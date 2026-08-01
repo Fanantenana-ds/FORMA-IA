@@ -1,0 +1,56 @@
+# ============================================================
+# FORMA-IA — .gitignore
+# ============================================================
+
+# Environnement virtuel
+venv/
+env/
+.venv/
+
+# Variables d'environnement (SÉCURITÉ !)
+.env
+.env.local
+.env.*.local
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.so
+*.dylib
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Base de données
+*.db
+*.sqlite
+
+# Logs
+logs/
+*.log
+
+# Fichiers temporaires
+*.tmp
+*.temp
+.DS_Store
+Thumbs.db
+
+# Docker
+data/
+pgdata/
+
+# Exports générés
+exports/
+*.pdf
+*.docx
+*.xlsx
+
+# Tests
+.pytest_cache/
+.coverage
+htmlcov/

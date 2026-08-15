@@ -226,6 +226,7 @@ logger.info("✅ Module M1 (Veille) chargé")
 
 # from app.api.v1.routes_dashboard import router as dashboard_router
 # app.include_router(dashboard_router, prefix="/api/v1")
+
 # ============================================================
 # 9. ÉVÉNEMENTS DE DÉMARRAGE ET D'ARRÊT
 # ============================================================
@@ -235,38 +236,20 @@ async def startup_event():
     """Actions à effectuer au démarrage de l'application"""
     logger.info("🚀 FORMA-IA API démarrage...")
     logger.info(f"📌 Environnement: {os.getenv('ENVIRONMENT', 'development')}")
-    logger.info(f"📌 Modèle Claude: {os.getenv('CLAUDE_MODEL', 'claude-3-5-sonnet-20241022')}")
-    
-    # --- Vérification de la base de données ---
-    try:
-        from app.utils.db import test_connection, init_db, create_database_if_not_exists
-        
-        # Créer la base si elle n'existe pas
-        create_database_if_not_exists()
-        
-        # Tester la connexion
-        if test_connection():
-            logger.info("✅ Connexion à PostgreSQL établie")
-            # Créer les tables si elles n'existent pas
-            init_db()
-        else:
-            logger.warning("⚠️ PostgreSQL n'est pas accessible")
-            logger.warning("   💡 Assure-toi que PostgreSQL est installé et en cours d'exécution")
-            logger.warning("   💡 Vérifie les identifiants dans .env (DATABASE_URL)")
-    except ImportError as e:
-        logger.warning(f"⚠️ Module db non trouvé: {e}")
-    except Exception as e:
-        logger.warning(f"⚠️ Erreur PostgreSQL: {e}")
+    logger.info(f"📌 Modèle utilisé: Groq (llama3-70b-8192)")
+
+    # ... (le reste du code existant)
 
     # --- Vérification des clés API ---
-    anthropic_key = os.getenv("ANTHROPIC_API_KEY")
-    if anthropic_key and anthropic_key != "sk-ant-votre-clef-ici":
-        logger.info(f"✅ Clé Anthropic présente: {anthropic_key[:10]}...")
+    groq_key = os.getenv("GROQ_API_KEY")
+    if groq_key and groq_key != "gsk_...":
+        logger.info(f"✅ Clé Groq présente: {groq_key[:10]}...")
     else:
-        logger.warning("⚠️ Clé Anthropic manquante ou invalide dans .env")
+        logger.warning("⚠️ Clé Groq manquante ou invalide dans .env")
 
+    # --- Tavily ---
     tavily_key = os.getenv("TAVILY_API_KEY")
-    if tavily_key and tavily_key != "tvly-votre-clef-ici":
+    if tavily_key and tavily_key != "tvly-...":
         logger.info(f"✅ Clé Tavily présente: {tavily_key[:10]}...")
     else:
         logger.warning("⚠️ Clé Tavily manquante ou invalide dans .env")
@@ -274,10 +257,59 @@ async def startup_event():
     logger.info("✅ API prête à recevoir des requêtes")
     logger.info(f"📌 Documentation: http://localhost:8000/api/docs")
 
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Actions à effectuer à l'arrêt de l'application"""
-    logger.info("🛑 FORMA-IA API arrêt...")
+
+# ============================================================
+# 9. ÉVÉNEMENTS DE DÉMARRAGE ET D'ARRÊT
+# # ============================================================
+
+# @app.on_event("startup")
+# async def startup_event():
+#     """Actions à effectuer au démarrage de l'application"""
+#     logger.info("🚀 FORMA-IA API démarrage...")
+#     logger.info(f"📌 Environnement: {os.getenv('ENVIRONMENT', 'development')}")
+#     logger.info(f"📌 Modèle Claude: {os.getenv('CLAUDE_MODEL', 'claude-3-5-sonnet-20241022')}")
+    
+#     # --- Vérification de la base de données ---
+#     try:
+#         from app.utils.db import test_connection, init_db, create_database_if_not_exists
+        
+#         # Créer la base si elle n'existe pas
+#         create_database_if_not_exists()
+        
+#         # Tester la connexion
+#         if test_connection():
+#             logger.info("✅ Connexion à PostgreSQL établie")
+#             # Créer les tables si elles n'existent pas
+#             init_db()
+#         else:
+#             logger.warning("⚠️ PostgreSQL n'est pas accessible")
+#             logger.warning("   💡 Assure-toi que PostgreSQL est installé et en cours d'exécution")
+#             logger.warning("   💡 Vérifie les identifiants dans .env (DATABASE_URL)")
+#     except ImportError as e:
+#         logger.warning(f"⚠️ Module db non trouvé: {e}")
+#     except Exception as e:
+#         logger.warning(f"⚠️ Erreur PostgreSQL: {e}")
+
+#     # --- Vérification des clés API ---
+#     anthropic_key = os.getenv("ANTHROPIC_API_KEY")
+#     if anthropic_key and anthropic_key != "sk-ant-votre-clef-ici":
+#         logger.info(f"✅ Clé Anthropic présente: {anthropic_key[:10]}...")
+#     else:
+#         logger.warning("⚠️ Clé Anthropic manquante ou invalide dans .env")
+
+#     tavily_key = os.getenv("TAVILY_API_KEY")
+#     if tavily_key and tavily_key != "tvly-votre-clef-ici":
+#         logger.info(f"✅ Clé Tavily présente: {tavily_key[:10]}...")
+#     else:
+#         logger.warning("⚠️ Clé Tavily manquante ou invalide dans .env")
+
+#     logger.info("✅ API prête à recevoir des requêtes")
+#     logger.info(f"📌 Documentation: http://localhost:8000/api/docs")
+
+# @app.on_event("shutdown")
+# async def shutdown_event():
+#     """Actions à effectuer à l'arrêt de l'application"""
+#     logger.info("🛑 FORMA-IA API arrêt...")
 
 # ============================================================
 # 10. POINT D'ENTRÉE POUR L'EXÉCUTION DIRECTE

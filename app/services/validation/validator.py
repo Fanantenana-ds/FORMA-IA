@@ -102,7 +102,7 @@ class Validator:
             flags.append("budget_missing")
 
         # Score faible
-        if data.get("score", 0) < 50:
+        if data.get("score", 0) < 30:
             flags.append("low_score")
 
         # Deadline courte (< 15 jours)

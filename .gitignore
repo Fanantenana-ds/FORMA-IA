@@ -1,0 +1,46 @@
+# .gitignore
+
+# Environnement
+.env
+.env.local
+.env.production
+
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.coverage
+htmlcov/
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Docker
+*.pid
+*.socket
+
+# Google
+credentials.json
+*.key
+
+# Base de données
+*.db
+*.sqlite3
+
+# Données
+data/*.csv
+data/*.xlsx
+
+# Généré
+dist/
+build/
+*.egg-info/
+
+test.http

@@ -64,11 +64,3 @@ def get_me(current_user = Depends(get_current_user)):
         "email": current_user.email,
         "role": current_user.role
     }
-
-@router.get("/test-direction")
-def test_direction(current_user = Depends(require_role("Direction"))):
-    return {
-        "message": "Accès autorisé",
-        "user": current_user.nom,
-        "role": current_user.role
-    }

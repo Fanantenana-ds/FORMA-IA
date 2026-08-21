@@ -3,7 +3,9 @@ from fastapi import FastAPI
 from app.database import Base, engine
 from app.models.user import User
 from app.models.revoked_token import RevokedToken
-from app.api.v1.auth import router as auth_router
+from app.models.opportunite import Opportunite
+from app.api.v1.router import api_router
+
 
 Base.metadata.create_all(bind=engine)
 
@@ -11,4 +13,7 @@ app = FastAPI(
     title="FORMA-IA API"
 )
 
-app.include_router(auth_router)
+app.include_router(
+    api_router,
+    prefix="/api/v1"
+)

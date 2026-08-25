@@ -1,7 +1,7 @@
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from app.core.dependencies import get_current_user, require_role
+from app.core.dependencies import get_current_user, require_role, get_opportunite_analyse_service
 from app.models.user import User
 
 from app.database import get_db
@@ -10,10 +10,14 @@ from app.schemas.opportunite import (
     OpportuniteCreate,
     OpportuniteUpdate,
     OpportuniteResponse,
-    OpportuniteList
+    OpportuniteList,
+    OpportuniteAnalyseResult,
+    OpportuniteAnalyseRequest
 )
 from app.services.opportunite_service import OpportuniteService
+from app.services.opportunite_analyse_service import OpportuniteAnalyseService
 
+#Route opportunité
 router = APIRouter(
     prefix="/opportunites",
     tags=["Opportunités"]
@@ -49,6 +53,22 @@ def get_opportunites(service: OpportuniteService = Depends(get_opportunite_servi
         "opportunites": opportunites,
         "total": len(opportunites)
     }
+
+# Route analyse opportunité
+@router.post(
+    "/analyse",
+    response_model=OpportuniteAnalyseResult
+)
+def analyse_opportunite(
+    data: OpportuniteAnalyseRequest,
+    analyse_service: OpportuniteAnalyseService = Depends(get_opportunite_analyse_service),
+    current_user: User = Depends(get_current_user)
+):
+    contenu = data.contenu
+    if not contenu and data.url:
+        contenu = str(data.url)
+
+    return analyse_service.analyse(contenu)
 
 @router.get(
     "/{opportunite_id}",

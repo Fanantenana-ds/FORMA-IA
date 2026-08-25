@@ -4,6 +4,7 @@ from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.services.opportunite_analyse_service import OpportuniteAnalyseService
 from app.core.security import decode_access_token
 from app.repositories.user_repository import UserRepository
 from app.repositories.revoked_token_repository import (
@@ -12,7 +13,7 @@ from app.repositories.revoked_token_repository import (
 from typing import Callable
 
 oauth2_scheme = OAuth2PasswordBearer(
-    tokenUrl="api/v1/auth/login"
+    tokenUrl="/api/v1/auth/login"
     )
 
 def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
@@ -94,3 +95,6 @@ def require_role(*allowed_roles: str) -> Callable:
         return current_user
 
     return role_checker
+
+def get_opportunite_analyse_service() -> OpportuniteAnalyseService:
+    return OpportuniteAnalyseService()

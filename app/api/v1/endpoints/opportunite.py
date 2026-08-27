@@ -1,7 +1,7 @@
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from app.core.dependencies import get_current_user, require_role, get_opportunite_analyse_service
+from app.models.core.dependencies import get_current_user, require_role, get_opportunite_analyse_service
 from app.models.user import User
 
 from app.database import get_db

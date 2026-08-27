@@ -6,7 +6,7 @@ from app.database import get_db
 from app.schemas.auth import TokenResponse, UserLogin
 from app.schemas.user import UserCreate, UserResponse
 from app.services.auth_service import AuthService
-from app.core.dependencies import get_current_user, require_role
+from app.models.core.dependencies import get_current_user, require_role
 
 router = APIRouter(
     prefix="/auth",

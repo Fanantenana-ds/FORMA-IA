@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.services.opportunite_analyse_service import OpportuniteAnalyseService
-from app.core.security import decode_access_token
+from app.models.core.security import decode_access_token
 from app.repositories.user_repository import UserRepository
 from app.repositories.revoked_token_repository import (
     RevokedTokenRepository

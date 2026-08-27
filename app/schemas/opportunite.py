@@ -23,7 +23,7 @@ class OpportuniteResponse(BaseModel):
     echeance: Optional[datetime] = None
     domaine: Optional[Domaine] = None
 
-    score_pertinente: float
+    score_pertinence: float
     statut: StatutOpportunite
     date_creation: datetime
 
@@ -61,7 +61,7 @@ class OpportuniteAnalyseResult(BaseModel):
     budget: Optional[float] = Field(default=None, ge=0)
     echeance: Optional[datetime] = None
     domaine: Optional[Domaine] = None
-    score_pertinente: float = Field(
+    score_pertinence: float = Field(
         ...,
         ge=0,
         le=1.0

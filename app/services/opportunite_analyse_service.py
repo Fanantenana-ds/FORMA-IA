@@ -12,5 +12,5 @@ class OpportuniteAnalyseService(IOpportuniteAnalyseService):
             budget=None,
             echeance=None,
             domaine=None,
-            score_pertinente=0.0
+            score_pertinence=0.0
         )

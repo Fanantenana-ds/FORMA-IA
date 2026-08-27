@@ -34,7 +34,7 @@ def analyser_opportunite(opportunite_id: UUID, db: Session = Depends(get_db), cu
         "budget": opportunite.budget,
         "echeance": opportunite.echeance,
         "domaine": opportunite.domaine,
-        "score_pertinente": 0.0
+        "score_pertinence": 0.0
     }
 
     service = AnalyseService(db)
@@ -50,5 +50,5 @@ def analyser_opportunite(opportunite_id: UUID, db: Session = Depends(get_db), cu
         budget=opportunite.budget,
         echeance=opportunite.echeance,
         domaine=opportunite.domaine,
-        score_pertinente=opportunite.score_pertinente
+        score_pertinence=opportunite.score_pertinence
     )

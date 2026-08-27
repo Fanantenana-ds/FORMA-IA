@@ -19,6 +19,6 @@ class HistoriqueAnalyse(Base):
     echeance = Column(DateTime(timezone=True))
     domaine = Column(SqlEnum(Domaine))
     exigences = Column(Text)
-    score_pertinente = Column(Float, default=0.0)
+    score_pertinence = Column(Float, default=0.0)
     date_analyse = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
     opportunite = relationship("Opportunite", back_populates="historique_analyses")

@@ -29,4 +29,4 @@ def test_analyse_avec_auth_et_opportunite_existante(client_authenticated):
     )
     assert response.status_code == 200
     data = response.json()
-    assert "score_pertinente" in data
+    assert "score_pertinence" in data

@@ -15,8 +15,8 @@ class AnalyseService:
             budget=resultat_ia.get("budget"),
             echeance=resultat_ia.get("echeance"),
             domaine=resultat_ia.get("domaine"),
-            score_pertinente=resultat_ia.get(
-                "score_pertinente",
+            score_pertinence=resultat_ia.get(
+                "score_pertinence",
                 0.0
             )
         )

@@ -9,4 +9,4 @@ class AnalyseResult(BaseModel):
     budget: Optional[float] = None
     echeance: Optional[datetime] = None
     domaine: Optional[Domaine] = None
-    score_pertinente: float = 0.0
+    score_pertinence: float = 0.0

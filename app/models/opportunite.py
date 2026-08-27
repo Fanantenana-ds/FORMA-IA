@@ -36,7 +36,7 @@ class Opportunite(Base):
     budget = Column(Float)
     echeance = Column(DateTime(timezone=True))
     domaine = Column(SqlEnum(Domaine))
-    score_pertinente = Column( Float, default=0.0)
+    score_pertinence = Column( Float, default=0.0)
     statut = Column(SqlEnum(StatutOpportunite), default=StatutOpportunite.EN_ATTENTE, nullable=False)
     date_creation = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
 

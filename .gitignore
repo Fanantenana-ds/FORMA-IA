@@ -10,6 +10,7 @@ __pycache__/
 # Secrets — NE JAMAIS versionner
 .env
 .env.*
+!.env.example
 
 # Bases de données locales
 *.db

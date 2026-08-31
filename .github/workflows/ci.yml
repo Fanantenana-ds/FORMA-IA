@@ -22,9 +22,11 @@ jobs:
       - name: Lint with ruff
         working-directory: ./backend
         run: ruff check .
-      - name: Run tests
+      - name: Run tests with coverage
         working-directory: ./backend
-        run: pytest
+        run: |
+          coverage run -m pytest
+          coverage report --fail-under=70
 
   frontend-checks:
     runs-on: ubuntu-latest

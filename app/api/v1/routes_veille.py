@@ -1,283 +1,461 @@
 # ============================================================
-# ROUTES API — M1 VEILLE MARCHÉ (AVEC GROQ)
+# FORMA-IA — M1 VEILLE
+# ROUTES API
 # ============================================================
 
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form
-from pydantic import BaseModel
-from typing import Optional, List
-import io
-import PyPDF2
-import logging
+from __future__ import annotations
 
-from app.orchestrator.veille_orchestrator import VeilleOrchestrator
+import io
+import logging
+from typing import List, Optional
+from fastapi import Depends
+from app.utils.security import verify_api_key
+
+import PyPDF2
+
+from fastapi import (
+    APIRouter,
+    File,
+    Form,
+    HTTPException,
+    UploadFile,
+)
+from pydantic import (
+    BaseModel,
+    Field,
+)
+
+from app.orchestrator.veille_orchestrator import (
+    VeilleOrchestrator,
+)
+
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter()
-orchestrator = VeilleOrchestrator()
+router = APIRouter(dependencies=[Depends(verify_api_key)])
+
 
 # ============================================================
-# SCHÉMAS PYDANTIC
+# ORCHESTRATEUR
+# ============================================================
+
+orchestrator = VeilleOrchestrator()
+
+
+# ============================================================
+# REQUESTS
 # ============================================================
 
 class SearchRequest(BaseModel):
-    query: str
+
+    query: str = Field(
+        ...,
+        min_length=2,
+        max_length=500,
+    )
+
     domains: Optional[List[str]] = None
-    min_score: Optional[int] = 60
-    limit: Optional[int] = 20
+
+    min_score: int = Field(
+        default=40,
+        ge=0,
+        le=100,
+    )
+
+    limit: int = Field(
+        default=20,
+        ge=1,
+        le=50,
+    )
+
 
 class AnalyseTexteRequest(BaseModel):
-    texte: str
+
+    texte: str = Field(
+        ...,
+        min_length=2,
+        max_length=10000,
+    )
+
     source: Optional[str] = "manuel"
 
+
 class SearchResponse(BaseModel):
+
     success: bool
+
     data: dict
+
     error: Optional[str] = None
 
+    file: Optional[dict] = None
+
+
 # ============================================================
-# ENDPOINTS M1
+# NORMALISATION
 # ============================================================
 
-@router.post("/ia/veille/rechercher", response_model=SearchResponse, tags=["M1 - Veille Marché"])
-async def rechercher_opportunites(request: SearchRequest):
-    """
-    Recherche et analyse des opportunités commerciales via Tavily + Groq.
+def _normalize_result(
+    resultat: dict,
+    min_score: int,
+    limit: int,
+):
 
-    - **query**: La requête de recherche (ex: "formation IA Madagascar")
-    - **domains**: Filtrer par domaine (ia, devops, data, etc.)
-    - **min_score**: Score minimum de pertinence (0-100)
-    - **limit**: Nombre maximum de résultats
-    """
-    logger.info(f"🔍 Recherche: {request.query}")
+    if not isinstance(
+        resultat,
+        dict,
+    ):
+        raise HTTPException(
+            status_code=502,
+            detail=(
+                "Réponse invalide "
+                "de l'orchestrateur."
+            ),
+        )
+
+    opportunities = resultat.get(
+        "opportunities",
+        [],
+    )
+
+    if not isinstance(
+        opportunities,
+        list,
+    ):
+        opportunities = []
+
+    filtered = []
+
+    for opportunity in opportunities:
+
+        if not isinstance(
+            opportunity,
+            dict,
+        ):
+            continue
+
+        try:
+            score = int(
+                opportunity.get(
+                    "score",
+                    0,
+                )
+            )
+        except (
+            TypeError,
+            ValueError,
+        ):
+            score = 0
+
+        if score < min_score:
+            continue
+
+        opportunity[
+            "score"
+        ] = score
+
+        try:
+            opportunity[
+                "confidence"
+            ] = round(
+                float(
+                    opportunity.get(
+                        "confidence",
+                        0,
+                    )
+                ),
+                3,
+            )
+        except (
+            TypeError,
+            ValueError,
+        ):
+            opportunity[
+                "confidence"
+            ] = 0.0
+
+        filtered.append(
+            opportunity
+        )
+
+    filtered.sort(
+        key=lambda x: (
+            x.get(
+                "score",
+                0,
+            ),
+            x.get(
+                "confidence",
+                0,
+            ),
+        ),
+        reverse=True,
+    )
+
+    filtered = filtered[:limit]
+
+    resultat[
+        "opportunities"
+    ] = filtered
+
+    resultat[
+        "total"
+    ] = len(filtered)
+
+    return resultat
+
+
+# ============================================================
+# 1. RECHERCHER
+# ============================================================
+
+@router.post(
+    "/ia/veille/rechercher",
+    response_model=SearchResponse,
+    tags=["M1 - Veille Marché"],
+)
+async def rechercher_opportunites(
+    request: SearchRequest,
+):
+
+    logger.info(
+        "🔍 IA: Recherche: %s...",
+        request.query[:100],
+    )
+
     try:
-        resultat = orchestrator.analyser_opportunites(request.query)
-        logger.info(f"✅ Résultat: {resultat.get('data', {}).get('total', 0)} opportunités trouvées")
-        return resultat
-    except Exception as e:
-        logger.error(f"❌ Erreur: {e}")
+
+        resultat = (
+            await orchestrator.analyser_opportunites(
+                query=request.query
+            )
+        )
+
+        resultat = _normalize_result(
+            resultat=resultat,
+            min_score=request.min_score,
+            limit=request.limit,
+        )
+
+        logger.info(
+            "✅ IA: %d opportunités retournées",
+            resultat.get(
+                "total",
+                0,
+            ),
+        )
+
         return {
-            "success": False,
-            "data": {},
-            "error": str(e)
+            "success": True,
+            "data": resultat,
+            "error": None,
         }
 
-@router.post("/ia/veille/analyser-texte", response_model=SearchResponse, tags=["M1 - Veille Marché"])
-async def analyser_texte(request: AnalyseTexteRequest):
-    """
-    Analyse un texte d'appel d'offres copié-collé.
-    """
+    except HTTPException:
+        raise
+
+    except Exception as exc:
+
+        logger.exception(
+            "❌ Erreur recherche M1 : %s",
+            exc,
+        )
+
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Erreur interne du "
+                "service de veille."
+            ),
+        )
+
+
+# ============================================================
+# 2. ANALYSE TEXTE
+# ============================================================
+
+@router.post(
+    "/ia/veille/analyser-texte",
+    response_model=SearchResponse,
+    tags=["M1 - Veille Marché"],
+)
+async def analyser_texte(
+    request: AnalyseTexteRequest,
+):
+
     try:
-        resultat = orchestrator.analyser_opportunites(request.texte[:1000])
-        return resultat
-    except Exception as e:
+
+        texte = request.texte.strip()
+
+        result = await orchestrator.analyser_texte(request.texte, request.source)
+
         return {
-            "success": False,
-            "data": {},
-            "error": str(e)
+            "success": True,
+            "data": result,
+            "error": None,
         }
 
-@router.post("/ia/veille/analyser-pdf", tags=["M1 - Veille Marché"])
+    except Exception as exc:
+
+        logger.exception(
+            "❌ Erreur analyse texte : %s",
+            exc,
+        )
+
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Erreur interne lors "
+                "de l'analyse texte."
+            ),
+        )
+
+
+# ============================================================
+# 3. ANALYSE PDF
+# ============================================================
+
+@router.post(
+    "/ia/veille/analyser-pdf",
+    tags=["M1 - Veille Marché"],
+)
 async def analyser_pdf(
     file: UploadFile = File(...),
-    source: str = Form("manuel")
+    source: str = Form(
+        default="manuel"
+    ),
 ):
-    """
-    Analyse un fichier PDF d'appel d'offres.
-    """
-    if not file.filename.endswith('.pdf'):
-        raise HTTPException(400, "Le fichier doit être un PDF")
+
+    filename = (
+        file.filename or ""
+    ).lower()
+
+    if not filename.endswith(
+        ".pdf"
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Le fichier doit être "
+                "un PDF."
+            ),
+        )
 
     try:
-        contents = await file.read()
-        pdf_reader = PyPDF2.PdfReader(io.BytesIO(contents))
 
-        texte_complet = ""
-        for page in pdf_reader.pages:
-            texte_complet += page.extract_text()
+        contents = await file.read()
+
+        if not contents:
+
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Le PDF est vide."
+                ),
+            )
+
+        max_size = (
+            15 * 1024 * 1024
+        )
+
+        if len(contents) > max_size:
+
+            raise HTTPException(
+                status_code=413,
+                detail=(
+                    "PDF trop volumineux "
+                    "(maximum 15 MB)."
+                ),
+            )
+
+        try:
+
+            reader = PyPDF2.PdfReader(
+                io.BytesIO(contents)
+            )
+
+        except Exception:
+
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "PDF invalide ou "
+                    "corrompu."
+                ),
+            )
+
+        pages = []
+
+        for page in reader.pages:
+
+            text = (
+                page.extract_text()
+                or ""
+            ).strip()
+
+            if text:
+                pages.append(
+                    text
+                )
+
+        texte_complet = (
+            "\n\n".join(pages)
+        )
 
         if not texte_complet.strip():
-            raise HTTPException(400, "Le PDF est vide")
 
-        resultat = orchestrator.analyser_opportunites(texte_complet[:1000])
-        return resultat
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Aucun texte exploitable "
+                    "dans le PDF."
+                ),
+            )
 
-    except Exception as e:
-        raise HTTPException(500, f"Erreur : {str(e)}")
+        texte_complet = (
+            texte_complet[:10000]
+        )
 
-@router.get("/ia/veille/opportunites", tags=["M1 - Veille Marché"])
-async def list_opportunites(
-    domain: Optional[str] = None,
-    min_score: Optional[int] = None,
-    limit: int = 50
-):
-    """
-    Liste toutes les opportunités analysées.
-    """
-    return {
-        "opportunities": [],
-        "total": 0,
-        "filters": {
-            "domain": domain,
-            "min_score": min_score,
-            "limit": limit
+        resultat = (
+            await orchestrator.analyser_texte(
+                query=texte_complet
+            )
+        )
+
+        return {
+            "success": True,
+            "data": resultat,
+            "error": None,
+            "file": {
+                "filename": file.filename,
+                "content_type": file.content_type,
+                "source": source,
+                "size_bytes": len(contents),
+            },
         }
-    }
 
-@router.get("/ia/veille/opportunites/{id}", tags=["M1 - Veille Marché"])
-async def get_opportunite(id: int):
-    """
-    Récupère une opportunité par son ID.
-    """
-    return {
-        "id": id,
-        "message": "Opportunité à récupérer depuis la base"
-    }
+    except HTTPException:
+        raise
 
+    except Exception as exc:
 
+        logger.exception(
+            "❌ Erreur PDF : %s",
+            exc,
+        )
 
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Erreur interne lors "
+                "de l'analyse PDF."
+            ),
+        )
+from fastapi import Query
+from app.services.benchmark.benchmark_runner import BenchmarkRunner
 
-
-
-
-
-# # ============================================================
-# # ROUTES API — M1 VEILLE MARCHÉ
-# # ============================================================
-
-# from fastapi import APIRouter, HTTPException, UploadFile, File, Form
-# from pydantic import BaseModel
-# from typing import Optional, List
-# import io
-# import PyPDF2
-
-# from app.orchestrator.veille_orchestrator import VeilleOrchestrator
-
-# # Créer le router
-# router = APIRouter()
-# orchestrator = VeilleOrchestrator()
-
-# # ============================================================
-# # SCHÉMAS PYDANTIC
-# # ============================================================
-
-# class SearchRequest(BaseModel):
-#     query: str
-#     domains: Optional[List[str]] = None
-#     min_score: Optional[int] = 60
-#     limit: Optional[int] = 20
-
-# class AnalyseTexteRequest(BaseModel):
-#     texte: str
-#     source: Optional[str] = "manuel"
-
-# class SearchResponse(BaseModel):
-#     success: bool
-#     data: dict
-#     error: Optional[str] = None
-
-# # ============================================================
-# # ENDPOINTS M1
-# # ============================================================
-
-# @router.post("/ia/veille/rechercher", response_model=SearchResponse, tags=["M1 - Veille Marché"])
-# async def rechercher_opportunites(request: SearchRequest):
-#     """
-#     Recherche et analyse des opportunités commerciales via Tavily.
-
-#     - **query**: La requête de recherche (ex: "formation IA Madagascar")
-#     - **domains**: Filtrer par domaine (ia, devops, data, etc.)
-#     - **min_score**: Score minimum de pertinence (0-100)
-#     - **limit**: Nombre maximum de résultats
-#     """
-#     try:
-#         resultat = orchestrator.analyser_opportunites(request.query)
-#         return resultat
-#     except Exception as e:
-#         return {
-#             "success": False,
-#             "data": {},
-#             "error": str(e)
-#         }
-
-# @router.post("/ia/veille/analyser-texte", response_model=SearchResponse, tags=["M1 - Veille Marché"])
-# async def analyser_texte(request: AnalyseTexteRequest):
-#     """
-#     Analyse un texte d'appel d'offres copié-collé.
-
-#     - **texte**: Le contenu de l'appel d'offres
-#     - **source**: La source du texte (manuel, email, etc.)
-#     """
-#     try:
-#         resultat = orchestrator.analyser_opportunites(request.texte[:1000])
-#         return resultat
-#     except Exception as e:
-#         return {
-#             "success": False,
-#             "data": {},
-#             "error": str(e)
-#         }
-
-# @router.post("/ia/veille/analyser-pdf", tags=["M1 - Veille Marché"])
-# async def analyser_pdf(
-#     file: UploadFile = File(...),
-#     source: str = Form("manuel")
-# ):
-#     """
-#     Analyse un fichier PDF d'appel d'offres.
-
-#     - **file**: Le fichier PDF à analyser
-#     - **source**: La source du document
-#     """
-#     if not file.filename.endswith('.pdf'):
-#         raise HTTPException(400, "Le fichier doit être un PDF")
-
-#     try:
-#         contents = await file.read()
-#         pdf_reader = PyPDF2.PdfReader(io.BytesIO(contents))
-
-#         texte_complet = ""
-#         for page in pdf_reader.pages:
-#             texte_complet += page.extract_text()
-
-#         if not texte_complet.strip():
-#             raise HTTPException(400, "Le PDF est vide")
-
-#         resultat = orchestrator.analyser_opportunites(texte_complet[:1000])
-#         return resultat
-
-#     except Exception as e:
-#         raise HTTPException(500, f"Erreur : {str(e)}")
-
-# @router.get("/ia/veille/opportunites", tags=["M1 - Veille Marché"])
-# async def list_opportunites(
-#     domain: Optional[str] = None,
-#     min_score: Optional[int] = None,
-#     limit: int = 50
-# ):
-#     """
-#     Liste toutes les opportunités analysées.
-
-#     - **domain**: Filtrer par domaine (ia, devops, data, etc.)
-#     - **min_score**: Score minimum de pertinence
-#     - **limit**: Nombre maximum de résultats
-#     """
-#     return {
-#         "opportunities": [],
-#         "total": 0,
-#         "filters": {
-#             "domain": domain,
-#             "min_score": min_score,
-#             "limit": limit
-#         }
-#     }
-
-# @router.get("/ia/veille/opportunites/{id}", tags=["M1 - Veille Marché"])
-# async def get_opportunite(id: int):
-#     """
-#     Récupère une opportunité par son ID.
-#     """
-#     return {
-#         "id": id,
-#         "message": "Opportunité à récupérer depuis la base"
-#     }
+@router.post("/benchmark")
+async def run_benchmark(limit: int = Query(20, ge=1, le=100)):
+    runner = BenchmarkRunner()
+    report = await runner.run(limit=limit)
+    return {"status": "success", "report": report}

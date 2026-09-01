@@ -1,573 +1,1228 @@
+# app/orchestrator/veille_orchestrator.py
 # ============================================================
-# ORCHESTRATEUR M1 — VEILLE MARCHÉ (AVEC GROQ VIA OPENAI)
+# FORMA-IA — M1 VEILLE MARCHÉ — ORCHESTRATEUR
 # ============================================================
-# Version : V1.0
-# Date : 13 Août 2026
+# Version : V7.0 — architecture modulaire par services
+#
+# Ce fichier NE CONTIENT PLUS de logique métier. Il coordonne :
+#   TavilyService        -> recherche web
+#   prefilter_service     -> filtrage déterministe
+#   LLMAnalysisService     -> analyse Groq (compréhension)
+#   ValidationService      -> qualité, normalisation, dédup
+#   ClassificationService  -> domaine (Python, déterministe)
+#   ScoringService          -> score final (Python, déterministe)
+#   opportunity_sync        -> sync backend optionnelle, non bloquante
+#
+# Aucun import SQLAlchemy ici (cf. répartition des rôles :
+# la persistance est la responsabilité du module Backend).
 # ============================================================
 
-import os
-import json
-import yaml
 import logging
-from typing import Dict, List, Any
-from openai import OpenAI
-from dotenv import load_dotenv
+import os
+import time
+from typing import Any, Dict, List
 
-from app.services.search.search_manager import SearchManager
-from app.services.validation.validator import Validator
+from app.services.veille.tavily_service import TavilyService
+from app.services.veille.prefilter_service import rank_results
+from app.services.veille.llm_analysis_service import LLMAnalysisService
+from app.services.veille.classification_service import ClassificationService
+from app.services.veille.scoring_service import ScoringService
+from app.services.veille import validation_service
+from app.services.backend_sync.opportunity_sync import sync_opportunities_to_backend
 
-load_dotenv()
 logger = logging.getLogger(__name__)
+
+MIN_SCORE_VALIDATED = int(os.getenv("MIN_SCORE_VALIDATED", "60"))
+MIN_SCORE_TO_REVIEW = int(os.getenv("MIN_SCORE_TO_REVIEW", "40"))
+
+# IMPORTANT : la formule de confidence de classification_service.py
+# (0.50 + 0.05 x nb_mots_clés, plafond 0.95) donne en pratique des
+# valeurs entre 0.50 et 0.70 sur des résumés courts. Un seuil de
+# 0.85 pour "validated" (suggestion générique non calibrée) viderait
+# ce statut en permanence. 0.55 est calibré sur les vraies valeurs
+# observées en test (0.55, 0.65) — à réajuster une fois le corpus de
+# test annoté disponible, pas avant.
+MIN_CONFIDENCE_VALIDATED = float(os.getenv("MIN_CONFIDENCE_VALIDATED", "0.55"))
+
+MAX_RESULTS_AI = int(os.getenv("MAX_RESULTS_AI", "4"))
+
+# Si le 1er lot de sources ne donne aucune opportunité, on retente
+# avec le(s) lot(s) suivant(s) avant d'abandonner. 2 = jusqu'à
+# 2 lots (8 sources sur 10 typiquement), borné pour ne pas exploser
+# la latence totale (CDC <3s par appel, tolérable en cumulé sur 2).
+MAX_FALLBACK_BATCHES = int(os.getenv("MAX_FALLBACK_BATCHES", "2"))
 
 
 class VeilleOrchestrator:
-    """Orchestrateur pour le module M1 avec Groq (via OpenAI)"""
+    """Coordonne le pipeline M1 sans porter lui-même de logique métier."""
 
     def __init__(self):
-        """Initialise l'orchestrateur avec Groq via OpenAI"""
-        # --- Configuration de Groq ---
-        api_key = os.getenv("GROQ_API_KEY")
-        if not api_key:
-            raise ValueError("❌ GROQ_API_KEY non trouvée dans .env")
-        
-        # Mampiasa OpenAI client miaraka amin'ny base_url Groq
-        self.client = OpenAI(
-            api_key=api_key,
-            base_url="https://api.groq.com/openai/v1"
+        logger.info("🚀 Initialisation M1 Veille Orchestrator")
+
+        self.tavily_service = TavilyService()
+        self.llm_service = LLMAnalysisService()
+        self.classification_service = ClassificationService()
+        self.scoring_service = ScoringService()
+
+    # ========================================================
+    # MÉTHODE PRINCIPALE
+    # ========================================================
+
+    async def analyser_opportunites(self, query: str) -> Dict[str, Any]:
+
+        query = str(query or "").strip()
+        start_total = time.perf_counter()
+
+        if not query:
+            return self._empty_response(status="error", notes="Requête vide.")
+
+        logger.info("=" * 60)
+        logger.info("🚀 M1 VEILLE — DÉBUT")
+        logger.info("🔍 Requête : %s", query)
+        logger.info("=" * 60)
+
+        # ----------------------------------------------------
+        # 1 — TAVILY
+        # ----------------------------------------------------
+
+        raw_results = await self.tavily_service.search(query)
+
+        if not raw_results:
+            return self._empty_response(
+                status="no_results",
+                notes="Aucun résultat Tavily.",
+                elapsed=time.perf_counter() - start_total,
+            )
+
+        # ----------------------------------------------------
+        # 2 — CLASSEMENT COMPLET (pas de troncature ici)
+        # ----------------------------------------------------
+
+        ranked_results = rank_results(raw_results, query)
+
+        if not ranked_results:
+            return self._empty_response(
+                status="no_results",
+                notes="Aucun résultat après préfiltrage.",
+                elapsed=time.perf_counter() - start_total,
+                raw_count=len(raw_results),
+            )
+
+        # ----------------------------------------------------
+        # 3/4 — ANALYSE LLM PAR LOTS, AVEC FALLBACK
+        # ----------------------------------------------------
+        # Si le lot 1 (top MAX_RESULTS_AI) ne donne aucune
+        # opportunité, on essaie le lot suivant avant d'abandonner.
+        # Évite de conclure "0 opportunité" sur la seule base d'un
+        # sous-ensemble qui aurait pu mal tomber au préfiltrage.
+        # ----------------------------------------------------
+
+        groq_response = None
+        groq_opportunities: List[Dict[str, Any]] = []
+        filtered_results: List[Dict[str, Any]] = []
+        last_notes = None
+        any_groq_success = False
+
+        for batch_index in range(MAX_FALLBACK_BATCHES):
+            start_idx = batch_index * MAX_RESULTS_AI
+            end_idx = start_idx + MAX_RESULTS_AI
+            batch = ranked_results[start_idx:end_idx]
+
+            if not batch:
+                break
+
+            logger.info(
+                "🔁 Lot %d/%d : %d source(s) analysée(s) par Groq",
+                batch_index + 1,
+                MAX_FALLBACK_BATCHES,
+                len(batch),
+            )
+
+            batch_response = await self.llm_service.analyze(query, batch)
+            filtered_results = batch  # dernier lot réellement tenté
+
+            if batch_response is None:
+                # Échec réseau/format sur ce lot : on tente quand
+                # même le lot suivant plutôt que d'abandonner tout
+                # de suite (peut être transitoire malgré les retries
+                # internes déjà épuisés dans llm_analysis_service).
+                logger.warning(
+                    "⚠️ Lot %d : analyse Groq échouée, passage au lot suivant",
+                    batch_index + 1,
+                )
+                continue
+
+            any_groq_success = True
+            groq_response = batch_response
+            last_notes = batch_response.get("notes")
+            batch_opportunities = batch_response.get("opportunities", [])
+
+            if batch_opportunities:
+                logger.info(
+                    "✅ Lot %d : %d opportunité(s) trouvée(s) — arrêt du fallback",
+                    batch_index + 1,
+                    len(batch_opportunities),
+                )
+                groq_opportunities = batch_opportunities
+                break
+
+            logger.info(
+                "ℹ️ Lot %d : aucune opportunité éligible", batch_index + 1
+            )
+
+        # ----------------------------------------------------
+        # Aucun lot n'a pu être analysé (tous en échec réseau/format)
+        # ----------------------------------------------------
+
+        if not any_groq_success:
+            result = validation_service.fallback_response(filtered_results)
+            elapsed = time.perf_counter() - start_total
+            result["statistics"]["processing_time_seconds"] = round(elapsed, 3)
+            logger.info("🏁 M1 FALLBACK — FIN (%.3fs)", elapsed)
+            return result
+
+        # ----------------------------------------------------
+        # Tous les lots tentés, mais 0 opportunité au final
+        # ----------------------------------------------------
+
+        if not groq_opportunities:
+            elapsed = time.perf_counter() - start_total
+            logger.info(
+                "ℹ️ Aucune opportunité éligible après %d lot(s) testé(s)",
+                min(MAX_FALLBACK_BATCHES, batch_index + 1),
+            )
+            return {
+                "opportunities": [],
+                "market_signals": (
+                    groq_response.get("market_signals", []) if groq_response else []
+                ),
+                "total": 0,
+                "status": "success",
+                "ai_provider": "groq",
+                "statistics": {
+                    "raw_results": len(raw_results),
+                    "filtered": len(ranked_results),
+                    "batches_tried": min(MAX_FALLBACK_BATCHES, batch_index + 1),
+                    "groq_results": 0,
+                    "final": 0,
+                    "madagascar": 0,
+                    "processing_time_seconds": round(elapsed, 3),
+                },
+                "notes": last_notes or "Aucune opportunité éligible trouvée.",
+            }
+
+        # ----------------------------------------------------
+        # 5 — NORMALISATION / QUALITÉ / CLASSIFICATION / SCORING
+        # ----------------------------------------------------
+
+        normalized: List[Dict[str, Any]] = []
+
+        for opportunity in groq_opportunities:
+
+            cleaned = validation_service.normalize_opportunity(opportunity)
+            if cleaned is None:
+                continue
+
+            if not validation_service.quality_filter(cleaned):
+                continue
+
+            cleaned.update(self.classification_service.classify(cleaned))
+            cleaned["country_scope"] = self.classification_service.detect_country(
+                cleaned
+            )
+
+            cleaned.update(self.scoring_service.score(cleaned))
+
+            try:
+                final_score = int(cleaned.get("score", 0))
+            except (TypeError, ValueError):
+                final_score = 0
+
+            if final_score < MIN_SCORE_TO_REVIEW:
+                continue
+
+            try:
+                final_confidence = float(cleaned.get("confidence", 0))
+            except (TypeError, ValueError):
+                final_confidence = 0.0
+
+            organizer_is_unclear = "organizer_unclear" in (
+                cleaned.get("flags") or []
+            )
+
+            # ============================================================
+            # ✅ FANITSIA — IZAO FOTSINY NO OVANA
+            # ============================================================
+            # validated : score + confidence suffisants.
+            # organizer_unclear ne bloque PLUS la validation ;
+            # le flag reste dans les métadonnées pour information.
+            if final_score >= MIN_SCORE_VALIDATED and final_confidence >= MIN_CONFIDENCE_VALIDATED:
+                cleaned["status"] = "validated"
+            else:
+                cleaned["status"] = "to_review"
+
+            cleaned["ai_provider"] = "groq"
+            cleaned["is_actionable"] = True
+
+            normalized.append(cleaned)
+
+        # ----------------------------------------------------
+        # 6 — DÉDUPLICATION + TRI
+        # ----------------------------------------------------
+
+        normalized = validation_service.deduplicate(normalized)
+        normalized.sort(key=lambda item: int(item.get("score", 0)), reverse=True)
+
+        # ----------------------------------------------------
+        # 7 — VALIDATION FINALE (schéma Pydantic partagé)
+        # ----------------------------------------------------
+
+        schema_valid: List[Dict[str, Any]] = []
+        for opportunity in normalized:
+            validated = validation_service.validate_against_schema(opportunity)
+            if validated is not None:
+                schema_valid.append(validated)
+
+        # ----------------------------------------------------
+        # 8 — SYNC BACKEND (optionnelle, non bloquante)
+        # ----------------------------------------------------
+
+        sync_result = await sync_opportunities_to_backend(schema_valid)
+
+        # ----------------------------------------------------
+        # 9 — STATISTIQUES + RÉPONSE
+        # ----------------------------------------------------
+
+        madagascar_count = sum(
+            1 for o in schema_valid if o.get("country_scope") == "Madagascar"
         )
-        self.model = "llama-3.3-70b-versatile"  # ou "mixtral-8x7b-32768"
-        
-        self.search_manager = SearchManager()
-        self.validator = Validator()
 
-        # Charger les prompts
-        self.system_prompt = self._load_prompt("app/prompts/m1/veille.yaml")
-        logger.info(f"✅ Orchestrateur M1 initialisé avec Groq ({self.model}) via OpenAI")
+        elapsed = time.perf_counter() - start_total
 
-    def _load_prompt(self, path: str) -> str:
-        """Charge le prompt depuis un fichier YAML"""
-        try:
-            with open(path, 'r', encoding='utf-8') as f:
-                config = yaml.safe_load(f)
+        logger.info("🏁 M1 VEILLE — FIN")
+        logger.info("🔎 Résultats Tavily : %d", len(raw_results))
+        logger.info("🔧 Résultats classés : %d", len(ranked_results))
+        logger.info("🤖 Résultats Groq : %d", len(groq_opportunities))
+        logger.info("✅ Opportunités finales : %d", len(schema_valid))
+        logger.info("🇲🇬 Madagascar : %d", madagascar_count)
+        logger.info("⏱️ Temps total : %.3fs", elapsed)
+        logger.info("=" * 60)
 
-            prompt = (
-                config.get("role", "") + "\n\n" +
-                config.get("task", "") + "\n\n" +
-                config.get("format", "") + "\n\n" +
-                config.get("context", "") + "\n\n" +
-                "EXEMPLES :\n" + config.get("examples", "") + "\n\n" +
-                config.get("security", "")
-            )
-            logger.info(f"✅ Prompt chargé: {path}")
-            return prompt
-        except Exception as e:
-            logger.error(f"❌ Erreur chargement prompt {path}: {e}")
-            return ""
+        return {
+            "opportunities": schema_valid[:20],
+            "market_signals": groq_response.get("market_signals", []),
+            "total": len(schema_valid),
+            "status": "success",
+            "ai_provider": "groq",
+            "statistics": {
+                "raw_results": len(raw_results),
+                "filtered": len(ranked_results),
+                "sources_analyzed": len(filtered_results),
+                "groq_results": len(groq_opportunities),
+                "final": len(schema_valid),
+                "madagascar": madagascar_count,
+                "backend_sync": sync_result,
+                "processing_time_seconds": round(elapsed, 3),
+                # --- Noms explicites (CDC : clarté pour dashboard M8 /
+                # jury) — mêmes valeurs, libellés sans ambiguïté ---
+                "prefilter_candidates": len(ranked_results),
+                "sources_sent_to_llm": len(filtered_results),
+                "llm_opportunities": len(groq_opportunities),
+                "final_opportunities": len(schema_valid),
+            },
+            "notes": groq_response.get(
+                "notes", "Analyse M1 effectuée avec veille.yaml."
+            ),
+        }
 
-    def analyser_opportunites(self, query: str) -> Dict[str, Any]:
-        """
-        Analyse les opportunités pour une requête donnée
+    # ========================================================
+    # HELPER — réponse vide standardisée
+    # ========================================================
 
-        Args:
-            query (str): La requête de recherche
+    @staticmethod
+    def _empty_response(
+        status: str,
+        notes: str,
+        elapsed: float = 0.0,
+        raw_count: int = 0,
+    ) -> Dict[str, Any]:
+        return {
+            "opportunities": [],
+            "market_signals": [],
+            "total": 0,
+            "status": status,
+            "ai_provider": None,
+            "statistics": {
+                "raw_results": raw_count,
+                "filtered": 0,
+                "groq_results": 0,
+                "final": 0,
+                "madagascar": 0,
+                "processing_time_seconds": round(elapsed, 3),
+            },
+            "notes": notes,
+        }
 
-        Returns:
-            Dict: Résultats structurés
-        """
-        try:
-            # 1. Rechercher les opportunités
-            results = self.search_manager.search_and_merge(query)
+    # ========================================================
+    # ALIAS
+    # ========================================================
 
-            if not results:
-                return {
-                    "success": True,
-                    "data": {
-                        "opportunities": [],
-                        "total": 0,
-                        "message": "Aucun résultat trouvé"
-                    }
-                }
-
-            # 2. Préparer les données pour Groq
-            input_text = self._format_results_for_groq(results)
-
-            # 3. Appeler Groq (via OpenAI)
-            response = self._call_groq(input_text)
-
-            # 4. Parser la réponse
-            parsed = self._parse_response(response)
-
-            # 5. Valider les données
-            validated = self.validator.validate_batch(parsed.get("opportunities", []))
-
-            return {
-                "success": True,
-                "data": {
-                    "opportunities": validated,
-                    "total": len(validated),
-                    "validated_count": len([o for o in validated if o.get("status") == "validated"])
-                }
-            }
-
-        except Exception as e:
-            logger.error(f"❌ Erreur: {e}")
-            return {
-                "success": False,
-                "data": {},
-                "error": str(e)
-            }
-
-    def _format_results_for_groq(self, results: List[Dict]) -> str:
-        """Formate les résultats pour Groq"""
-        formatted = "Voici une liste d'opportunités à analyser :\n\n"
-        for i, item in enumerate(results, 1):
-            formatted += f"Opportunité {i} :\n"
-            formatted += f"Titre : {item.get('title', 'Sans titre')}\n"
-            formatted += f"Source : {item.get('source', 'Non précisé')}\n"
-            formatted += f"URL : {item.get('url', 'Non précisé')}\n"
-            formatted += f"Extrait : {item.get('snippet', 'Non précisé')[:300]}...\n\n"
-        return formatted
-
-    def _call_groq(self, input_text: str) -> str:
-        """Appelle Groq via OpenAI client"""
-        try:
-            # Construire le prompt complet
-            full_prompt = self.system_prompt + "\n\n" + input_text + "\n\n" + """
-            ⚠️ INSTRUCTION CRUCIALE :
-            Tu dois répondre UNIQUEMENT au format JSON suivant, SANS aucun autre texte :
-
-            {
-              "opportunities": [
-                {
-                  "title": "Titre de l'opportunité",
-                  "source": "Organisation émettrice",
-                  "url": "URL ou null",
-                  "budget": "Budget en Ariary ou 'Non précisé'",
-                  "deadline": "Date au format YYYY-MM-DD ou null",
-                  "organizer": "Organisme qui publie",
-                  "domain": "ia|devops|data|developpement|bureautique|autre",
-                  "summary": "Résumé en 3-4 phrases",
-                  "score": 85,
-                  "confidence": 0.92,
-                  "reason": "Raison du score"
-                }
-              ],
-              "total": 20
-            }
-
-            ⚠️ Réponds UNIQUEMENT le JSON. Pas de commentaire, pas d'explication.
-            """
-
-            # Appeler Groq via OpenAI
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": "Tu es un expert en analyse d'appels d'offres. Tu réponds UNIQUEMENT en JSON."},
-                    {"role": "user", "content": full_prompt}
-                ],
-                temperature=0.1,
-                max_tokens=2048,
-                response_format={"type": "json_object"}
-            )
-
-            # Extraire le contenu
-            content = response.choices[0].message.content
-            logger.info(f"✅ Réponse Groq reçue ({len(content)} caractères)")
-
-            return content
-
-        except Exception as e:
-            logger.error(f"❌ Erreur Groq: {e}")
-            return '{"opportunities": [], "total": 0}'
-
-    def _parse_response(self, response: str) -> Dict:
-        """Parse la réponse JSON"""
-        try:
-            cleaned = response.strip()
-            return json.loads(cleaned)
-        except json.JSONDecodeError as e:
-            logger.error(f"❌ Erreur parsing JSON: {e}")
-            return {"opportunities": [], "total": 0}
+    async def rechercher(self, query: str) -> Dict[str, Any]:
+        return await self.analyser_opportunites(query)
 
 
 
 
 
 
+
+
+
+# # app/orchestrator/veille_orchestrator.py
 # # ============================================================
-# # ORCHESTRATEUR M1 — VEILLE MARCHÉ
+# # FORMA-IA — M1 VEILLE MARCHÉ — ORCHESTRATEUR
+# # ============================================================
+# # Version : V7.0 — architecture modulaire par services
+# #
+# # Ce fichier NE CONTIENT PLUS de logique métier. Il coordonne :
+# #   TavilyService        -> recherche web
+# #   prefilter_service     -> filtrage déterministe
+# #   LLMAnalysisService     -> analyse Groq (compréhension)
+# #   ValidationService      -> qualité, normalisation, dédup
+# #   ClassificationService  -> domaine (Python, déterministe)
+# #   ScoringService          -> score final (Python, déterministe)
+# #   opportunity_sync        -> sync backend optionnelle, non bloquante
+# #
+# # Aucun import SQLAlchemy ici (cf. répartition des rôles :
+# # la persistance est la responsabilité du module Backend).
 # # ============================================================
 
-# import os
-# import json
-# import yaml
 # import logging
-# from typing import Dict, List, Any
-# from anthropic import Anthropic
-# from dotenv import load_dotenv
+# import os
+# import time
+# from typing import Any, Dict, List
 
-# from app.services.search.search_manager import SearchManager
-# from app.services.validation.validator import Validator
+# from app.services.veille.tavily_service import TavilyService
+# from app.services.veille.prefilter_service import rank_results
+# from app.services.veille.llm_analysis_service import LLMAnalysisService
+# from app.services.veille.classification_service import ClassificationService
+# from app.services.veille.scoring_service import ScoringService
+# from app.services.veille import validation_service
+# from app.services.backend_sync.opportunity_sync import sync_opportunities_to_backend
 
-# load_dotenv()
 # logger = logging.getLogger(__name__)
 
+# MIN_SCORE_VALIDATED = int(os.getenv("MIN_SCORE_VALIDATED", "60"))
+# MIN_SCORE_TO_REVIEW = int(os.getenv("MIN_SCORE_TO_REVIEW", "40"))
+
+# # IMPORTANT : la formule de confidence de classification_service.py
+# # (0.50 + 0.05 x nb_mots_clés, plafond 0.95) donne en pratique des
+# # valeurs entre 0.50 et 0.70 sur des résumés courts. Un seuil de
+# # 0.85 pour "validated" (suggestion générique non calibrée) viderait
+# # ce statut en permanence. 0.55 est calibré sur les vraies valeurs
+# # observées en test (0.55, 0.65) — à réajuster une fois le corpus de
+# # test annoté disponible, pas avant.
+# MIN_CONFIDENCE_VALIDATED = float(os.getenv("MIN_CONFIDENCE_VALIDATED", "0.55"))
+
+# MAX_RESULTS_AI = int(os.getenv("MAX_RESULTS_AI", "4"))
+
+# # Si le 1er lot de sources ne donne aucune opportunité, on retente
+# # avec le(s) lot(s) suivant(s) avant d'abandonner. 2 = jusqu'à
+# # 2 lots (8 sources sur 10 typiquement), borné pour ne pas exploser
+# # la latence totale (CDC <3s par appel, tolérable en cumulé sur 2).
+# MAX_FALLBACK_BATCHES = int(os.getenv("MAX_FALLBACK_BATCHES", "2"))
+
+
 # class VeilleOrchestrator:
-#     """Orchestrateur pour le module M1 (Veille Marché)"""
+#     """Coordonne le pipeline M1 sans porter lui-même de logique métier."""
 
 #     def __init__(self):
-#         self.client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
-#         self.model = os.getenv("CLAUDE_MODEL", "claude-3-5-sonnet-20241022")
-#         self.search_manager = SearchManager()
-#         self.validator = Validator()
+#         logger.info("🚀 Initialisation M1 Veille Orchestrator")
 
-#         # Charger les prompts
-#         self.system_prompt = self._load_prompt("app/prompts/m1/veille.yaml")
+#         self.tavily_service = TavilyService()
+#         self.llm_service = LLMAnalysisService()
+#         self.classification_service = ClassificationService()
+#         self.scoring_service = ScoringService()
 
-#     def _load_prompt(self, path: str) -> str:
-#         """Charge le prompt depuis un fichier YAML"""
-#         try:
-#             with open(path, 'r', encoding='utf-8') as f:
-#                 config = yaml.safe_load(f)
+#     # ========================================================
+#     # MÉTHODE PRINCIPALE
+#     # ========================================================
 
-#             prompt = (
-#                 config.get("role", "") + "\n\n" +
-#                 config.get("task", "") + "\n\n" +
-#                 config.get("format", "") + "\n\n" +
-#                 config.get("context", "") + "\n\n" +
-#                 "EXEMPLES :\n" + config.get("examples", "") + "\n\n" +
-#                 config.get("security", "")
-#             )
-#             logger.info(f"✅ Prompt chargé: {path}")
-#             return prompt
-#         except Exception as e:
-#             logger.error(f"❌ Erreur chargement prompt {path}: {e}")
-#             return ""
+#     async def analyser_opportunites(self, query: str) -> Dict[str, Any]:
 
-#     def analyser_opportunites(self, query: str) -> Dict[str, Any]:
-#         """
-#         Analyse les opportunités pour une requête donnée
+#         query = str(query or "").strip()
+#         start_total = time.perf_counter()
 
-#         Args:
-#             query (str): La requête de recherche
+#         if not query:
+#             return self._empty_response(status="error", notes="Requête vide.")
 
-#         Returns:
-#             Dict: Résultats structurés
-#         """
-#         try:
-#             # 1. Rechercher les opportunités
-#             results = self.search_manager.search_and_merge(query)
+#         logger.info("=" * 60)
+#         logger.info("🚀 M1 VEILLE — DÉBUT")
+#         logger.info("🔍 Requête : %s", query)
+#         logger.info("=" * 60)
 
-#             if not results:
-#                 return {
-#                     "success": True,
-#                     "data": {
-#                         "opportunities": [],
-#                         "total": 0,
-#                         "message": "Aucun résultat trouvé"
-#                     }
-#                 }
+#         # ----------------------------------------------------
+#         # 1 — TAVILY
+#         # ----------------------------------------------------
 
-#             # 2. Préparer les données pour Claude
-#             input_text = self._format_results_for_claude(results)
+#         raw_results = await self.tavily_service.search(query)
 
-#             # 3. Appeler Claude avec Tool Calling
-#             response = self._call_claude(input_text)
-
-#             # 4. Parser la réponse
-#             parsed = self._parse_response(response)
-
-#             # 5. Valider les données
-#             validated = self.validator.validate_batch(parsed.get("opportunities", []))
-
-#             return {
-#                 "success": True,
-#                 "data": {
-#                     "opportunities": validated,
-#                     "total": len(validated),
-#                     "validated_count": len([o for o in validated if o.get("status") == "validated"])
-#                 }
-#             }
-
-#         except Exception as e:
-#             logger.error(f"❌ Erreur: {e}")
-#             return {
-#                 "success": False,
-#                 "data": {},
-#                 "error": str(e)
-#             }
-
-#     def _format_results_for_claude(self, results: List[Dict]) -> str:
-#         """Formate les résultats pour Claude"""
-#         formatted = "Voici une liste d'opportunités à analyser :\n\n"
-#         for i, item in enumerate(results, 1):
-#             formatted += f"Opportunité {i} :\n"
-#             formatted += f"Titre : {item.get('title', 'Sans titre')}\n"
-#             formatted += f"Source : {item.get('source', 'Non précisé')}\n"
-#             formatted += f"URL : {item.get('url', 'Non précisé')}\n"
-#             formatted += f"Extrait : {item.get('snippet', 'Non précisé')[:300]}...\n\n"
-#         return formatted
-
-#     def _call_claude(self, input_text: str) -> Dict:
-#         """Appelle Claude avec Tool Calling"""
-#         try:
-#             response = self.client.messages.create(
-#                 model=self.model,
-#                 max_tokens=4096,
-#                 temperature=float(os.getenv("CLAUDE_TEMPERATURE", 0.1)),
-#                 system=self.system_prompt,
-#                 tools=[{
-#                     "name": "classifier",
-#                     "description": "Classifie et analyse les opportunités commerciales",
-#                     "input_schema": {
-#                         "type": "object",
-#                         "properties": {
-#                             "opportunities": {
-#                                 "type": "array",
-#                                 "items": {
-#                                     "type": "object",
-#                                     "properties": {
-#                                         "title": {"type": "string"},
-#                                         "source": {"type": "string"},
-#                                         "url": {"type": "string"},
-#                                         "budget": {"type": "string"},
-#                                         "deadline": {"type": "string"},
-#                                         "organizer": {"type": "string"},
-#                                         "domain": {
-#                                             "type": "string",
-#                                             "enum": ["ia", "devops", "data", "developpement", "bureautique", "autre"]
-#                                         },
-#                                         "summary": {"type": "string"},
-#                                         "score": {"type": "integer", "minimum": 0, "maximum": 100},
-#                                         "confidence": {"type": "number", "minimum": 0, "maximum": 1},
-#                                         "reason": {"type": "string"}
-#                                     },
-#                                     "required": ["title", "source", "domain", "summary", "score", "confidence"]
-#                                 }
-#                             },
-#                             "total": {"type": "integer"}
-#                         },
-#                         "required": ["opportunities", "total"]
-#                     }
-#                 }],
-#                 messages=[{"role": "user", "content": input_text}]
+#         if not raw_results:
+#             return self._empty_response(
+#                 status="no_results",
+#                 notes="Aucun résultat Tavily.",
+#                 elapsed=time.perf_counter() - start_total,
 #             )
 
-#             # Extraire le JSON de la réponse
-#             content = response.content[0].text
-#             return self._extract_json(content)
+#         # ----------------------------------------------------
+#         # 2 — CLASSEMENT COMPLET (pas de troncature ici)
+#         # ----------------------------------------------------
 
-#         except Exception as e:
-#             logger.error(f"❌ Erreur Claude: {e}")
-#             return {"opportunities": [], "total": 0}
+#         ranked_results = rank_results(raw_results, query)
 
-#     def _extract_json(self, text: str) -> Dict:
-#         """Extrait le JSON de la réponse de Claude"""
-#         import re
-#         try:
-#             match = re.search(r'```json\s*(\{.*?\})\s*```', text, re.DOTALL)
-#             if match:
-#                 return json.loads(match.group(1))
-#             match = re.search(r'(\{.*\})', text, re.DOTALL)
-#             if match:
-#                 return json.loads(match.group(1))
-#             return {"opportunities": [], "total": 0}
-#         except json.JSONDecodeError:
-#             logger.error("❌ Erreur parsing JSON")
-#             return {"opportunities": [], "total": 0}
+#         if not ranked_results:
+#             return self._empty_response(
+#                 status="no_results",
+#                 notes="Aucun résultat après préfiltrage.",
+#                 elapsed=time.perf_counter() - start_total,
+#                 raw_count=len(raw_results),
+#             )
 
-#     def _parse_response(self, response: Dict) -> Dict:
-#         """Parse la réponse de Claude"""
-#         return response
+#         # ----------------------------------------------------
+#         # 3/4 — ANALYSE LLM PAR LOTS, AVEC FALLBACK
+#         # ----------------------------------------------------
+#         # Si le lot 1 (top MAX_RESULTS_AI) ne donne aucune
+#         # opportunité, on essaie le lot suivant avant d'abandonner.
+#         # Évite de conclure "0 opportunité" sur la seule base d'un
+#         # sous-ensemble qui aurait pu mal tomber au préfiltrage.
+#         # ----------------------------------------------------
+
+#         groq_response = None
+#         groq_opportunities: List[Dict[str, Any]] = []
+#         filtered_results: List[Dict[str, Any]] = []
+#         last_notes = None
+#         any_groq_success = False
+
+#         for batch_index in range(MAX_FALLBACK_BATCHES):
+#             start_idx = batch_index * MAX_RESULTS_AI
+#             end_idx = start_idx + MAX_RESULTS_AI
+#             batch = ranked_results[start_idx:end_idx]
+
+#             if not batch:
+#                 break
+
+#             logger.info(
+#                 "🔁 Lot %d/%d : %d source(s) analysée(s) par Groq",
+#                 batch_index + 1,
+#                 MAX_FALLBACK_BATCHES,
+#                 len(batch),
+#             )
+
+#             batch_response = await self.llm_service.analyze(query, batch)
+#             filtered_results = batch  # dernier lot réellement tenté
+
+#             if batch_response is None:
+#                 # Échec réseau/format sur ce lot : on tente quand
+#                 # même le lot suivant plutôt que d'abandonner tout
+#                 # de suite (peut être transitoire malgré les retries
+#                 # internes déjà épuisés dans llm_analysis_service).
+#                 logger.warning(
+#                     "⚠️ Lot %d : analyse Groq échouée, passage au lot suivant",
+#                     batch_index + 1,
+#                 )
+#                 continue
+
+#             any_groq_success = True
+#             groq_response = batch_response
+#             last_notes = batch_response.get("notes")
+#             batch_opportunities = batch_response.get("opportunities", [])
+
+#             if batch_opportunities:
+#                 logger.info(
+#                     "✅ Lot %d : %d opportunité(s) trouvée(s) — arrêt du fallback",
+#                     batch_index + 1,
+#                     len(batch_opportunities),
+#                 )
+#                 groq_opportunities = batch_opportunities
+#                 break
+
+#             logger.info(
+#                 "ℹ️ Lot %d : aucune opportunité éligible", batch_index + 1
+#             )
+
+#         # ----------------------------------------------------
+#         # Aucun lot n'a pu être analysé (tous en échec réseau/format)
+#         # ----------------------------------------------------
+
+#         if not any_groq_success:
+#             result = validation_service.fallback_response(filtered_results)
+#             elapsed = time.perf_counter() - start_total
+#             result["statistics"]["processing_time_seconds"] = round(elapsed, 3)
+#             logger.info("🏁 M1 FALLBACK — FIN (%.3fs)", elapsed)
+#             return result
+
+#         # ----------------------------------------------------
+#         # Tous les lots tentés, mais 0 opportunité au final
+#         # ----------------------------------------------------
+
+#         if not groq_opportunities:
+#             elapsed = time.perf_counter() - start_total
+#             logger.info(
+#                 "ℹ️ Aucune opportunité éligible après %d lot(s) testé(s)",
+#                 min(MAX_FALLBACK_BATCHES, batch_index + 1),
+#             )
+#             return {
+#                 "opportunities": [],
+#                 "market_signals": (
+#                     groq_response.get("market_signals", []) if groq_response else []
+#                 ),
+#                 "total": 0,
+#                 "status": "success",
+#                 "ai_provider": "groq",
+#                 "statistics": {
+#                     "raw_results": len(raw_results),
+#                     "filtered": len(ranked_results),
+#                     "batches_tried": min(MAX_FALLBACK_BATCHES, batch_index + 1),
+#                     "groq_results": 0,
+#                     "final": 0,
+#                     "madagascar": 0,
+#                     "processing_time_seconds": round(elapsed, 3),
+#                 },
+#                 "notes": last_notes or "Aucune opportunité éligible trouvée.",
+#             }
+
+#         # ----------------------------------------------------
+#         # 5 — NORMALISATION / QUALITÉ / CLASSIFICATION / SCORING
+#         # ----------------------------------------------------
+
+#         normalized: List[Dict[str, Any]] = []
+
+#         for opportunity in groq_opportunities:
+
+#             cleaned = validation_service.normalize_opportunity(opportunity)
+#             if cleaned is None:
+#                 continue
+
+#             if not validation_service.quality_filter(cleaned):
+#                 continue
+
+#             cleaned.update(self.classification_service.classify(cleaned))
+#             cleaned["country_scope"] = self.classification_service.detect_country(
+#                 cleaned
+#             )
+
+#             cleaned.update(self.scoring_service.score(cleaned))
+
+#             try:
+#                 final_score = int(cleaned.get("score", 0))
+#             except (TypeError, ValueError):
+#                 final_score = 0
+
+#             if final_score < MIN_SCORE_TO_REVIEW:
+#                 continue
+
+#             try:
+#                 final_confidence = float(cleaned.get("confidence", 0))
+#             except (TypeError, ValueError):
+#                 final_confidence = 0.0
+
+#             organizer_is_unclear = "organizer_unclear" in (
+#                 cleaned.get("flags") or []
+#             )
+
+#             # validated exige score ET confidence suffisants, ET une
+#             # organisation clairement identifiée. Une organisation
+#             # incertaine (organizer_unclear) force la revue humaine
+#             # même si le score est bon — cohérent avec "mieux vaut
+#             # une vraie opportunité que 10 faux positifs" (veille.yaml).
+#             if (
+#                 final_score >= MIN_SCORE_VALIDATED
+#                 and final_confidence >= MIN_CONFIDENCE_VALIDATED
+#                 and not organizer_is_unclear
+#             ):
+#                 cleaned["status"] = "validated"
+#             else:
+#                 cleaned["status"] = "to_review"
+
+#             cleaned["ai_provider"] = "groq"
+#             cleaned["is_actionable"] = True
+
+#             normalized.append(cleaned)
+
+#         # ----------------------------------------------------
+#         # 6 — DÉDUPLICATION + TRI
+#         # ----------------------------------------------------
+
+#         normalized = validation_service.deduplicate(normalized)
+#         normalized.sort(key=lambda item: int(item.get("score", 0)), reverse=True)
+
+#         # ----------------------------------------------------
+#         # 7 — VALIDATION FINALE (schéma Pydantic partagé)
+#         # ----------------------------------------------------
+
+#         schema_valid: List[Dict[str, Any]] = []
+#         for opportunity in normalized:
+#             validated = validation_service.validate_against_schema(opportunity)
+#             if validated is not None:
+#                 schema_valid.append(validated)
+
+#         # ----------------------------------------------------
+#         # 8 — SYNC BACKEND (optionnelle, non bloquante)
+#         # ----------------------------------------------------
+
+#         sync_result = await sync_opportunities_to_backend(schema_valid)
+
+#         # ----------------------------------------------------
+#         # 9 — STATISTIQUES + RÉPONSE
+#         # ----------------------------------------------------
+
+#         madagascar_count = sum(
+#             1 for o in schema_valid if o.get("country_scope") == "Madagascar"
+#         )
+
+#         elapsed = time.perf_counter() - start_total
+
+#         logger.info("🏁 M1 VEILLE — FIN")
+#         logger.info("🔎 Résultats Tavily : %d", len(raw_results))
+#         logger.info("🔧 Résultats classés : %d", len(ranked_results))
+#         logger.info("🤖 Résultats Groq : %d", len(groq_opportunities))
+#         logger.info("✅ Opportunités finales : %d", len(schema_valid))
+#         logger.info("🇲🇬 Madagascar : %d", madagascar_count)
+#         logger.info("⏱️ Temps total : %.3fs", elapsed)
+#         logger.info("=" * 60)
+
+#         return {
+#             "opportunities": schema_valid[:20],
+#             "market_signals": groq_response.get("market_signals", []),
+#             "total": len(schema_valid),
+#             "status": "success",
+#             "ai_provider": "groq",
+#             "statistics": {
+#                 "raw_results": len(raw_results),
+#                 "filtered": len(ranked_results),
+#                 "sources_analyzed": len(filtered_results),
+#                 "groq_results": len(groq_opportunities),
+#                 "final": len(schema_valid),
+#                 "madagascar": madagascar_count,
+#                 "backend_sync": sync_result,
+#                 "processing_time_seconds": round(elapsed, 3),
+#                 # --- Noms explicites (CDC : clarté pour dashboard M8 /
+#                 # jury) — mêmes valeurs, libellés sans ambiguïté ---
+#                 "prefilter_candidates": len(ranked_results),
+#                 "sources_sent_to_llm": len(filtered_results),
+#                 "llm_opportunities": len(groq_opportunities),
+#                 "final_opportunities": len(schema_valid),
+#             },
+#             "notes": groq_response.get(
+#                 "notes", "Analyse M1 effectuée avec veille.yaml."
+#             ),
+#         }
+
+#     # ========================================================
+#     # HELPER — réponse vide standardisée
+#     # ========================================================
+
+#     @staticmethod
+#     def _empty_response(
+#         status: str,
+#         notes: str,
+#         elapsed: float = 0.0,
+#         raw_count: int = 0,
+#     ) -> Dict[str, Any]:
+#         return {
+#             "opportunities": [],
+#             "market_signals": [],
+#             "total": 0,
+#             "status": status,
+#             "ai_provider": None,
+#             "statistics": {
+#                 "raw_results": raw_count,
+#                 "filtered": 0,
+#                 "groq_results": 0,
+#                 "final": 0,
+#                 "madagascar": 0,
+#                 "processing_time_seconds": round(elapsed, 3),
+#             },
+#             "notes": notes,
+#         }
+
+#     # ========================================================
+#     # ALIAS
+#     # ========================================================
+
+#     async def rechercher(self, query: str) -> Dict[str, Any]:
+#         return await self.analyser_opportunites(query)
 
 
 
+# # app/orchestrator/veille_orchestrator.py
 # # ============================================================
-# # ORCHESTRATEUR M1 — VEILLE MARCHÉ (AVEC GEMINI)
+# # FORMA-IA — M1 VEILLE MARCHÉ — ORCHESTRATEUR
+# # ============================================================
+# # Version : V7.0 — architecture modulaire par services
+# #
+# # Ce fichier NE CONTIENT PLUS de logique métier. Il coordonne :
+# #   TavilyService        -> recherche web
+# #   prefilter_service     -> filtrage déterministe
+# #   LLMAnalysisService     -> analyse Groq (compréhension)
+# #   ValidationService      -> qualité, normalisation, dédup
+# #   ClassificationService  -> domaine (Python, déterministe)
+# #   ScoringService          -> score final (Python, déterministe)
+# #   opportunity_sync        -> sync backend optionnelle, non bloquante
+# #
+# # Aucun import SQLAlchemy ici (cf. répartition des rôles :
+# # la persistance est la responsabilité du module Backend).
 # # ============================================================
 
-# import os
-# import json
-# import yaml
 # import logging
-# from typing import Dict, List, Any
-# import google.generativeai as genai
-# from dotenv import load_dotenv
+# import os
+# import time
+# from typing import Any, Dict, List, Optional
 
-# from app.services.search.search_manager import SearchManager
-# from app.services.validation.validator import Validator
+# from app.services.veille.tavily_service import TavilyService
+# from app.services.veille.prefilter_service import rank_results
+# from app.services.veille.llm_analysis_service import LLMAnalysisService
+# from app.services.veille.classification_service import ClassificationService
+# from app.services.veille.scoring_service import ScoringService
+# from app.services.veille import validation_service
+# from app.services.backend_sync.opportunity_sync import sync_opportunities_to_backend
 
-# load_dotenv()
 # logger = logging.getLogger(__name__)
 
+# MIN_SCORE_VALIDATED = int(os.getenv("MIN_SCORE_VALIDATED", "60"))
+# MIN_SCORE_TO_REVIEW = int(os.getenv("MIN_SCORE_TO_REVIEW", "40"))
+
+# # IMPORTANT : la formule de confidence de classification_service.py
+# # (0.50 + 0.05 x nb_mots_clés, plafond 0.95) donne en pratique des
+# # valeurs entre 0.50 et 0.70 sur des résumés courts. Un seuil de
+# # 0.85 pour "validated" (suggestion générique non calibrée) viderait
+# # ce statut en permanence. 0.55 est calibré sur les vraies valeurs
+# # observées en test (0.55, 0.65) — à réajuster une fois le corpus de
+# # test annoté disponible, pas avant.
+# MIN_CONFIDENCE_VALIDATED = float(os.getenv("MIN_CONFIDENCE_VALIDATED", "0.55"))
+
+# MAX_RESULTS_AI = int(os.getenv("MAX_RESULTS_AI", "4"))
+
+# # Si le 1er lot de sources ne donne aucune opportunité, on retente
+# # avec le(s) lot(s) suivant(s) avant d'abandonner. 2 = jusqu'à
+# # 2 lots (8 sources sur 10 typiquement), borné pour ne pas exploser
+# # la latence totale (CDC <3s par appel, tolérable en cumulé sur 2).
+# MAX_FALLBACK_BATCHES = int(os.getenv("MAX_FALLBACK_BATCHES", "2"))
+
+
 # class VeilleOrchestrator:
-#     """Orchestrateur pour le module M1 avec Google Gemini"""
+#     """Coordonne le pipeline M1 sans porter lui-même de logique métier."""
 
 #     def __init__(self):
-#         # --- Configuration de Gemini ---
-#         genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
-#         self.model = genai.GenerativeModel('gemini-2.5-flash')  # na 'gemini-1.5-flash'
-        
-#         self.search_manager = SearchManager()
-#         self.validator = Validator()
+#         logger.info("🚀 Initialisation M1 Veille Orchestrator")
 
-#         # Charger les prompts
-#         self.system_prompt = self._load_prompt("app/prompts/m1/veille.yaml")
+#         self.tavily_service = TavilyService()
+#         self.llm_service = LLMAnalysisService()
+#         self.classification_service = ClassificationService()
+#         self.scoring_service = ScoringService()
 
-#     def _load_prompt(self, path: str) -> str:
-#         """Charge le prompt depuis un fichier YAML"""
-#         try:
-#             with open(path, 'r', encoding='utf-8') as f:
-#                 config = yaml.safe_load(f)
+#     # ========================================================
+#     # POST-TRAITEMENT D'UNE OPPORTUNITÉ (partagé par toutes les
+#     # routes M1 : rechercher, analyser-texte, analyser-pdf)
+#     # ========================================================
 
-#             prompt = (
-#                 config.get("role", "") + "\n\n" +
-#                 config.get("task", "") + "\n\n" +
-#                 config.get("format", "") + "\n\n" +
-#                 config.get("context", "") + "\n\n" +
-#                 "EXEMPLES :\n" + config.get("examples", "") + "\n\n" +
-#                 config.get("security", "")
-#             )
-#             logger.info(f"✅ Prompt chargé: {path}")
-#             return prompt
-#         except Exception as e:
-#             logger.error(f"❌ Erreur chargement prompt {path}: {e}")
-#             return ""
-
-#     def analyser_opportunites(self, query: str) -> Dict[str, Any]:
+#     def _process_single_opportunity(
+#         self, opportunity: Dict[str, Any]
+#     ) -> Optional[Dict[str, Any]]:
 #         """
-#         Analyse les opportunités pour une requête donnée avec Gemini
-
-#         Args:
-#             query (str): La requête de recherche
-
-#         Returns:
-#             Dict: Résultats structurés
+#         Normalise, filtre, classifie et note UNE opportunité brute
+#         renvoyée par Groq. Retourne None si elle est rejetée à une
+#         étape quelconque.
 #         """
+
+#         cleaned = validation_service.normalize_opportunity(opportunity)
+#         if cleaned is None:
+#             return None
+
+#         if not validation_service.quality_filter(cleaned):
+#             return None
+
+#         cleaned.update(self.classification_service.classify(cleaned))
+#         cleaned["country_scope"] = self.classification_service.detect_country(
+#             cleaned
+#         )
+
+#         cleaned.update(self.scoring_service.score(cleaned))
+
 #         try:
-#             # 1. Rechercher les opportunités
-#             results = self.search_manager.search_and_merge(query)
+#             final_score = int(cleaned.get("score", 0))
+#         except (TypeError, ValueError):
+#             final_score = 0
 
-#             if not results:
-#                 return {
-#                     "success": True,
-#                     "data": {
-#                         "opportunities": [],
-#                         "total": 0,
-#                         "message": "Aucun résultat trouvé"
-#                     }
-#                 }
+#         if final_score < MIN_SCORE_TO_REVIEW:
+#             return None
 
-#             # 2. Préparer les données pour Gemini
-#             input_text = self._format_results_for_claude(results)
-
-#             # 3. Appeler Gemini
-#             response = self._call_gemini(input_text)
-
-#             # 4. Parser la réponse
-#             parsed = self._parse_response(response)
-
-#             # 5. Valider les données
-#             validated = self.validator.validate_batch(parsed.get("opportunities", []))
-
-#             return {
-#                 "success": True,
-#                 "data": {
-#                     "opportunities": validated,
-#                     "total": len(validated),
-#                     "validated_count": len([o for o in validated if o.get("status") == "validated"])
-#                 }
-#             }
-
-#         except Exception as e:
-#             logger.error(f"❌ Erreur: {e}")
-#             return {
-#                 "success": False,
-#                 "data": {},
-#                 "error": str(e)
-#             }
-
-#     def _format_results_for_claude(self, results: List[Dict]) -> str:
-#         """Formate les résultats pour Gemini"""
-#         formatted = "Voici une liste d'opportunités à analyser :\n\n"
-#         for i, item in enumerate(results, 1):
-#             formatted += f"Opportunité {i} :\n"
-#             formatted += f"Titre : {item.get('title', 'Sans titre')}\n"
-#             formatted += f"Source : {item.get('source', 'Non précisé')}\n"
-#             formatted += f"URL : {item.get('url', 'Non précisé')}\n"
-#             formatted += f"Extrait : {item.get('snippet', 'Non précisé')[:300]}...\n\n"
-#         return formatted
-
-#     def _call_gemini(self, input_text: str) -> str:
-#         """Appelle Google Gemini avec Tool Calling"""
 #         try:
-#             # Construire le prompt complet
-#             full_prompt = self.system_prompt + "\n\n" + input_text + "\n\n" + """
-#             IMPORTANT : Tu dois répondre UNIQUEMENT au format JSON suivant :
+#             final_confidence = float(cleaned.get("confidence", 0))
+#         except (TypeError, ValueError):
+#             final_confidence = 0.0
 
-#             {
-#               "opportunities": [
-#                 {
-#                   "title": "...",
-#                   "source": "...",
-#                   "url": "...",
-#                   "budget": "...",
-#                   "deadline": "...",
-#                   "organizer": "...",
-#                   "domain": "ia|devops|data|developpement|bureautique|autre",
-#                   "summary": "...",
-#                   "score": 85,
-#                   "confidence": 0.92,
-#                   "reason": "..."
-#                 }
-#               ],
-#               "total": 20
-#             }
+#         organizer_is_unclear = "organizer_unclear" in (cleaned.get("flags") or [])
 
-#             Ne mets PAS d'autres commentaires. Réponds UNIQUEMENT le JSON.
-#             """
+#         if (
+#             final_score >= MIN_SCORE_VALIDATED
+#             and final_confidence >= MIN_CONFIDENCE_VALIDATED
+#             and not organizer_is_unclear
+#         ):
+#             cleaned["status"] = "validated"
+#         else:
+#             cleaned["status"] = "to_review"
 
-#             # Appeler Gemini
-#             response = self.model.generate_content(
-#                 full_prompt,
-#                 generation_config={
-#                     "temperature": 0.1,
-#                     "max_output_tokens": 4096,
-#                 }
+#         cleaned["ai_provider"] = "groq"
+#         cleaned["is_actionable"] = True
+
+#         return cleaned
+
+#     # ========================================================
+#     # ANALYSE DE TEXTE DIRECT — PAS DE TAVILY
+#     # ========================================================
+#     # Utilisée par /analyser-texte et /analyser-pdf (après
+#     # extraction du texte du PDF). Le texte fourni EST la source
+#     # à analyser — on ne fait AUCUNE recherche web dessus.
+#     # ========================================================
+
+#     async def analyser_texte(
+#         self, texte: str, source: str = "manuel"
+#     ) -> Dict[str, Any]:
+
+#         texte = str(texte or "").strip()
+#         start_total = time.perf_counter()
+
+#         if not texte:
+#             return self._empty_response(status="error", notes="Texte vide.")
+
+#         logger.info("=" * 60)
+#         logger.info("🚀 M1 ANALYSE TEXTE DIRECT — DÉBUT (source: %s)", source)
+#         logger.info("📄 Longueur du texte : %d caractères", len(texte))
+#         logger.info("=" * 60)
+
+#         # Le texte EST la source unique — encapsulé au même format
+#         # que les résultats Tavily pour réutiliser llm_analysis_service
+#         # sans dupliquer sa logique de construction de prompt.
+#         pseudo_source = {
+#             "title": source or "Texte fourni directement",
+#             "url": "",
+#             "content": texte,
+#         }
+
+#         groq_response = await self.llm_service.analyze(
+#             query="Analyse directe d'un texte fourni par l'utilisateur (pas de recherche web).",
+#             results=[pseudo_source],
+#         )
+
+#         if groq_response is None:
+#             result = validation_service.fallback_response([pseudo_source])
+#             elapsed = time.perf_counter() - start_total
+#             result["statistics"]["processing_time_seconds"] = round(elapsed, 3)
+#             logger.info("🏁 M1 ANALYSE TEXTE FALLBACK — FIN (%.3fs)", elapsed)
+#             return result
+
+#         groq_opportunities = groq_response.get("opportunities", [])
+
+#         normalized: List[Dict[str, Any]] = []
+#         for opportunity in groq_opportunities:
+#             processed = self._process_single_opportunity(opportunity)
+#             if processed is not None:
+#                 normalized.append(processed)
+
+#         normalized = validation_service.deduplicate(normalized)
+#         normalized.sort(key=lambda item: int(item.get("score", 0)), reverse=True)
+
+#         schema_valid: List[Dict[str, Any]] = []
+#         for opportunity in normalized:
+#             validated = validation_service.validate_against_schema(opportunity)
+#             if validated is not None:
+#                 schema_valid.append(validated)
+
+#         sync_result = await sync_opportunities_to_backend(schema_valid)
+
+#         elapsed = time.perf_counter() - start_total
+
+#         logger.info("🏁 M1 ANALYSE TEXTE — FIN")
+#         logger.info("🤖 Résultats Groq : %d", len(groq_opportunities))
+#         logger.info("✅ Opportunités finales : %d", len(schema_valid))
+#         logger.info("⏱️ Temps total : %.3fs", elapsed)
+#         logger.info("=" * 60)
+
+#         return {
+#             "opportunities": schema_valid,
+#             "market_signals": groq_response.get("market_signals", []),
+#             "total": len(schema_valid),
+#             "status": "success",
+#             "ai_provider": "groq",
+#             "statistics": {
+#                 "sources_analyzed": 1,
+#                 "llm_opportunities": len(groq_opportunities),
+#                 "final_opportunities": len(schema_valid),
+#                 "backend_sync": sync_result,
+#                 "processing_time_seconds": round(elapsed, 3),
+#             },
+#             "notes": groq_response.get("notes", ""),
+#         }
+
+#     # ========================================================
+#     # MÉTHODE PRINCIPALE
+#     # ========================================================
+
+#     async def analyser_opportunites(self, query: str) -> Dict[str, Any]:
+
+#         query = str(query or "").strip()
+#         start_total = time.perf_counter()
+
+#         if not query:
+#             return self._empty_response(status="error", notes="Requête vide.")
+
+#         logger.info("=" * 60)
+#         logger.info("🚀 M1 VEILLE — DÉBUT")
+#         logger.info("🔍 Requête : %s", query)
+#         logger.info("=" * 60)
+
+#         # ----------------------------------------------------
+#         # 1 — TAVILY
+#         # ----------------------------------------------------
+
+#         raw_results = await self.tavily_service.search(query)
+
+#         if not raw_results:
+#             return self._empty_response(
+#                 status="no_results",
+#                 notes="Aucun résultat Tavily.",
+#                 elapsed=time.perf_counter() - start_total,
 #             )
 
-#             # Extraire le texte de la réponse
-#             text_response = response.text
-#             logger.info(f"✅ Réponse Gemini reçue ({len(text_response)} caractères)")
+#         # ----------------------------------------------------
+#         # 2 — CLASSEMENT COMPLET (pas de troncature ici)
+#         # ----------------------------------------------------
 
-#             return self._extract_json(text_response)
+#         ranked_results = rank_results(raw_results, query)
 
-#         except Exception as e:
-#             logger.error(f"❌ Erreur Gemini: {e}")
-#             return {"opportunities": [], "total": 0}
+#         if not ranked_results:
+#             return self._empty_response(
+#                 status="no_results",
+#                 notes="Aucun résultat après préfiltrage.",
+#                 elapsed=time.perf_counter() - start_total,
+#                 raw_count=len(raw_results),
+#             )
 
-#     def _extract_json(self, text: str) -> Dict:
-#         """Extrait le JSON de la réponse de Gemini"""
-#         import re
-#         try:
-#             # Essayer de trouver un bloc JSON
-#             match = re.search(r'```json\s*(\{.*?\})\s*```', text, re.DOTALL)
-#             if match:
-#                 return json.loads(match.group(1))
-            
-#             # Essayer de trouver des accolades simples
-#             match = re.search(r'(\{.*\})', text, re.DOTALL)
-#             if match:
-#                 return json.loads(match.group(1))
-            
-#             # Si rien ne marche, retourner vide
-#             logger.warning("⚠️ Aucun JSON trouvé dans la réponse")
-#             return {"opportunities": [], "total": 0}
-            
-#         except json.JSONDecodeError as e:
-#             logger.error(f"❌ Erreur parsing JSON: {e}")
-#             return {"opportunities": [], "total": 0}
+#         # ----------------------------------------------------
+#         # 3/4 — ANALYSE LLM PAR LOTS, AVEC FALLBACK
+#         # ----------------------------------------------------
+#         # Si le lot 1 (top MAX_RESULTS_AI) ne donne aucune
+#         # opportunité, on essaie le lot suivant avant d'abandonner.
+#         # Évite de conclure "0 opportunité" sur la seule base d'un
+#         # sous-ensemble qui aurait pu mal tomber au préfiltrage.
+#         # ----------------------------------------------------
 
-#     def _parse_response(self, response: Dict) -> Dict:
-#         """Parse la réponse de Gemini"""
-#         return response
+#         groq_response = None
+#         groq_opportunities: List[Dict[str, Any]] = []
+#         filtered_results: List[Dict[str, Any]] = []
+#         last_notes = None
+#         any_groq_success = False
+
+#         for batch_index in range(MAX_FALLBACK_BATCHES):
+#             start_idx = batch_index * MAX_RESULTS_AI
+#             end_idx = start_idx + MAX_RESULTS_AI
+#             batch = ranked_results[start_idx:end_idx]
+
+#             if not batch:
+#                 break
+
+#             logger.info(
+#                 "🔁 Lot %d/%d : %d source(s) analysée(s) par Groq",
+#                 batch_index + 1,
+#                 MAX_FALLBACK_BATCHES,
+#                 len(batch),
+#             )
+
+#             batch_response = await self.llm_service.analyze(query, batch)
+#             filtered_results = batch  # dernier lot réellement tenté
+
+#             if batch_response is None:
+#                 # Échec réseau/format sur ce lot : on tente quand
+#                 # même le lot suivant plutôt que d'abandonner tout
+#                 # de suite (peut être transitoire malgré les retries
+#                 # internes déjà épuisés dans llm_analysis_service).
+#                 logger.warning(
+#                     "⚠️ Lot %d : analyse Groq échouée, passage au lot suivant",
+#                     batch_index + 1,
+#                 )
+#                 continue
+
+#             any_groq_success = True
+#             groq_response = batch_response
+#             last_notes = batch_response.get("notes")
+#             batch_opportunities = batch_response.get("opportunities", [])
+
+#             if batch_opportunities:
+#                 logger.info(
+#                     "✅ Lot %d : %d opportunité(s) trouvée(s) — arrêt du fallback",
+#                     batch_index + 1,
+#                     len(batch_opportunities),
+#                 )
+#                 groq_opportunities = batch_opportunities
+#                 break
+
+#             logger.info(
+#                 "ℹ️ Lot %d : aucune opportunité éligible", batch_index + 1
+#             )
+
+#         # ----------------------------------------------------
+#         # Aucun lot n'a pu être analysé (tous en échec réseau/format)
+#         # ----------------------------------------------------
+
+#         if not any_groq_success:
+#             result = validation_service.fallback_response(filtered_results)
+#             elapsed = time.perf_counter() - start_total
+#             result["statistics"]["processing_time_seconds"] = round(elapsed, 3)
+#             logger.info("🏁 M1 FALLBACK — FIN (%.3fs)", elapsed)
+#             return result
+
+#         # ----------------------------------------------------
+#         # Tous les lots tentés, mais 0 opportunité au final
+#         # ----------------------------------------------------
+
+#         if not groq_opportunities:
+#             elapsed = time.perf_counter() - start_total
+#             logger.info(
+#                 "ℹ️ Aucune opportunité éligible après %d lot(s) testé(s)",
+#                 min(MAX_FALLBACK_BATCHES, batch_index + 1),
+#             )
+#             return {
+#                 "opportunities": [],
+#                 "market_signals": (
+#                     groq_response.get("market_signals", []) if groq_response else []
+#                 ),
+#                 "total": 0,
+#                 "status": "success",
+#                 "ai_provider": "groq",
+#                 "statistics": {
+#                     "raw_results": len(raw_results),
+#                     "filtered": len(ranked_results),
+#                     "batches_tried": min(MAX_FALLBACK_BATCHES, batch_index + 1),
+#                     "groq_results": 0,
+#                     "final": 0,
+#                     "madagascar": 0,
+#                     "processing_time_seconds": round(elapsed, 3),
+#                 },
+#                 "notes": last_notes or "Aucune opportunité éligible trouvée.",
+#             }
+
+#         # ----------------------------------------------------
+#         # 5 — NORMALISATION / QUALITÉ / CLASSIFICATION / SCORING
+#         # ----------------------------------------------------
+
+#         normalized: List[Dict[str, Any]] = []
+
+#         for opportunity in groq_opportunities:
+#             processed = self._process_single_opportunity(opportunity)
+#             if processed is not None:
+#                 normalized.append(processed)
+
+#         # ----------------------------------------------------
+#         # 6 — DÉDUPLICATION + TRI
+#         # ----------------------------------------------------
+
+#         normalized = validation_service.deduplicate(normalized)
+#         normalized.sort(key=lambda item: int(item.get("score", 0)), reverse=True)
+
+#         # ----------------------------------------------------
+#         # 7 — VALIDATION FINALE (schéma Pydantic partagé)
+#         # ----------------------------------------------------
+
+#         schema_valid: List[Dict[str, Any]] = []
+#         for opportunity in normalized:
+#             validated = validation_service.validate_against_schema(opportunity)
+#             if validated is not None:
+#                 schema_valid.append(validated)
+
+#         # ----------------------------------------------------
+#         # 8 — SYNC BACKEND (optionnelle, non bloquante)
+#         # ----------------------------------------------------
+
+#         sync_result = await sync_opportunities_to_backend(schema_valid)
+
+#         # ----------------------------------------------------
+#         # 9 — STATISTIQUES + RÉPONSE
+#         # ----------------------------------------------------
+
+#         madagascar_count = sum(
+#             1 for o in schema_valid if o.get("country_scope") == "Madagascar"
+#         )
+
+#         elapsed = time.perf_counter() - start_total
+
+#         logger.info("🏁 M1 VEILLE — FIN")
+#         logger.info("🔎 Résultats Tavily : %d", len(raw_results))
+#         logger.info("🔧 Résultats classés : %d", len(ranked_results))
+#         logger.info("🤖 Résultats Groq : %d", len(groq_opportunities))
+#         logger.info("✅ Opportunités finales : %d", len(schema_valid))
+#         logger.info("🇲🇬 Madagascar : %d", madagascar_count)
+#         logger.info("⏱️ Temps total : %.3fs", elapsed)
+#         logger.info("=" * 60)
+
+#         return {
+#             "opportunities": schema_valid[:20],
+#             "market_signals": groq_response.get("market_signals", []),
+#             "total": len(schema_valid),
+#             "status": "success",
+#             "ai_provider": "groq",
+#             "statistics": {
+#                 "raw_results": len(raw_results),
+#                 "filtered": len(ranked_results),
+#                 "sources_analyzed": len(filtered_results),
+#                 "groq_results": len(groq_opportunities),
+#                 "final": len(schema_valid),
+#                 "madagascar": madagascar_count,
+#                 "backend_sync": sync_result,
+#                 "processing_time_seconds": round(elapsed, 3),
+#                 # --- Noms explicites (CDC : clarté pour dashboard M8 /
+#                 # jury) — mêmes valeurs, libellés sans ambiguïté ---
+#                 "prefilter_candidates": len(ranked_results),
+#                 "sources_sent_to_llm": len(filtered_results),
+#                 "llm_opportunities": len(groq_opportunities),
+#                 "final_opportunities": len(schema_valid),
+#             },
+#             "notes": groq_response.get(
+#                 "notes", "Analyse M1 effectuée avec veille.yaml."
+#             ),
+#         }
+
+#     # ========================================================
+#     # HELPER — réponse vide standardisée
+#     # ========================================================
+
+#     @staticmethod
+#     def _empty_response(
+#         status: str,
+#         notes: str,
+#         elapsed: float = 0.0,
+#         raw_count: int = 0,
+#     ) -> Dict[str, Any]:
+#         return {
+#             "opportunities": [],
+#             "market_signals": [],
+#             "total": 0,
+#             "status": status,
+#             "ai_provider": None,
+#             "statistics": {
+#                 "raw_results": raw_count,
+#                 "filtered": 0,
+#                 "groq_results": 0,
+#                 "final": 0,
+#                 "madagascar": 0,
+#                 "processing_time_seconds": round(elapsed, 3),
+#             },
+#             "notes": notes,
+#         }
+
+#     # ========================================================
+#     # ALIAS
+#     # ========================================================
+
+#     async def rechercher(self, query: str) -> Dict[str, Any]:
+#         return await self.analyser_opportunites(query)

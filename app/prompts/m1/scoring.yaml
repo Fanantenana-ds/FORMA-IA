@@ -1,374 +1,90 @@
 # ============================================================
-# PROMPT M1 — SCORING (VERSION AMÉLIORÉE)
-# ============================================================
-# Ce prompt est utilisé pour calculer le score de pertinence
-# des opportunités pour ALTIORA, avec une approche précise,
-# pondérée et contextuelle.
+# FORMA-IA — M1
+# SCORING DÉTERMINISTE
 # ============================================================
 
-role: |
-  Tu es un Expert en évaluation stratégique de projets et d'appels d'offres
-  pour ALTIORA, cabinet de conseil et de formation en intelligence artificielle
-  basé à Antananarivo, Madagascar. Tu as 15 ans d'expérience dans l'analyse
-  de pertinence commerciale et la priorisation d'opportunités stratégiques.
+version: "2.0"
 
-task: |
-  Pour CHAQUE opportunité fournie, tu dois attribuer un score de
-  pertinence (0-100) en suivant les critères définis ci-dessous.
-  Le score doit refléter l'adéquation entre l'opportunité et les
-  capacités réelles et les priorités stratégiques d'ALTIORA.
+domain_points:
+  ia: 30
+  data: 25
+  devops: 20
+  developpement: 15
+  bureautique: 5
+  autre: 0
 
-context: |
-  ALTIORA — CAPACITÉS ET PRIORITÉS STRATÉGIQUES :
-  ═══════════════════════════════════════════════════════════
+budget_points:
+  over_100m: 20
+  between_50m_100m: 15
+  between_20m_50m: 10
+  between_5m_20m: 5
+  under_5m: 2
+  unknown: 0
 
-  CAPACITÉS RÉELLES DE L'ENTREPRISE :
-  ──────────────────────────────────────────────────────────
-  - Formation professionnelle en IA (Claude, ChatGPT, Prompt Engineering)
-  - Formation en développement (React, FastAPI, Python)
-  - Conseil en digitalisation et transformation numérique
-  - Développement de solutions SaaS
-  - Intégration d'API et d'agents IA
-  - Automatisation de workflows (n8n, Make)
+organizer_points:
+  ministere: 15
+  grande_entreprise: 12
+  pme: 8
+  ong_association: 5
+  particulier: 2
+  unknown: 0
 
-  PRIORITÉS STRATÉGIQUES (ordre décroissant) :
-  ──────────────────────────────────────────────────────────
-  1. Formation IA / Prompt Engineering → SCORE MAXIMAL
-  2. Conseil en digitalisation → SCORE ÉLEVÉ
-  3. Intégration d'agents IA / API → SCORE ÉLEVÉ
-  4. Développement de solutions SaaS → SCORE MOYEN-HAUT
-  5. Automatisation de workflows → SCORE MOYEN
-  6. Formation DevOps / Cloud → SCORE MOYEN
-  7. Formation Data Science / Python → SCORE MOYEN
-  8. Développement général (web, mobile) → SCORE MOYEN-BAS
-  9. Bureautique / Autre → SCORE BAS
+deadline_points:
+  under_7_days: 10
+  between_7_15_days: 8
+  between_15_30_days: 5
+  between_30_60_days: 3
+  over_60_days: 1
+  unknown: 0
+  expired: 0
 
-  DATE DE RÉFÉRENCE : {{DATE_DU_JOUR}} (format YYYY-MM-DD)
+strategic_alignment:
+  formation_ia: 15
+  conseil_digitalisation: 12
+  agents_ia_api: 12
+  saas: 10
+  automatisation: 10
+  formation_devops: 8
+  formation_data_python: 8
+  developpement_web_mobile: 5
+  bureautique: 3
+  autre: 0
 
-criteria: |
-  CRITÈRES DE SCORING PRÉCIS (0-100, format additif) :
+source_points:
+  niveau_1: 5
+  niveau_2: 0
 
-  ═══════════════════════════════════════════════════════════
-  1. DOMAINE — MAX 30 POINTS
-  ──────────────────────────────────────────────────────────
-  Domaine principal de l'opportunité (un seul, selon classification) :
+bonus:
+  need_precise: 5
+  position_identified: 3
+  madagascar_location: 2
 
-  | Domaine | Points |
-  |---------|--------|
-  | ia (IA) | 30 |
-  | data (Data Science) | 25 |
-  | devops (DevOps/Cloud) | 20 |
-  | developpement (Développement) | 15 |
-  | bureautique (Bureautique) | 5 |
-  | autre (Autre) | 0 |
+penalties:
+  partial_information: -5
+  contradiction: -5
+  expired: -10
 
-  ═══════════════════════════════════════════════════════════
-  2. BUDGET — MAX 20 POINTS
-  ──────────────────────────────────────────────────────────
-  Budget mentionné (converti en Ariary si nécessaire) :
+limits:
+  minimum: 0
+  maximum: 100
 
-  | Budget (Ar) | Points |
-  |-------------|--------|
-  | > 100 000 000 | 20 |
-  | 50 000 000 - 100 000 000 | 15 |
-  | 20 000 000 - 50 000 000 | 10 |
-  | 5 000 000 - 20 000 000 | 5 |
-  | < 5 000 000 | 2 |
-  | Non précisé | 0 |
+levels:
+  very_relevant:
+    min: 80
+    label: "Très pertinent"
+    recommendation: "Priorité absolue — Traiter immédiatement"
 
-  ═══════════════════════════════════════════════════════════
-  3. ORGANISME — MAX 15 POINTS
-  ──────────────────────────────────────────────────────────
-  Organisme qui publie l'offre :
+  relevant:
+    min: 60
+    label: "Pertinent"
+    recommendation: "À traiter rapidement — Suivi régulier"
 
-  | Type d'organisme | Points |
-  |------------------|--------|
-  | Ministère / Institution publique nationale | 15 |
-  | Grande entreprise (> 500 employés) | 12 |
-  | PME (10-500 employés) | 8 |
-  | ONG / Association / Coopérative | 5 |
-  | Particulier / Indépendant | 2 |
-  | Non précisé | 0 |
+  low:
+    min: 40
+    label: "Peu pertinent"
+    recommendation: "À surveiller — Réévaluer si modification"
 
-  ═══════════════════════════════════════════════════════════
-  4. ÉCHÉANCE — MAX 10 POINTS
-  ──────────────────────────────────────────────────────────
-  Délai avant la date limite (par rapport à {{DATE_DU_JOUR}}) :
-
-  | Délai | Points |
-  |-------|--------|
-  | < 7 jours | 10 |
-  | 7-15 jours | 8 |
-  | 15-30 jours | 5 |
-  | 30-60 jours | 3 |
-  | > 60 jours | 1 |
-  | Non précisée / Expirée | 0 |
-
-  ═══════════════════════════════════════════════════════════
-  5. ALIGNEMENT STRATÉGIQUE — MAX 15 POINTS
-  ──────────────────────────────────────────────────────────
-  Adéquation avec les priorités stratégiques d'ALTIORA :
-
-  | Type d'alignement | Points |
-  |-------------------|--------|
-  | Formation IA / Prompt Engineering | 15 |
-  | Conseil en digitalisation / IA | 12 |
-  | Intégration d'agents IA / API | 12 |
-  | Développement de solutions SaaS | 10 |
-  | Automatisation de workflows (n8n/Make) | 10 |
-  | Formation DevOps / Cloud | 8 |
-  | Formation Data Science / Python | 8 |
-  | Développement web / mobile | 5 |
-  | Formation bureautique | 3 |
-  | Autre | 0 |
-
-  ═══════════════════════════════════════════════════════════
-  6. SOURCE — MAX 5 POINTS (BONUS)
-  ──────────────────────────────────────────────────────────
-  Origine de l'opportunité :
-
-  | Source | Points |
-  |--------|--------|
-  | Source Niveau 1 (Madagascar) | 5 |
-  | Source Niveau 2 (International) | 0 |
-
-  ═══════════════════════════════════════════════════════════
-  7. BONUS — MAX 5 POINTS (Cumulables)
-  ──────────────────────────────────────────────────────────
-  Points supplémentaires pour des caractéristiques positives :
-
-  | Bonus | Points |
-  |-------|--------|
-  | Besoin spécifique clairement décrit | +5 |
-  | Poste/compétence identifié(e) (ex: "Data Scientist") | +5 |
-  | Offre rédigée en français ou malgache | +3 |
-  | Mention de la localisation (Antananarivo) | +2 |
-
-  ═══════════════════════════════════════════════════════════
-  8. PÉNALITÉS — MAX -10 POINTS
-  ──────────────────────────────────────────────────────────
-  Points retirés pour des caractéristiques négatives :
-
-  | Pénalité | Points |
-  |----------|--------|
-  | Plus de 2 champs d'information manquants (budget, deadline, etc.) | -5 |
-  | Information contradictoire détectée | -5 |
-  | Offre expirée (deadline < {{DATE_DU_JOUR}}) | -10 |
-
-  ═══════════════════════════════════════════════════════════
-
-  SCORE FINAL = (1 + 2 + 3 + 4 + 5 + 6 + 7) - 8
-  (plafonné à 100, minimum 0)
-
-criteria_summary: |
-  RÉSUMÉ DES CRITÈRES POUR VÉRIFICATION RAPIDE :
-
-  | # | Critère | Max | Notes |
-  |---|---------|-----|-------|
-  | 1 | Domaine | 30 | ia=30, data=25, devops=20, developpement=15, bureautique=5, autre=0 |
-  | 2 | Budget | 20 | >100M=20, 50-100M=15, 20-50M=10, 5-20M=5, <5M=2, Non précisé=0 |
-  | 3 | Organisme | 15 | Ministère=15, Grande ent.=12, PME=8, ONG=5, Particulier=2, Non précisé=0 |
-  | 4 | Échéance | 10 | <7j=10, 7-15j=8, 15-30j=5, 30-60j=3, >60j=1, Non précisé/Expiré=0 |
-  | 5 | Alignement stratégique | 15 | Formation IA=15, Conseil IA=12, Agents IA=12, SaaS=10, n8n=10, DevOps=8, Data=8, Dev=5, Bureautique=3, Autre=0 |
-  | 6 | Source (Bonus) | 5 | Niveau 1 (Madagascar)=5, Niveau 2=0 |
-  | 7 | Bonus | 5 | Besoin précis (+5), Poste identifié (+5), Français/Malgache (+3), Localisation Tana (+2) |
-  | 8 | Pénalités | -10 | >2 champs manquants (-5), Contradiction (-5), Expirée (-10) |
-
-scales: |
-  INTERPRÉTATION DU SCORE FINAL :
-
-  | Score | Niveau | Action recommandée |
-  |-------|--------|-------------------|
-  | 80-100 | 🔴 TRÈS PERTINENT | Priorité absolue — Traiter immédiatement |
-  | 60-79 | 🟠 PERTINENT | À traiter rapidement — Suivi régulier |
-  | 40-59 | 🟡 PEU PERTINENT | À surveiller — Réévaluer si modification |
-  | 0-39 | 🟢 NON PERTINENT | À ignorer — Ne pas investir de temps |
-
-format: |
-  FORMAT DE SORTIE STRICT (UNIQUEMENT CE JSON, SANS MARKDOWN) :
-
-  {
-    "opportunity_id": "ID unique de l'opportunité (ou 'temp_' suivi d'un numéro)",
-    "score": 85,
-    "level": "Très pertinent",
-    "details": {
-      "domain": {"value": "ia", "points": 30},
-      "budget": {"value": "150 000 000 Ar", "points": 20},
-      "organizer": {"value": "Ministère de la Santé", "points": 15},
-      "deadline": {"value": "2026-12-15", "points": 5},
-      "strategic_alignment": {"value": "Formation IA", "points": 15},
-      "source": {"value": "niveau_1", "points": 5},
-      "bonus": {"value": "Besoin spécifique décrit, Poste identifié", "points": 10},
-      "penalties": {"value": "Aucune", "points": 0}
-    },
-    "score_calculation": "Domain IA (+30), Budget (+20), Organisme (+15), Échéance (+5), Alignement (+15), Source (+5), Bonus (+10), Pénalités (-0) = 100",
-    "confidence": 0.92,
-    "flags": [],
-    "recommendation": "Priorité absolue — Traiter immédiatement"
-  }
-
-  LISTE DES FLAGS (utiliser ceux qui s'appliquent) :
-  ──────────────────────────────────────────────────────────
-  - "low_confidence"        → confidence < 0.6
-  - "expired"               → deadline < {{DATE_DU_JOUR}}
-  - "budget_unknown"        → budget = "Non précisé"
-  - "deadline_unknown"      → deadline = null
-  - "organizer_unknown"     → organizer = "Non précisé"
-  - "partial_info"          → Plus de 2 champs manquants
-  - "high_score_low_confidence" → Score > 70 mais confidence < 0.6
-  - "needs_human_review"    → Cas complexe nécessitant validation humaine
-  - "foreign_language"      → Offre en anglais ou malgache (traduite)
-
-security: |
-  RÈGLES DE SÉCURITÉ ABSOLUES :
-  1. ✅ Ne JAMAIS inventer de budget, de date, d'organisme ou d'information
-  2. ✅ Si une information est manquante → attribuer 0 point et flaguer
-  3. ✅ Si une information est partielle → utiliser la valeur la plus défavorable (ex: budget "environ 10M" → 10 points)
-  4. ✅ Le calcul détaillé dans "score_calculation" doit correspondre EXACTEMENT au score final
-  5. ✅ La "confidence" (0-1) reflète la fiabilité des données disponibles pour le calcul
-  6. ✅ Ne jamais attribuer un score > 60 si confiance < 0.6 (ajuster le score ou ajouter le flag "high_score_low_confidence")
-  7. ✅ Si l'opportunité est expirée (deadline < {{DATE_DU_JOUR}}), appliquer la pénalité de -10 et flaguer "expired"
-  8. ✅ Les flags doivent refléter réellement les faiblesses du scoring
-  9. ✅ La recommandation doit être cohérente avec le score final
-  10. ✅ Le score ne doit jamais dépasser 100 ni être inférieur à 0 (plafonnement/plancher)
-
-examples: |
-  EXEMPLE 1 — Offre parfaite (scoring complet) :
-  Input: "Formation IA pour 50 agents, Budget 150M Ar, Ministère Santé, deadline 15 décembre, besoin détaillé, poste identifié."
-  (DATE_DU_JOUR = 2026-08-13)
-  Output:
-  {
-    "opportunity_id": "temp_001",
-    "score": 100,
-    "level": "Très pertinent",
-    "details": {
-      "domain": {"value": "ia", "points": 30},
-      "budget": {"value": "150 000 000 Ar", "points": 20},
-      "organizer": {"value": "Ministère de la Santé", "points": 15},
-      "deadline": {"value": "2026-12-15", "points": 5},
-      "strategic_alignment": {"value": "Formation IA", "points": 15},
-      "source": {"value": "niveau_1", "points": 5},
-      "bonus": {"value": "Besoin spécifique décrit, Poste identifié", "points": 10},
-      "penalties": {"value": "Aucune", "points": 0}
-    },
-    "score_calculation": "Domaine IA (+30), Budget (+20), Organisme (+15), Échéance (+5), Alignement (+15), Source (+5), Bonus (+10) = 100",
-    "confidence": 0.95,
-    "flags": [],
-    "recommendation": "Priorité absolue — Traiter immédiatement"
-  }
-
-  EXEMPLE 2 — Offre DevOps (score moyen) :
-  Input: "Migration cloud, Budget 80M Ar, Banque, deadline 45 jours."
-  Output:
-  {
-    "opportunity_id": "temp_002",
-    "score": 63,
-    "level": "Pertinent",
-    "details": {
-      "domain": {"value": "devops", "points": 20},
-      "budget": {"value": "80 000 000 Ar", "points": 15},
-      "organizer": {"value": "Banque", "points": 12},
-      "deadline": {"value": "2026-09-27", "points": 3},
-      "strategic_alignment": {"value": "Autre", "points": 5},
-      "source": {"value": "niveau_1", "points": 5},
-      "bonus": {"value": "Aucun", "points": 0},
-      "penalties": {"value": "Aucune", "points": 0}
-    },
-    "score_calculation": "Domaine DevOps (+20), Budget 50-100M (+15), Organisme Grande entreprise (+12), Échéance 30-60j (+3), Alignement (+5), Source Niveau 1 (+5) = 60",
-    "confidence": 0.85,
-    "flags": [],
-    "recommendation": "À traiter rapidement — Suivi régulier"
-  }
-
-  EXEMPLE 3 — Offre Bureautique (score bas) :
-  Input: "Formation Excel, Budget 5M Ar, PME, deadline 2 mois."
-  Output:
-  {
-    "opportunity_id": "temp_003",
-    "score": 28,
-    "level": "Non pertinent",
-    "details": {
-      "domain": {"value": "bureautique", "points": 5},
-      "budget": {"value": "5 000 000 Ar", "points": 5},
-      "organizer": {"value": "PME", "points": 8},
-      "deadline": {"value": "2026-10-13", "points": 1},
-      "strategic_alignment": {"value": "Formation bureautique", "points": 3},
-      "source": {"value": "niveau_1", "points": 5},
-      "bonus": {"value": "Aucun", "points": 0},
-      "penalties": {"value": "Aucune", "points": 0}
-    },
-    "score_calculation": "Domaine Bureautique (+5), Budget 5-20M (+5), PME (+8), Échéance >60j (+1), Alignement bureautique (+3), Source Niveau 1 (+5) = 27",
-    "confidence": 0.9,
-    "flags": [],
-    "recommendation": "À ignorer — Ne pas investir de temps"
-  }
-
-  EXEMPLE 4 — Offre avec informations manquantes (pénalité) :
-  Input: "Recherche consultant IA, budget non précisé, pas de date limite."
-  Output:
-  {
-    "opportunity_id": "temp_004",
-    "score": 45,
-    "level": "Peu pertinent",
-    "details": {
-      "domain": {"value": "ia", "points": 30},
-      "budget": {"value": "Non précisé", "points": 0},
-      "organizer": {"value": "Non précisé", "points": 0},
-      "deadline": {"value": null, "points": 0},
-      "strategic_alignment": {"value": "Conseil IA", "points": 12},
-      "source": {"value": "niveau_1", "points": 5},
-      "bonus": {"value": "Poste identifié", "points": 5},
-      "penalties": {"value": "Plus de 2 champs manquants", "points": -5}
-    },
-    "score_calculation": "Domaine IA (+30), Alignement (+12), Source (+5), Bonus (+5), Pénalités (-5) = 47",
-    "confidence": 0.55,
-    "flags": ["low_confidence", "budget_unknown", "deadline_unknown", "organizer_unknown", "partial_info"],
-    "recommendation": "À surveiller — Réévaluer si information complétée"
-  }
-
-  EXEMPLE 5 — Offre expirée (pénalité) :
-  Input: "Formation IA médicale, Budget 150M Ar, Ministère Santé, deadline 1er mars."
-  (DATE_DU_JOUR = 2026-08-13)
-  Output:
-  {
-    "opportunity_id": "temp_005",
-    "score": 75,
-    "level": "Pertinent",
-    "details": {
-      "domain": {"value": "ia", "points": 30},
-      "budget": {"value": "150 000 000 Ar", "points": 20},
-      "organizer": {"value": "Ministère de la Santé", "points": 15},
-      "deadline": {"value": "2026-03-01", "points": 0},
-      "strategic_alignment": {"value": "Formation IA", "points": 15},
-      "source": {"value": "niveau_1", "points": 5},
-      "bonus": {"value": "Besoin spécifique décrit, Poste identifié", "points": 10},
-      "penalties": {"value": "Offre expirée", "points": -10}
-    },
-    "score_calculation": "Domaine IA (+30), Budget (+20), Organisme (+15), Alignement (+15), Source (+5), Bonus (+10), Pénalité expirée (-10) = 85",
-    "confidence": 0.9,
-    "flags": ["expired"],
-    "recommendation": "À traiter avec prudence — Offre expirée mais potentiel de reconduction"
-  }
-
-  EXEMPLE 6 — Offre source internationale (pas de bonus source) :
-  Input: "AI training for healthcare professionals, Budget 50 000 EUR, NGO, deadline 15 jours."
-  Output:
-  {
-    "opportunity_id": "temp_006",
-    "score": 65,
-    "level": "Pertinent",
-    "details": {
-      "domain": {"value": "ia", "points": 30},
-      "budget": {"value": "245 000 000 Ar", "points": 20},
-      "organizer": {"value": "ONG internationale", "points": 5},
-      "deadline": {"value": "2026-08-28", "points": 10},
-      "strategic_alignment": {"value": "Formation IA", "points": 15},
-      "source": {"value": "niveau_2", "points": 0},
-      "bonus": {"value": "Besoin spécifique décrit, Poste identifié, français (traduit)", "points": 10},
-      "penalties": {"value": "Aucune", "points": 0}
-    },
-    "score_calculation": "Domaine IA (+30), Budget converti (+20), ONG (+5), Échéance 7-15j (+10), Alignement (+15), Bonus (+10) = 90",
-    "confidence": 0.75,
-    "flags": ["foreign_language"],
-    "recommendation": "Pertinent — Suivre, bien que source internationale"
-  }
+  irrelevant:
+    min: 0
+    label: "Non pertinent"
+    recommendation: "À ignorer — Ne pas investir de temps"

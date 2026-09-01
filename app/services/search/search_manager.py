@@ -1,5 +1,5 @@
 # ============================================================
-# FORMA-IA — SEARCH MANAGER
+# FORMA-IA — SEARCH MANAGER (VERSION MADAGASCAR PRIORITAIRE)
 # ============================================================
 # Ce fichier gère la recherche, la fusion et la déduplication
 # des résultats provenant de Tavily.
@@ -22,6 +22,7 @@ class SearchManager:
     def search_and_merge(self, query: str, max_results: int = 20) -> List[Dict]:
         """
         Recherche, fusionne et déduplique les résultats
+        PRIORITÉ : Madagascar d'abord, puis remote international
 
         Args:
             query (str): La requête de recherche
@@ -31,9 +32,15 @@ class SearchManager:
             List[Dict]: Liste des résultats uniques
         """
         try:
-            # 1. Récupérer les résultats depuis Tavily
-            results = self.tavily_client.search(query, max_results * 2)
-            logger.info(f"📊 {len(results)} résultats trouvés pour: {query[:50]}...")
+            # ✅ CONSTRUCTION DE LA REQUÊTE CIBLÉE
+            # Priorité 1 : Madagascar (sites .mg, Antananarivo, Asako, PortailJob)
+            # Priorité 2 : Remote international compatible Madagascar
+            
+            modified_query = self._build_madagascar_query(query)
+            logger.info(f"🔍 Requête Tavily modifiée: {modified_query}")
+            
+            results = self.tavily_client.search(modified_query, max_results * 2)
+            logger.info(f"📊 {len(results)} résultats trouvés")
 
             # 2. Fusionner et dédupliquer
             merged = self._merge_results(results)
@@ -47,14 +54,37 @@ class SearchManager:
             logger.error(f"❌ Erreur lors de la recherche: {e}")
             return []
 
+    def _build_madagascar_query(self, query: str) -> str:
+        """
+        Construit une requête ciblant Madagascar en priorité
+        """
+        # Mots-clés Madagascar
+        mg_keywords = [
+            "Madagascar",
+            "Antananarivo",
+            "site:.mg",
+            "Asako.mg",
+            "PortailJob.mg",
+            "ARMP Madagascar",
+            "emploi Madagascar",
+            "recrutement Madagascar",
+            "offre Madagascar"
+        ]
+        
+        # Si la requête contient déjà "Madagascar", on l'utilise directement
+        if "Madagascar" in query or "Antananarivo" in query:
+            return query
+        
+        # Pour les recherches d'emploi
+        if any(word in query.lower() for word in ["emploi", "travail", "poste", "recrutement", "stage"]):
+            return f"{query} (Madagascar OR Antananarivo OR site:.mg OR Asako.mg OR PortailJob.mg) OR ({query} remote Madagascar)"
+        
+        # Pour les recherches générales
+        return f"{query} (Madagascar OR Antananarivo OR site:.mg) OR ({query} remote Madagascar)"
+
     def _merge_results(self, results: List[Dict]) -> List[Dict]:
         """
         Fusionne et déduplique les résultats
-
-        Stratégie :
-        1. Grouper par URL exacte
-        2. Grouper par titre similaire (>80%)
-        3. Garder le meilleur résultat pour chaque groupe
         """
         if not results:
             return []
@@ -78,7 +108,31 @@ class SearchManager:
             seen_titles.add(title)
             title_unique.append(item)
 
-        return title_unique
+        # Étape 3 : Prioriser les sources malgaches
+        mg_sources = [".mg", "asako", "portailjob", "madagascar", "antananarivo"]
+        priority_results = []
+        other_results = []
+        
+        for item in title_unique:
+            url = item.get("url", "").lower()
+            title = item.get("title", "").lower()
+            snippet = item.get("snippet", "").lower()
+            
+            # Vérifier si c'est une source malgache
+            is_mg = any(
+                src in url or src in title or src in snippet
+                for src in mg_sources
+            )
+            
+            if is_mg:
+                item["is_madagascar"] = True
+                priority_results.append(item)
+            else:
+                item["is_madagascar"] = False
+                other_results.append(item)
+        
+        # Retourner les résultats malgaches en premier
+        return priority_results + other_results
 
     def _is_similar_title(self, title1: str, title2: str) -> bool:
         """Vérifie si deux titres sont similaires"""

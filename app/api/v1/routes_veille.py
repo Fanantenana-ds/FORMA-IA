@@ -418,7 +418,8 @@ async def analyser_pdf(
 
         resultat = (
             await orchestrator.analyser_texte(
-                query=texte_complet
+                texte=texte_complet,
+                source=source,
             )
         )
 

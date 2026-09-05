@@ -2,9 +2,12 @@ from datetime import datetime, timezone
 from uuid import UUID
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
+from typing import List
 
-from app.models.document import Document, TDR, StatutValidation
+from app.models.document import Document, TDR, Attestation, StatutValidation, FormatExport
+from app.models.formation import Session as FormationSession, Seance, Presence, Participant, StatutPresence
 from app.schemas.document import TDRRequest
+
 
 
 class DocumentService:
@@ -43,3 +46,43 @@ class DocumentService:
         self.db.commit()
         self.db.refresh(document)
         return document
+
+    def generer_attestations(self, session_id: UUID) -> List[Attestation]:
+        session = self.db.query(FormationSession).filter(FormationSession.id == session_id).first()
+        if not session:
+            raise HTTPException(status_code=404, detail= "Session introuvable")
+
+        # Participant ayant été PRÉSENT au moin une fois à une séance de la session
+        participants = (
+            self.db.query(Participant)
+            .join(Presence, Presence.participant_id == Participant.id)
+            .join(Seance, Seance.id == Presence.seance_id)
+            .filter(Seance.session_id == session_id, Presence.statut == StatutPresence.PRESENT)
+            .distinct()
+            .all()
+        )
+
+        existantes = self.db.query(Attestation).filter(Attestation.session_id == session_id).all()
+        deja_generees = {a.participant_id for a in existantes}
+        sequence = len(existantes) + 1
+
+        for participant in participants:
+            if participant.id in deja_generees:
+                continue
+
+            numero = f"ATT-{str(session_id)[:8].upper()}-{sequence:03d}"
+            sequence += 1
+
+            attestation = Attestation(
+                session_id=session_id,
+                participant_id=participant.id,
+                numero_unique=numero,
+                contenu=f"Attestation de participation - {participant.nom} - {session.titre}",
+                format_export=FormatExport.PDF,
+                statut_validation=StatutValidation.EN_ATTENTE
+            )
+            self.db.add(attestation)
+
+        self.db.commit()
+
+        return self.db.query(Attestation).filter(Attestation.session_id == session_id).all()

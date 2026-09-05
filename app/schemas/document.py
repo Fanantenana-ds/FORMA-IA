@@ -18,6 +18,9 @@ class DocumentResponse(BaseModel):
     client: Optional[str] = None
     objectifs: Optional[str] = None
     format_export: Optional[FormatExport] = None
+    session_id: Optional[UUID] = None
+    participant_id: Optional[UUID] = None
+    numero_unique: Optional[str] = None
     statut_validation: StatutValidation
     valide_par: Optional[UUID] = None
     date_generation: datetime

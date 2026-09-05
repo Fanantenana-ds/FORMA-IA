@@ -9,6 +9,8 @@ from app.models.document import Document
 from app.schemas.document import TDRRequest, DocumentResponse, ValidationRequest
 from app.services.document_service import DocumentService
 
+from typing import List
+
 router = APIRouter(
     prefix="/documents",
     tags=["Documents"]
@@ -45,3 +47,11 @@ def get_document(
     if not document:
         raise HTTPException(status_code=404, detail="Document introuvable")
     return document
+
+@router.post("/attestations/{session_id}", response_model=List[DocumentResponse], status_code=201)
+def generer_attestations(
+    session_id: UUID,
+    service: DocumentService = Depends(get_document_service),
+    current_user: User = Depends(require_role("DIRECTION", "FORMATEUR"))
+):
+    return service.generer_attestations(session_id)

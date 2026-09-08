@@ -1,0 +1,109 @@
+# # ============================================================
+# # FORMA-IA — M1
+# # CLASSIFICATION
+# # ============================================================
+
+# version: "1.0"
+
+# domains:
+
+#   ia:
+#     priority: 1
+#     keywords:
+#       - intelligence artificielle
+#       - intelligence artificielle générative
+#       - opportunite sur la formation en intelligence artificielle 
+#       - ia générative
+#       - artificial intelligence
+#       - ai
+#       - machine learning
+#       - deep learning
+#       - llm
+#       - large language model
+#       - rag
+#       - agent ia
+#       - agents ia
+#       - agent intelligent
+#       - chatbot
+#       - nlp
+#       - traitement du langage naturel
+#       - computer vision
+#       - prompt engineering
+#       - chatgpt
+#       - claude
+#       - gemini
+#       - automatisation ia
+
+#   data:
+#     priority: 2
+#     keywords:
+#       - data science
+#       - data scientist
+#       - data analyst
+#       - data engineer
+#       - data engineering
+#       - analyse de données
+#       - analyse des données
+#       - big data
+#       - business intelligence
+#       - power bi
+#       - tableau
+#       - etl
+#       - data warehouse
+#       - machine learning
+
+#   devops:
+#     priority: 3
+#     keywords:
+#       - devops
+#       - cloud
+#       - aws
+#       - azure
+#       - google cloud
+#       - docker
+#       - kubernetes
+#       - jenkins
+#       - ci/cd
+#       - terraform
+#       - infrastructure
+
+#   developpement:
+#     priority: 4
+#     keywords:
+#       - développeur
+#       - developpeur
+#       - developer
+#       - software engineer
+#       - développement logiciel
+#       - developpement logiciel
+#       - python
+#       - fastapi
+#       - django
+#       - flask
+#       - react
+#       - reactjs
+#       - react native
+#       - javascript
+#       - typescript
+#       - nodejs
+#       - node.js
+#       - java
+#       - php
+#       - laravel
+#       - backend
+#       - frontend
+#       - fullstack
+#       - application web
+#       - application mobile
+#       - logiciel
+
+#   bureautique:
+#     priority: 5
+#     keywords:
+#       - excel
+#       - word
+#       - powerpoint
+#       - microsoft office
+#       - bureautique
+
+# fallback_domain: autre

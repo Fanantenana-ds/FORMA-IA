@@ -1,0 +1,90 @@
+# ============================================================
+# FORMA-IA — M1
+# SCORING DÉTERMINISTE
+# ============================================================
+
+version: "2.0"
+
+domain_points:
+  ia: 30
+  data: 25
+  devops: 20
+  developpement: 15
+  bureautique: 5
+  autre: 0
+
+budget_points:
+  over_100m: 20
+  between_50m_100m: 15
+  between_20m_50m: 10
+  between_5m_20m: 5
+  under_5m: 2
+  unknown: 0
+
+organizer_points:
+  ministere: 15
+  grande_entreprise: 12
+  pme: 8
+  ong_association: 5
+  particulier: 2
+  unknown: 0
+
+deadline_points:
+  under_7_days: 10
+  between_7_15_days: 8
+  between_15_30_days: 5
+  between_30_60_days: 3
+  over_60_days: 1
+  unknown: 0
+  expired: 0
+
+strategic_alignment:
+  formation_ia: 15
+  conseil_digitalisation: 12
+  agents_ia_api: 12
+  saas: 10
+  automatisation: 10
+  formation_devops: 8
+  formation_data_python: 8
+  developpement_web_mobile: 5
+  bureautique: 3
+  autre: 0
+
+source_points:
+  niveau_1: 5
+  niveau_2: 0
+
+bonus:
+  need_precise: 5
+  position_identified: 3
+  madagascar_location: 2
+
+penalties:
+  partial_information: -5
+  contradiction: -5
+  expired: -10
+
+limits:
+  minimum: 0
+  maximum: 100
+
+levels:
+  very_relevant:
+    min: 80
+    label: "Très pertinent"
+    recommendation: "Priorité absolue — Traiter immédiatement"
+
+  relevant:
+    min: 60
+    label: "Pertinent"
+    recommendation: "À traiter rapidement — Suivi régulier"
+
+  low:
+    min: 40
+    label: "Peu pertinent"
+    recommendation: "À surveiller — Réévaluer si modification"
+
+  irrelevant:
+    min: 0
+    label: "Non pertinent"
+    recommendation: "À ignorer — Ne pas investir de temps"

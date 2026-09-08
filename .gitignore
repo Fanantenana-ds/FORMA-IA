@@ -1,20 +1,28 @@
-# .gitignore
+# ============================================================
+# FORMA-IA — .gitignore
+# ============================================================
 
-# Environnement
+# Environnements virtuels
+venv/
+env/
+.venv/
+
+# Variables d'environnement — SÉCURITÉ
 .env
 .env.local
 .env.production
+.env.*.local
 
 # Python
-venv/
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
+*.so
+*.dylib
 .pytest_cache/
 .coverage
 htmlcov/
-*.log
 
 # IDE
 .vscode/
@@ -22,26 +30,43 @@ htmlcov/
 *.swp
 *.swo
 
+# Base de données
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+logs/
+*.log
+
+# Fichiers temporaires
+*.tmp
+*.temp
+.DS_Store
+Thumbs.db
+
 # Docker
 *.pid
 *.socket
+pgdata/
 
-# Google
+# Google / credentials
 credentials.json
 *.key
-
-# Base de données
-*.db
-*.sqlite3
 
 # Données
 data/*.csv
 data/*.xlsx
 
-# Généré
+# Exports générés
+exports/
 dist/
 build/
 *.egg-info/
+*.pdf
+*.docx
+*.xlsx
 
+# Fichiers de test / temporaires du projet
 test.http
 formaia-backend.zip

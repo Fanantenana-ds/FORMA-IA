@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session as DbSession
 
 from app.database import get_db
-from app.core.dependencies import get_current_user, require_role
+from app.models.core.dependencies import get_current_user, require_role
 from app.models.user import User
 from app.schemas.formation import (
     SeanceCreate, SeanceResponse,

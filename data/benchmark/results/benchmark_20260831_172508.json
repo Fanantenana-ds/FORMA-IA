@@ -1,0 +1,120 @@
+{
+  "total_requests": 10,
+  "avg_precision": 0.2,
+  "avg_recall": 0.2,
+  "avg_f1": 0.2,
+  "avg_latency_seconds": 26.06061246000463,
+  "details": [
+    {
+      "id": "req_001",
+      "query": "Opportunite sur la poste devellopeur IA CDD,CDI automatisation",
+      "expected_count": 1,
+      "actual_count": 1,
+      "true_positives": 1,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "elapsed": 5.058350400009658
+    },
+    {
+      "id": "req_002",
+      "query": "Opportunite sur la poste des devops",
+      "expected_count": 2,
+      "actual_count": 2,
+      "true_positives": 2,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "elapsed": 6.639682600012748
+    },
+    {
+      "id": "req_003",
+      "query": "Opportunite sur la poste devellopeur fullstack CDD,CDI Antananrivo ou autres",
+      "expected_count": 1,
+      "actual_count": 0,
+      "true_positives": 0,
+      "precision": 0,
+      "recall": 0.0,
+      "f1": 0,
+      "elapsed": 31.808494199998677
+    },
+    {
+      "id": "req_004",
+      "query": "Chercher des offres sur la poste des devops,IA",
+      "expected_count": 1,
+      "actual_count": 2,
+      "true_positives": 0,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0,
+      "elapsed": 28.669891600002302
+    },
+    {
+      "id": "req_005",
+      "query": "Offre emploi data scientist Madagascar",
+      "expected_count": 0,
+      "actual_count": 0,
+      "true_positives": 0,
+      "precision": 0,
+      "recall": 0,
+      "f1": 0,
+      "elapsed": 26.372231000015745
+    },
+    {
+      "id": "req_006",
+      "query": "stage développeur web Antananarivo",
+      "expected_count": 0,
+      "actual_count": 1,
+      "true_positives": 0,
+      "precision": 0.0,
+      "recall": 0,
+      "f1": 0,
+      "elapsed": 34.38195499998983
+    },
+    {
+      "id": "req_007",
+      "query": "recrutement chef de projet IT",
+      "expected_count": 0,
+      "actual_count": 0,
+      "true_positives": 0,
+      "precision": 0,
+      "recall": 0,
+      "f1": 0,
+      "elapsed": 31.816821699991124
+    },
+    {
+      "id": "req_008",
+      "query": "consultant en cybersécurité Madagascar",
+      "expected_count": 0,
+      "actual_count": 0,
+      "true_positives": 0,
+      "precision": 0,
+      "recall": 0,
+      "f1": 0,
+      "elapsed": 32.12166370000341
+    },
+    {
+      "id": "req_009",
+      "query": "formation intelligence artificielle",
+      "expected_count": 0,
+      "actual_count": 1,
+      "true_positives": 0,
+      "precision": 0.0,
+      "recall": 0,
+      "f1": 0,
+      "elapsed": 22.809715300012613
+    },
+    {
+      "id": "req_010",
+      "query": "appel d'offres formation professionnelle",
+      "expected_count": 0,
+      "actual_count": 0,
+      "true_positives": 0,
+      "precision": 0,
+      "recall": 0,
+      "f1": 0,
+      "elapsed": 40.92731910001021
+    }
+  ],
+  "timestamp": "2026-08-31 17:25:08"
+}

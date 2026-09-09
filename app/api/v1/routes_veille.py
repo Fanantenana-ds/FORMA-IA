@@ -1,6 +1,7 @@
 # ============================================================
 # FORMA-IA — M1 VEILLE
 # ROUTES API
+# api/v1/routes_veille.py
 # ============================================================
 
 from __future__ import annotations
@@ -32,7 +33,8 @@ from app.orchestrator.veille_orchestrator import (
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(dependencies=[Depends(verify_api_key)])
+router = APIRouter()
+# dependencies=[Depends(verify_api_key)]
 
 
 # ============================================================

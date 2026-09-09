@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models.core.dependencies import get_current_user, require_role
+from app.core.dependencies import get_current_user, require_role
 from app.models.user import User
 from app.models.document import Document, FormatExport
 from app.schemas.document import TDRRequest, DocumentResponse, ValidationRequest, OffreRequest

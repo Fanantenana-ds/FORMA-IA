@@ -54,22 +54,6 @@ def get_opportunites(service: OpportuniteService = Depends(get_opportunite_servi
         "total": len(opportunites)
     }
 
-# Route analyse opportunité
-@router.post(
-    "/analyse",
-    response_model=OpportuniteAnalyseResult
-)
-def analyse_opportunite(
-    data: OpportuniteAnalyseRequest,
-    analyse_service: OpportuniteAnalyseService = Depends(get_opportunite_analyse_service),
-    current_user: User = Depends(get_current_user)
-):
-    contenu = data.contenu
-    if not contenu and data.url:
-        contenu = str(data.url)
-
-    return analyse_service.analyse(contenu)
-
 @router.get(
     "/{opportunite_id}",
     response_model=OpportuniteResponse

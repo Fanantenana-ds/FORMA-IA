@@ -17,15 +17,6 @@ router = APIRouter(
 def get_document_service(db: Session = Depends(get_db)) -> DocumentService:
     return DocumentService(db)
 
-@router.post("/tdr", response_model=DocumentResponse, status_code=201)
-def generer_tdr(
-    data: TDRRequest,
-    service: DocumentService = Depends(get_document_service),
-    current_user: User = Depends(require_role("DIRECTION", "ASSISTANT"))
-):
-    return service.generer_tdr(data)
-
-
 @router.post("/{document_id}/valider", response_model=DocumentResponse)
 def valider_document(
     document_id: UUID,

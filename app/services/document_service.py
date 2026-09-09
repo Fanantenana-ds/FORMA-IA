@@ -4,9 +4,11 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 from typing import List
 
-from app.models.document import Document, TDR, Attestation, StatutValidation, FormatExport
+from app.models.document import Document, TDR, Attestation, StatutValidation, FormatExport, Offre
 from app.models.formation import Session as FormationSession, Seance, Presence, Participant, StatutPresence
-from app.schemas.document import TDRRequest
+from app.models.opportunite import Opportunite
+from app.schemas.document import TDRRequest, OffreRequest
+
 
 
 
@@ -86,3 +88,26 @@ class DocumentService:
         self.db.commit()
 
         return self.db.query(Attestation).filter(Attestation.session_id == session_id).all()
+
+    def generer_offre(self, data: OffreRequest) -> Offre:
+        opportunite = self.db.query(Opportunite).filter(Opportunite.id == data.opportunite_id).first()
+        if not opportunite:
+            raise HTTPException(status_code=404, detail="Opportunite introuvable")
+
+        contenu = (
+            f"Offre technique et financière\n"
+            f"Objet: {opportunite.objet or '-'}\n"
+            f"Domaine: {opportunite.domaine or '-'}\n"
+            f"Montant proposé: {data.montant or opportunite.budget or '-'}"
+        )
+
+        offre = Offre(
+            opportunite_id = opportunite.id,
+            montant = data.montant,
+            contenu = contenu,
+            statut_validation = StatutValidation.EN_ATTENTE
+        )
+        self.db.add(offre)
+        self.db.commit()
+        self.db.refresh(offre)
+        return offre

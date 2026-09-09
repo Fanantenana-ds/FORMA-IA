@@ -32,3 +32,7 @@ class DocumentResponse(BaseModel):
 
 class ValidationRequest(BaseModel):
     approuve: bool
+
+class OffreRequest(BaseModel):
+    opportunite_id: UUID
+    montant: Optional[float] = Field(default=None, ge=0)

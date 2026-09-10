@@ -21,6 +21,10 @@ def get_document_service(db: Session = Depends(get_db)) -> DocumentService:
     return DocumentService(db)
 
 
+def get_document_service(db: Session = Depends(get_db)) -> DocumentService:
+    return DocumentService(db)
+
+
 @router.post("/tdr", response_model=DocumentResponse, status_code=201)
 def generer_tdr(
     data: TDRRequest,
@@ -50,6 +54,7 @@ def get_document(
     if not document:
         raise HTTPException(status_code=404, detail="Document introuvable")
     return document
+
 
 @router.post("/attestations/{session_id}", response_model=List[DocumentResponse], status_code=201)
 def generer_attestations(

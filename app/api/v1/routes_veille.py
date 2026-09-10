@@ -9,8 +9,9 @@ from __future__ import annotations
 import io
 import logging
 from typing import List, Optional
-from fastapi import Depends
+from fastapi import Depends,Query
 from app.utils.security import verify_api_key
+from app.services.benchmark.benchmark_runner import BenchmarkRunner
 
 import PyPDF2
 
@@ -35,6 +36,8 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 # dependencies=[Depends(verify_api_key)]
+
+
 
 
 # ============================================================
@@ -205,6 +208,15 @@ def _normalize_result(
     ] = len(filtered)
 
     return resultat
+# ===========================================================
+# SYSTEME
+# ==========================================================
+
+@router.post("/benchmark", tags=["Système"])
+async def run_benchmark(limit: int = Query(20, ge=1, le=100)):
+    runner = BenchmarkRunner()
+    report = await runner.run(limit=limit)
+    return {"status": "success", "report": report}
 
 
 # ============================================================
@@ -454,11 +466,3 @@ async def analyser_pdf(
                 "de l'analyse PDF."
             ),
         )
-from fastapi import Query
-from app.services.benchmark.benchmark_runner import BenchmarkRunner
-
-@router.post("/benchmark")
-async def run_benchmark(limit: int = Query(20, ge=1, le=100)):
-    runner = BenchmarkRunner()
-    report = await runner.run(limit=limit)
-    return {"status": "success", "report": report}

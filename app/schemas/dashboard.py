@@ -2,8 +2,8 @@ from pydantic import BaseModel
 
 class StatistiquesResponse(BaseModel):
     session_realisees: int
-    participant_total: int
+    participant: int
     taux_presence: float
-    chiffre_affaire: float
-    opportunite_total: int
-    opportunite_analysees: int
+    opportunite_par_domaine: dict[str, int]
+    chiffre_affaires_facture: float
+    chiffre_affaires_encaisse: float

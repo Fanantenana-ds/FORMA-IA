@@ -2,7 +2,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 
 from app.models.formation import Session as FormationSession, Presence, StatutPresence
-from app.models.opportunite import Opportunite, StatutOpportunite
+from app.models.opportunite import Opportunite
 from app.schemas.dashboard import StatistiquesResponse
 
 
@@ -13,35 +13,38 @@ class DashboardService:
     def obtenir_statistiques(self) -> StatistiquesResponse:
         session_realisees = self.db.query(FormationSession).count()
 
-        participants_total = (
+        participant = (
             self.db.query(Presence.participant_id)
             .distinct()
             .count()
         )
 
-        total_presence = self.db.query(Presence).count()
-        presence_effectives = (
+        total_presences = self.db.query(Presence).count()
+        presences_effectives = (
             self.db.query(Presence)
             .filter(Presence.statut == StatutPresence.PRESENT)
             .count()
         )
         taux_presence = (
-            round(presence_effectives / total_presence * 100, 2)
-            if total_presence > 0 else 0.0
+            round(presences_effectives / total_presences * 100, 2)
+            if total_presences > 0 else 0.0
         )
 
-        opportunites_total = self.db.query(Opportunite).count()
-        opportunies_analysees = (
-            self.db.query(Opportunite)
-            .filter(Opportunite.statut == StatutOpportunite.ANALYSEE)
-            .count()
+        resultats_domaine = (
+            self.db.query(Opportunite.domaine, func.count(Opportunite.id))
+            .filter(Opportunite.domaine.isnot(None))
+            .group_by(Opportunite.domaine)
+            .all()
         )
+        opportunite_par_domaine = {
+            domaine.value: total for domaine, total in resultats_domaine
+        }
 
         return StatistiquesResponse(
             session_realisees=session_realisees,
-            participant_total=participants_total,
+            participant=participant,
             taux_presence=taux_presence,
-            chiffre_affaire=0.0,
-            opportunite_total=opportunites_total,
-            opportunite_analysees=opportunies_analysees
+            opportunite_par_domaine=opportunite_par_domaine,
+            chiffre_affaires_facture=0.0,
+            chiffre_affaires_encaisse=0.0
         )

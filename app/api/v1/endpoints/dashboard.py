@@ -7,15 +7,15 @@ from app.models.user import User
 from app.schemas.dashboard import StatistiquesResponse
 from app.services.dashboard_service import DashboardService
 
-router = APIRouter(prefix="/dasboard", tags=["Dashboard"])
+router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
 
 
 def get_dashboard_service(db: Session = Depends(get_db)) -> DashboardService:
     return DashboardService(db)
 
 
-@router.get("/Statistiques", response_model=StatistiquesResponse)
-def get_statisiques(
+@router.get("/statistiques", response_model=StatistiquesResponse)
+def get_statistiques(
     service: DashboardService = Depends(get_dashboard_service),
     current_user: User = Depends(require_role("DIRECTION"))
 ):

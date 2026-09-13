@@ -1,5 +1,5 @@
 from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from sqlalchemy.orm import Session
 
@@ -12,12 +12,19 @@ from app.repositories.revoked_token_repository import (
 )
 from typing import Callable
 
-oauth2_scheme = OAuth2PasswordBearer(
-    tokenUrl="/api/v1/auth/login"
-    )
+security_scheme = HTTPBearer(auto_error=False)
 
-def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+def get_current_user(credential: HTTPAuthorizationCredentials = Depends(security_scheme), db: Session = Depends(get_db)):
     # Décodage et vérification du JWT
+    if not credential:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token invalide ou expiré",
+            headers={
+                "WWW-Authenticate": "Bearer"
+            }
+        )
+    token = credential.credentials
     payload = decode_access_token(token)
 
     if not payload:

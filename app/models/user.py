@@ -9,10 +9,10 @@ from sqlalchemy import Enum as SQlEnum
 from app.database import Base
 
 class RoleEnum(str, Enum):
-    DIRECTION = "Direction"
-    ASSISTANT = "Assistant"
-    COMPTABLE = "Comptable"
-    FORMATEUR = "Formateur"
+    DIRECTION = "DIRECTION"
+    ASSISTANT = "ASSISTANT"
+    COMPTABLE = "COMPTABLE"
+    FORMATEUR = "FORMATEUR"
 
 class User(Base):
     __tablename__ = "users"

@@ -79,7 +79,7 @@ format: |
         "url": "https://...",
         "budget": "Non précisé",
         "deadline": null,
-        "organizer": "Organisation",
+        "organizer": "Organisation/Nom de l'entreprise/organisme",
         "domain": "ia",
         "opportunity_type": "emploi",
         "summary": "Résumé concret de l'opportunité en 2-3 phrases.",

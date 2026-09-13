@@ -341,6 +341,7 @@ class LLMAnalysisService:
                 "✅ GROQ : réponse JSON valide — %d opportunités",
                 len(data["opportunities"]),
             )
+            logger.info(f"🔍 Réponse GROQ: {data}")
 
             return data
 
@@ -361,3 +362,4 @@ class LLMAnalysisService:
         except Exception as exc:
             logger.exception("❌ GROQ [%s] : %s", self.model, exc)
             return None
+        

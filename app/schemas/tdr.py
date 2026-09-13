@@ -1,47 +1,45 @@
+# app/schemas/tdr.py
 # ============================================================
-# SCHEMAS M2 — TDR (CONTRAT IA ↔ BACKEND)
+# SCHÉMAS TDR — Pydantic (V4.0)
 # ============================================================
 
-from pydantic import BaseModel
-from typing import Optional, Dict, Any, List
+from typing import Any, Dict, List, Optional
+from pydantic import BaseModel, Field
 
 
 class TDRRequest(BaseModel):
-    """Requête pour la génération d'un TDR"""
-    client: str
-    objectifs: str
-    public: str
-    duree: str
+    """Brief client pour la génération de TDR."""
+    client: str = Field(..., min_length=2)
+    objectifs: str = Field(..., min_length=5)
+    public: str = Field(..., min_length=2)
+    duree: str = Field(..., min_length=1)
     format: Optional[str] = "Présentiel"
     budget: Optional[str] = None
+    lieu: Optional[str] = None
+    deadline: Optional[str] = None
+    opportunite_id: Optional[str] = None       # ✅ Lien vers M1
 
 
-class TDRSection(BaseModel):
-    """Section d'un TDR"""
-    titre: str
-    contenu: str
+class TDRFromOpportuniteRequest(BaseModel):
+    """Requête pour pré-remplir depuis une opportunité."""
+    opportunite_id: str
 
 
-class TDRData(BaseModel):
-    """Données d'un TDR"""
-    titre: str
-    sections: Dict[str, str]
-    date_generation: Optional[str] = None
-
-
-class TDRResponse(BaseModel):
-    """Réponse pour la génération d'un TDR"""
+class TDRFromOpportuniteResponse(BaseModel):
+    """Réponse avec le brief pré-rempli."""
     success: bool
-    data: Dict[str, Any]
+    brief: Optional[Dict[str, Any]] = None
+    opportunite: Optional[Dict[str, Any]] = None
     error: Optional[str] = None
 
 
-class TDRDocument(BaseModel):
-    """Document TDR généré"""
-    id: Optional[int] = None
-    client: str
-    titre: str
-    contenu: str
-    format: str
-    url: Optional[str] = None
-    created_at: Optional[str] = None
+class TDRFiles(BaseModel):
+    docx: Optional[str] = None
+    pdf: Optional[str] = None
+
+
+class TDRResponse(BaseModel):
+    success: bool
+    data: Optional[Dict[str, Any]] = None
+    files: Optional[TDRFiles] = None
+    error: Optional[str] = None

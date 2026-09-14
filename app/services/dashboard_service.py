@@ -3,6 +3,7 @@ from sqlalchemy import func
 
 from app.models.formation import Session as FormationSession, Presence, StatutPresence
 from app.models.opportunite import Opportunite
+from app.models.facture import Facture, Paiement
 from app.schemas.dashboard import StatistiquesResponse
 
 
@@ -40,11 +41,21 @@ class DashboardService:
             domaine.value: total for domaine, total in resultats_domaine
         }
 
+        chiffre_affaires_facture = (
+            self.db.query(func.sum(Facture.montant))
+            .scalar() or 0.0
+        )
+
+        chiffre_affaires_encaisse = (
+            self.db.query(func.sum(Paiement.montant))
+            .scalar() or 0.0
+        )
+
         return StatistiquesResponse(
             session_realisees=session_realisees,
             participant=participant,
             taux_presence=taux_presence,
             opportunite_par_domaine=opportunite_par_domaine,
-            chiffre_affaires_facture=0.0,
-            chiffre_affaires_encaisse=0.0
+            chiffre_affaires_facture=round(chiffre_affaires_facture, 2),
+            chiffre_affaires_encaisse=round(chiffre_affaires_encaisse, 2)
         )

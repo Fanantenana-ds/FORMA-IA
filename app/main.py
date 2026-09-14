@@ -56,11 +56,11 @@ app = FastAPI(
         },
         {
             "name": "M1 - Veille Marché",
-            "description": "Analyse d'opportunités (recherche Tavily + analyse Groq)"
+            "description": "Analyse d'opportunités (avec IA)"
         },
         {
             "name": "M2 - TDR",
-            "description": "Génération de Termes de Référence pour formations"
+            "description": "Génération de Termes de Référence "
         },
         {
             "name": "Authentification",
@@ -69,10 +69,6 @@ app = FastAPI(
         {
             "name": "Opportunités",
             "description": "CRUD complet des opportunités détectées"
-        },
-        {
-            "name": "Analyse",
-            "description": "Analyse IA des opportunités (avec Groq)"
         },
         {
             "name": "Documents",

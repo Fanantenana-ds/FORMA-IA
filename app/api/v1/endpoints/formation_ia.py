@@ -4,6 +4,10 @@ import time
 from typing import Dict, Any, Optional, List
 
 from fastapi import APIRouter, HTTPException, Depends, status, Query
+from app.services.hitl import get_review as _get
+from app.services.hitl import get_stats ,list_pending
+from app.services.hitl import approve_review as _approve
+from app.services.hitl import reject_review as _reject
 from pydantic import BaseModel, Field
 
 from app.orchestrator.formation_orchestrator import (
@@ -171,11 +175,6 @@ async def health_check() -> Dict[str, Any]:
         _handle_exception(e, "health_check")
         return {"success": False}
 
-
-# =============================================================================
-# ROUTE 1 — POST /generate-forms  (Agent 1)
-# =============================================================================
-
 @router.post("/generate-forms", response_model=RouteResponse,
              summary="[M5] Agent 1 — Générer les 4 formulaires")
 async def generate_forms(
@@ -194,10 +193,6 @@ async def generate_forms(
         _handle_exception(e, "generate_forms")
         return RouteResponse(success=False, message="")
 
-
-# =============================================================================
-# ROUTE 2 — POST /regenerate-forms  (Agent 1 — Feedback)
-# =============================================================================
 
 @router.post("/regenerate-forms", response_model=RouteResponse,
              summary="[M5] Agent 1 — Régénérer avec feedback")
@@ -221,9 +216,6 @@ async def regenerate_forms(
         return RouteResponse(success=False, message="")
 
 
-# =============================================================================
-# ROUTE 3 — POST /analyze-levels  (Agent 2)
-# =============================================================================
 
 @router.post("/analyze-levels", response_model=RouteResponse,
              summary="[M5] Agent 2 — Analyser les niveaux")
@@ -247,10 +239,6 @@ async def analyze_levels(
         return RouteResponse(success=False, message="")
 
 
-# =============================================================================
-# ROUTE 4 — POST /analyze-satisfaction  (Agent 3)
-# =============================================================================
-
 @router.post("/analyze-satisfaction", response_model=RouteResponse,
              summary="[M5] Agent 3 — Analyser la satisfaction")
 async def analyze_satisfaction(
@@ -272,10 +260,6 @@ async def analyze_satisfaction(
         _handle_exception(e, "analyze_satisfaction")
         return RouteResponse(success=False, message="")
 
-
-# =============================================================================
-# ROUTE 5 — POST /analyze-presences  (Agent 4)
-# =============================================================================
 
 @router.post("/analyze-presences", response_model=RouteResponse,
              summary="[M5] Agent 4 — Analyser les présences")
@@ -300,10 +284,6 @@ async def analyze_presences(
         return RouteResponse(success=False, message="")
 
 
-# =============================================================================
-# ROUTE 6 — POST /generate-attestations  (Agent 5)
-# =============================================================================
-
 @router.post("/generate-attestations", response_model=RouteResponse,
              summary="[M5] Agent 5 — Générer les attestations")
 async def generate_attestations(
@@ -326,10 +306,6 @@ async def generate_attestations(
         return RouteResponse(success=False, message="")
 
 
-# =============================================================================
-# ROUTE 7 — POST /generate-report  (Agent 6)
-# =============================================================================
-
 @router.post("/generate-report", response_model=RouteResponse,
              summary="[M5] Agent 6 — Générer le rapport final")
 async def generate_report(
@@ -349,10 +325,6 @@ async def generate_report(
         _handle_exception(e, "generate_report")
         return RouteResponse(success=False, message="")
 
-
-# =============================================================================
-# ROUTE 8 — GET /agents
-# =============================================================================
 
 @router.get("/agents", summary="[M5] Liste des agents IA")
 async def list_agents(
@@ -377,20 +349,6 @@ async def list_agents(
         "agents": agents,
     }
 
-# =============================================================================
-# =============================================================================
-# HITL — HUMAN-IN-THE-LOOP
-# =============================================================================
-# =============================================================================
-# ⚠️  ORDRE IMPORTANT :
-#   Les routes spécifiques (/stats) DOIVENT être déclarées AVANT
-#   les routes paramétrées (/{review_id}), sinon FastAPI les capture.
-# =============================================================================
-
-
-# =============================================================================
-# HITL ROUTE 1 — GET /pending-reviews
-# =============================================================================
 
 @router.get("/pending-reviews",
             summary="[HITL] Liste des contenus en attente de validation")
@@ -401,7 +359,7 @@ async def list_pending_reviews(
     _log_request("GET", "/ia/formations/pending-reviews",
                  Agent=agent_id or "tous", Criticité=criticity or "toutes")
     try:
-        from app.services.formations.hitl_helper import list_pending
+        
         reviews = list_pending(agent_id=agent_id, criticity=criticity)
         vlog(f"✅ [HITL] {len(reviews)} contenu(s) en attente")
         return {
@@ -415,16 +373,13 @@ async def list_pending_reviews(
         return {"success": False, "reviews": []}
 
 
-# =============================================================================
-# HITL ROUTE 2 — GET /reviews/stats  (⚠️ AVANT /reviews/{review_id} !)
-# =============================================================================
 
 @router.get("/reviews/stats",
             summary="[HITL] Statistiques des validations")
 async def get_reviews_stats() -> Dict[str, Any]:
     _log_request("GET", "/ia/formations/reviews/stats")
     try:
-        from app.services.formations.hitl_helper import get_stats
+       
         stats = get_stats()
         vlog(
             f"✅ [HITL] Stats : pending={stats.get('pending', 0)}, "
@@ -437,16 +392,12 @@ async def get_reviews_stats() -> Dict[str, Any]:
         return {"success": False, "stats": {}}
 
 
-# =============================================================================
-# HITL ROUTE 3 — GET /reviews/{review_id}
-# =============================================================================
-
 @router.get("/reviews/{review_id}",
             summary="[HITL] Détails d'un contenu en attente")
 async def get_review(review_id: str) -> Dict[str, Any]:
     _log_request("GET", f"/ia/formations/reviews/{review_id}")
     try:
-        from app.services.formations.hitl_helper import get_review as _get
+       
         review = _get(review_id)
         if not review:
             raise HTTPException(404, detail=f"Review '{review_id}' non trouvée")
@@ -459,10 +410,6 @@ async def get_review(review_id: str) -> Dict[str, Any]:
         return {"success": False, "review": None}
 
 
-# =============================================================================
-# HITL ROUTE 4 — POST /reviews/{review_id}/approve
-# =============================================================================
-
 @router.post("/reviews/{review_id}/approve",
              response_model=ReviewResponse,
              summary="[HITL] Approuver un contenu")
@@ -473,7 +420,7 @@ async def approve_review(
     _log_request("POST", f"/ia/formations/reviews/{review_id}/approve",
                  Note=payload.reviewer_note or "Aucune")
     try:
-        from app.services.formations.hitl_helper import approve_review as _approve
+        
         review = _approve(review_id=review_id, reviewer_note=payload.reviewer_note)
         if not review:
             raise HTTPException(404, detail=f"Review '{review_id}' non trouvée")
@@ -489,11 +436,6 @@ async def approve_review(
         _handle_exception(e, "approve_review")
         return ReviewResponse(success=False, message="")
 
-
-# =============================================================================
-# HITL ROUTE 5 — POST /reviews/{review_id}/reject
-# =============================================================================
-
 @router.post("/reviews/{review_id}/reject",
              response_model=ReviewResponse,
              summary="[HITL] Rejeter un contenu")
@@ -504,7 +446,7 @@ async def reject_review(
     _log_request("POST", f"/ia/formations/reviews/{review_id}/reject",
                  Raison=payload.reason)
     try:
-        from app.services.formations.hitl_helper import reject_review as _reject
+        
         review = _reject(review_id=review_id, reason=payload.reason)
         if not review:
             raise HTTPException(404, detail=f"Review '{review_id}' non trouvée")

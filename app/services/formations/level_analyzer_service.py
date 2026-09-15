@@ -8,7 +8,7 @@ from typing import Dict, Any, List, Optional
 
 import pandas as pd
 from openai import AsyncOpenAI
-from app.services.formations.hitl_helper import create_review
+from app.services.hitl import create_review
 
 logger = logging.getLogger(__name__)
 

@@ -9,7 +9,7 @@ from typing import Dict, Any
 
 from openai import AsyncOpenAI
 
-from app.services.formations.hitl_helper import create_review
+from app.services.hitl import create_review
 
 logger = logging.getLogger(__name__)
 
@@ -27,9 +27,6 @@ def vlog(msg: str, level: str = "info") -> None:
         getattr(logger, level)(msg)
 
 
-# ============================================================
-# SERVICE
-# ============================================================
 class FormGeneratorService:
     """Agent 1 — Génère les 4 formulaires Google Forms d'une session."""
 

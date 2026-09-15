@@ -3,7 +3,7 @@ from pathlib import Path
 from datetime import datetime, time as dtime
 from typing import Dict, Any, List, Optional
 from collections import defaultdict
-from app.services.formations.hitl_helper import create_review
+from app.services.hitl import create_review
 
 logger = logging.getLogger(__name__)
 

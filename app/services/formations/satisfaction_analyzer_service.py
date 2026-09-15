@@ -21,7 +21,7 @@ from typing import Dict, Any, List
 
 import pandas as pd
 from openai import AsyncOpenAI
-from app.services.formations.hitl_helper import create_review
+from app.services.hitl import create_review
 
 logger = logging.getLogger(__name__)
 
@@ -261,7 +261,7 @@ class SatisfactionAnalyzerService:
         return result
 
     # --------------------------------------------------------
-    # CALCUL DÉTERMINISTE (pandas)
+    # CALCUL DÉTERMINISTE 
     # --------------------------------------------------------
     def _compute_statistics(self, responses: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Calcule notes moyennes + taux de recommandation (pur Python/pandas)."""

@@ -24,7 +24,7 @@ from typing import Dict, Any
 
 from openai import AsyncOpenAI
 
-from app.services.formations.hitl_helper import create_review
+from app.services.hitl import create_review
 
 logger = logging.getLogger(__name__)
 

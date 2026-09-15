@@ -11,23 +11,34 @@
 
 ## 📖 Description
 
-**FORMA-IA** est une plateforme intelligente qui automatise le cycle complet
-de l'activité de formation professionnelle d'**ALTIORA Prest** : de la
-détection d'opportunités (veille marché) jusqu'à la facturation, en passant
-par la génération assistée de documents (TDR, offres, attestations,
-rapports).
+**FORMA-IA** est une plateforme intelligente destinée à automatiser et
+centraliser le cycle complet de l'activité de formation professionnelle
+d'**ALTIORA Prest**.
 
-Le projet intègre **7 agents IA** orchestrés, une couche de **validation
-humaine obligatoire (HITL)** et une architecture **Provider Abstraction**
-permettant de migrer entre fournisseurs LLM sans modifier le code métier.
+Le pipeline couvre la chaîne métier depuis la **détection des opportunités
+de formation** jusqu'à la **facturation et au suivi des paiements**, avec
+une génération assistée de documents tels que les TDR, offres,
+attestations et rapports.
 
-**Client** : ALTIORA Prest — Antananarivo, Madagascar
-**Contexte** : Stage Master Informatique ENI Madagascar 
+Le projet intègre :
+
+* **7 agents IA** orchestrés pour le module de gestion des formations ;
+* une couche de **validation humaine obligatoire (HITL — Human-In-The-Loop)** ;
+* une architecture **Provider Abstraction** permettant de changer de
+  fournisseur LLM sans modifier la logique métier ;
+* une architecture modulaire basée sur **FastAPI** ;
+* des mécanismes de **fallback** pour limiter la dépendance aux services IA
+  externes.
+
+**Client :** ALTIORA Prest — Antananarivo, Madagascar
+**Contexte :** Stage de Master Informatique — ENI Madagascar
 
 ---
+
 ## 🏗️ Pipeline Métier
 
-Le projet suit un pipeline métier en **5 étapes + finalisation**, validé par l'encadreur professionnel.
+Le projet suit un pipeline métier en **5 étapes + finalisation**, validé par
+l'encadreur professionnel.
 
 ### 🔹 ÉTAPE 1 — DÉTECTION MARCHÉ + TDR
 
@@ -96,99 +107,176 @@ Le projet suit un pipeline métier en **5 étapes + finalisation**, validé par 
 
 ---
 
-## 🤖 Les 7 Agents IA (M5)
+## 🤖 Les 7 Agents IA
 
-Le module **M5 (Gestion des Formations)** est le cœur du projet. Il
-coordonne 7 agents IA via un orchestrateur central.
+Le module **M5 — Gestion des Formations** constitue l'un des principaux
+modules intelligents du projet. Il coordonne plusieurs agents spécialisés
+via un orchestrateur central.
 
-| # | Agent | Type | Fonction | Criticité HITL |
-|---|-------|------|----------|----------------|
-| **1** | FormGenerator | LLM | Génère 4 formulaires Google Forms | 🔴 Critical |
-| **2** | LevelAnalyzer | Pandas + LLM | Analyse niveaux avant/après | 🟡 Medium |
-| **3** | SatisfactionAnalyzer | Pandas + LLM | Analyse satisfaction participants | 🟡 Medium |
-| **4** | PresenceAnalyzer | Python pur | Détection anomalies présences | 🔴 Critical |
-| **5** | AttestationGenerator | LLM + PDF | Génère attestations PDF | 🔴 Critical |
-| **6** | ReportGenerator | LLM + fallback | Rapport final de formation | 🔴 Critical |
-| **7** | KnowledgeBase (RAG) | LangChain + ChromaDB | Base vectorielle (V2) | ⏳ À venir |
+| #     | Agent                    | Type                 | Fonction                                    | Criticité HITL |
+| ----- | ------------------------ | -------------------- | ------------------------------------------- | -------------- |
+| **1** | **FormGenerator**        | LLM                  | Génération de 4 formulaires Google Forms    | 🔴 Critical    |
+| **2** | **LevelAnalyzer**        | Pandas + LLM         | Analyse des niveaux avant/après formation   | 🟡 Medium      |
+| **3** | **SatisfactionAnalyzer** | Pandas + LLM         | Analyse de la satisfaction des participants | 🟡 Medium      |
+| **4** | **PresenceAnalyzer**     | Python pur           | Détection des anomalies de présence         | 🔴 Critical    |
+| **5** | **AttestationGenerator** | LLM + PDF            | Génération des attestations PDF             | 🔴 Critical    |
+| **6** | **ReportGenerator**      | LLM + fallback       | Génération du rapport final de formation    | 🔴 Critical    |
+| **7** | **KnowledgeBase (RAG)**  | LangChain + ChromaDB | Base vectorielle et recherche sémantique    | ⏳ À venir      |
+
+> **Remarque :** le statut de chaque agent doit être interprété selon
+> l'avancement réel du module correspondant. Le composant **KnowledgeBase
+> (RAG)** est prévu pour une évolution ultérieure.
 
 ---
 
 ## 🔄 Human-In-The-Loop (HITL)
 
-**Toute génération IA destinée à une diffusion externe** doit faire l'objet
-d'une **validation humaine obligatoire** avant utilisation.
+Toute génération IA destinée à une **utilisation ou diffusion externe**
+doit faire l'objet d'une **validation humaine obligatoire** avant son
+utilisation.
 
-### Statuts
+### Statuts de validation
 
-| Statut | Signification | Action |
-|--------|---------------|--------|
-| `pending_review` | En attente | Affichage au frontend |
-| `approved` | Validé | Workflow continue |
-| `rejected` | Rejeté | Régénération avec feedback |
+| Statut           | Signification            | Action                                   |
+| ---------------- | ------------------------ | ---------------------------------------- |
+| `pending_review` | En attente de validation | Affichage au frontend                    |
+| `approved`       | Validé par l'utilisateur | Le workflow continue                     |
+| `rejected`       | Rejeté                   | Régénération ou correction avec feedback |
 
 ### Fonctionnement
-Agent IA génère contenu
-→ create_review() → review_id (ex: HITL-A1F-0001)
 
-Frontend interroge /pending-reviews
-→ Affichage au réviseur humain
+```text
+Agent IA
+   ↓
+Génération du contenu
+   ↓
+create_review()
+   ↓
+review_id
+(ex. HITL-A1F-0001)
+   ↓
+Frontend
+   ↓
+/pending-reviews
+   ↓
+Révision humaine
+   ├── APPROUVE → /reviews/{id}/approve
+   │                 ↓
+   │              Workflow continue
+   │
+   └── REJETTE → /reviews/{id}/reject
+                     ↓
+                  Feedback
+                     ↓
+                  Correction /
+                  Régénération
+```
 
-Réviseur approuve ou rejette
-→ /reviews/{id}/approve ou /reviews/{id}/reject
+### Modules soumis au HITL
 
-Workflow continue (si approuvé)
-
-
-
-### Modules avec HITL
-
-| Module | Agents | Criticité |
-|--------|--------|-----------|
-| M3 — Offres | Technique, Financière | 🔴 Critical |
-| M4 — RH | Email candidat | 🔴 Critical |
-| M5 — Formations | Agents 1, 4, 5, 6 | 🔴 Critical |
-| M5 — Formations | Agents 2, 3 | 🟡 Medium |
-| M7 — Facturation | Facture, Relance | 🔴 Critical |
+| Module               | Agents / Fonction                                                      | Criticité   |
+| -------------------- | ---------------------------------------------------------------------- | ----------- |
+| **M3 — Offres**      | Offre technique, offre financière                                      | 🔴 Critical |
+| **M4 — RH**          | Email candidat                                                         | 🔴 Critical |
+| **M5 — Formations**  | FormGenerator, PresenceAnalyzer, AttestationGenerator, ReportGenerator | 🔴 Critical |
+| **M5 — Formations**  | LevelAnalyzer, SatisfactionAnalyzer                                    | 🟡 Medium   |
+| **M7 — Facturation** | Facture, relance                                                       | 🔴 Critical |
 
 ---
 
-## 🔌 Provider Abstraction (LLM)
+## 🔌 Provider Abstraction — LLM
 
-L'architecture sépare strictement **l'orchestration métier** du
-**fournisseur LLM** :
+L'architecture sépare strictement **la logique métier et l'orchestration**
+du **fournisseur LLM**.
+
+Cette abstraction permet de remplacer un fournisseur LLM sans modifier les
+services métier qui utilisent l'intelligence artificielle.
+
+```text
 app/services/llm/
-├── llm_provider.py # Interface abstraite
-├── groq_provider.py # Implémentation Groq (actif)
-├── claude_provider.py # Implémentation Claude (V3)
-└── llm_factory.py # Sélection via .env
+├── llm_provider.py          # Interface abstraite
+├── groq_provider.py         # Implémentation Groq — actif
+├── claude_provider.py       # Implémentation Claude — V3
+└── llm_factory.py           # Sélection du provider via .env
+```
 
-🏃 Lancement
-Développement
-bash
-# Démarrer le serveur avec reload automatique
-uvicorn app.main:app --reload
-Le serveur sera accessible sur : http://localhost:8000
+Le fournisseur actif est sélectionné à partir de la configuration du projet.
 
-Documentation interactive
-Swagger UI : http://localhost:8000/api/docs
+---
 
-ReDoc : http://localhost:8000/api/redoc
+## 🚀 Lancement
 
-OpenAPI JSON : http://localhost:8000/api/openapi.json
+### Développement
 
-Production (Docker)
-bash
-# Build
+Activer l'environnement virtuel :
+
+```powershell
+.\venv\Scripts\Activate.ps1
+```
+
+Puis démarrer le serveur FastAPI :
+
+```powershell
+python -m uvicorn app.main:app --reload
+```
+
+> **Note Windows :** l'utilisation de `python -m uvicorn` est recommandée
+> si l'exécution directe de `uvicorn.exe` est bloquée par une stratégie de
+> contrôle d'application.
+
+Le serveur sera accessible à :
+
+```text
+http://localhost:8000
+```
+
+### 📚 Documentation interactive
+
+**Swagger UI**
+
+```text
+http://localhost:8000/api/docs
+```
+
+**ReDoc**
+
+```text
+http://localhost:8000/api/redoc
+```
+
+**OpenAPI JSON**
+
+```text
+http://localhost:8000/api/openapi.json
+```
+
+---
+
+## 🐳 Production — Docker
+
+### Build
+
+```bash
 docker-compose build
+```
 
-# Démarrer tous les services
+### Démarrer les services
+
+```bash
 docker-compose up -d
+```
 
-# Logs
+### Consulter les logs
+
+```bash
 docker-compose logs -f
+```
 
-📁 Structure du Projet
+---
 
+## 📁 Structure du Projet
+
+```text
 FORMA-IA/
 ├── app/
 │   ├── api/
@@ -197,49 +285,100 @@ FORMA-IA/
 │   │   │   │   ├── auth.py                 # Authentification JWT
 │   │   │   │   ├── opportunite.py          # CRUD opportunités
 │   │   │   │   ├── document.py             # Génération documents
-│   │   │   │   ├── facture.py              # Facturation (M7)
+│   │   │   │   ├── facture.py              # Facturation — M7
 │   │   │   │   ├── formation.py            # Sessions, participants
 │   │   │   │   ├── formation_ia.py         # M5 — Routes IA
 │   │   │   │   └── dashboard.py            # Statistiques
 │   │   │   ├── routes_tdr.py               # M2 — Routes TDR
 │   │   │   ├── routes_veille.py            # M1 — Routes veille
 │   │   │   └── router.py                   # Agrégateur
+│   │   │
 │   │   ├── orchestrator/
-│   │   │   ├── formation_orchestrator.py   # M5 — 7 agents
+│   │   │   ├── formation_orchestrator.py   # M5 — Orchestrateur IA
 │   │   │   ├── tdr_orchestrator.py         # M2
 │   │   │   └── veille_orchestrator.py      # M1
+│   │   │
 │   │   ├── services/
-│   │   │   ├── llm/                        # 🆕 Provider Abstraction
-│   │   │   ├── hitl/                       # 🆕 HITL Générique
-│   │   │   ├── formations/                 # M5 — Agents 1-6
+│   │   │   ├── llm/                        # Provider Abstraction
+│   │   │   ├── hitl/                       # HITL générique
+│   │   │   ├── formations/                 # M5 — Agents
 │   │   │   ├── veille/                     # M1
 │   │   │   ├── tdr/                        # M2
-│   │   │   ├── offres/                     # M3 (à venir)
-│   │   │   ├── rh/                         # M4 (à venir)
-│   │   │   └── facturation/                # M7 (partiel)
+│   │   │   ├── offres/                     # M3 — à venir
+│   │   │   ├── rh/                         # M4 — à venir
+│   │   │   └── facturation/                # M7 — partiel
+│   │   │
 │   │   ├── schemas/                        # Pydantic schemas
 │   │   ├── models/                         # SQLAlchemy models
-│   │   ├── prompts/                        # Prompts RTFCE (YAML)
+│   │   ├── prompts/                        # Prompts RTFCE — YAML
 │   │   │   ├── m1/                         # Veille
 │   │   │   ├── m2/                         # TDR
-│   │   │   ├── m3/                         # Offres (à venir)
-│   │   │   └── m5/                         # Formations (7 prompts)
+│   │   │   ├── m3/                         # Offres — à venir
+│   │   │   └── m5/                         # Formations
 │   │   ├── templates/                      # Templates Word
 │   │   │   ├── tdr/
 │   │   │   ├── attestations/
 │   │   │   └── rapports/
-│   │   ├── core/                           # Config, security
+│   │   ├── core/                           # Configuration, sécurité
 │   │   └── utils/                          # Helpers
+│   │
 │   ├── scripts/                            # Scripts utilitaires
 │   ├── tests/                              # Tests pytest
 │   ├── docs/                               # Documentation
-│   ├── .env.example                        # Template config
+│   ├── .env.example                        # Template de configuration
 │   ├── .gitignore                          # Fichiers ignorés
-│   ├── requirements.txt                    # Dépendances
-│   └── README.md                           # Ce fichier
+│   ├── requirements.txt                    # Dépendances Python
+│   └── README.md                           # Documentation du projet
+│
+├── venv/                                   # Environnement virtuel
+├── docker-compose.yml                      # Orchestration Docker
+└── ...
+```
 
+---
 
+## 📊 Avancement Global
 
-Avancement global
+```text
+████████████████████░░░░░░░░░░░░░░░░  ~55 %
+```
 
-████████████████████░░░░░░░░░░░░░░░░  ~55%
+### État actuel
+
+| Domaine                      | Avancement     |
+| ---------------------------- | -------------- |
+| Détection marché + TDR       | ✅ Développé    |
+| Offre technique + financière | 🚧 En cours    |
+| Préparation formation        | ❌ À développer |
+| Supports + RAG               | ❌ À développer |
+| Gestion de la formation      | ✅ Développé    |
+| Facturation + paiements      | 🟡 Partiel     |
+| **Avancement global estimé** | **~55 %**      |
+
+---
+
+## 🔐 Principes d'architecture
+
+FORMA-IA repose sur plusieurs principes structurants :
+
+1. **Modularité** — séparation claire des domaines métier.
+2. **Human-In-The-Loop** — validation humaine des productions IA critiques.
+3. **Provider Abstraction** — indépendance vis-à-vis du fournisseur LLM.
+4. **Fallback** — continuité de fonctionnement lorsque cela est possible
+   sans dépendre exclusivement du LLM.
+5. **Traçabilité** — suivi des générations, validations et workflows.
+6. **API-first** — exposition des fonctionnalités métier via FastAPI.
+7. **Évolutivité** — possibilité d'ajouter progressivement les modules
+   M3, M4, C3/RAG, préparation et facturation.
+
+---
+
+## 📌 Statut du projet
+
+**FORMA-IA est actuellement en phase de développement.**
+
+Les modules **M1, M2 et M5** constituent le socle fonctionnel actuellement
+développé. Les autres composants sont progressivement intégrés selon le
+pipeline métier défini avec l'encadrement professionnel.
+
+**Avancement global estimé : ~55 %.**

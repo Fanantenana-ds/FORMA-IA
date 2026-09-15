@@ -25,47 +25,74 @@ permettant de migrer entre fournisseurs LLM sans modifier le code métier.
 **Contexte** : Stage Master Informatique ENI Madagascar 
 
 ---
-
 ## 🏗️ Pipeline Métier
 
-Le projet suit un pipeline en **5 étapes + finalisation** validé par
-l'encadreur professionnel :
-─────────────────────────────────────────────────────────────────┐
-│ ÉTAPE 1 — DÉTECTION MARCHÉ + TDR │
-│ Veille → Classification → Scoring → Génération TDR │
-│ Modules : M1, M2 | Statut : ✅ DÉVELOPPÉ │
-└─────────────────────────────────────────────────────────────────┘
-↓
-┌─────────────────────────────────────────────────────────────────┐
-│ ÉTAPE 2 — OFFRE TECHNIQUE + FINANCIÈRE │
-│ Trame technique + Grille tarifaire + Export Word/PDF │
-│ Module : M3 | Statut : 🚧 EN COURS │
-└─────────────────────────────────────────────────────────────────┘
-↓
-┌─────────────────────────────────────────────────────────────────┐
-│ ÉTAPE 3 — PRÉPARATION DE LA FORMATION │
-│ EDT + Formateur + Salle + Budget prévisionnel │
-│ Module : Préparation | Statut : ❌ À DÉVELOPPER │
-└─────────────────────────────────────────────────────────────────┘
-↓
-┌─────────────────────────────────────────────────────────────────┐
-│ ÉTAPE 4 — UPLOAD SUPPORTS + RAG │
-│ Upload documents + Embeddings + Recherche sémantique │
-│ Module : C3 (RAG) | Statut : ❌ À DÉVELOPPER │
-└─────────────────────────────────────────────────────────────────┘
-↓
-┌─────────────────────────────────────────────────────────────────┐
-│ ÉTAPE 5 — PENDANT LA FORMATION │
-│ Présences + Tests + Satisfaction + Attestations + Rapport │
-│ Modules : M5, M6 | Statut : ✅ DÉVELOPPÉ (7 agents) │
-└─────────────────────────────────────────────────────────────────┘
-↓
-┌─────────────────────────────────────────────────────────────────┐
-│ ÉTAPE FINALE — FACTURATION + SUIVI PAIEMENTS │
-│ Factures + Relances + Export comptable + Dashboard │
-│ Modules : M7, M8a | Statut : 🟡 PARTIEL │
-└─────────────────────────────────────────────────────────────────┘
+Le projet suit un pipeline métier en **5 étapes + finalisation**, validé par l'encadreur professionnel.
 
+### 🔹 ÉTAPE 1 — DÉTECTION MARCHÉ + TDR
+
+**Veille → Classification → Scoring → Génération TDR**
+
+* **Modules :** M1, M2
+* **Statut :** ✅ Développé
+
+⬇️
+
+### 🔹 ÉTAPE 2 — OFFRE TECHNIQUE + FINANCIÈRE
+
+**Trame technique → Grille tarifaire → Export Word/PDF**
+
+* **Module :** M3
+* **Statut :** 🚧 En cours
+
+⬇️
+
+### 🔹 ÉTAPE 3 — PRÉPARATION DE LA FORMATION
+
+**EDT → Formateur → Salle → Budget prévisionnel**
+
+* **Module :** Préparation
+* **Statut :** ❌ À développer
+
+⬇️
+
+### 🔹 ÉTAPE 4 — UPLOAD SUPPORTS + RAG
+
+**Upload documents → Embeddings → Recherche sémantique**
+
+* **Module :** C3 (RAG)
+* **Statut :** ❌ À développer
+
+⬇️
+
+### 🔹 ÉTAPE 5 — PENDANT LA FORMATION
+
+**Présences → Tests → Satisfaction → Attestations → Rapport**
+
+* **Modules :** M5, M6
+* **Statut :** ✅ Développé — **7 agents**
+
+⬇️
+
+### 🔹 ÉTAPE FINALE — FACTURATION + SUIVI DES PAIEMENTS
+
+**Factures → Relances → Export comptable → Dashboard**
+
+* **Modules :** M7, M8a
+* **Statut :** 🟡 Partiel
+
+---
+
+### 📊 Vue synthétique
+
+| Étape      | Fonction principale          | Module(s)   | Statut                 |
+| ---------- | ---------------------------- | ----------- | ---------------------- |
+| **1**      | Détection marché + TDR       | M1, M2      | ✅ Développé            |
+| **2**      | Offre technique + financière | M3          | 🚧 En cours            |
+| **3**      | Préparation de la formation  | Préparation | ❌ À développer         |
+| **4**      | Supports + RAG               | C3          | ❌ À développer         |
+| **5**      | Exécution de la formation    | M5, M6      | ✅ Développé — 7 agents |
+| **Finale** | Facturation + paiements      | M7, M8a     | 🟡 Partiel             |
 
 ---
 

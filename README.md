@@ -31,6 +31,7 @@ Le projet intègre :
   externes.
 
 **Client :** ALTIORA Prest — Antananarivo, Madagascar
+
 **Contexte :** Stage de Master Informatique — ENI Madagascar
 
 ---

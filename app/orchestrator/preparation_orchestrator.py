@@ -9,6 +9,7 @@ from app.services.preparation import (
     EDTGeneratorService,
 )
 from app.services.hitl import create_review, get_review
+from app.services.backend_sync import preparation_sync, review_sync
 
 logger = logging.getLogger(__name__)
 
@@ -278,7 +279,13 @@ class PreparationOrchestrator:
             if date_debut and date_fin:
                 dates = self._build_dates(date_debut, date_fin)
             else:
-                dates = [f"2026-10-{15 + i}" for i in range(nb_jours)]
+                # Dates par défaut : à partir du 15/10/2026 (avant : f"2026-10-{15+i}",
+                # ce qui donnait des dates invalides comme 2026-10-32 au-delà de 17 jours)
+                debut = datetime(2026, 10, 15)
+                dates = [
+                    (debut + timedelta(days=i)).strftime("%Y-%m-%d")
+                    for i in range(nb_jours)
+                ]
 
             modules = offre_data.get("modules", [])
             if not modules:
@@ -294,6 +301,7 @@ class PreparationOrchestrator:
                 dates=dates,
                 formateur=formateur,
                 salle=salle,
+                feedback=options.get("feedback"),
             )
             vlog(f"   ✅ EDT : {len(edt.get('jours', []))} jour(s)")
 
@@ -313,6 +321,19 @@ class PreparationOrchestrator:
                 "metadata": {
                     "generated_at": datetime.now().isoformat(),
                     "agent_id": "agent_preparation",
+                },
+                # Données d'entrée : nécessaires à /regenerer (le review
+                # rejeté est la seule source) et à la sync Backend.
+                # Le feedback n'est pas conservé : chaque régénération
+                # repart des entrées avec SON feedback.
+                "_inputs": {
+                    "offre_data": offre_data,
+                    "projet_info": projet_info,
+                    "ressources": ressources,
+                    "options": {
+                        k: v for k, v in options.items()
+                        if k not in ("feedback", "regenerated_from")
+                    },
                 },
             }
 
@@ -369,12 +390,24 @@ class PreparationOrchestrator:
                 f"(status: {review.get('status')})."
             )
 
+        if review.get("agent_id") != "agent_preparation":
+            raise ValueError(
+                f"❌ Review '{review_id}' produit par "
+                f"'{review.get('agent_id')}', pas par la Préparation."
+            )
+
+        # Données d'entrée mémorisées par generate_complete()
         old_data = review.get("data", {})
-        # Récupérer les données originales si disponibles
-        offre_data = old_data.get("offre_data", old_data.get("offre_technique", {}))
-        projet_info = old_data.get("projet_info", {})
-        ressources = old_data.get("ressources", {})
-        options = old_data.get("options", {})
+        inputs = old_data.get("_inputs")
+        if not inputs:
+            raise ValueError(
+                f"❌ Review '{review_id}' sans données d'entrée mémorisées "
+                f"(créé avant leur enregistrement) : relancez /generer-complet."
+            )
+        offre_data = inputs.get("offre_data") or {}
+        projet_info = inputs.get("projet_info") or {}
+        ressources = inputs.get("ressources") or {}
+        options = dict(inputs.get("options") or {})
         options["feedback"] = feedback
         options["regenerated_from"] = review_id
 
@@ -396,6 +429,60 @@ class PreparationOrchestrator:
         except Exception as e:
             self._log_error("regenerate", start, e)
             raise
+
+    # =========================================================================
+    # SYNCHRONISATION BACKEND (après approbation HITL)
+    # =========================================================================
+
+    async def synchroniser_backend(
+        self,
+        review_id: str,
+        formateur_id: Optional[str] = None,
+        force: bool = False,
+    ) -> Dict[str, Any]:
+        """
+        Enregistre la préparation APPROUVÉE côté Backend : une session et
+        une séance par jour d'EDT (le budget n'a pas de route Backend :
+        il n'est pas persisté, voir preparation_sync).
+
+        Garde-fous : review approuvé uniquement (agent_preparation), un seul
+        envoi par review (sauf force=True : crée alors une NOUVELLE session).
+
+        Args:
+            review_id: review de la préparation.
+            formateur_id: UUID d'un utilisateur Backend (facultatif).
+
+        Raises:
+            ValueError: review introuvable / non approuvé / d'un autre agent.
+        """
+        start = self._log_start(
+            "synchroniser_backend",
+            **{"🔍 Review": review_id, "🔁 Force": force},
+        )
+
+        review = review_sync.load_approved_review(
+            review_id, agent_ids=("agent_preparation",)
+        )
+        data = review.get("data") or {}
+        inputs = data.get("_inputs") or {}
+
+        async def _envoyer() -> Dict[str, Any]:
+            return await preparation_sync.sync_preparation_to_backend(
+                edt=data.get("edt") or {},
+                projet_info=inputs.get("projet_info"),
+                budget=data.get("budget"),
+                formateur_id=formateur_id,
+            )
+
+        result = await review_sync.sync_once(review_id, _envoyer, force=force)
+        self._log_end(
+            "synchroniser_backend", start,
+            **{
+                "📤 Envoyé": (result["backend_sync"] or {}).get("sent"),
+                "♻️  Déjà synchronisé": result["already_synced"],
+            },
+        )
+        return result
 
     # =========================================================================
     # HELPERS

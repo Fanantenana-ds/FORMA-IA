@@ -164,6 +164,19 @@ class RegenerateRequest(BaseModel):
     feedback: str = Field(..., min_length=10)
 
 
+class SynchroniserRequest(BaseModel):
+    review_id: str = Field(
+        ..., description="ID du review APPROUVÉ de la préparation (agent_preparation)"
+    )
+    formateur_id: Optional[str] = Field(
+        default=None, description="UUID d'un utilisateur Backend (facultatif)"
+    )
+    force: bool = Field(
+        default=False,
+        description="Renvoyer même si déjà synchronisé (crée une NOUVELLE session côté Backend)",
+    )
+
+
 # =============================================================================
 # SCHÉMAS — RÉPONSES
 # =============================================================================
@@ -343,4 +356,56 @@ async def regenerer(
         return _build_response(result, "Préparation régénérée.", elapsed)
     except Exception as e:
         _handle_exception(e, "regenerer")
+        return RouteResponse(success=False, message="")
+
+
+# =============================================================================
+# ROUTE 5 — POST /synchroniser  (Backend, APRÈS approbation HITL)
+# =============================================================================
+
+@router.post(
+    "/synchroniser",
+    response_model=RouteResponse,
+    summary="[PREP] Enregistrer une préparation APPROUVÉE dans le Backend",
+    description=(
+        "Enregistre l'EDT dans le Backend : une session (POST /sessions) et "
+        "une séance par jour d'EDT.\n\n"
+        "⚠️ Refusé (422) tant que le review n'est pas **approuvé**.\n\n"
+        "Le **budget n'est pas persisté** : le Backend n'a pas de route pour "
+        "lui (`data.backend_sync.budget.skipped`). Un seul envoi par review "
+        "(sauf `force`). Nécessite BACKEND_SYNC_ENABLED=true."
+    ),
+)
+async def synchroniser(
+    payload: SynchroniserRequest,
+    orchestrator: PreparationOrchestrator = Depends(get_preparation_orchestrator),
+) -> RouteResponse:
+    from app.services.backend_sync.review_sync import describe_sync
+
+    _log_request(
+        "POST", "/ia/preparation/synchroniser",
+        Review=payload.review_id,
+        Force=payload.force,
+    )
+    start = time.perf_counter()
+    try:
+        result = await orchestrator.synchroniser_backend(
+            review_id=payload.review_id,
+            formateur_id=payload.formateur_id,
+            force=payload.force,
+        )
+        elapsed = round(time.perf_counter() - start, 2)
+        success, message = describe_sync(result)
+        vlog(f"✅ [Route PREP] synchroniser terminé en {elapsed}s : {message}")
+        return RouteResponse(
+            success=success,
+            message=message,
+            duration_seconds=elapsed,
+            review_id=payload.review_id,
+            review_status="approved",
+            requires_human_action=False,
+            data=result,
+        )
+    except Exception as e:
+        _handle_exception(e, "synchroniser")
         return RouteResponse(success=False, message="")

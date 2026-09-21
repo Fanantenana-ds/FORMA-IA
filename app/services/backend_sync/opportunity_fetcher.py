@@ -10,48 +10,15 @@ import logging
 import os
 from typing import Any, Dict, List, Optional
 
-import httpx
+from app.services.backend_sync import base_sync
 
 logger = logging.getLogger(__name__)
 
 # ============================================================
 # CONFIGURATION
 # ============================================================
-BACKEND_API_URL = os.getenv("BACKEND_API_URL", "http://localhost:8000/api/v1")
-BACKEND_SYNC_TOKEN = os.getenv("BACKEND_SYNC_TOKEN", "")
-BACKEND_SERVICE_EMAIL = os.getenv("BACKEND_SERVICE_EMAIL", "")
-BACKEND_SERVICE_PASSWORD = os.getenv("BACKEND_SERVICE_PASSWORD", "")
+# URL, token, login automatique et re-login sur 401 : base_sync.py
 BACKEND_FETCH_TIMEOUT = float(os.getenv("BACKEND_FETCH_TIMEOUT", "15"))
-
-
-# ============================================================
-# AUTO-LOGIN (même logique que sync)
-# ============================================================
-
-async def _get_backend_token() -> Optional[str]:
-    """Récupère un JWT token (env ou auto-login)."""
-    if BACKEND_SYNC_TOKEN:
-        return BACKEND_SYNC_TOKEN
-
-    if not BACKEND_SERVICE_EMAIL or not BACKEND_SERVICE_PASSWORD:
-        logger.warning("⚠️ Pas de credentials pour fetch")
-        return None
-
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.post(
-                f"{BACKEND_API_URL}/auth/login",
-                json={
-                    "email": BACKEND_SERVICE_EMAIL,
-                    "password": BACKEND_SERVICE_PASSWORD,
-                },
-            )
-            if response.status_code == 200:
-                return response.json().get("access_token")
-    except Exception as exc:
-        logger.error("❌ Auto-login échoué : %s", exc)
-
-    return None
 
 
 # ============================================================
@@ -73,45 +40,21 @@ async def fetch_opportunite_by_id(
     if not opportunite_id:
         return None
 
-    token = await _get_backend_token()
-    headers = {"Content-Type": "application/json"}
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
+    response = await base_sync.backend_request(
+        "GET",
+        f"/opportunites/{opportunite_id}",
+        timeout=BACKEND_FETCH_TIMEOUT,
+    )
 
-    try:
-        async with httpx.AsyncClient(timeout=BACKEND_FETCH_TIMEOUT) as client:
-            response = await client.get(
-                f"{BACKEND_API_URL}/opportunites/{opportunite_id}",
-                headers=headers,
-            )
+    if response["ok"]:
+        logger.info("✅ Opportunité récupérée : %s", opportunite_id)
+        return response["data"]
 
-            if response.status_code == 200:
-                data = response.json()
-                logger.info(
-                    "✅ Opportunité récupérée : %s", opportunite_id
-                )
-                return data
-
-            elif response.status_code == 404:
-                logger.warning(
-                    "⚠️ Opportunité introuvable : %s", opportunite_id
-                )
-                return None
-
-            else:
-                logger.error(
-                    "❌ Erreur fetch : HTTP %d | %s",
-                    response.status_code,
-                    response.text[:200]
-                )
-                return None
-
-    except httpx.TimeoutException:
-        logger.error("❌ Timeout fetch : %s", opportunite_id)
-        return None
-    except Exception as exc:
-        logger.exception("❌ Erreur fetch : %s", exc)
-        return None
+    if response["status_code"] == 404:
+        logger.warning("⚠️ Opportunité introuvable : %s", opportunite_id)
+    else:
+        logger.error("❌ Erreur fetch : %s", response["error"])
+    return None
 
 
 # ============================================================
@@ -127,43 +70,32 @@ async def fetch_opportunites_list(
 
     Endpoint Backend attendu : GET /api/v1/opportunites
     """
-    token = await _get_backend_token()
-    headers = {"Content-Type": "application/json"}
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
-
-    params = {"limit": limit}
+    params: Dict[str, Any] = {"limit": limit}
     if statut:
         params["statut"] = statut
 
-    try:
-        async with httpx.AsyncClient(timeout=BACKEND_FETCH_TIMEOUT) as client:
-            response = await client.get(
-                f"{BACKEND_API_URL}/opportunites",
-                headers=headers,
-                params=params,
-            )
+    response = await base_sync.backend_request(
+        "GET",
+        "/opportunites",
+        params=params,
+        timeout=BACKEND_FETCH_TIMEOUT,
+    )
 
-            if response.status_code == 200:
-                data = response.json()
-                # Gérer les 2 formats possibles
-                opps = (
-                    data.get("opportunites")
-                    or data.get("items")
-                    or (data if isinstance(data, list) else [])
-                )
-                logger.info("✅ %d opportunités récupérées", len(opps))
-                return opps
-            else:
-                logger.error(
-                    "❌ Erreur fetch list : HTTP %d",
-                    response.status_code
-                )
-                return []
-
-    except Exception as exc:
-        logger.exception("❌ Erreur fetch list : %s", exc)
+    if not response["ok"]:
+        logger.error("❌ Erreur fetch list : %s", response["error"])
         return []
+
+    data = response["data"]
+    # Gérer les formats possibles (liste directe, {"opportunites"}, {"items"})
+    if isinstance(data, list):
+        opps = data
+    elif isinstance(data, dict):
+        opps = data.get("opportunites") or data.get("items") or []
+    else:
+        opps = []
+
+    logger.info("✅ %d opportunités récupérées", len(opps))
+    return opps
 
 
 # ============================================================

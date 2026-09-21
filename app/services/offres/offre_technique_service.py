@@ -89,6 +89,7 @@ class OffreTechniqueGeneratorService:
         self,
         tdr_data: Dict[str, Any],
         session_info: Dict[str, Any],
+        feedback: Optional[str] = None,
     ) -> str:
         """Construit le user prompt avec les données du TDR + session."""
         lines = [
@@ -109,6 +110,15 @@ class OffreTechniqueGeneratorService:
             "",
             "Retourne UNIQUEMENT le JSON valide, sans texte autour.",
         ]
+        if feedback and feedback.strip():
+            # Régénération après rejet HITL : le réviseur humain a demandé
+            # des corrections (bloc placé avant la consigne de format).
+            lines[-1:-1] = [
+                "=== CORRECTIONS DEMANDÉES PAR LE RÉVISEUR HUMAIN ===",
+                feedback.strip(),
+                "Tiens compte de ces corrections dans cette nouvelle version.",
+                "",
+            ]
         return "\n".join(lines)
 
     # =========================================================================
@@ -121,6 +131,7 @@ class OffreTechniqueGeneratorService:
         session_info: Dict[str, Any],
         temperature: float = 0.4,
         max_tokens: int = 8000,
+        feedback: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Génère la trame technique d'une offre.
@@ -128,6 +139,8 @@ class OffreTechniqueGeneratorService:
         Args:
             tdr_data: Données du TDR (issu du M2).
             session_info: Informations de session.
+            feedback: Corrections du réviseur humain (régénération après
+                rejet HITL). Pris en compte uniquement par le LLM.
 
         Returns:
             Dict avec la trame technique + HITL review_id.
@@ -140,7 +153,7 @@ class OffreTechniqueGeneratorService:
         vlog("=" * 70)
 
         system_prompt = self._build_system_prompt()
-        user_prompt = self._build_user_prompt(tdr_data, session_info)
+        user_prompt = self._build_user_prompt(tdr_data, session_info, feedback)
 
         content = None
         source = "fallback_template"
@@ -201,6 +214,10 @@ class OffreTechniqueGeneratorService:
                 "agent_id": AGENT_ID,
             },
         }
+        if feedback and feedback.strip():
+            # Le gabarit Python de secours ne sait pas exploiter le feedback
+            result["metadata"]["feedback"] = feedback.strip()
+            result["metadata"]["feedback_applied"] = source == "llm"
 
         # Créer le review HITL
         review_id = create_review(

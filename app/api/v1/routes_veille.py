@@ -505,6 +505,7 @@ from pydantic import (
 from app.orchestrator.veille_orchestrator import (
     VeilleOrchestrator,
 )
+from app.services.veille import auto_detection_service as auto_detection
 
 
 logger = logging.getLogger(__name__)
@@ -557,6 +558,15 @@ class AnalyseTexteRequest(BaseModel):
     )
 
     source: Optional[str] = "manuel"
+
+
+class DetectionAutoRequest(BaseModel):
+    """Corps OPTIONNEL : sans corps, la configuration VEILLE_AUTO_* s'applique."""
+
+    min_score: Optional[int] = Field(default=None, ge=0, le=100)
+    limit: Optional[int] = Field(default=None, ge=1, le=50)
+    # False = aperçu : rien n'est envoyé au Backend
+    sync_backend: bool = True
 
 
 class SearchResponse(BaseModel):
@@ -653,6 +663,7 @@ async def run_benchmark(limit: int = Query(20, ge=1, le=100)):
     response_model=SearchResponse,
     tags=["M1 - Veille Marché"],
     operation_id="rechercherOpportunites",
+    summary="Mode 1 — Recherche d'offres (requête saisie)",
 )
 async def rechercher_opportunites(
     request: SearchRequest,
@@ -700,6 +711,71 @@ async def rechercher_opportunites(
             status_code=500,
             detail="Erreur interne du service de veille.",
         )
+
+
+# ============================================================
+# 1 bis. DÉTECTION AUTOMATIQUE (sans requête saisie)
+# ============================================================
+
+@router.post(
+    "/ia/veille/detecter",
+    response_model=SearchResponse,
+    tags=["M1 - Veille Marché"],
+    operation_id="detecterOpportunites",
+    summary="Mode 2 — Détection automatique (sans requête)",
+)
+async def detecter_opportunites(
+    request: Optional[DetectionAutoRequest] = None,
+):
+    """
+    Lance les requêtes du profil ALTIORA (VEILLE_AUTO_QUERIES ou défaut),
+    fusionne, dédoublonne, garde les meilleurs scores et enregistre dans le
+    Backend celles qui n'y sont pas déjà. Peut durer plusieurs dizaines de
+    secondes (une recherche + analyse IA par requête).
+    """
+    request = request or DetectionAutoRequest()
+
+    try:
+        resultat = await auto_detection.executer_detection(
+            orchestrator,
+            declenchement="manuel",
+            min_score=request.min_score,
+            limit=request.limit,
+            sync_backend=request.sync_backend,
+        )
+        return {"success": True, "data": resultat, "error": None}
+
+    except auto_detection.DetectionAutoEnCours:
+        raise HTTPException(
+            status_code=409,
+            detail="Une détection automatique est déjà en cours.",
+        )
+
+    except Exception as exc:
+        logger.exception("❌ Erreur détection automatique M1 : %s", exc)
+        raise HTTPException(
+            status_code=500,
+            detail="Erreur interne lors de la détection automatique.",
+        )
+
+
+@router.get(
+    "/ia/veille/detecter/statut",
+    response_model=SearchResponse,
+    tags=["M1 - Veille Marché"],
+    operation_id="statutDetectionAutomatique",
+    summary="Mode 2 — État et configuration de la détection automatique",
+)
+async def statut_detection_automatique():
+    return {
+        "success": True,
+        "data": {
+            "en_cours": auto_detection.est_en_cours(),
+            "configuration": auto_detection.get_config(),
+            "derniere_execution": auto_detection.lire_etat() or None,
+        },
+        "error": None,
+    }
 
 
 # ============================================================

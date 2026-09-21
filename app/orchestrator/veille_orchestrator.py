@@ -13,7 +13,11 @@ from app.services.veille.llm_analysis_service import (
 from app.services.veille.classification_service import ClassificationService
 from app.services.veille.scoring_service import ScoringService
 from app.services.veille import validation_service
-from app.services.backend_sync.opportunity_sync import sync_opportunities_to_backend
+from app.services.backend_sync.opportunity_sync import (
+    sync_new_opportunities_to_backend,
+    sync_opportunities_to_backend,
+)
+from app.services.backend_sync import base_sync
 
 logger = logging.getLogger(__name__)
 
@@ -93,8 +97,15 @@ class VeilleOrchestrator:
     # ENTRÉE 1 — RECHERCHE WEB
     # ========================================================
 
-    async def analyser_opportunites(self, query: str) -> Dict[str, Any]:
-        """Pipeline complet : recherche web → analyse → opportunités."""
+    async def analyser_opportunites(
+        self, query: str, sync_backend: bool = True
+    ) -> Dict[str, Any]:
+        """
+        Pipeline complet : recherche web → analyse → opportunités.
+
+        sync_backend=False : n'envoie rien au Backend (utilisé par la
+        détection automatique, qui synchronise une seule fois à la fin).
+        """
 
         query = str(query or "").strip()
         start_total = time.perf_counter()
@@ -231,7 +242,124 @@ class VeilleOrchestrator:
                 "prefilter_candidates": len(ranked_results),
                 "sources_sent_to_llm": len(filtered_results),
             },
+            sync_backend=sync_backend,
         )
+
+    # ========================================================
+    # ENTRÉE 1 bis — DÉTECTION AUTOMATIQUE (sans requête saisie)
+    # ========================================================
+
+    async def detecter_automatiquement(
+        self,
+        queries: List[str],
+        min_score: int = 40,
+        limit: int = 20,
+        sync_backend: bool = True,
+    ) -> Dict[str, Any]:
+        """
+        Détection sans requête utilisateur : exécute la série de requêtes
+        `queries` (profil ALTIORA, cf. auto_detection_service), fusionne les
+        résultats, retire les doublons, ne garde que score >= min_score, puis
+        synchronise UNE fois vers le Backend en ignorant ce qui y existe déjà.
+
+        Les requêtes sont exécutées l'une après l'autre (quotas Tavily/Groq).
+        Une requête en échec n'interrompt pas les suivantes.
+        """
+        start_total = time.perf_counter()
+        queries = [str(q).strip() for q in (queries or []) if str(q).strip()]
+
+        if not queries:
+            return self._empty_response(
+                status="error", notes="Aucune requête de détection configurée."
+            )
+
+        vlog("=" * 70)
+        vlog(f"🤖 M1 DÉTECTION AUTOMATIQUE — DÉBUT ({len(queries)} requête(s))")
+        vlog("=" * 70)
+
+        par_requete: List[Dict[str, Any]] = []
+        collectees: List[Dict[str, Any]] = []
+
+        for query in queries:
+            try:
+                resultat = await self.analyser_opportunites(
+                    query, sync_backend=False
+                )
+            except Exception as exc:
+                logger.exception("❌ Détection auto — requête en échec : %s", query)
+                par_requete.append({
+                    "query": query, "status": "error",
+                    "found": 0, "error": type(exc).__name__,
+                })
+                continue
+
+            trouvees = [
+                o for o in resultat.get("opportunities", []) if isinstance(o, dict)
+            ]
+            par_requete.append({
+                "query": query,
+                "status": resultat.get("status"),
+                "found": len(trouvees),
+            })
+            for opportunite in trouvees:
+                opportunite["detected_by_query"] = query
+            collectees.extend(trouvees)
+
+        # ── FUSION : meilleur score d'abord, puis dédoublonnage URL/titre ──
+        collectees.sort(key=lambda o: int(o.get("score", 0) or 0), reverse=True)
+        uniques = validation_service.deduplicate(collectees)
+        retenues = [o for o in uniques if int(o.get("score", 0) or 0) >= min_score]
+        finales = retenues[:limit]
+
+        # ── SYNC BACKEND (une fois, sans doublons) ──
+        if sync_backend and finales:
+            sync_result = await sync_new_opportunities_to_backend(finales)
+        else:
+            sync_result = {
+                "enabled": base_sync.is_sync_enabled(),
+                "sent": 0,
+                "failed": 0,
+                "already_present": 0,
+                "deferred": not sync_backend,
+            }
+
+        ok = [r for r in par_requete if r["status"] in ("success", "no_results")]
+        if not ok:
+            statut = "degraded"
+        elif len(ok) < len(par_requete):
+            statut = "partial"
+        else:
+            statut = "success"
+
+        elapsed = time.perf_counter() - start_total
+        vlog(
+            f"🏁 M1 DÉTECTION AUTOMATIQUE — FIN ({elapsed:.1f}s) : "
+            f"{len(finales)} opportunité(s), statut={statut}"
+        )
+
+        return {
+            "mode": "automatique",
+            "opportunities": finales,
+            "market_signals": [],
+            "total": len(finales),
+            "status": statut,
+            "ai_provider": "groq",
+            "queries": par_requete,
+            "statistics": {
+                "queries_run": len(queries),
+                "collected": len(collectees),
+                "after_dedup": len(uniques),
+                "below_min_score": len(uniques) - len(retenues),
+                "final": len(finales),
+                "min_score": min_score,
+                "backend_sync": sync_result,
+                "processing_time_seconds": round(elapsed, 3),
+            },
+            "notes": (
+                f"Détection automatique : {len(finales)} opportunité(s) "
+                f"(score >= {min_score}) sur {len(queries)} requête(s)."
+            ),
+        }
 
     # ========================================================
     # ENTRÉE 2 — TEXTE COLLÉ
@@ -405,9 +533,10 @@ class VeilleOrchestrator:
         groq_response: Dict[str, Any],
         start_total: float,
         extra_statistics: Optional[Dict[str, Any]] = None,
+        sync_backend: bool = True,
     ) -> Dict[str, Any]:
         """Post-traitement : normalisation, qualité, classification, scoring,
-        déduplication, validation, sync backend."""
+        déduplication, validation, sync backend (si sync_backend)."""
 
         vlog("=" * 70)
         vlog(f"🔍 _finalize : {len(groq_opportunities)} opportunités depuis Groq")
@@ -542,9 +671,18 @@ class VeilleOrchestrator:
         # ────────────────────────────────────────────────────
         # 8 — SYNC BACKEND
         # ────────────────────────────────────────────────────
-        vlog("🔄 Sync Backend...")
-        sync_result = await sync_opportunities_to_backend(schema_valid)
-        vlog(f"   ✅ Sync : {sync_result}")
+        if sync_backend:
+            vlog("🔄 Sync Backend...")
+            sync_result = await sync_opportunities_to_backend(schema_valid)
+            vlog(f"   ✅ Sync : {sync_result}")
+        else:
+            sync_result = {
+                "enabled": base_sync.is_sync_enabled(),
+                "sent": 0,
+                "failed": 0,
+                "deferred": True,
+            }
+            vlog("⏭️ Sync Backend différée (détection automatique)")
 
         # ────────────────────────────────────────────────────
         # 9 — STATISTIQUES + RÉPONSE

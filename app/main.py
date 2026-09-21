@@ -16,8 +16,9 @@ from app.models.opportunite import Opportunite
 from app.models.historique_analyse import HistoriqueAnalyse
 
 # Routers IA (M1, M2)
-from app.api.v1.routes_veille import router as veille_router
+from app.api.v1.routes_veille import router as veille_router, orchestrator as veille_orchestrator
 from app.api.v1.routes_tdr import router as tdr_router
+from app.services.veille import auto_detection_service
 
 # Router Backend (auth, CRUD, analyse, document, formation)
 from app.api.v1.router import api_router
@@ -162,3 +163,10 @@ async def startup():
     logger.info("🚀 FORMA-IA API démarrage...")
     logger.info("📌 Environnement: %s", settings.ENVIRONMENT)
     logger.info("🤖 Modèle Groq: %s", settings.GROQ_MODEL)
+    # M1 mode 2 : détection automatique planifiée (inactive sauf VEILLE_AUTO_ENABLED=true)
+    auto_detection_service.demarrer_planification(veille_orchestrator)
+
+
+@app.on_event("shutdown")
+async def shutdown():
+    await auto_detection_service.arreter_planification()

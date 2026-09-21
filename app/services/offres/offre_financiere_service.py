@@ -126,6 +126,16 @@ class OffreFinanciereGeneratorService:
             "",
             "Retourne UNIQUEMENT le JSON valide, sans texte autour.",
         ]
+        feedback = str(options.get("feedback") or "").strip()
+        if feedback:
+            # Régénération après rejet HITL (les montants restent ceux du calcul)
+            lines[-1:-1] = [
+                "=== CORRECTIONS DEMANDÉES PAR LE RÉVISEUR HUMAIN ===",
+                feedback,
+                "Tiens compte de ces corrections pour le TEXTE de l'offre ; "
+                "les montants restent ceux ci-dessus.",
+                "",
+            ]
         return "\n".join(lines)
 
     # =========================================================================
@@ -254,6 +264,11 @@ class OffreFinanciereGeneratorService:
                 "agent_id": AGENT_ID,
             },
         }
+        feedback = str(options.get("feedback") or "").strip()
+        if feedback:
+            # Le gabarit Python de secours ne sait pas exploiter le feedback
+            result["metadata"]["feedback"] = feedback
+            result["metadata"]["feedback_applied"] = source == "llm"
 
         review_id = create_review(
             agent_id=AGENT_ID,

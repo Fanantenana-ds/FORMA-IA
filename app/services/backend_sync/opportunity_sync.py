@@ -8,33 +8,18 @@
 # l'API Backend (FastAPI) qui les stocke en base PostgreSQL.
 #
 # Configuration (dans .env) :
-#   BACKEND_SYNC_ENABLED=true|false
-#   BACKEND_API_URL=http://localhost:8000/api/v1
-#   BACKEND_SYNC_TOKEN=<token JWT si nécessaire>
+#   BACKEND_SYNC_ENABLED, BACKEND_API_URL, BACKEND_SYNC_TOKEN,
+#   BACKEND_SERVICE_EMAIL / BACKEND_SERVICE_PASSWORD, BACKEND_SYNC_TIMEOUT
+#   → lues et gérées par base_sync.py (auth + re-login sur 401).
 # ============================================================
 
 import logging
-import os
 import re
 from typing import Any, Dict, List, Optional
 
-import httpx
+from app.services.backend_sync import base_sync
 
 logger = logging.getLogger(__name__)
-
-
-# ============================================================
-# CONFIGURATION (depuis .env)
-# ============================================================
-
-BACKEND_SYNC_ENABLED = (
-    os.getenv("BACKEND_SYNC_ENABLED", "false").lower() == "true"
-)
-BACKEND_API_URL = os.getenv(
-    "BACKEND_API_URL", "http://localhost:8000/api/v1"
-)
-BACKEND_SYNC_TOKEN = os.getenv("BACKEND_SYNC_TOKEN", "")
-BACKEND_SYNC_TIMEOUT = float(os.getenv("BACKEND_SYNC_TIMEOUT", "30"))
 
 
 # ============================================================
@@ -92,10 +77,13 @@ def _parse_budget(budget_str: Any) -> float:
         return 0.0
 
     # ✅ Détection multiplicateur (M = millions, K = milliers)
+    # M / K collé ou séparé d'un espace du chiffre : "5M", "5 M", "5M Ar".
+    # Pas de lettre ou chiffre derrière : ni "MGA", ni "150 m2".
+    # (L'ancien \bM\b ne reconnaissait pas "5M" : pas de frontière entre 5 et M.)
     multiplier = 1.0
-    if re.search(r"\bM\b|millions?", text, re.IGNORECASE):
+    if re.search(r"(?<=\d)\s?M(?![A-Za-z0-9])|millions?", text, re.IGNORECASE):
         multiplier = 1_000_000.0
-    elif re.search(r"\bK\b|milliers?", text, re.IGNORECASE):
+    elif re.search(r"(?<=\d)\s?K(?![A-Za-z0-9])|milliers?", text, re.IGNORECASE):
         multiplier = 1_000.0
 
     # Extraire le nombre
@@ -179,7 +167,7 @@ def _build_backend_payload(opportunity: Dict[str, Any]) -> Dict[str, Any]:
     Construit le payload pour l'API Backend (POST /opportunites).
 
     Le Backend accepte (schéma OpportuniteCreate) :
-      - source: enum (TEXTE, PDF, VEILLE_IA, ...)
+      - source: enum SourceOpportunite (TEXTE, PDF, URL)
       - contenu: str (description)
       - objet: str (titre)
       - budget: float
@@ -208,7 +196,9 @@ def _build_backend_payload(opportunity: Dict[str, Any]) -> Dict[str, Any]:
     contenu = " | ".join(filter(None, contenu_parts))
 
     payload = {
-        "source": "VEILLE_IA",
+        # Enum Backend SourceOpportunite = TEXTE | PDF | URL
+        # ("VEILLE_IA" n'existe pas : le Backend répondait HTTP 422)
+        "source": "URL" if url else "TEXTE",
         "contenu": contenu[:5000],  # Limite raisonnable
         "objet": str(opportunity.get("title", "Sans titre"))[:500],
         "budget": _parse_budget(opportunity.get("budget")),
@@ -242,7 +232,7 @@ async def sync_opportunities_to_backend(
       - Sinon → POST pour chaque opportunité
     """
     result = {
-        "enabled": BACKEND_SYNC_ENABLED,
+        "enabled": base_sync.is_sync_enabled(),
         "sent": 0,
         "failed": 0,
     }
@@ -250,7 +240,7 @@ async def sync_opportunities_to_backend(
     # ------------------------------------------------------------
     # 1. Vérifications préliminaires
     # ------------------------------------------------------------
-    if not BACKEND_SYNC_ENABLED:
+    if not result["enabled"]:
         logger.info(
             "ℹ️ Backend sync DÉSACTIVÉ "
             "(BACKEND_SYNC_ENABLED=false dans .env)"
@@ -262,83 +252,136 @@ async def sync_opportunities_to_backend(
         return result
 
     logger.info(
-        "📤 Backend sync : envoi de %d opportunité(s) vers %s",
-        len(opportunities), BACKEND_API_URL
+        "📤 Backend sync : envoi de %d opportunité(s)", len(opportunities)
     )
 
     # ------------------------------------------------------------
-    # 2. Préparation des headers
+    # 2. Envoi de chaque opportunité
+    #    (authentification + re-login sur 401 : gérés par base_sync)
     # ------------------------------------------------------------
-    headers = {"Content-Type": "application/json"}
-    if BACKEND_SYNC_TOKEN:
-        headers["Authorization"] = f"Bearer {BACKEND_SYNC_TOKEN}"
+    for idx, opp in enumerate(opportunities, start=1):
+        title_preview = str(opp.get("title", "?"))[:60]
 
-    # ------------------------------------------------------------
-    # 3. Envoi de chaque opportunité
-    # ------------------------------------------------------------
-    async with httpx.AsyncClient(timeout=BACKEND_SYNC_TIMEOUT) as client:
-        for idx, opp in enumerate(opportunities, start=1):
-            title_preview = str(opp.get("title", "?"))[:60]
+        try:
+            payload = _build_backend_payload(opp)
 
-            try:
-                payload = _build_backend_payload(opp)
+            logger.debug(
+                "   [%d/%d] Payload : %s",
+                idx, len(opportunities), payload
+            )
 
-                logger.debug(
-                    "   [%d/%d] Payload : %s",
-                    idx, len(opportunities), payload
-                )
+            response = await base_sync.backend_request(
+                "POST", "/opportunites", json=payload
+            )
 
-                response = await client.post(
-                    f"{BACKEND_API_URL}/opportunites",
-                    json=payload,
-                    headers=headers,
-                )
-
-                if response.status_code in (200, 201):
-                    result["sent"] += 1
-                    logger.info(
-                        "   ✅ [%d/%d] Envoyé : '%s'",
-                        idx, len(opportunities), title_preview
-                    )
-                else:
-                    result["failed"] += 1
-                    logger.warning(
-                        "   ❌ [%d/%d] Échec HTTP %d : '%s' | %s",
-                        idx, len(opportunities),
-                        response.status_code,
-                        title_preview,
-                        response.text[:200]
-                    )
-
-            except httpx.TimeoutException:
-                result["failed"] += 1
-                logger.error(
-                    "   ❌ [%d/%d] Timeout : '%s'",
+            if response["ok"]:
+                result["sent"] += 1
+                logger.info(
+                    "   ✅ [%d/%d] Envoyé : '%s'",
                     idx, len(opportunities), title_preview
                 )
-            except httpx.HTTPError as exc:
+            else:
                 result["failed"] += 1
-                logger.error(
-                    "   ❌ [%d/%d] Erreur HTTP : '%s' | %s",
+                logger.warning(
+                    "   ❌ [%d/%d] Échec : '%s' | %s",
                     idx, len(opportunities),
-                    title_preview, exc
-                )
-            except Exception as exc:
-                result["failed"] += 1
-                logger.exception(
-                    "   ❌ [%d/%d] Erreur inattendue : '%s' | %s",
-                    idx, len(opportunities),
-                    title_preview, exc
+                    title_preview, response["error"]
                 )
 
+        except Exception as exc:
+            result["failed"] += 1
+            logger.exception(
+                "   ❌ [%d/%d] Erreur inattendue : '%s' | %s",
+                idx, len(opportunities),
+                title_preview, exc
+            )
+
     # ------------------------------------------------------------
-    # 4. Résumé
+    # 3. Résumé
     # ------------------------------------------------------------
     logger.info(
         "📊 Backend sync TERMINÉ : %d envoyés, %d échoués (sur %d)",
         result["sent"], result["failed"], len(opportunities)
     )
 
+    return result
+
+
+# ============================================================
+# SYNC SANS DOUBLONS — détection automatique répétée
+# ============================================================
+
+def _cle_titre(titre: Any) -> str:
+    """Titre normalisé, tronqué comme la colonne Backend (objet = 255)."""
+    return re.sub(r"\s+", " ", str(titre or "").strip().lower())[:255]
+
+
+def _liste_backend(data: Any) -> List[Dict[str, Any]]:
+    if isinstance(data, list):
+        return [o for o in data if isinstance(o, dict)]
+    if isinstance(data, dict):
+        liste = data.get("opportunites") or data.get("items") or []
+        return [o for o in liste if isinstance(o, dict)]
+    return []
+
+
+async def sync_new_opportunities_to_backend(
+    opportunities: List[Dict[str, Any]]
+) -> Dict[str, Any]:
+    """
+    Comme sync_opportunities_to_backend, mais n'envoie QUE les opportunités
+    absentes du Backend (même URL déjà présente dans un contenu, ou même
+    titre). Indispensable en mode automatique : chaque passage retrouve les
+    mêmes annonces et les recréerait à chaque fois.
+
+    Si la liste du Backend est illisible, RIEN n'est envoyé (mieux vaut
+    manquer un passage que créer des doublons) : la clé "error" l'explique.
+
+    Retourne {enabled, sent, failed, already_present[, error]}.
+    """
+    result: Dict[str, Any] = {
+        "enabled": base_sync.is_sync_enabled(),
+        "sent": 0,
+        "failed": 0,
+        "already_present": 0,
+    }
+    if not result["enabled"] or not opportunities:
+        return result
+
+    response = await base_sync.backend_request("GET", "/opportunites")
+    if not response["ok"]:
+        result["error"] = (
+            "Doublons non vérifiables, envoi annulé : "
+            f"{response['error']}"
+        )
+        logger.warning("⚠️ %s", result["error"])
+        return result
+
+    existantes = _liste_backend(response["data"])
+    titres_connus = {_cle_titre(o.get("objet")) for o in existantes}
+    titres_connus.discard("")
+    contenus = [str(o.get("contenu") or "").lower() for o in existantes]
+
+    nouvelles: List[Dict[str, Any]] = []
+    for opp in opportunities:
+        url = str(opp.get("url") or "").strip().lower()
+        deja = _cle_titre(opp.get("title")) in titres_connus or (
+            bool(url) and any(url in contenu for contenu in contenus)
+        )
+        if deja:
+            result["already_present"] += 1
+        else:
+            nouvelles.append(opp)
+
+    if nouvelles:
+        envoi = await sync_opportunities_to_backend(nouvelles)
+        result["sent"] = envoi["sent"]
+        result["failed"] = envoi["failed"]
+
+    logger.info(
+        "📊 Sync sans doublons : %d envoyées, %d déjà présentes, %d échecs",
+        result["sent"], result["already_present"], result["failed"],
+    )
     return result
 
 

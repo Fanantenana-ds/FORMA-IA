@@ -88,6 +88,7 @@ class EDTGeneratorService:
         dates: List[str],
         formateur: Optional[Dict[str, Any]],
         salle: Optional[Dict[str, Any]],
+        feedback: Optional[str] = None,
     ) -> str:
         lines = [
             f"Génère l'emploi du temps de la formation : {titre_formation}",
@@ -119,6 +120,13 @@ class EDTGeneratorService:
             lines.append(f"- Nom : {salle.get('nom', 'N/A')}")
             lines.append(f"- Adresse : {salle.get('adresse', 'N/A')}")
 
+        if feedback and feedback.strip():
+            # Régénération après rejet HITL
+            lines.append("")
+            lines.append("=== CORRECTIONS DEMANDÉES PAR LE RÉVISEUR HUMAIN ===")
+            lines.append(feedback.strip())
+            lines.append("Tiens compte de ces corrections dans cette nouvelle version.")
+
         lines.append("")
         lines.append("Retourne UNIQUEMENT le JSON valide, sans texte autour.")
         return "\n".join(lines)
@@ -136,9 +144,15 @@ class EDTGeneratorService:
         salle: Optional[Dict[str, Any]] = None,
         temperature: float = 0.3,
         max_tokens: int = 30000,
+        feedback: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Génère l'emploi du temps d'une formation.
+
+        Args:
+            feedback: Corrections du réviseur humain (régénération après
+                rejet HITL). Pris en compte uniquement en mode LLM
+                (EDT_USE_LLM=true) : le gabarit Python ne peut pas les exploiter.
 
         Returns:
             Dict avec l'EDT complet (jours, sessions, pauses, résumé).
@@ -163,7 +177,7 @@ class EDTGeneratorService:
                 llm = get_llm_provider()
                 system_prompt = self._build_system_prompt()
                 user_prompt = self._build_user_prompt(
-                    titre_formation, modules, dates, formateur, salle
+                    titre_formation, modules, dates, formateur, salle, feedback
                 )
 
                 response = await llm.generate(
@@ -217,6 +231,9 @@ class EDTGeneratorService:
             "duration_seconds": elapsed,
             "agent_id": "agent_preparation",
         }
+        if feedback and feedback.strip():
+            content["metadata"]["feedback"] = feedback.strip()
+            content["metadata"]["feedback_applied"] = source == "llm"
 
         vlog("=" * 70)
         vlog(f"✅ [EDTGenerator] EDT terminé en {elapsed}s (source={source})")

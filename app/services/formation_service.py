@@ -24,7 +24,11 @@ class FormationService:
 
     def ajouter_seance(self, session_id: UUID, data: SeanceCreate) -> Seance:
         self.get_session(session_id)
-        seance = Seance(session_id=session_id, **data.model_dump())
+        valeurs = data.model_dump()
+        # Seance.duree est NOT NULL en base alors que le schéma la déclare
+        # optionnelle : sans valeur, l'insertion échouait (HTTP 500).
+        valeurs["duree"] = valeurs["duree"] or "Non précisée"
+        seance = Seance(session_id=session_id, **valeurs)
         self.db.add(seance)
         self.db.commit()
         self.db.refresh(seance)

@@ -10,6 +10,7 @@ from app.services.offres import (
     GrilleTarifaireService,
 )
 from app.services.hitl import create_review
+from app.services.backend_sync import offre_sync, review_sync
 
 logger = logging.getLogger(__name__)
 
@@ -171,6 +172,7 @@ class OffreOrchestrator:
             offre_tech = await self.offre_technique.generate(
                 tdr_data=tdr_data,
                 session_info=session_info,
+                feedback=options.get("feedback"),
             )
             vlog(f"   ✅ Offre technique générée : {offre_tech.get('reference')}")
 
@@ -218,6 +220,19 @@ class OffreOrchestrator:
                 "reviews_individuels": {
                     "technique": review_tech,
                     "financiere": review_fin,
+                },
+
+                # Données d'entrée : nécessaires à /regenerer (le review
+                # rejeté est la seule source) et à la sync Backend.
+                # Le feedback n'est pas conservé : chaque régénération
+                # repart des entrées avec SON feedback.
+                "_inputs": {
+                    "tdr_data": tdr_data,
+                    "session_info": session_info,
+                    "options": {
+                        k: v for k, v in options.items()
+                        if k not in ("feedback", "regenerated_from")
+                    },
                 },
 
                 # Métadonnées
@@ -366,16 +381,20 @@ class OffreOrchestrator:
                 f"(status actuel : {review.get('status')})."
             )
 
-        # Récupérer les données du review
+        # Récupérer les données d'entrée mémorisées par generate_complete()
+        # (anciens reviews : clés à la racine, sans "_inputs")
         old_data = review.get("data", {})
-        tdr_data = old_data.get("tdr_data", {})
-        session_info = old_data.get("session_info", {})
-        options = old_data.get("options", {})
+        inputs = old_data.get("_inputs") or {}
+        tdr_data = inputs.get("tdr_data") or old_data.get("tdr_data") or {}
+        session_info = inputs.get("session_info") or old_data.get("session_info") or {}
+        options = dict(inputs.get("options") or old_data.get("options") or {})
 
         if not tdr_data:
             raise ValueError(
-                "❌ Données du TDR manquantes dans le review. "
-                "Impossible de régénérer."
+                f"Données du TDR absentes du review '{review_id}' "
+                f"(agent : {review.get('agent_id')}). Seul le review de "
+                f"l'offre COMPLÈTE (agent_m3_complete) peut être régénéré ; "
+                f"sinon relancez /generer-complet."
             )
 
         # Ajouter le feedback aux options pour le LLM
@@ -400,6 +419,64 @@ class OffreOrchestrator:
         except Exception as e:
             self._log_error("regenerate", start, e)
             raise
+
+    # =========================================================================
+    # SYNCHRONISATION BACKEND (après approbation HITL)
+    # =========================================================================
+
+    async def synchroniser_backend(
+        self,
+        review_id: str,
+        opportunite_id: Optional[str] = None,
+        force: bool = False,
+    ) -> Dict[str, Any]:
+        """
+        Enregistre l'offre APPROUVÉE côté Backend (POST /documents/offre).
+
+        Garde-fous : review approuvé uniquement (agent_m3_complete), un seul
+        envoi par review (sauf force=True : crée alors un nouveau document).
+
+        Args:
+            review_id: review global de l'offre complète.
+            opportunite_id: UUID de l'opportunité Backend liée. À défaut,
+                lu dans tdr_data / session_info (clé « opportunite_id »).
+
+        Raises:
+            ValueError: review introuvable / non approuvé / d'un autre agent.
+        """
+        start = self._log_start(
+            "synchroniser_backend",
+            **{"🔍 Review": review_id, "🔁 Force": force},
+        )
+
+        review = review_sync.load_approved_review(
+            review_id, agent_ids=("agent_m3_complete",)
+        )
+        data = review.get("data") or {}
+        inputs = data.get("_inputs") or {}
+
+        opportunite_id = (
+            opportunite_id
+            or (inputs.get("tdr_data") or {}).get("opportunite_id")
+            or (inputs.get("session_info") or {}).get("opportunite_id")
+        )
+
+        async def _envoyer() -> Dict[str, Any]:
+            return await offre_sync.sync_offre_to_backend(
+                opportunite_id=opportunite_id,
+                montant=offre_sync.extract_montant(data),
+                contenu=offre_sync.build_contenu(data),
+            )
+
+        result = await review_sync.sync_once(review_id, _envoyer, force=force)
+        self._log_end(
+            "synchroniser_backend", start,
+            **{
+                "📤 Envoyé": (result["backend_sync"] or {}).get("sent"),
+                "♻️  Déjà synchronisé": result["already_synced"],
+            },
+        )
+        return result
 
 
 # =============================================================================

@@ -17,7 +17,13 @@ class DocumentService:
         self.db = db
 
     def generer_tdr(self, brief: TDRRequest) -> TDR:
-        contenu = (
+        if brief.opportunite_id:
+            opportunite = self.db.query(Opportunite).filter(Opportunite.id == brief.opportunite_id).first()
+            if not opportunite:
+                raise HTTPException(status_code=404, detail="Opportunite introuvable")
+
+        # Contenu fourni par le module IA (M2) si présent, sinon texte par défaut
+        contenu = brief.contenu or (
             f"TDR - Client: {brief.client}\n"
             f"Objectifs: {brief.objectifs}\n"
             f"Budget: {brief.budget}\n"
@@ -28,6 +34,7 @@ class DocumentService:
             client=brief.client,
             objectifs=brief.objectifs,
             contenu=contenu,
+            format_export=brief.format_export,
             opportunite_id=brief.opportunite_id,
             statut_validation=StatutValidation.EN_ATTENTE
         )
@@ -94,7 +101,8 @@ class DocumentService:
         if not opportunite:
             raise HTTPException(status_code=404, detail="Opportunite introuvable")
 
-        contenu = (
+        # Contenu fourni par le module IA (M3) si présent, sinon texte par défaut
+        contenu = data.contenu or (
             f"Offre technique et financière\n"
             f"Objet: {opportunite.objet or '-'}\n"
             f"Domaine: {opportunite.domaine or '-'}\n"

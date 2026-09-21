@@ -10,6 +10,9 @@ class TDRRequest(BaseModel):
     objectifs: str = Field(..., min_length=1)
     budget: Optional[float] = Field(default=None, ge=0)
     echeance: Optional[datetime] = None
+    # Champs optionnels : TDR déjà rédigé par le module IA (M2)
+    contenu: Optional[str] = Field(default=None, max_length=500_000)
+    format_export: Optional[FormatExport] = None
 
 class DocumentResponse(BaseModel):
     id: UUID
@@ -36,3 +39,6 @@ class ValidationRequest(BaseModel):
 class OffreRequest(BaseModel):
     opportunite_id: UUID
     montant: Optional[float] = Field(default=None, ge=0)
+    # Optionnel : offre technique + financière rédigée par le module IA (M3).
+    # Absent → le Backend génère son texte par défaut (comportement historique).
+    contenu: Optional[str] = Field(default=None, max_length=500_000)

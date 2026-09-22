@@ -1,4 +1,4 @@
-<<<<<<< HEAD
+
 # 🎓 FORMA-IA
 
 **Plateforme intelligente de gestion de la formation pour ALTIORA Prest**

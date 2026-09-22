@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # ═══════════════════════════════════════════════════════════════
 # FORMA-IA — .gitignore
 # ═══════════════════════════════════════════════════════════════
@@ -9,6 +8,8 @@
 .env
 .env.local
 .env.*.local
+.env.*
+!.env.example
 *.key
 *.pem
 *.p12
@@ -21,6 +22,7 @@ config/secrets.yaml
 # ─────────────────────────────────────────────────────────────
 __pycache__/
 *.py[cod]
+*.pyc
 *$py.class
 *.so
 .Python
@@ -131,6 +133,17 @@ yarn-error.log*
 .ipynb_checkpoints/
 
 # ─────────────────────────────────────────────────────────────
+# 🐳 DOCKER
+# ─────────────────────────────────────────────────────────────
+*.log
+
+# ─────────────────────────────────────────────────────────────
+# 🤖 FICHIERS DE TRAVAIL CLAUDE CODE (internes, jamais partagés)
+# ─────────────────────────────────────────────────────────────
+claude.md
+trace-claude.ps1
+
+# ─────────────────────────────────────────────────────────────
 # 📝 TEMPORAIRES
 # ─────────────────────────────────────────────────────────────
 *.tmp
@@ -142,30 +155,3 @@ yarn-error.log*
 # Fichiers de test / temporaires du projet
 test.http
 formaia-backend.zip
-=======
-﻿# Environnements virtuels Python
-venv/
-.venv/
-env/
-
-# Fichiers Python compilés
-__pycache__/
-*.pyc
-
-# Secrets — NE JAMAIS versionner
-.env
-.env.*
-!.env.example
-
-# Bases de données locales
-*.db
-*.sqlite3
-
-# Docker
-*.log
-
-# OS / éditeurs
-.DS_Store
-.vscode/
-Thumbs.db
->>>>>>> altiora/develop

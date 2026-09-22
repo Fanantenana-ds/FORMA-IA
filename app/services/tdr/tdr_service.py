@@ -13,16 +13,12 @@ import time
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-import httpx
 import yaml
-from openai import AsyncOpenAI
 
-from app.utils.retry import retry_with_backoff
+from app.services.llm import LLMError, LLMNotAvailableError, get_llm_provider
 
 logger = logging.getLogger(__name__)
 
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-20b")
 GROQ_TIMEOUT = float(os.getenv("GROQ_TIMEOUT", "90"))
 TDR_MAX_OUTPUT_TOKENS = int(os.getenv("TDR_MAX_OUTPUT_TOKENS", "4000"))
 TDR_TEMPERATURE = float(os.getenv("TDR_TEMPERATURE", "0.3"))
@@ -36,15 +32,11 @@ class TDRService:
     """Génération de TDR via Groq (API directe, sans LangChain)."""
 
     def __init__(self):
-        if not GROQ_API_KEY:
-            raise ValueError("GROQ_API_KEY manquante dans .env")
+        try:
+            self.llm = get_llm_provider()
+        except LLMNotAvailableError as exc:
+            raise ValueError(f"Aucun provider LLM disponible : {exc}") from exc
 
-        self.client = AsyncOpenAI(
-            api_key=GROQ_API_KEY,
-            base_url="https://api.groq.com/openai/v1",
-            timeout=GROQ_TIMEOUT,
-        )
-        self.model = GROQ_MODEL
         self.system_prompt = self._load_prompt()
 
     def _load_prompt(self) -> str:
@@ -90,16 +82,6 @@ class TDRService:
 
         return prompt
 
-    async def _do_call(self, prompt: str):
-        """Appel Groq (rejouable par retry)."""
-        return await self.client.chat.completions.create(
-            model=self.model,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=TDR_TEMPERATURE,
-            max_tokens=TDR_MAX_OUTPUT_TOKENS,
-            response_format={"type": "json_object"},
-        )
-
     async def generate(self, brief: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Génère un TDR complet à partir du brief."""
         if not brief:
@@ -114,19 +96,20 @@ class TDRService:
         logger.info("=" * 60)
 
         try:
-            response = await retry_with_backoff(
-                self._do_call,
-                prompt,
+            response = await self.llm.generate_with_retry(
+                system_prompt="",
+                user_prompt=prompt,
+                temperature=TDR_TEMPERATURE,
+                max_tokens=TDR_MAX_OUTPUT_TOKENS,
+                json_mode=True,
+                timeout=GROQ_TIMEOUT,
                 max_retries=3,
-                base_delay=2.0,
-                retryable_exceptions=(httpx.TimeoutException, httpx.HTTPError),
-                label="TDR-Groq",
             )
 
             elapsed = time.perf_counter() - start
             logger.info("⏱️ Groq : %.2fs", elapsed)
 
-            content = response.choices[0].message.content
+            content = response["content"]
             if not content:
                 logger.error("❌ TDR : réponse vide")
                 return None

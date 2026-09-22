@@ -55,6 +55,8 @@ class LLMProvider(ABC):
         temperature: float = 0.4,
         max_tokens: int = 4000,
         json_mode: bool = True,
+        reasoning_effort: Optional[str] = None,
+        timeout: Optional[float] = None,
     ) -> Dict[str, Any]:
         """
         Génère une réponse à partir d'un prompt système et utilisateur.
@@ -65,6 +67,15 @@ class LLMProvider(ABC):
             temperature: Créativité (0.0 = déterministe, 1.0 = créatif).
             max_tokens: Nombre maximum de tokens en sortie.
             json_mode: Si True, force la réponse au format JSON.
+            reasoning_effort: Paramètre spécifique aux modèles de raisonnement
+                Groq ("low"/"medium"/"high"). None = comportement par défaut
+                du provider. Un provider qui ne le supporte pas (Claude)
+                l'ignore silencieusement.
+            timeout: Délai maximum en secondes pour CET appel (None =
+                délai par défaut du client). Le provider est un singleton
+                partagé entre appelants aux besoins différents (M1 veut un
+                délai court, M2 un délai long) : ce paramètre s'applique
+                par appel, pas à la construction du client.
 
         Returns:
             {
@@ -113,6 +124,8 @@ class LLMProvider(ABC):
         temperature: float = 0.4,
         max_tokens: int = 4000,
         json_mode: bool = True,
+        reasoning_effort: Optional[str] = None,
+        timeout: Optional[float] = None,
         max_retries: int = 3,
         backoff_factor: float = 2.0,
     ) -> Dict[str, Any]:
@@ -143,6 +156,8 @@ class LLMProvider(ABC):
                     temperature=temperature,
                     max_tokens=max_tokens,
                     json_mode=json_mode,
+                    reasoning_effort=reasoning_effort,
+                    timeout=timeout,
                 )
             except LLMRateLimitError as e:
                 # Rate limit → backoff obligatoire

@@ -7,17 +7,12 @@ import logging
 from pathlib import Path
 from typing import Dict, Any
 
-from openai import AsyncOpenAI
-
 from app.services.hitl import create_review
+from app.services.llm import LLMNotAvailableError, get_llm_provider
 
 logger = logging.getLogger(__name__)
 
 VERBOSE = os.getenv("VERBOSE_LOGS", "true").lower() == "true"
-
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-20b")
-GROQ_BASE_URL = os.getenv("GROQ_BASE_URL", "https://api.groq.com/openai/v1")
 
 PROMPT_PATH = Path(__file__).resolve().parents[2] / "prompts" / "m5" / "form_generation.yaml"
 
@@ -31,13 +26,13 @@ class FormGeneratorService:
     """Agent 1 — Génère les 4 formulaires Google Forms d'une session."""
 
     def __init__(self):
-        if not GROQ_API_KEY:
-            raise ValueError("❌ GROQ_API_KEY manquant.")
+        try:
+            self.llm = get_llm_provider()
+        except LLMNotAvailableError as exc:
+            raise ValueError(f"❌ Aucun provider LLM disponible : {exc}") from exc
 
-        self.client = AsyncOpenAI(api_key=GROQ_API_KEY, base_url=GROQ_BASE_URL)
-        self.model = GROQ_MODEL
         self.prompt_config = self._load_prompt()
-        vlog(f"✅ FormGeneratorService initialisé (model={self.model})")
+        vlog(f"✅ FormGeneratorService initialisé (provider={self.llm.get_provider_name()})")
 
     # --------------------------------------------------------
     # PROMPT
@@ -122,19 +117,16 @@ class FormGeneratorService:
         raw_content = ""
 
         try:
-            response = await self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
-                ],
+            response = await self.llm.generate(
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
                 temperature=temperature,
                 max_tokens=max_tokens,
             )
 
-            raw_content = response.choices[0].message.content
-            finish_reason = response.choices[0].finish_reason
-            vlog(f"✅ Réponse Groq ({len(raw_content)} chars, finish={finish_reason})")
+            raw_content = response["content"]
+            finish_reason = response["finish_reason"]
+            vlog(f"✅ Réponse LLM ({len(raw_content)} chars, finish={finish_reason})")
 
             if finish_reason == "length":
                 raise ValueError("❌ Réponse IA tronquée (finish_reason=length).")
@@ -191,19 +183,16 @@ class FormGeneratorService:
         )
 
         try:
-            response = await self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
-                ],
+            response = await self.llm.generate(
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
                 temperature=temperature,
                 max_tokens=max_tokens,
             )
 
-            raw_content = response.choices[0].message.content
-            finish_reason = response.choices[0].finish_reason
-            vlog(f"✅ Réponse Groq ({len(raw_content)} chars, finish={finish_reason})")
+            raw_content = response["content"]
+            finish_reason = response["finish_reason"]
+            vlog(f"✅ Réponse LLM ({len(raw_content)} chars, finish={finish_reason})")
 
             if finish_reason == "length":
                 raise ValueError("❌ Réponse IA tronquée.")

@@ -44,7 +44,7 @@ def get_facture(
     return service.get_facture(facture_id)
 
 
-@router.post("/{facture_id}/paisments", response_model=FactureResponse, status_code=201)
+@router.post("/{facture_id}/paiments", response_model=FactureResponse, status_code=201)
 def ajouter_paiement(
     facture_id: UUID,
     data: PaiementCreate,

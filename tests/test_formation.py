@@ -38,6 +38,21 @@ def test_creer_session_role_autorise(client_role):
     assert data["titre"] == "Formation PostgreSQL"
 
 
+def test_creer_session_sans_date_fin_ne_plante_pas(client_role):
+    """
+    Session.date_fin est NOT NULL en base alors que le schéma la déclare
+    optionnelle : avant correction, l'omettre provoquait un 500
+    (NotNullViolation) au lieu d'un 201.
+    """
+    client = client_role(role="FORMATEUR")
+    response = client.post(
+        "/api/v1/sessions",
+        json={"titre": "Formation sans date de fin", "date_debut": "2026-10-01"},
+    )
+    assert response.status_code == 201
+    assert response.json()["date_fin"] == "2026-10-01"  # défaut = date_debut
+
+
 def test_get_session_inexistante(client_authenticated):
     response = client_authenticated.get(
         "/api/v1/sessions/00000000-0000-0000-0000-000000000000"
@@ -54,6 +69,24 @@ def test_ajouter_seance_session_inexistante(client_role):
         }
     )
     assert response.status_code == 404
+
+
+def test_ajouter_seance_sans_theme_ne_plante_pas(client_role):
+    """Seance.theme est NOT NULL en base alors que le schéma le déclare
+    optionnel — même bug que duree, corrigé de la même façon."""
+    client = client_role(role="FORMATEUR")
+    session_id = client.post(
+        "/api/v1/sessions",
+        json={"titre": "Formation sans thème", "date_debut": "2026-10-01",
+              "date_fin": "2026-10-01"},
+    ).json()["id"]
+
+    response = client.post(
+        f"/api/v1/sessions/{session_id}/seances",
+        json={"date": "2026-10-01"},
+    )
+    assert response.status_code == 201
+    assert response.json()["theme"] == "Non précisé"
 
 
 def test_creer_participant_role_autorise(client_role):

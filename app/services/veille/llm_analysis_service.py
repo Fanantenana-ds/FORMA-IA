@@ -26,10 +26,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-import httpx
-from openai import AsyncOpenAI
-
-from app.utils.retry import retry_with_backoff
+from app.services.llm import (
+    LLMError,
+    LLMNotAvailableError,
+    get_llm_provider,
+)
 from app.utils.url_utils import normalize_url
 
 logger = logging.getLogger(__name__)
@@ -38,8 +39,6 @@ BASE_DIR = Path(__file__).resolve().parents[3]
 PROMPTS_DIR = BASE_DIR / "app" / "prompts" / "m1"
 VEILLE_YAML_PATH = PROMPTS_DIR / "veille.yaml"
 
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-20b")
 GROQ_TIMEOUT = float(os.getenv("GROQ_TIMEOUT", "20"))
 # 1200 était trop juste pour openai/gpt-oss-120b avec reasoning
 # activé, même en "low" : le JSON de sortie (jusqu'à 4 sources,
@@ -51,7 +50,6 @@ MAX_SOURCE_CHARS_TOTAL = int(os.getenv("MAX_SOURCE_CHARS_TOTAL", "4500"))
 MAX_SOURCE_CHARS_EACH = int(os.getenv("MAX_SOURCE_CHARS_EACH", "1000"))
 
 RETRY_MAX_ATTEMPTS = int(os.getenv("RETRY_MAX_ATTEMPTS", "3"))
-RETRY_BASE_DELAY = float(os.getenv("RETRY_BASE_DELAY", "1.0"))
 
 # Ce texte est ajouté UNIQUEMENT si le mot "json" est absent du
 # prompt final (donc en principe jamais si veille.yaml est à jour,
@@ -67,18 +65,12 @@ class LLMAnalysisService:
     """Analyse factuelle des sources via Groq, pilotée par veille.yaml."""
 
     def __init__(self):
-        self.model = GROQ_MODEL
-        self.client: Optional[AsyncOpenAI] = None
-
-        if GROQ_API_KEY:
-            self.client = AsyncOpenAI(
-                api_key=GROQ_API_KEY,
-                base_url="https://api.groq.com/openai/v1",
-                timeout=GROQ_TIMEOUT,
-            )
-            logger.info("🤖 GROQ configuré : %s", self.model)
-        else:
-            logger.warning("⚠️ GROQ_API_KEY absente")
+        try:
+            self.llm = get_llm_provider()
+            logger.info("🤖 Provider LLM configuré : %s", self.llm.get_provider_name())
+        except LLMNotAvailableError:
+            self.llm = None
+            logger.warning("⚠️ Aucun provider LLM disponible")
 
         self.veille_yaml_text = self._load_raw_yaml(VEILLE_YAML_PATH)
         logger.info("✅ Prompt veille.yaml chargé")
@@ -248,37 +240,19 @@ class LLMAnalysisService:
         return self._ensure_json_keyword(prompt)
 
     # --------------------------------------------------------
-    # APPEL GROQ (avec retry/backoff)
+    # APPEL LLM (retry/backoff géré par la Provider Abstraction)
     # --------------------------------------------------------
-
-    async def _do_call(self, prompt: str):
-        """Un seul essai — rejouable par retry_with_backoff."""
-        return await self.client.chat.completions.create(
-            model=self.model,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.1,
-            max_tokens=GROQ_MAX_OUTPUT_TOKENS,
-            response_format={"type": "json_object"},
-            # IMPORTANT : openai/gpt-oss-120b est un modèle de
-            # raisonnement sur Groq. Par défaut (reasoning_effort=
-            # "medium"), le raisonnement interne peut épuiser tout
-            # le budget max_tokens AVANT que le JSON final ne soit
-            # généré -> erreur "json_validate_failed / max completion
-            # tokens reached before generating a valid document".
-            # "low" laisse plus de marge pour la réponse elle-même.
-            reasoning_effort="low",
-        )
 
     async def analyze(
         self, query: str, results: List[Dict[str, Any]]
     ) -> Optional[Dict[str, Any]]:
         """
-        Construit le prompt et interroge Groq. Retourne le JSON
+        Construit le prompt et interroge le LLM. Retourne le JSON
         brut du modèle, ou None en cas d'échec (réseau ou format).
         """
 
-        if self.client is None:
-            logger.warning("⚠️ GROQ indisponible")
+        if self.llm is None:
+            logger.warning("⚠️ Aucun provider LLM disponible")
             return None
 
         prompt = self.build_prompt_with_budget(query, results)
@@ -297,23 +271,28 @@ class LLMAnalysisService:
         start = time.perf_counter()
 
         try:
-            response = await retry_with_backoff(
-                self._do_call,
-                prompt,
+            response = await self.llm.generate_with_retry(
+                system_prompt="",
+                user_prompt=prompt,
+                temperature=0.1,
+                max_tokens=GROQ_MAX_OUTPUT_TOKENS,
+                json_mode=True,
+                # IMPORTANT : openai/gpt-oss-120b est un modèle de
+                # raisonnement sur Groq. Par défaut (reasoning_effort=
+                # "medium"), le raisonnement interne peut épuiser tout
+                # le budget max_tokens AVANT que le JSON final ne soit
+                # généré -> erreur "json_validate_failed / max completion
+                # tokens reached before generating a valid document".
+                # "low" laisse plus de marge pour la réponse elle-même.
+                reasoning_effort="low",
+                timeout=GROQ_TIMEOUT,
                 max_retries=RETRY_MAX_ATTEMPTS,
-                base_delay=RETRY_BASE_DELAY,
-                retryable_exceptions=(httpx.TimeoutException, httpx.HTTPError),
-                label="Groq",
             )
 
             elapsed = time.perf_counter() - start
             logger.info("⏱️ Groq : %.3fs", elapsed)
 
-            if not response.choices:
-                logger.error("❌ GROQ : aucune choice")
-                return None
-
-            content = response.choices[0].message.content
+            content = response["content"]
             if not content:
                 logger.error("❌ GROQ : réponse vide")
                 return None
@@ -345,21 +324,19 @@ class LLMAnalysisService:
 
             return data
 
-        # BadRequestError (400) inclut l'erreur "must contain the word json"
-        # -> PAS transitoire, ne doit jamais être retryée.
-        except httpx.HTTPStatusError as exc:
-            logger.error(
-                "❌ GROQ [%s] : erreur HTTP non transitoire (%s) — pas de retry",
-                self.model,
-                exc,
+        except LLMNotAvailableError as exc:
+            logger.error("❌ Provider LLM indisponible : %s", exc)
+            return None
+
+        # LLMError générique (ex: 400 "must contain the word json") :
+        # generate_with_retry ne la retente jamais (non transitoire).
+        except LLMError as exc:
+            logger.exception(
+                "❌ LLM [%s] (après retries) : %s", self.llm.get_model_name(), exc
             )
             return None
 
-        except (httpx.TimeoutException, httpx.HTTPError) as exc:
-            logger.exception("❌ GROQ [%s] (après retries) : %s", self.model, exc)
-            return None
-
         except Exception as exc:
-            logger.exception("❌ GROQ [%s] : %s", self.model, exc)
+            logger.exception("❌ LLM [%s] : %s", self.llm.get_model_name(), exc)
             return None
         

@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # ═══════════════════════════════════════════════════════════════
 # FORMA-IA — .gitignore
 # ═══════════════════════════════════════════════════════════════
@@ -141,3 +142,30 @@ yarn-error.log*
 # Fichiers de test / temporaires du projet
 test.http
 formaia-backend.zip
+=======
+﻿# Environnements virtuels Python
+venv/
+.venv/
+env/
+
+# Fichiers Python compilés
+__pycache__/
+*.pyc
+
+# Secrets — NE JAMAIS versionner
+.env
+.env.*
+!.env.example
+
+# Bases de données locales
+*.db
+*.sqlite3
+
+# Docker
+*.log
+
+# OS / éditeurs
+.DS_Store
+.vscode/
+Thumbs.db
+>>>>>>> altiora/develop

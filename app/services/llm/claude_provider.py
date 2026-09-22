@@ -19,7 +19,7 @@ Version : 1.0.0 (placeholder)
 
 import os
 import logging
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 from .llm_provider import (
     LLMProvider,
@@ -89,11 +89,16 @@ class ClaudeProvider(LLMProvider):
         temperature: float = 0.4,
         max_tokens: int = 4000,
         json_mode: bool = True,
+        reasoning_effort: Optional[str] = None,
+        timeout: Optional[float] = None,
     ) -> Dict[str, Any]:
         """
         Génère une réponse via Claude API.
 
         ⚠️ PLACEHOLDER — L'implémentation réelle sera ajoutée en V3.
+        reasoning_effort est propre aux modèles Groq : Claude n'a pas
+        d'équivalent, le paramètre est accepté (conformité d'interface)
+        mais ignoré.
         """
         if not self.is_available():
             raise LLMNotAvailableError(

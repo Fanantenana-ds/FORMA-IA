@@ -10,7 +10,12 @@ class FormationService:
         self.db = db
 
     def creer_session(self, data: SessionCreate) -> Session:
-        session = Session(**data.model_dump())
+        valeurs = data.model_dump()
+        # Session.date_fin est NOT NULL en base alors que le schéma la
+        # déclare optionnelle : sans valeur, l'insertion échouait (HTTP 500).
+        # Défaut : même jour que date_debut (aucune durée n'est supposée).
+        valeurs["date_fin"] = valeurs["date_fin"] or valeurs["date_debut"]
+        session = Session(**valeurs)
         self.db.add(session)
         self.db.commit()
         self.db.refresh(session)
@@ -25,9 +30,11 @@ class FormationService:
     def ajouter_seance(self, session_id: UUID, data: SeanceCreate) -> Seance:
         self.get_session(session_id)
         valeurs = data.model_dump()
-        # Seance.duree est NOT NULL en base alors que le schéma la déclare
-        # optionnelle : sans valeur, l'insertion échouait (HTTP 500).
+        # Seance.duree et Seance.theme sont NOT NULL en base alors que le
+        # schéma les déclare optionnels : sans valeur, l'insertion échouait
+        # (HTTP 500).
         valeurs["duree"] = valeurs["duree"] or "Non précisée"
+        valeurs["theme"] = valeurs["theme"] or "Non précisé"
         seance = Seance(session_id=session_id, **valeurs)
         self.db.add(seance)
         self.db.commit()

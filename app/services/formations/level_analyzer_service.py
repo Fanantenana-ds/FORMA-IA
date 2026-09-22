@@ -7,8 +7,8 @@ from datetime import datetime
 from typing import Dict, Any, List, Optional
 
 import pandas as pd
-from openai import AsyncOpenAI
 from app.services.hitl import create_review
+from app.services.llm import LLMNotAvailableError, get_llm_provider
 
 logger = logging.getLogger(__name__)
 
@@ -16,10 +16,6 @@ logger = logging.getLogger(__name__)
 # ============================================================
 # CONFIG
 # ============================================================
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-20b")
-GROQ_BASE_URL = os.getenv("GROQ_BASE_URL", "https://api.groq.com/openai/v1")
-
 PROMPT_PATH = Path(__file__).resolve().parents[2] / "prompts" / "m5" / "level_analysis.yaml"
 
 # Seuils de classification
@@ -40,17 +36,17 @@ class LevelAnalyzerService:
     """
 
     def __init__(self):
-        if not GROQ_API_KEY:
-            logger.warning("⚠️  GROQ_API_KEY manquant → mode fallback uniquement.")
-            self.client = None
-        else:
-            self.client = AsyncOpenAI(api_key=GROQ_API_KEY, base_url=GROQ_BASE_URL)
+        try:
+            self.llm = get_llm_provider()
+        except LLMNotAvailableError:
+            logger.warning("⚠️  Aucun provider LLM disponible → mode fallback uniquement.")
+            self.llm = None
 
-        self.model = GROQ_MODEL
         self.prompt_config = self._load_prompt()
         logger.info(
             f"✅ LevelAnalyzerService initialisé "
-            f"(model={self.model}, llm={'✅' if self.client else '❌ fallback only'})"
+            f"(provider={self.llm.get_provider_name() if self.llm else 'aucun'}, "
+            f"llm={'✅' if self.llm else '❌ fallback only'})"
         )
 
     # --------------------------------------------------------
@@ -162,7 +158,7 @@ class LevelAnalyzerService:
         enrichment = None
         source = "fallback_template"
 
-        if self.client:
+        if self.llm:
             try:
                 enrichment = await self._generate_with_llm(
                     session_info, stats, temperature, max_tokens
@@ -353,20 +349,17 @@ class LevelAnalyzerService:
         temperature: float,
         max_tokens: int,
     ) -> Dict[str, Any]:
-        """Appel Groq — génère resume + interpretation + recommandations."""
-        response = await self.client.chat.completions.create(
-            model=self.model,
-            messages=[
-                {"role": "system", "content": self._build_system_prompt()},
-                {"role": "user", "content": self._build_user_prompt(session_info, stats)},
-            ],
+        """Appel LLM — génère resume + interpretation + recommandations."""
+        response = await self.llm.generate(
+            system_prompt=self._build_system_prompt(),
+            user_prompt=self._build_user_prompt(session_info, stats),
             temperature=temperature,
             max_tokens=max_tokens,
-            response_format={"type": "json_object"},
+            json_mode=True,
         )
 
-        raw = response.choices[0].message.content
-        finish = response.choices[0].finish_reason
+        raw = response["content"]
+        finish = response["finish_reason"]
 
         if finish == "length":
             raise ValueError("Réponse LLM tronquée (finish_reason=length)")

@@ -1,0 +1,33 @@
+﻿services:
+  db:
+    image: postgres:15
+    restart: always
+    environment:
+      POSTGRES_USER: forma_user
+      POSTGRES_PASSWORD: forma_pass
+      POSTGRES_DB: forma_ia
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+    depends_on:
+      - db
+    environment:
+      DATABASE_URL: postgresql://forma_user:forma_pass@db:5432/forma_ia
+  frontend:
+    build: ./frontend
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      - backend
+volumes:
+  pgdata:

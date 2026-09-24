@@ -297,19 +297,45 @@ def test_split_texte_en_sources_texte_court():
     assert chunks[0]["content"] == "Texte court."
 
 
-# ---- analyser_pdf — bug connu, non corrigé (hors périmètre de cette tâche) ----
+# ---- analyser_pdf — corrigé le 2026-09-24 (_extract_pdf_text, PyPDF2) ----
 
-@pytest.mark.xfail(strict=True, reason=(
-    "self.pdf_extraction_service n'est jamais initialisé dans __init__ "
-    "(aucune classe PDFExtractionService dans le projet) : analyser_pdf() "
-    "lève AttributeError avant même d'atteindre son propre garde-fou "
-    "'if not self.pdf_extraction_service'. Route /ia/veille/... concernée "
-    "dans routes_veille.py. Signalé, non corrigé (hors périmètre de la tâche "
-    "couverture de tests)."
-))
-def test_analyser_pdf_service_extraction_jamais_initialise(orchestrateur):
-    resultat = run(orchestrateur.analyser_pdf(b"%PDF-1.4 ...", filename="ao.pdf"))
+def test_analyser_pdf_pdf_vide(orchestrateur):
+    resultat = run(orchestrateur.analyser_pdf(b"", filename="vide.pdf"))
     assert resultat["status"] == "error"
+    assert resultat["notes"] == "PDF vide."
+
+
+def test_analyser_pdf_invalide_ou_corrompu(orchestrateur):
+    resultat = run(orchestrateur.analyser_pdf(b"ceci n'est pas un PDF", filename="corrompu.pdf"))
+    assert resultat["status"] == "error"
+    assert "Erreur extraction PDF" in resultat["notes"]
+
+
+def test_analyser_pdf_aucun_texte_extrait(orchestrateur, monkeypatch):
+    monkeypatch.setattr(VeilleOrchestrator, "_extract_pdf_text", staticmethod(lambda pdf_bytes: "   "))
+    resultat = run(orchestrateur.analyser_pdf(b"%PDF-1.4 ...", filename="scan_image.pdf"))
+    assert resultat["status"] == "no_results"
+    assert resultat["notes"] == "Aucun texte extrait du PDF."
+
+
+def test_analyser_pdf_success_reutilise_analyser_texte(orchestrateur, monkeypatch):
+    monkeypatch.setattr(
+        VeilleOrchestrator, "_extract_pdf_text",
+        staticmethod(lambda pdf_bytes: "Appel d'offre pour une formation en IA."),
+    )
+    monkeypatch.setattr(
+        orchestrateur.llm_service, "analyze",
+        _async(lambda *a, **k: {"opportunities": [{"title": "x"}], "market_signals": [], "notes": "x"}),
+    )
+    monkeypatch.setattr(vo_module.validation_service, "normalize_opportunity", lambda o: {**o, "score": 0, "confidence": 0})
+    monkeypatch.setattr(vo_module.validation_service, "quality_filter", lambda o: True)
+    monkeypatch.setattr(vo_module.validation_service, "validate_against_schema", lambda o: o)
+
+    resultat = run(orchestrateur.analyser_pdf(b"%PDF-1.4 ...", filename="ao.pdf"))
+
+    assert resultat["status"] == "success"
+    assert resultat["statistics"]["pdf_filename"] == "ao.pdf"
+    assert resultat["statistics"]["pdf_size_bytes"] > 0
 
 
 # ---- Helpers directs ----

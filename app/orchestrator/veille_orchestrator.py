@@ -1,7 +1,10 @@
+import io
 import logging
 import os
 import time
 from typing import Any, Dict, List, Optional
+
+import PyPDF2
 
 from app.services.veille.tavily_service import TavilyService
 from app.services.veille.prefilter_service import rank_results
@@ -455,6 +458,18 @@ class VeilleOrchestrator:
     # ENTRÉE 3 — ANALYSE PDF
     # ========================================================
 
+    @staticmethod
+    def _extract_pdf_text(pdf_bytes: bytes) -> str:
+        """Extrait le texte d'un PDF (PyPDF2, même logique que la route
+        /ia/veille/analyser-pdf qui fait sa propre extraction en pratique)."""
+        reader = PyPDF2.PdfReader(io.BytesIO(pdf_bytes))
+        pages = []
+        for page in reader.pages:
+            text = (page.extract_text() or "").strip()
+            if text:
+                pages.append(text)
+        return "\n\n".join(pages)
+
     async def analyser_pdf(
         self, pdf_bytes: bytes, filename: str = "document.pdf"
     ) -> Dict[str, Any]:
@@ -479,17 +494,9 @@ class VeilleOrchestrator:
         vlog("=" * 70)
 
         # ── ÉTAPE 1 : EXTRACTION TEXTE ──
-        if not self.pdf_extraction_service:
-            logger.error("❌ PDFExtractionService indisponible")
-            return self._empty_response(
-                status="error",
-                notes="Service d'extraction PDF indisponible.",
-                elapsed=time.perf_counter() - start_total,
-            )
-
         try:
             vlog("📄 [1/2] Extraction du texte...")
-            texte = self.pdf_extraction_service.extract_text(pdf_bytes)
+            texte = self._extract_pdf_text(pdf_bytes)
 
             if not texte or not texte.strip():
                 return self._empty_response(

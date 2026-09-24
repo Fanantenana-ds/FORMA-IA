@@ -57,14 +57,15 @@ def db_isolee():
     app.dependency_overrides[get_db] = override_get_db
 
     with DbSession(bind=connection, join_transaction_mode="create_savepoint") as db:
-        db.add(User(
+        user = User(
             id=uuid.UUID(FAKE_USER_ID),
             nom="Utilisateur de test",
             email="utilisateur-de-test@example.invalid",
             password="!",
             role=RoleEnum.DIRECTION,
             actif=True,
-        ))
+        )
+        db.merge(user)
         db.commit()
 
     yield

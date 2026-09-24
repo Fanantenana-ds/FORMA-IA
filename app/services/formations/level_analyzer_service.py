@@ -415,7 +415,7 @@ class LevelAnalyzerService:
 
         resume = (
             f"La formation a permis une progression moyenne de "
-            f"+{s['progression_absolue']} points ({s['progression_relative']}). "
+            f"{s['progression_absolue']:+} points ({s['progression_relative']}). "
             f"Les débutants sont passés de {d_av['debutants']['pourcentage']} "
             f"à {d_ap['debutants']['pourcentage']} après la formation."
         )
@@ -433,7 +433,7 @@ class LevelAnalyzerService:
         if s["progression_absolue"] < 20:
             recos.append("Adapter le rythme pédagogique et proposer des exercices supplémentaires.")
         recos.append("Reconduire la formation en capitalisant sur les acquis du groupe.")
-        if len(d_ap["avances"]["pourcentage"]) > 0:
+        if float(d_ap["avances"]["pourcentage"].rstrip("%")) > 0:
             recos.append("Proposer un module avancé pour les participants ayant atteint le niveau Avancé.")
 
         return {

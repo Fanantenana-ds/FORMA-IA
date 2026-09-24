@@ -234,11 +234,8 @@ def test_agent2_cree_une_review_hitl_dans_le_store_temporaire(niveaux, store_hit
     assert store_hitl_temporaire.exists()                       # le vrai store n'est pas touché
 
 
-# ---- Défauts CONNUS du gabarit de repli (agent stabilisé : documentés, non corrigés) ----
+# ---- Anciens défauts du gabarit de repli, corrigés le 2026-09-24 ----
 
-@pytest.mark.xfail(strict=True, reason=(
-    "Gabarit Agent 2 : écrit '+{progression}' sans gérer le négatif "
-    "→ 'progression moyenne de +-10.0 points'"))
 def test_agent2_gabarit_progression_negative_bien_formatee(niveaux):
     participants = [{"nom": "A",
                      "reponses_avant": {"av_01": "A", "av_02": "B"},
@@ -248,9 +245,6 @@ def test_agent2_gabarit_progression_negative_bien_formatee(niveaux):
     assert "+-" not in niveaux._generate_with_template(stats)["resume"]
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "Gabarit Agent 2 : `len(pourcentage) > 0` est toujours vrai → recommande un "
-    "'module avancé' même quand 0 % des participants sont avancés"))
 def test_agent2_gabarit_pas_de_module_avance_sans_participant_avance(niveaux):
     participants = [{"nom": "A",
                      "reponses_avant": {"av_01": "X"}, "reponses_apres": {"ap_01": "X"}}]

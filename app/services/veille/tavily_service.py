@@ -181,6 +181,8 @@ import httpx
 
 from app.utils.retry import retry_with_backoff
 from app.utils.url_utils import normalize_url
+from app.services.veille import tavily_quota_service
+from app.services.veille.tavily_quota_service import QuotaTavilyDepasseError
 
 logger = logging.getLogger(__name__)
 
@@ -315,8 +317,13 @@ class TavilyService:
         key = self._cache_key(query)
         self._cache[key] = (results, time.time())
 
-    async def _do_request(self, payload: Dict[str, Any]) -> httpx.Response:
-        """Un seul essai HTTP — rejouable par retry_with_backoff."""
+    async def _do_request(
+        self, payload: Dict[str, Any], categorie: str = "manuel",
+    ) -> httpx.Response:
+        """Un seul essai HTTP — rejouable par retry_with_backoff. Compte
+        CET appel (échec/retry compris) — jamais appelé sur un cache hit,
+        donc jamais de sur-comptage (correction Étape B)."""
+        tavily_quota_service.enregistrer_appel(categorie)
         async with httpx.AsyncClient(timeout=TAVILY_TIMEOUT) as client:
             response = await client.post(
                 "https://api.tavily.com/search",
@@ -326,7 +333,9 @@ class TavilyService:
                 response.raise_for_status()
             return response
 
-    async def search(self, query: str) -> List[Dict[str, Any]]:
+    async def search(
+        self, query: str, categorie: str = "manuel",
+    ) -> List[Dict[str, Any]]:
         """
         Recherche Tavily avec filtrage multi-niveaux :
         1. Vérifie le cache
@@ -335,6 +344,10 @@ class TavilyService:
         4. Si 0 résultats, retente SANS site: (fallback)
         5. Filtre à nouveau le fallback
         6. Stocke dans le cache
+
+        `categorie` : "auto" | "manuel" | "collecte" — ventile le comptage
+        de quota (voir tavily_quota_service). "manuel" par défaut, pour
+        ne rien changer aux appelants existants.
         """
 
         if not TAVILY_API_KEY:
@@ -349,6 +362,19 @@ class TavilyService:
         cached = self._get_from_cache(query)
         if cached is not None:
             return cached
+
+        # ✅ Quota — mode auto protégé EN AMONT (verifier_quota_auto,
+        # une fois par passage, dans auto_detection_service.executer_detection),
+        # jamais bloqué ici. Mode manuel/collecte : bloqué au plafond dur,
+        # AVANT tout appel HTTP (correction Étape B).
+        if categorie in ("manuel", "collecte") and tavily_quota_service.plafond_dur_atteint():
+            cfg = tavily_quota_service.config()
+            total = tavily_quota_service.consommation()
+            raise QuotaTavilyDepasseError(
+                f"Quota Tavily épuisé : {total}/{cfg['plafond_dur']} appels ce mois "
+                f"(plafond dur). Réessayez le mois prochain, ou augmentez "
+                f"TAVILY_QUOTA_PLAFOND_DUR dans .env."
+            )
 
         # ✅ 2. Construire la query avec site: operators
         base_query = query
@@ -385,6 +411,7 @@ class TavilyService:
             response = await retry_with_backoff(
                 self._do_request,
                 payload,
+                categorie,
                 max_retries=RETRY_MAX_ATTEMPTS,
                 base_delay=RETRY_BASE_DELAY,
                 retryable_exceptions=(httpx.TimeoutException, httpx.HTTPError),
@@ -436,6 +463,7 @@ class TavilyService:
             response = await retry_with_backoff(
                 self._do_request,
                 fallback_payload,
+                categorie,
                 max_retries=RETRY_MAX_ATTEMPTS,
                 base_delay=RETRY_BASE_DELAY,
                 retryable_exceptions=(httpx.TimeoutException, httpx.HTTPError),

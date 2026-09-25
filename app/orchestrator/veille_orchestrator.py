@@ -2,6 +2,7 @@ import io
 import logging
 import os
 import time
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 import PyPDF2
@@ -101,13 +102,17 @@ class VeilleOrchestrator:
     # ========================================================
 
     async def analyser_opportunites(
-        self, query: str, sync_backend: bool = True
+        self, query: str, sync_backend: bool = True, categorie: str = "manuel"
     ) -> Dict[str, Any]:
         """
         Pipeline complet : recherche web → analyse → opportunités.
 
         sync_backend=False : n'envoie rien au Backend (utilisé par la
         détection automatique, qui synchronise une seule fois à la fin).
+
+        categorie : "auto" | "manuel" | "collecte" — ventile le comptage
+        de quota Tavily (Étape B, tavily_quota_service). "manuel" par
+        défaut, pour ne rien changer au comportement existant.
         """
 
         query = str(query or "").strip()
@@ -128,7 +133,7 @@ class VeilleOrchestrator:
 
         # ── 1. TAVILY (recherche web) ──
         vlog("🌐 [1] Recherche Tavily...")
-        raw_results = await self.tavily_service.search(query)
+        raw_results = await self.tavily_service.search(query, categorie=categorie)
 
         if not raw_results:
             return self._empty_response(
@@ -286,7 +291,7 @@ class VeilleOrchestrator:
         for query in queries:
             try:
                 resultat = await self.analyser_opportunites(
-                    query, sync_backend=False
+                    query, sync_backend=False, categorie="auto"
                 )
             except Exception as exc:
                 logger.exception("❌ Détection auto — requête en échec : %s", query)
@@ -369,9 +374,25 @@ class VeilleOrchestrator:
     # ========================================================
 
     async def analyser_texte(
-        self, texte: str, source: str = "manuel"
+        self,
+        texte: str,
+        source: str = "manuel",
+        sync_backend: bool = True,
+        date_reference: Optional[datetime] = None,
     ) -> Dict[str, Any]:
-        """Pipeline : texte collé → analyse directe (sans recherche web)."""
+        """Pipeline : texte collé → analyse directe (sans recherche web).
+
+        sync_backend=False : n'envoie rien au Backend (utilisé par le
+        benchmark M1 — correction 1c, mission "Étape 1" : lancer le
+        benchmark sur le corpus annoté ne doit jamais polluer la base
+        formaia avec de fausses opportunités).
+
+        date_reference : date à laquelle évaluer le score (Étape C,
+        mission "Préparation soutenance" — reproductibilité). Le
+        benchmark passe la date de collecte de chaque document ; sans
+        cela, rejouer le même corpus à des dates différentes donnerait
+        des scores différents (ScoringService évalue l'échéance par
+        rapport à "maintenant")."""
 
         texte = str(texte or "").strip()
         source_label = str(source or "manuel").strip() or "manuel"
@@ -417,6 +438,8 @@ class VeilleOrchestrator:
                 "text_chunks": len(pseudo_sources),
                 "text_length_chars": len(texte),
             },
+            sync_backend=sync_backend,
+            date_reference=date_reference,
         )
 
     @staticmethod
@@ -541,6 +564,7 @@ class VeilleOrchestrator:
         start_total: float,
         extra_statistics: Optional[Dict[str, Any]] = None,
         sync_backend: bool = True,
+        date_reference: Optional[datetime] = None,
     ) -> Dict[str, Any]:
         """Post-traitement : normalisation, qualité, classification, scoring,
         déduplication, validation, sync backend (si sync_backend)."""
@@ -600,7 +624,7 @@ class VeilleOrchestrator:
             cleaned["country_scope"] = country_scope
 
             # ── ÉTAPE D : SCORING ──
-            cleaned.update(self.scoring_service.score(cleaned))
+            cleaned.update(self.scoring_service.score(cleaned, date_reference=date_reference))
 
             try:
                 final_score = int(cleaned.get("score", 0))

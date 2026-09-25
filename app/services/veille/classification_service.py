@@ -211,9 +211,18 @@ DOMAIN_KEYWORDS = {
 # déclenche des faux positifs : "materiaux" contient "ia", "stabilité" contient
 # "bi". La frontière de mot (\b) exige que le mot-clé soit un mot entier
 # (ou une phrase entière pour les mots-clés à plusieurs mots), pas un fragment.
+#
+# Correction 1e (2026-09-25, mission "Étape 1") : "s?" optionnel juste avant
+# la frontière finale reconnaît le pluriel régulier français/anglais
+# ("bureautique" -> "bureautiques", "application" -> "applications") sans
+# affaiblir la protection anti-sous-chaîne ci-dessus (la frontière de DÉBUT
+# du mot-clé est inchangée : "redéveloppement" ne matche toujours pas
+# "développement", seule la fin du mot-clé accepte un "s" optionnel).
+# Limite assumée : ne couvre pas les pluriels irréguliers français
+# (ex. "-al" -> "-aux"), aucun mot-clé actuel n'étant concerné.
 _KEYWORD_PATTERNS: Dict[str, Dict[str, "re.Pattern[str]"]] = {
     domain: {
-        keyword: re.compile(r"\b" + re.escape(keyword) + r"\b")
+        keyword: re.compile(r"\b" + re.escape(keyword) + r"s?\b")
         for keyword in keywords
     }
     for domain, keywords in DOMAIN_KEYWORDS.items()

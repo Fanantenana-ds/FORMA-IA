@@ -8,6 +8,7 @@ from typing import Dict, Any, List, Optional
 
 from app.services.hitl import create_review
 from app.services.llm import LLMNotAvailableError, get_llm_provider
+from app.services.formations.presence_analyzer_service import SEUIL_ELIGIBILITE_ATTESTATION
 
 logger = logging.getLogger(__name__)
 
@@ -168,6 +169,55 @@ class AttestationGeneratorService:
         }
 
     # --------------------------------------------------------
+    # RE-VÉRIFICATION DU SEUIL (correction 1a) — Agent 5 ne fait PAS
+    # confiance à la liste fournie par l'appelant : un participant sous
+    # le seuil (ou dont l'éligibilité n'est pas vérifiable) est refusé et
+    # signalé, jamais généré silencieusement (conformité CDC : attestation
+    # à partir de 80% de présence).
+    # --------------------------------------------------------
+    def _verifier_eligibilite(self, participant: Dict[str, Any]) -> "tuple[bool, Optional[str]]":
+        """
+        Retourne (eligible, raison_du_refus). `eligible_attestation`
+        (booléen déjà calculé par l'Agent 4) fait foi s'il est présent —
+        sinon on retombe sur `taux_presence` (chaîne "85.0%" ou nombre).
+        Aucune donnée manquante n'est supposée éligible par défaut.
+        """
+        if "eligible_attestation" in participant:
+            valeur = participant["eligible_attestation"]
+            if isinstance(valeur, bool):
+                if valeur:
+                    return True, None
+                return False, f"Sous le seuil de {SEUIL_ELIGIBILITE_ATTESTATION}% de présence (calcul Agent 4)."
+
+        taux_brut = participant.get("taux_presence")
+        if taux_brut is None:
+            return False, (
+                "Taux de présence non fourni — éligibilité non vérifiable, "
+                "refus par précaution."
+            )
+        try:
+            taux = float(str(taux_brut).rstrip("%").strip())
+        except (TypeError, ValueError):
+            return False, f"Taux de présence illisible ('{taux_brut}') — éligibilité non vérifiable."
+
+        if taux >= SEUIL_ELIGIBILITE_ATTESTATION:
+            return True, None
+        return False, f"Taux de présence {taux}% < seuil de {SEUIL_ELIGIBILITE_ATTESTATION}%."
+
+    def _filtrer_eligibles(
+        self, eligible_participants: List[Dict[str, Any]],
+    ) -> "tuple[List[Dict[str, Any]], List[Dict[str, Any]]]":
+        verifies, rejetes = [], []
+        for p in eligible_participants:
+            ok, raison = self._verifier_eligibilite(p)
+            if ok:
+                verifies.append(p)
+            else:
+                logger.warning(f"   🚫 [AttestationAgent] Refusé (seuil) : {p.get('nom')} — {raison}")
+                rejetes.append({"participant": p, "raison": raison})
+        return verifies, rejetes
+
+    # --------------------------------------------------------
     # GÉNÉRATION — BATCH
     # --------------------------------------------------------
     async def generate_batch(
@@ -180,10 +230,12 @@ class AttestationGeneratorService:
         vlog(f"🚀 [AttestationAgent] BATCH — {len(eligible_participants)} participants")
         vlog("=" * 70)
 
+        verifies, rejetes = self._filtrer_eligibles(eligible_participants)
+
         attestations = []
         failed = []
 
-        for i, p in enumerate(eligible_participants, start=1):
+        for i, p in enumerate(verifies, start=1):
             try:
                 att = await self.generate_one(session_info, p, index=i)
                 attestations.append(att)
@@ -195,7 +247,8 @@ class AttestationGeneratorService:
         vlog("=" * 70)
         vlog(
             f"✅ [AttestationAgent] BATCH terminé — "
-            f"{len(attestations)}/{len(eligible_participants)} en {elapsed}s"
+            f"{len(attestations)}/{len(eligible_participants)} en {elapsed}s "
+            f"({len(rejetes)} refusé(s) seuil)"
         )
         vlog("=" * 70)
 
@@ -205,8 +258,10 @@ class AttestationGeneratorService:
             "total_eligible": len(eligible_participants),
             "total_generated": len(attestations),
             "total_failed": len(failed),
+            "total_rejetes_seuil": len(rejetes),
             "attestations": attestations,
             "failed_participants": failed,
+            "rejected_ineligible": rejetes,
             "duration_seconds": elapsed,
         }
 
@@ -497,8 +552,10 @@ class AttestationGeneratorService:
         vlog(f"🚀 [AttestationAgent] BATCH+PDF — {len(eligible_participants)} participants")
         vlog("=" * 70)
 
+        verifies, rejetes = self._filtrer_eligibles(eligible_participants)
+
         attestations, failed = [], []
-        for i, p in enumerate(eligible_participants, start=1):
+        for i, p in enumerate(verifies, start=1):
             try:
                 att = await self.generate_one_with_pdf(session_info, p, index=i)
                 attestations.append(att)
@@ -511,7 +568,7 @@ class AttestationGeneratorService:
         vlog("=" * 70)
         vlog(
             f"✅ BATCH+PDF terminé — {len(attestations)}/{len(eligible_participants)} "
-            f"contenus, {pdf_ok} PDF en {elapsed}s"
+            f"contenus, {pdf_ok} PDF en {elapsed}s ({len(rejetes)} refusé(s) seuil)"
         )
         vlog("=" * 70)
 
@@ -522,8 +579,10 @@ class AttestationGeneratorService:
             "total_generated": len(attestations),
             "total_pdf_generated": pdf_ok,
             "total_failed": len(failed),
+            "total_rejetes_seuil": len(rejetes),
             "attestations": attestations,
             "failed_participants": failed,
+            "rejected_ineligible": rejetes,
             "duration_seconds": elapsed,
         }
 

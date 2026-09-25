@@ -37,6 +37,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from app.services.veille import tavily_quota_service
+
 logger = logging.getLogger(__name__)
 
 BASE_DIR = Path(__file__).resolve().parents[3]
@@ -158,6 +160,11 @@ async def executer_detection(
     en parallèle doubleraient la consommation de quota).
     L'état est enregistré même en cas d'échec, pour que la planification
     n'enchaîne pas de nouvelles tentatives à la suite.
+
+    Correction Étape B (quota Tavily) : APRÈS le verrou anti-chevauchement,
+    UNE SEULE vérification de quota pour tout le passage (pas par requête
+    individuelle) — runs/jour, budget auto, plafond dur. Si refusé, retourne
+    {"statut": "quota_atteint", "raison": ...} sans appeler l'orchestrateur.
     """
     global _en_cours
     if _en_cours:
@@ -172,6 +179,24 @@ async def executer_detection(
         "erreur": None,
     }
     try:
+        autorise, raison = tavily_quota_service.verifier_quota_auto(debut)
+        if not autorise:
+            logger.warning("⏸️ Détection automatique bloquée par le quota Tavily : %s", raison)
+            etat["statut"] = "quota_atteint"
+            etat["erreur"] = raison
+            return {
+                "statut": "quota_atteint",
+                "raison": raison,
+                "mode": "automatique",
+                "status": "quota_atteint",
+                "opportunities": [],
+                "total": 0,
+                "queries": [],
+                "statistics": {},
+            }
+
+        tavily_quota_service.enregistrer_run_auto(debut)
+
         resultat = await orchestrator.detecter_automatiquement(
             queries=get_queries(),
             min_score=score_minimum() if min_score is None else min_score,

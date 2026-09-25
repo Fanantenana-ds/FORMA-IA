@@ -79,3 +79,47 @@ tzdata==2026.4
 uritemplate==4.2.0
 urllib3==2.7.0
 uvicorn==0.34.0
+
+
+# ============================================================
+# FORMA-IA — RAG (Étape 4)
+# ============================================================
+# Version : V1.0 — pgvector + LangChain
+# ============================================================
+
+# ═══════════════════════════════════════════════════════════
+# VECTOR STORE — pgvector
+# ═══════════════════════════════════════════════════════════
+pgvector>=0.2.5
+psycopg2-binary>=2.9.9
+SQLAlchemy>=2.0.30
+
+# ═══════════════════════════════════════════════════════════
+# EMBEDDINGS — Voyage AI (API, via httpx — PAS le SDK voyageai)
+# ═══════════════════════════════════════════════════════════
+# sentence-transformers/torch/transformers RETIRÉS (2026-09-24) : bloqués
+# par Smart App Control sur ce poste (DLL _regex non signée), remplacés
+# par l'API Voyage AI. httpx est déjà une dépendance du projet (base_sync).
+#
+# fastembed (poids ouverts, même espace vectoriel Voyage 4, secours local
+# éventuel) : NON installé — non testé sur ce poste, à documenter comme
+# perspective uniquement (voir mission C3, contrainte du poste). Ne pas
+# installer sans tester l'import au préalable :
+# fastembed>=0.3.0  # optionnel, désactivé — vérifier l'import avant d'activer
+
+# ═══════════════════════════════════════════════════════════
+# DOCUMENT EXTRACTION
+# ═══════════════════════════════════════════════════════════
+pypdf>=4.2.0
+python-docx>=1.1.0
+python-pptx>=1.0.2
+openpyxl>=3.1.5
+filetype>=1.2.0
+
+# ═══════════════════════════════════════════════════════════
+# DÉCOUPAGE DE TEXTE — Python pur, pas de dépendance
+# ═══════════════════════════════════════════════════════════
+# langchain/langchain-text-splitters RETIRÉS (2026-09-24) : son __init__.py
+# importe inconditionnellement sentence_transformers (donc torch), retiré
+# à l'Étape B. Remplacé par app/services/rag/texte_splitter.py (Python pur,
+# aucune dépendance externe) — voir ce fichier pour le détail.

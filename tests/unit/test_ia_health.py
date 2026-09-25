@@ -41,8 +41,11 @@ def test_m5_expose_6_agents_actifs_sur_7():
     assert m5["manquants"] == []          # l'Agent 7 (RAG V2) est optionnel
 
 
-def test_les_quatre_modules_sont_couverts():
-    assert set(ia_health.collecter()["modules"]) == {"M5", "M3", "PREPARATION", "M7"}
+def test_les_cinq_modules_sont_couverts():
+    # C3 (RAG) ajouté à l'Étape H de la mission RAG (2026-09-25) : le
+    # module est livré (routes, chat, portfolio, syllabus, questions) et
+    # suit désormais son état via get_package_status() comme les autres.
+    assert set(ia_health.collecter()["modules"]) == {"M5", "M3", "PREPARATION", "M7", "C3"}
 
 
 def test_un_agent_requis_manquant_donne_degraded(monkeypatch):

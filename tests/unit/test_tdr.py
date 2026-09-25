@@ -9,6 +9,13 @@
 # valide pas les champs du brief et délègue tout à TDRService + le
 # générateur de documents + la sync Backend. Tests réécrits pour couvrir le
 # comportement RÉEL avec des doublures (aucun appel Groq/Backend/disque réel).
+#
+# MODIFIÉ le 2026-09-25 (correction 1b, mission "Étape 1") : generate() ne
+# synchronise PLUS directement avec le Backend — un review HITL est créé,
+# la sync n'a lieu qu'après approbation (voir tests/unit/test_tdr_hitl_sync.py
+# pour la couverture complète de synchroniser_backend()). test_generate_success
+# mettait à jour resultat["backend_sync"], qui n'existe plus : remplacé par
+# une vérification du review HITL créé.
 # ============================================================
 
 import asyncio
@@ -16,10 +23,17 @@ import asyncio
 import pytest
 
 from app.orchestrator.tdr_orchestrator import TdrOrchestrator
+from app.services.hitl import hitl_helper
 
 
 def run(coro):
     return asyncio.run(coro)
+
+
+@pytest.fixture(autouse=True)
+def store_hitl_temporaire(monkeypatch, tmp_path):
+    """Aucune review de test dans le vrai store data/hitl_reviews.json."""
+    monkeypatch.setattr(hitl_helper, "STORAGE_PATH", tmp_path / "hitl_reviews.json")
 
 
 class TestTdrOrchestrator:
@@ -29,7 +43,8 @@ class TestTdrOrchestrator:
         self.orchestrator = TdrOrchestrator()
 
     def test_generate_success(self, monkeypatch):
-        """Brief valide : TDR généré, documents créés, sync backend tentée."""
+        """Brief valide : TDR généré, documents créés, review HITL créé
+        (PAS de sync Backend directe — correction 1b)."""
         brief = {
             "client": "Ministère de la Santé",
             "objectifs": "Former 50 agents à l'IA médicale",
@@ -45,23 +60,20 @@ class TestTdrOrchestrator:
         def faux_document_generator_generate(tdr_content, client):
             return ("tdr_test.docx", "tdr_test.pdf")
 
-        async def faux_sync_tdr_to_backend(**kwargs):
-            return {"success": True, "skipped": False}
-
         monkeypatch.setattr(self.orchestrator.tdr_service, "generate", faux_tdr_service_generate)
         monkeypatch.setattr(self.orchestrator.document_generator, "generate", faux_document_generator_generate)
-        monkeypatch.setattr(
-            "app.orchestrator.tdr_orchestrator.sync_tdr_to_backend",
-            faux_sync_tdr_to_backend,
-        )
 
         resultat = run(self.orchestrator.generate(brief))
 
         assert resultat["success"] is True
         assert resultat["data"]["titre"] == "TDR Formation IA médicale"
         assert resultat["files"] == {"docx": "tdr_test.docx", "pdf": "tdr_test.pdf"}
-        assert resultat["backend_sync"]["success"] is True
         assert resultat["error"] is None
+
+        assert resultat["_review_status"] == "pending_review"
+        review = hitl_helper.get_review(resultat["_review_id"])
+        assert review["agent_id"] == "agent_m2_tdr"
+        assert review["status"] == "pending_review"
 
     def test_generate_service_indisponible(self):
         """TDRService non initialisé (ex. clé LLM absente) : RuntimeError explicite.

@@ -15,6 +15,7 @@ from app.schemas.tdr import (
     TDRResponse,
     TDRFiles,
     TDRFromOpportuniteResponse,
+    SynchroniserTDRRequest,
 )
 from app.orchestrator.tdr_orchestrator import TdrOrchestrator
 from app.services.backend_sync.opportunity_fetcher import (
@@ -66,12 +67,56 @@ async def generer_tdr(request: TDRRequest):
             data=result.get("data"),
             files=files_obj,
             error=None,
+            review_id=result.get("_review_id"),
+            review_status=result.get("_review_status"),
         )
 
     except HTTPException:
         raise
     except Exception as exc:
         logger.exception("❌ Erreur TDR : %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+# ============================================================
+# 1bis. SYNCHRONISATION BACKEND — APRÈS APPROBATION HITL (correction 1b)
+# ============================================================
+
+@router.post(
+    "/ia/tdr/synchroniser",
+    tags=["M2 - TDR"],
+    operation_id="synchroniserTDR",
+    summary="[M2] Enregistrer un TDR APPROUVÉ dans le Backend",
+    description=(
+        "Envoie le TDR au Backend (POST /documents/tdr).\n\n"
+        "⚠️ Refusé (422) tant que le review n'est pas **approuvé** : aucun "
+        "contenu IA n'atteint le Backend sans validation humaine.\n\n"
+        "Un seul envoi par review (sauf `force`)."
+    ),
+)
+async def synchroniser_tdr(payload: SynchroniserTDRRequest):
+    from app.services.backend_sync.review_sync import describe_sync
+
+    try:
+        result = await orchestrator.synchroniser_backend(
+            review_id=payload.review_id,
+            opportunite_id=payload.opportunite_id,
+            force=payload.force,
+        )
+        success, message = describe_sync(result)
+        return {
+            "success": success,
+            "message": message,
+            "review_id": payload.review_id,
+            "review_status": "approved",
+            "data": result,
+        }
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=f"Données invalides : {exc}")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("❌ Erreur synchroniser TDR : %s", exc)
         raise HTTPException(status_code=500, detail=str(exc))
 
 

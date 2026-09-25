@@ -22,11 +22,11 @@ def run(coro):
 def orchestrateur(monkeypatch):
     o = VeilleOrchestrator()
     # Doublures par défaut : "aucun résultat" (chaque test les redéfinit au besoin)
-    monkeypatch.setattr(o.tavily_service, "search", _async(lambda q: []))
+    monkeypatch.setattr(o.tavily_service, "search", _async(lambda q, **kw: []))
     monkeypatch.setattr(o.llm_service, "analyze", _async(lambda *a, **k: None))
     monkeypatch.setattr(o.classification_service, "classify", lambda c: {"domain": "ia"})
     monkeypatch.setattr(o.classification_service, "detect_country", lambda c: "Madagascar")
-    monkeypatch.setattr(o.scoring_service, "score", lambda c: {"score": 80, "confidence": 0.9})
+    monkeypatch.setattr(o.scoring_service, "score", lambda c, **kw: {"score": 80, "confidence": 0.9})
     monkeypatch.setattr(
         vo_module, "sync_opportunities_to_backend",
         _async(lambda opps: {"enabled": True, "sent": len(opps), "failed": 0}),
@@ -57,13 +57,13 @@ def test_analyser_opportunites_query_vide(orchestrateur):
 
 
 def test_analyser_opportunites_aucun_resultat_tavily(orchestrateur, monkeypatch):
-    monkeypatch.setattr(orchestrateur.tavily_service, "search", _async(lambda q: []))
+    monkeypatch.setattr(orchestrateur.tavily_service, "search", _async(lambda q, **kw: []))
     resultat = run(orchestrateur.analyser_opportunites("formation IA"))
     assert resultat["status"] == "no_results"
 
 
 def test_analyser_opportunites_aucun_resultat_apres_prefiltre(orchestrateur, monkeypatch):
-    monkeypatch.setattr(orchestrateur.tavily_service, "search", _async(lambda q: [_opportunite_brute()]))
+    monkeypatch.setattr(orchestrateur.tavily_service, "search", _async(lambda q, **kw: [_opportunite_brute()]))
     monkeypatch.setattr(vo_module, "rank_results", lambda results, query: [])
     resultat = run(orchestrateur.analyser_opportunites("formation IA"))
     assert resultat["status"] == "no_results"
@@ -73,7 +73,7 @@ def test_analyser_opportunites_aucun_resultat_apres_prefiltre(orchestrateur, mon
 def test_analyser_opportunites_ajoute_contexte_madagascar(orchestrateur, monkeypatch):
     requetes = []
 
-    async def capter(q):
+    async def capter(q, categorie="manuel"):
         requetes.append(q)
         return []
 
@@ -85,7 +85,7 @@ def test_analyser_opportunites_ajoute_contexte_madagascar(orchestrateur, monkeyp
 # ---- analyser_opportunites — tous les lots échouent (fallback) ----
 
 def test_analyser_opportunites_tous_lots_echouent_fallback(orchestrateur, monkeypatch):
-    monkeypatch.setattr(orchestrateur.tavily_service, "search", _async(lambda q: [_opportunite_brute()]))
+    monkeypatch.setattr(orchestrateur.tavily_service, "search", _async(lambda q, **kw: [_opportunite_brute()]))
     monkeypatch.setattr(vo_module, "rank_results", lambda results, query: results)
     monkeypatch.setattr(orchestrateur.llm_service, "analyze", _async(lambda *a, **k: None))
 
@@ -97,7 +97,7 @@ def test_analyser_opportunites_tous_lots_echouent_fallback(orchestrateur, monkey
 
 
 def test_analyser_opportunites_lots_tentes_zero_opportunite(orchestrateur, monkeypatch):
-    monkeypatch.setattr(orchestrateur.tavily_service, "search", _async(lambda q: [_opportunite_brute()]))
+    monkeypatch.setattr(orchestrateur.tavily_service, "search", _async(lambda q, **kw: [_opportunite_brute()]))
     monkeypatch.setattr(vo_module, "rank_results", lambda results, query: results)
     monkeypatch.setattr(
         orchestrateur.llm_service, "analyze",
@@ -114,7 +114,7 @@ def test_analyser_opportunites_lots_tentes_zero_opportunite(orchestrateur, monke
 # ---- analyser_opportunites — pipeline complet (succès) ----
 
 def test_analyser_opportunites_success_complet(orchestrateur, monkeypatch):
-    monkeypatch.setattr(orchestrateur.tavily_service, "search", _async(lambda q: [_opportunite_brute()]))
+    monkeypatch.setattr(orchestrateur.tavily_service, "search", _async(lambda q, **kw: [_opportunite_brute()]))
     monkeypatch.setattr(vo_module, "rank_results", lambda results, query: results)
     monkeypatch.setattr(
         orchestrateur.llm_service, "analyze",
@@ -138,7 +138,7 @@ def test_analyser_opportunites_success_complet(orchestrateur, monkeypatch):
 
 
 def test_analyser_opportunites_rejets_normalize_et_quality_et_score_bas(orchestrateur, monkeypatch):
-    monkeypatch.setattr(orchestrateur.tavily_service, "search", _async(lambda q: [_opportunite_brute()]))
+    monkeypatch.setattr(orchestrateur.tavily_service, "search", _async(lambda q, **kw: [_opportunite_brute()]))
     monkeypatch.setattr(vo_module, "rank_results", lambda results, query: results)
     monkeypatch.setattr(
         orchestrateur.llm_service, "analyze",
@@ -165,7 +165,7 @@ def test_analyser_opportunites_rejets_normalize_et_quality_et_score_bas(orchestr
         vo_module.validation_service, "quality_filter",
         lambda o: "quality_filter" not in o.get("title", ""),
     )
-    monkeypatch.setattr(orchestrateur.scoring_service, "score", lambda c: {"score": 1, "confidence": 0.9})  # < MIN_SCORE_TO_REVIEW
+    monkeypatch.setattr(orchestrateur.scoring_service, "score", lambda c, **kw: {"score": 1, "confidence": 0.9})  # < MIN_SCORE_TO_REVIEW
 
     resultat = run(orchestrateur.analyser_opportunites("formation IA"))
 
@@ -177,7 +177,7 @@ def test_analyser_opportunites_rejets_normalize_et_quality_et_score_bas(orchestr
 
 
 def test_analyser_opportunites_sync_backend_desactivee(orchestrateur, monkeypatch):
-    monkeypatch.setattr(orchestrateur.tavily_service, "search", _async(lambda q: [_opportunite_brute()]))
+    monkeypatch.setattr(orchestrateur.tavily_service, "search", _async(lambda q, **kw: [_opportunite_brute()]))
     monkeypatch.setattr(vo_module, "rank_results", lambda results, query: results)
     monkeypatch.setattr(
         orchestrateur.llm_service, "analyze",
@@ -200,7 +200,7 @@ def test_detecter_automatiquement_aucune_requete(orchestrateur):
 
 
 def test_detecter_automatiquement_success(orchestrateur, monkeypatch):
-    async def faux_analyser(query, sync_backend=False):
+    async def faux_analyser(query, sync_backend=False, categorie="auto"):
         return {
             "status": "success",
             "opportunities": [{"title": f"Opp de {query}", "score": 50, "url": f"https://{query}.mg"}],
@@ -217,7 +217,7 @@ def test_detecter_automatiquement_success(orchestrateur, monkeypatch):
 
 
 def test_detecter_automatiquement_requete_en_echec_statut_degrade(orchestrateur, monkeypatch):
-    async def faux_analyser(query, sync_backend=False):
+    async def faux_analyser(query, sync_backend=False, categorie="auto"):
         raise RuntimeError("Tavily indisponible")
 
     monkeypatch.setattr(orchestrateur, "analyser_opportunites", faux_analyser)
@@ -231,7 +231,7 @@ def test_detecter_automatiquement_requete_en_echec_statut_degrade(orchestrateur,
 def test_detecter_automatiquement_statut_partiel(orchestrateur, monkeypatch):
     appels = {"n": 0}
 
-    async def faux_analyser(query, sync_backend=False):
+    async def faux_analyser(query, sync_backend=False, categorie="auto"):
         appels["n"] += 1
         if appels["n"] == 1:
             raise RuntimeError("échec")
@@ -245,7 +245,7 @@ def test_detecter_automatiquement_statut_partiel(orchestrateur, monkeypatch):
 
 
 def test_detecter_automatiquement_filtre_min_score_et_limit(orchestrateur, monkeypatch):
-    async def faux_analyser(query, sync_backend=False):
+    async def faux_analyser(query, sync_backend=False, categorie="auto"):
         return {
             "status": "success",
             "opportunities": [
@@ -349,7 +349,7 @@ def test_empty_response_structure():
 def test_rechercher_alias_appelle_analyser_opportunites(orchestrateur, monkeypatch):
     appels = []
 
-    async def faux_analyser(query, sync_backend=True):
+    async def faux_analyser(query, sync_backend=True, categorie="auto"):
         appels.append(query)
         return {"status": "success"}
 

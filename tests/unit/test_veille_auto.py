@@ -23,6 +23,7 @@ from app.orchestrator import veille_orchestrator as orch_module
 from app.orchestrator.veille_orchestrator import VeilleOrchestrator
 from app.services.backend_sync import base_sync, opportunity_sync
 from app.services.veille import auto_detection_service as auto
+from app.services.veille import tavily_quota_service as quota
 
 VARIABLES_AUTO = (
     "VEILLE_AUTO_ENABLED", "VEILLE_AUTO_INTERVAL_HOURS", "VEILLE_AUTO_QUERIES",
@@ -41,6 +42,7 @@ def isole(monkeypatch, tmp_path):
     monkeypatch.setattr(auto, "_en_cours", False)
     monkeypatch.setattr(auto, "_tache", None)
     monkeypatch.setattr(auto, "_demarre_a", None)
+    monkeypatch.setattr(quota, "QUOTA_PATH", tmp_path / "tavily_quota.json")
     for nom in VARIABLES_AUTO:
         monkeypatch.delenv(nom, raising=False)
 
@@ -57,8 +59,8 @@ class OrchestrateurSimule(VeilleOrchestrator):
         self.reponses = reponses          # {requête: dict | Exception}
         self.appels = []
 
-    async def analyser_opportunites(self, query, sync_backend=True):
-        self.appels.append((query, sync_backend))
+    async def analyser_opportunites(self, query, sync_backend=True, categorie="manuel"):
+        self.appels.append((query, sync_backend, categorie))
         reponse = self.reponses[query]
         if isinstance(reponse, Exception):
             raise reponse
@@ -129,7 +131,8 @@ def test_chaque_requete_est_lancee_sans_sync_puis_une_seule_sync_finale(espion_s
 
     resultat = run(orch.detecter_automatiquement(["q1", "q2"]))
 
-    assert orch.appels == [("q1", False), ("q2", False)]     # jamais de sync par requête
+    # jamais de sync par requête ; catégorie "auto" (Étape B, quota Tavily)
+    assert orch.appels == [("q1", False, "auto"), ("q2", False, "auto")]
     assert len(espion_sync) == 1                              # une seule sync, à la fin
     assert [o["title"] for o in espion_sync[0]] == ["A", "B"]
     assert resultat["mode"] == "automatique"
@@ -398,6 +401,33 @@ def test_echec_liberer_le_verrou_et_enregistre_l_erreur():
     assert auto.lire_etat()["statut"] == "error"
 
 
+def test_executer_detection_bloquee_par_le_quota_n_appelle_pas_l_orchestrateur(monkeypatch):
+    """Étape B : le quota est vérifié UNE FOIS après le verrou, avant tout
+    appel à l'orchestrateur (donc avant toute requête Tavily)."""
+    monkeypatch.setattr(
+        quota, "verifier_quota_auto", lambda maintenant=None: (False, "Budget épuisé (test)")
+    )
+
+    class OrchestrateurInterdit:
+        async def detecter_automatiquement(self, **kw):
+            raise AssertionError("l'orchestrateur ne doit pas être appelé si le quota est refusé")
+
+    resultat = run(auto.executer_detection(OrchestrateurInterdit()))
+
+    assert resultat["statut"] == "quota_atteint"
+    assert resultat["raison"] == "Budget épuisé (test)"
+    assert auto.est_en_cours() is False                       # verrou bien libéré
+    assert auto.lire_etat()["statut"] == "quota_atteint"       # état persistant à jour
+
+
+def test_executer_detection_autorisee_enregistre_un_run_auto():
+    orch = OrchestrateurSimule({q: reponse(opps=[]) for q in auto.get_queries()})
+
+    assert quota.runs_aujourd_hui() == 0
+    run(auto.executer_detection(orch))
+    assert quota.runs_aujourd_hui() == 1
+
+
 def test_les_parametres_explicites_priment_sur_la_configuration(monkeypatch):
     recu = {}
 
@@ -586,6 +616,45 @@ def test_route_statut(api):
     assert data["configuration"]["planification_activee"] is False
     assert data["configuration"]["requetes"] == auto.get_queries()
     assert data["derniere_execution"]["declenchement"] == "manuel"
+
+
+def test_route_rechercher_429_si_quota_depasse(monkeypatch):
+    """Étape B : QuotaTavilyDepasseError -> HTTP 429, message clair, pas
+    un 500 générique."""
+    app = FastAPI()
+    app.include_router(routes_veille.router, prefix="/api/v1")
+    client = TestClient(app)
+
+    from app.services.veille.tavily_quota_service import QuotaTavilyDepasseError
+
+    async def refuse(query, categorie="manuel"):
+        raise QuotaTavilyDepasseError("Quota Tavily épuisé : 980/980 appels ce mois.")
+
+    monkeypatch.setattr(routes_veille.orchestrator, "analyser_opportunites", refuse)
+
+    response = client.post("/api/v1/ia/veille/rechercher", json={"query": "formation IA"})
+
+    assert response.status_code == 429
+    assert "Quota Tavily épuisé" in response.json()["detail"]
+
+
+def test_route_quota_tavily(monkeypatch):
+    app = FastAPI()
+    app.include_router(routes_veille.router, prefix="/api/v1")
+    client = TestClient(app)
+
+    quota.enregistrer_appel("auto")
+    quota.enregistrer_appel("manuel")
+    quota.enregistrer_appel("manuel")
+
+    response = client.get("/api/v1/ia/veille/quota")
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["appels_par_categorie"] == {"auto": 1, "manuel": 2, "collecte": 0}
+    assert data["total_appels"] == 3
+    assert data["configuration"]["quota_mensuel"] == 1000
+    assert data["avertissement"] is None
 
 
 def test_les_deux_modes_sont_montes_dans_l_application_reelle():

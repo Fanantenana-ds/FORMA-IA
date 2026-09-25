@@ -7,6 +7,8 @@ from typing import Dict, Any, Optional
 from app.services.tdr.tdr_service import TDRService
 from app.services.tdr.tdr_document_generator import TDRDocumentGenerator
 from app.services.backend_sync.tdr_sync import sync_tdr_to_backend
+from app.services.backend_sync import review_sync
+from app.services.hitl import create_review
 
 logger = logging.getLogger(__name__)
 
@@ -128,7 +130,13 @@ class TdrOrchestrator:
 
     async def generate(self, brief: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Pipeline complet : brief → TDR JSON → Word → PDF → Backend.
+        Pipeline complet : brief → TDR JSON → Word → PDF → review HITL.
+
+        Correction 1a/1b (2026-09-25) : le TDR n'est PLUS envoyé au Backend
+        directement ici (contrairement à l'ancien comportement). Un review
+        HITL (agent_m2_tdr) est créé — la synchronisation Backend n'a lieu
+        qu'après approbation humaine, via synchroniser_backend(), même
+        mécanisme que M3 (offre_orchestrator.py).
 
         Args:
             brief: Informations du brief client (client, objectifs, etc.).
@@ -138,7 +146,9 @@ class TdrOrchestrator:
                 "success": bool,
                 "data": Dict (contenu TDR),
                 "files": {"docx": str, "pdf": str},
-                "backend_sync": Dict,
+                "_inputs": {"brief": Dict},
+                "_review_id": str,
+                "_review_status": "pending_review",
                 "duration_seconds": float,
                 "error": Optional[str],
             }
@@ -182,32 +192,30 @@ class TdrOrchestrator:
             vlog(f"   ✅ PDF  : {pdf_filename}")
 
             # ═══════════════════════════════════════════════════════════
-            # ③ ÉTAPE 3 : Sync Backend (non bloquant)
+            # ③ ÉTAPE 3 : Review HITL (AUCUN envoi Backend ici)
             # ═══════════════════════════════════════════════════════════
             vlog("")
-            vlog("🔄 [3/3] Sync Backend (non bloquant)...")
+            vlog("⏳ [3/3] Création du review HITL (CDC : validation humaine avant Backend)...")
 
-            opportunite_id = brief.get("opportunite_id")
+            result = {
+                "success": True,
+                "data": tdr_content,
+                "files": {
+                    "docx": docx_filename,
+                    "pdf": pdf_filename,
+                },
+                "_inputs": {"brief": brief},
+                "error": None,
+            }
 
-            try:
-                sync_result = await sync_tdr_to_backend(
-                    tdr_content=tdr_content,
-                    docx_filename=docx_filename,
-                    pdf_filename=pdf_filename,
-                    opportunite_id=opportunite_id,
-                )
-            except Exception as e:
-                logger.warning(
-                    f"   ⚠️  Sync backend échoué (non bloquant) : "
-                    f"{type(e).__name__} — {e}"
-                )
-                sync_result = {
-                    "success": False,
-                    "error": f"{type(e).__name__} : {e}",
-                }
-
-            tdr_content["backend_sync"] = sync_result
-            vlog(f"   ✅ Sync : success={sync_result.get('success')}")
+            review_id = create_review(
+                agent_id="agent_m2_tdr",
+                data=result,
+                summary=f"TDR — {brief.get('client', 'N/A')} — {tdr_content.get('titre', 'N/A')[:60]}",
+                criticity="critical",
+            )
+            result["_review_id"] = review_id
+            result["_review_status"] = "pending_review"
 
             # ═══════════════════════════════════════════════════════════
             # ④ RÉSULTAT
@@ -217,21 +225,12 @@ class TdrOrchestrator:
                 **{
                     "📄 Word": docx_filename,
                     "📄 PDF": pdf_filename,
-                    "🔄 Sync": sync_result.get("success"),
+                    "⏳ Review HITL": review_id,
                 },
             )
 
-            return {
-                "success": True,
-                "data": tdr_content,
-                "files": {
-                    "docx": docx_filename,
-                    "pdf": pdf_filename,
-                },
-                "backend_sync": sync_result,
-                "duration_seconds": elapsed,
-                "error": None,
-            }
+            result["duration_seconds"] = elapsed
+            return result
 
         except Exception as e:
             self._log_error("generate", start, e)
@@ -243,6 +242,63 @@ class TdrOrchestrator:
                 "backend_sync": None,
                 "duration_seconds": round(time.perf_counter() - start, 2),
             }
+
+    # =========================================================================
+    # SYNCHRONISATION BACKEND — APRÈS APPROBATION HITL (correction 1b)
+    # =========================================================================
+
+    async def synchroniser_backend(
+        self,
+        review_id: str,
+        opportunite_id: Optional[str] = None,
+        force: bool = False,
+    ) -> Dict[str, Any]:
+        """
+        Envoie le TDR APPROUVÉ au Backend. Même mécanisme que M3
+        (OffreOrchestrator.synchroniser_backend) : garde-fou via
+        review_sync.load_approved_review (review approuvé + bon agent
+        uniquement), un seul envoi par review (sauf force=True).
+
+        Args:
+            review_id: review du TDR (agent_m2_tdr).
+            opportunite_id: UUID de l'opportunité Backend liée. À défaut,
+                lu dans le brief mémorisé (_inputs.brief.opportunite_id).
+
+        Raises:
+            ValueError: review introuvable / non approuvé / d'un autre agent.
+        """
+        start = self._log_start(
+            "synchroniser_backend",
+            **{"🔍 Review": review_id, "🔁 Force": force},
+        )
+
+        review = review_sync.load_approved_review(
+            review_id, agent_ids=("agent_m2_tdr",)
+        )
+        data = review.get("data") or {}
+        inputs = data.get("_inputs") or {}
+        brief = inputs.get("brief") or {}
+        files = data.get("files") or {}
+
+        opportunite_id = opportunite_id or brief.get("opportunite_id")
+
+        async def _envoyer() -> Dict[str, Any]:
+            return await sync_tdr_to_backend(
+                tdr_content=data.get("data") or {},
+                docx_filename=files.get("docx"),
+                pdf_filename=files.get("pdf"),
+                opportunite_id=opportunite_id,
+            )
+
+        result = await review_sync.sync_once(review_id, _envoyer, force=force)
+        self._log_end(
+            "synchroniser_backend", start,
+            **{
+                "📤 Envoyé": (result["backend_sync"] or {}).get("sent"),
+                "♻️  Déjà synchronisé": result["already_synced"],
+            },
+        )
+        return result
 
 
 # =============================================================================

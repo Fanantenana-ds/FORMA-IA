@@ -100,3 +100,46 @@ def test_detect_country_inchange():
         {"title": "Poste à Antananarivo", "summary": "", "organizer": ""}
     )
     assert domaine == "Madagascar"
+
+
+# ============================================================
+# Correction 1e — pluriels reconnus (mission "Étape 1")
+# ============================================================
+# AVANT : \b + mot-clé + \b exigeait une correspondance EXACTE. "bureautique"
+# (singulier) ne matchait pas "bureautiques" (pluriel), "application" ne
+# matchait pas "applications" -- ces textes, pourtant clairement dans le
+# domaine, tombaient dans "autre", ce qui fait baisser la précision de M1.
+
+def test_bureautique_pluriel_est_detecte(service):
+    resultat = classer(service, titre="Recherche d'un expert pour nos outils bureautiques")
+
+    assert resultat["domain"] == "bureautique"
+    assert "bureautique" in resultat["matched_keywords"]
+
+
+def test_application_pluriel_est_detecte(service):
+    resultat = classer(service, titre="Développement d'applications mobiles pour PME")
+
+    assert resultat["domain"] == "developpement"
+    assert "application" in resultat["matched_keywords"]
+
+
+def test_redeveloppement_pluriel_toujours_refuse(service):
+    """Le pluriel ajouté ne doit pas réintroduire le faux positif par
+    sous-chaîne déjà corrigé (test_redeveloppement_ne_declenche_pas_developpement)."""
+    resultat = classer(service, titre="Projets de redéveloppements urbains")
+
+    assert "développement" not in resultat["matched_keywords"]
+
+
+def test_materiaux_pluriel_toujours_refuse(service):
+    resultat = classer(service, titre="Gestion des matériaux de plusieurs chantiers")
+
+    assert "ia" not in resultat["matched_keywords"]
+
+
+def test_singulier_toujours_detecte_apres_ajout_du_pluriel(service):
+    """Non-régression : le singulier doit toujours matcher."""
+    resultat = classer(service, titre="Formation Excel et Word (bureautique)")
+
+    assert resultat["domain"] == "bureautique"

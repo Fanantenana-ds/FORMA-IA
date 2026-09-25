@@ -34,6 +34,8 @@ from app.orchestrator.veille_orchestrator import (
     VeilleOrchestrator,
 )
 from app.services.veille import auto_detection_service as auto_detection
+from app.services.veille import tavily_quota_service
+from app.services.veille.tavily_quota_service import QuotaTavilyDepasseError
 
 
 logger = logging.getLogger(__name__)
@@ -225,6 +227,9 @@ async def rechercher_opportunites(
             "error": None,
         }
 
+    except QuotaTavilyDepasseError as exc:
+        raise HTTPException(status_code=429, detail=str(exc))
+
     except HTTPException:
         raise
 
@@ -304,6 +309,22 @@ async def statut_detection_automatique():
         },
         "error": None,
     }
+
+
+@router.get(
+    "/ia/veille/quota",
+    tags=["M1 - Veille Marché"],
+    operation_id="quotaTavily",
+    summary="Quota Tavily — appels HTTP réels du mois, par catégorie",
+)
+async def quota_tavily():
+    """
+    Appels HTTP RÉELS vers Tavily ce mois-ci (pas les "requêtes"
+    utilisateur — jusqu'à 2 appels HTTP par recherche, repli et retries
+    compris), ventilés par catégorie (auto / manuel / collecte), restant,
+    pourcentage utilisé, configuration active, avertissement (80%/95%).
+    """
+    return {"success": True, "data": tavily_quota_service.etat_pour_route(), "error": None}
 
 
 # ============================================================

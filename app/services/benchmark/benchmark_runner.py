@@ -12,12 +12,19 @@
 # Aucun accès SQLAlchemy ici : lecture d'un fichier JSONL local et
 # appel de l'orchestrateur existant, conformément à la séparation
 # des rôles (persistance = responsabilité du module Backend).
+#
+# Correction 1c (2026-09-25, mission "Étape 1") : analyser_texte() est
+# appelé avec sync_backend=False — AVANT cette correction, ce paramètre
+# n'existait pas et chaque exécution du benchmark synchronisait réellement
+# les "opportunités" du corpus de test avec le Backend (POST /opportunites),
+# polluant la base formaia à chaque lancement.
 # ============================================================
 
 import json
 import logging
 import os
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -28,6 +35,55 @@ logger = logging.getLogger(__name__)
 BASE_DIR = Path(__file__).resolve().parents[3]
 DEFAULT_CORPUS_PATH = BASE_DIR / "data" / "corpus_veille" / "corpus_v1.jsonl"
 CORPUS_PATH = Path(os.getenv("CORPUS_VEILLE_PATH", str(DEFAULT_CORPUS_PATH)))
+
+VALEURS_VIDES = (None, "", "Non précisé")
+
+
+# ============================================================
+# COMPARAISON DES VALEURS EXTRAITES (correction 1d)
+# ============================================================
+# AVANT : un champ (budget, deadline) était compté "correct" dès qu'il
+# était non vide, sans jamais être comparé à la valeur attendue (gold).
+# Une valeur totalement fausse était donc comptée comme une réussite.
+
+def _est_valeur_inventee(valeur: Any) -> bool:
+    """True si le LLM a rempli ce champ alors qu'aucune valeur n'était
+    attendue par le gold (hallucination)."""
+    return valeur not in VALEURS_VIDES
+
+
+def _dates_concordent(predite: Any, attendue: Any) -> Optional[bool]:
+    """Compare deux dates si les deux sont parseables en ISO 8601.
+    Retourne None si l'une des deux n'est pas parseable (comparaison
+    textuelle en repli, la date pouvant être en langage naturel)."""
+    try:
+        d1 = datetime.fromisoformat(str(predite).strip())
+        d2 = datetime.fromisoformat(str(attendue).strip())
+        return d1.date() == d2.date()
+    except (TypeError, ValueError):
+        return None
+
+
+def _valeur_correcte(predite: Any, attendue: Any, est_date: bool = False) -> bool:
+    """Compare RÉELLEMENT la valeur extraite à la valeur attendue (gold) —
+    une valeur non vide mais différente n'est jamais comptée correcte.
+
+    Comparaison EXACTE (après normalisation espaces/casse) uniquement —
+    PAS de similarité floue (difflib) ici : pour un budget ou une date,
+    une différence d'un seul chiffre ('50M Ar' vs '5M Ar') est une erreur
+    totale, pas une variante mineure. Une comparaison floue masquerait
+    exactement le genre d'erreur que cette correction doit détecter."""
+    if predite in VALEURS_VIDES or attendue in VALEURS_VIDES:
+        return False
+
+    if est_date:
+        resultat_date = _dates_concordent(predite, attendue)
+        if resultat_date is not None:
+            return resultat_date
+
+    p = str(predite).strip().lower()
+    a = str(attendue).strip().lower()
+    return p == a
 
 
 class BenchmarkRunner:
@@ -94,7 +150,9 @@ class BenchmarkRunner:
 
         budget_correct = 0
         deadline_correct = 0
+        organizer_correct = 0
         extraction_total = 0
+        hallucinations = {"budget": 0, "deadline": 0, "organizer": 0}
 
         latencies: List[float] = []
         details: List[Dict[str, Any]] = []
@@ -108,6 +166,7 @@ class BenchmarkRunner:
             result = await self.orchestrator.analyser_texte(
                 texte=entry.get("raw_text", ""),
                 source=entry_id,
+                sync_backend=False,  # correction 1c : jamais de pollution de formaia
             )
             elapsed = time.perf_counter() - start
             latencies.append(elapsed)
@@ -128,6 +187,7 @@ class BenchmarkRunner:
             predicted_domain = None
             predicted_budget = None
             predicted_deadline = None
+            predicted_organizer = None
 
             # --- Classification / extraction, uniquement sur les vrais
             # positifs détectés (comparer l'extraction n'a de sens que
@@ -137,21 +197,41 @@ class BenchmarkRunner:
                 predicted_domain = top.get("domain")
                 predicted_budget = top.get("budget")
                 predicted_deadline = top.get("deadline")
+                predicted_organizer = top.get("organizer")
 
                 if gold.get("domain") is not None:
                     domain_total += 1
                     if predicted_domain == gold.get("domain"):
                         domain_correct += 1
 
-                if gold.get("budget_expected") is not None:
+                # Correction 1d : comparaison RÉELLE à la valeur gold
+                # (budget/deadline/organisateur), plus une simple
+                # vérification de non-vacuité ; les valeurs inventées par
+                # le LLM (champ non vide alors que gold n'attend rien)
+                # sont comptabilisées séparément, jamais comme une réussite.
+                budget_attendu = gold.get("budget_expected")
+                if budget_attendu is not None:
                     extraction_total += 1
-                    if predicted_budget not in (None, "", "Non précisé"):
+                    if _valeur_correcte(predicted_budget, budget_attendu):
                         budget_correct += 1
+                elif _est_valeur_inventee(predicted_budget):
+                    hallucinations["budget"] += 1
 
-                if gold.get("deadline_expected") is not None:
+                deadline_attendue = gold.get("deadline_expected")
+                if deadline_attendue is not None:
                     extraction_total += 1
-                    if predicted_deadline not in (None, "", "Non précisé"):
+                    if _valeur_correcte(predicted_deadline, deadline_attendue, est_date=True):
                         deadline_correct += 1
+                elif _est_valeur_inventee(predicted_deadline):
+                    hallucinations["deadline"] += 1
+
+                organizer_attendu = gold.get("organizer_expected")
+                if organizer_attendu is not None:
+                    extraction_total += 1
+                    if _valeur_correcte(predicted_organizer, organizer_attendu):
+                        organizer_correct += 1
+                elif _est_valeur_inventee(predicted_organizer):
+                    hallucinations["organizer"] += 1
 
             details.append({
                 "id": entry_id,
@@ -184,9 +264,10 @@ class BenchmarkRunner:
             domain_correct / domain_total if domain_total > 0 else None
         )
         extraction_accuracy = (
-            (budget_correct + deadline_correct) / extraction_total
+            (budget_correct + deadline_correct + organizer_correct) / extraction_total
             if extraction_total > 0 else None
         )
+        hallucinations["total"] = sum(hallucinations.values())
         avg_latency = (
             sum(latencies) / len(latencies) if latencies else None
         )
@@ -211,6 +292,7 @@ class BenchmarkRunner:
             "accuracy_globale": round(accuracy_globale, 3) if accuracy_globale is not None else None,
             "domain_classification_accuracy": round(domain_accuracy, 3) if domain_accuracy is not None else None,
             "extraction_accuracy": round(extraction_accuracy, 3) if extraction_accuracy is not None else None,
+            "hallucinated_values": hallucinations,
             "average_latency_seconds": round(avg_latency, 3) if avg_latency is not None else None,
             "cdc_targets": cdc_targets,
             "meets_cdc_precision": (

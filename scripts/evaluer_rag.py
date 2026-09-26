@@ -50,9 +50,11 @@ async def evaluer_pour_modele(questions, modele_requete: str, top_k: int = 5):
         latences = []
 
         for q in questions:
+            collection = q.get("collection", "support")
             debut = time.perf_counter()
             resultats = await recherche_service.rechercher(
                 q["texte"], top_k=top_k, seuil_min=0.0, attente_max_s=None,
+                collection=collection,
             )
             latences.append((time.perf_counter() - debut) * 1000)
 
@@ -60,7 +62,14 @@ async def evaluer_pour_modele(questions, modele_requete: str, top_k: int = 5):
 
             if q.get("pertinente"):
                 pertinentes_total += 1
-                trouve = any(r.formation_code == q.get("formation_code") for r in resultats)
+                # Si formation_code est renseigné, filtrer par lui.
+                # Sinon (formation_code=null — ex. aide_plateforme), tout
+                # résultat retourné de la bonne collection compte comme trouvé.
+                fc_attendu = q.get("formation_code")
+                if fc_attendu is not None:
+                    trouve = any(r.formation_code == fc_attendu for r in resultats)
+                else:
+                    trouve = len(resultats) > 0
                 if trouve:
                     trouvees += 1
                     scores_corrects.append(meilleur_score)

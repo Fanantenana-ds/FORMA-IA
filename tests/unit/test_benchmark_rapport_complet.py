@@ -29,6 +29,7 @@ from app.services.benchmark.benchmark_runner import (
     _percentile,
     _f1_macro_domaine,
     _parser_date_collectee,
+    fusionner_rapports,
 )
 
 
@@ -251,3 +252,159 @@ def test_latence_mediane_et_p95_dans_le_rapport(tmp_path, monkeypatch):
 
     assert resultat["latency_median_seconds"] == 1.0
     assert resultat["latency_p95_seconds"] is not None
+
+
+# ============================================================
+# fusionner_rapports — pour --reprendre
+# ============================================================
+
+def test_fusion_equivaut_a_un_run_unique_sur_l_union(tmp_path, monkeypatch):
+    lignes = [
+        {"id": "c1", "raw_text": "Premier texte assez long pour la validation minimale du corpus.",
+         "gold": {"is_opportunity": True, "domain": "ia", "budget_expected": "5M Ar"}},
+        {"id": "c2", "raw_text": "Second texte assez long pour la validation minimale du corpus.",
+         "gold": {"is_opportunity": False}},
+        {"id": "c3", "raw_text": "Troisieme texte assez long pour la validation minimale du corpus.",
+         "gold": {"is_opportunity": True, "domain": "data"}},
+        {"id": "c4", "raw_text": "Quatrieme texte assez long pour la validation minimale du corpus.",
+         "gold": {"is_opportunity": False}},
+    ]
+
+    async def analyse(texte, source, sync_backend=True, date_reference=None):
+        if source == "c1":
+            return {"opportunities": [{"domain": "ia", "budget": "5M Ar"}]}
+        if source == "c3":
+            return {"opportunities": [{"domain": "ia"}]}  # "data" mal classé "ia"
+        return {"opportunities": []}
+
+    # Run UNIQUE sur les 4 entrées
+    chemin_complet = _corpus(tmp_path, lignes)
+    runner_complet = BenchmarkRunner(corpus_path=chemin_complet)
+    monkeypatch.setattr(runner_complet.orchestrator, "analyser_texte", analyse)
+    rapport_complet = run(runner_complet.run(limit=4))
+
+    # Deux runs séparés (2 + 2), fusionnés
+    chemin_a = tmp_path / "a.jsonl"
+    chemin_a.write_text("\n".join(json.dumps(l, ensure_ascii=False) for l in lignes[:2]), encoding="utf-8")
+    chemin_b = tmp_path / "b.jsonl"
+    chemin_b.write_text("\n".join(json.dumps(l, ensure_ascii=False) for l in lignes[2:]), encoding="utf-8")
+    runner_a = BenchmarkRunner(corpus_path=chemin_a)
+    runner_b = BenchmarkRunner(corpus_path=chemin_b)
+    monkeypatch.setattr(runner_a.orchestrator, "analyser_texte", analyse)
+    monkeypatch.setattr(runner_b.orchestrator, "analyser_texte", analyse)
+    rapport_a = run(runner_a.run(limit=2))
+    rapport_b = run(runner_b.run(limit=2))
+
+    rapport_fusionne = fusionner_rapports([rapport_a, rapport_b])
+
+    for cle in (
+        "confusion_matrix", "precision_detection", "recall_detection", "f1_detection",
+        "domain_confusion_matrix", "domain_classification_accuracy", "f1_macro_domain",
+        "extraction_par_champ", "extraction_accuracy", "hallucinated_values",
+        "corpus_size_tested", "llm_fallback_count", "model_error_count",
+    ):
+        assert rapport_fusionne[cle] == rapport_complet[cle], f"écart sur {cle}"
+
+    assert len(rapport_fusionne["details"]) == 4
+
+
+def test_fusion_d_un_seul_rapport_le_retourne_inchange():
+    rapport = {"corpus_size_tested": 1, "details": []}
+    assert fusionner_rapports([rapport]) is rapport
+
+
+def test_fusion_sans_rapport_leve_une_erreur_claire():
+    with pytest.raises(ValueError, match="Aucun rapport"):
+        fusionner_rapports([])
+
+
+# ============================================================
+# Mesure déterministe séparée — ClassificationService seul (point 4)
+# ============================================================
+
+def test_mesure_deterministe_ne_touche_jamais_au_llm(tmp_path, monkeypatch):
+    """Aucun appel à analyser_texte (donc au LLM) : la mesure ne porte que
+    sur ClassificationService, en Python pur."""
+    lignes = [
+        {"id": "c1", "raw_text": "Formation en intelligence artificielle pour agents publics.",
+         "gold": {"is_opportunity": True, "domain": "ia"}},
+        {"id": "c2", "raw_text": "Cette annonce ne concerne pas une opportunite ALTIORA.",
+         "gold": {"is_opportunity": False}},  # pas de domaine -> ignoré
+    ]
+    chemin = _corpus(tmp_path, lignes)
+    runner = BenchmarkRunner(corpus_path=chemin)
+
+    async def interdit(*a, **kw):
+        raise AssertionError("le LLM ne doit jamais être appelé par cette mesure")
+    monkeypatch.setattr(runner.orchestrator, "analyser_texte", interdit)
+    monkeypatch.setattr(runner.orchestrator.llm_service, "analyze", interdit)
+
+    resultat = runner.mesurer_classification_deterministe(limit=2)
+
+    assert resultat["domain_total"] == 1  # seul c1 a un domaine gold
+    assert resultat["domain_correct"] == 1
+    assert resultat["domain_accuracy"] == 1.0
+
+
+def test_mesure_deterministe_est_reproductible(tmp_path):
+    """Aucune dépendance à l'heure/au hasard : deux appels identiques."""
+    lignes = [{"id": "c1", "raw_text": "Formation en intelligence artificielle pour agents publics.",
+               "gold": {"is_opportunity": True, "domain": "ia"}}]
+    chemin = _corpus(tmp_path, lignes)
+    runner = BenchmarkRunner(corpus_path=chemin)
+
+    resultat_1 = runner.mesurer_classification_deterministe(limit=1)
+    resultat_2 = runner.mesurer_classification_deterministe(limit=1)
+
+    assert resultat_1 == resultat_2
+
+
+def test_run_accepte_des_entries_precalculees_sans_relire_le_fichier(tmp_path, monkeypatch):
+    """Pour scripts/benchmark_m1.py : filtrer par split/reprise AVANT
+    d'appeler run(), sans dépendre du contenu réel du fichier corpus."""
+    chemin = _corpus(tmp_path, [{"id": "ignore-moi", "raw_text": "x" * 30, "gold": {"is_opportunity": False}}])
+    runner = BenchmarkRunner(corpus_path=chemin)
+    monkeypatch.setattr(
+        runner.orchestrator, "analyser_texte",
+        _async(lambda texte, source, sync_backend=True, date_reference=None: {"opportunities": []}),
+    )
+
+    entries_forcees = [{"id": "c-force", "raw_text": "texte force" * 3, "gold": {"is_opportunity": False}}]
+    resultat = run(runner.run(limit=10, entries=entries_forcees))
+
+    assert resultat["corpus_size_tested"] == 1
+    assert resultat["details"][0]["id"] == "c-force"
+
+
+def test_pause_secondes_attend_entre_chaque_document(tmp_path, monkeypatch):
+    lignes = [
+        {"id": "c1", "raw_text": "x" * 30, "gold": {"is_opportunity": False}},
+        {"id": "c2", "raw_text": "y" * 30, "gold": {"is_opportunity": False}},
+    ]
+    chemin = _corpus(tmp_path, lignes)
+    runner = BenchmarkRunner(corpus_path=chemin)
+    monkeypatch.setattr(
+        runner.orchestrator, "analyser_texte",
+        _async(lambda texte, source, sync_backend=True, date_reference=None: {"opportunities": []}),
+    )
+
+    pauses = []
+    async def fausse_attente(secondes):
+        pauses.append(secondes)
+    monkeypatch.setattr(br_module.asyncio, "sleep", fausse_attente)
+
+    run(runner.run(limit=2, pause_secondes=0.5))
+
+    assert pauses == [0.5, 0.5]  # une pause après CHAQUE document (y compris le dernier, sans risque)
+
+
+def test_mesure_deterministe_signale_les_erreurs_de_domaine(tmp_path):
+    lignes = [{"id": "c1", "raw_text": "Mission de developpement web et mobile pour une PME.",
+               "gold": {"is_opportunity": True, "domain": "ia"}}]  # gold FAUX volontairement
+    chemin = _corpus(tmp_path, lignes)
+    runner = BenchmarkRunner(corpus_path=chemin)
+
+    resultat = runner.mesurer_classification_deterministe(limit=1)
+
+    assert resultat["domain_correct"] == 0
+    assert resultat["domain_confusion_matrix"]["ia"]["developpement"] == 1

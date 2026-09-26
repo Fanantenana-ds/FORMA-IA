@@ -112,7 +112,7 @@ def _runner_avec_prediction(tmp_path, monkeypatch, gold_extra, prediction_extra)
     chemin = _corpus(tmp_path, gold_extra)
     r = BenchmarkRunner(corpus_path=chemin)
 
-    async def faux_analyze(query, results):
+    async def faux_analyze(query, results, date_reference=None):
         return {"opportunities": [{
             "title": "Formation IA", "summary": "Recrutement formateur IA",
             "domain": "ia", "confidence": 0.9, "opportunity_type": "autre",

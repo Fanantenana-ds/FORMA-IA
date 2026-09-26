@@ -287,13 +287,13 @@ async def generer_edt(
 
 
 # =============================================================================
-# ROUTE 3 — POST /generer-complet ⭐
+# ROUTE 3 — POST /generer-complet 
 # =============================================================================
 
 @router.post(
     "/generer-complet",
     response_model=RouteResponse,
-    summary="[PREP] ⭐ Générer la préparation complète (Budget + EDT + HITL)",
+    summary="[PREP]  Générer la préparation complète (Budget + EDT + HITL)",
     description=(
         "Route principale du module Préparation.\n\n"
         "1. Calcule le budget prévisionnel (Python pur)\n"

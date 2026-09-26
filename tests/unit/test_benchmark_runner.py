@@ -68,7 +68,7 @@ def appels_sync_backend(monkeypatch):
 def runner(corpus_test, monkeypatch, appels_sync_backend):
     r = BenchmarkRunner(corpus_path=corpus_test)
 
-    async def faux_analyze(query, results):
+    async def faux_analyze(query, results, date_reference=None):
         return {"opportunities": [{
             "title": "Formation IA", "summary": "Recrutement formateur IA",
             "domain": "ia", "budget": "5M Ar", "deadline": "2026-09-15",

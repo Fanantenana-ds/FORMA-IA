@@ -29,7 +29,12 @@ puis validez avec `scripts/valider_corpus.py` (voir §4) avant de continuer.
 
 ---
 
-## 2. Schéma d'un document annoté
+## 2. Schéma d'un document annoté (protocole v2 — Étape D)
+
+> **Nouveaux champs v2** : `split` et `type_opportunite` (optionnels mais
+> recommandés pour les nouvelles annotations). Les entrées v1 existantes
+> (sans ces champs) restent valides — `scripts/valider_corpus.py` les
+> accepte sans erreur.
 
 ```json
 {
@@ -37,6 +42,8 @@ puis validez avec `scripts/valider_corpus.py` (voir §4) avant de continuer.
   "source_type": "texte | linkedin | site_web | pdf",
   "date_collected": "AAAA-MM-JJ",
   "annotator": "Votre nom",
+  "split": "dev | test",
+  "type_opportunite": "appel_offres | mission_directe | recrutement | autre",
   "raw_text": "Le texte brut exact tel qu'il serait collé dans le système (annonce, offre, article...).",
   "gold": {
     "is_opportunity": true,
@@ -49,10 +56,28 @@ puis validez avec `scripts/valider_corpus.py` (voir §4) avant de continuer.
 }
 ```
 
+Un modèle de fichier complet est disponible dans
+`data/corpus_veille/corpus_v2_template.jsonl`.
+```
+
 ### Règles précises par champ
 
 - **`id`** : unique dans tout le fichier (le script de validation le
   vérifie). Convention actuelle : `corpus-0001`, `corpus-0002`, etc.
+- **`split`** *(v2, optionnel mais recommandé)* : `"dev"` ou `"test"`.
+  Convention : **80 % dev / 20 % test** (ex. 80 entrées dev + 20 test sur
+  100). Annoter en `"dev"` par défaut, puis désigner ~20 % comme `"test"`
+  en veillant à conserver l'équilibre positifs/négatifs dans chaque split
+  (même ratio). Le split `"test"` est réservé à la mesure officielle CDC
+  finale ; le `"dev"` sert aux ajustements de prompts. Les 14 entrées
+  existantes peuvent être annotées a posteriori avec `"split": "dev"` ou
+  laissées sans le champ — elles seront incluses si `--split` n'est pas
+  passé au CLI benchmark.
+- **`type_opportunite`** *(v2, optionnel)* : `"appel_offres"`,
+  `"mission_directe"`, `"recrutement"`, ou `"autre"`. Utile pour
+  analyser la précision M1 par type d'opportunité. Ne remplir que si
+  `gold.is_opportunity: true`. Valeur non reconnue → ATTENTION dans
+  `valider_corpus.py` (non bloquant).
 - **`raw_text`** : le texte **réel** tel qu'il apparaîtrait dans la
   source (annonce LinkedIn, page web, extrait de PDF...). Ne reformulez
   pas — le pipeline M1 sera testé sur ce texte exact.
@@ -96,14 +121,14 @@ puis validez avec `scripts/valider_corpus.py` (voir §4) avant de continuer.
 
 Pour que les métriques soient représentatives (pas seulement le total) :
 
-| Catégorie | Recommandation |
-| --- | --- |
-| Équilibre positif/négatif | Viser 40-60 % de `is_opportunity: true` — un corpus à 95 % de négatifs rendrait la précision trompeuse (facile d'avoir 0 faux positif en ne détectant presque rien). |
-| Couverture des domaines | Au moins quelques exemples de **chaque** domaine (`ia`, `data`, `devops`, `developpement`, `bureautique`) **et** de `autre` — le corpus actuel n'a **aucun** exemple `autre` positif. |
-| Cas pièges déjà connus | Inclure des textes contenant des mots comme *matériaux*, *stabilité*, *redéveloppement* dans un contexte **hors sujet**, pour vérifier qu'ils ne déclenchent pas de faux positif (protection déjà en place, testée dans `tests/unit/test_classification_service.py`). |
-| Pluriels | Inclure des formulations au pluriel (« outils bureautiques », « applications », etc. — corrigé en 1e) pour confirmer la détection. |
-| Champs partiellement absents | Inclure des opportunités réelles où le budget ou l'échéance ne sont **pas** mentionnés (pour vérifier que rien n'est inventé à leur place). |
-| Difficulté | Mélanger des cas évidents et des cas ambigus (ex. formation généraliste qui pourrait sembler une opportunité sans en être une). |
+| Catégorie                   | Recommandation                                                                                                                                                                                                                                                                             |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Équilibre positif/négatif  | Viser 40-60 % de`is_opportunity: true` — un corpus à 95 % de négatifs rendrait la précision trompeuse (facile d'avoir 0 faux positif en ne détectant presque rien).                                                                                                                 |
+| Couverture des domaines      | Au moins quelques exemples de**chaque** domaine (`ia`, `data`, `devops`, `developpement`, `bureautique`) **et** de `autre` — le corpus actuel n'a **aucun** exemple `autre` positif.                                                                      |
+| Cas pièges déjà connus    | Inclure des textes contenant des mots comme*matériaux*, *stabilité*, *redéveloppement* dans un contexte **hors sujet**, pour vérifier qu'ils ne déclenchent pas de faux positif (protection déjà en place, testée dans `tests/unit/test_classification_service.py`). |
+| Pluriels                     | Inclure des formulations au pluriel (« outils bureautiques », « applications », etc. — corrigé en 1e) pour confirmer la détection.                                                                                                                                                  |
+| Champs partiellement absents | Inclure des opportunités réelles où le budget ou l'échéance ne sont**pas** mentionnés (pour vérifier que rien n'est inventé à leur place).                                                                                                                                  |
+| Difficulté                  | Mélanger des cas évidents et des cas ambigus (ex. formation généraliste qui pourrait sembler une opportunité sans en être une).                                                                                                                                                      |
 
 ---
 
@@ -135,7 +160,7 @@ mesure de recette exigée par le CDC.
 
 ---
 
-## 5. Ce que Claude Code ne fera jamais dans ce processus
+## 5. Ce que  ce processus se deroule
 
 - Écrire une ligne dans `corpus_v1.jsonl` à votre place.
 - Deviner un `budget_expected` / `deadline_expected` / `organizer_expected`

@@ -416,6 +416,7 @@ class VeilleOrchestrator:
         groq_response = await self.llm_service.analyze(
             query=instruction,
             results=pseudo_sources,
+            date_reference=date_reference,
         )
 
         if groq_response is None:

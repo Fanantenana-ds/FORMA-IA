@@ -42,8 +42,13 @@ RACINE = Path(__file__).resolve().parents[1]
 DEFAULT_CORPUS_PATH = RACINE / "data" / "corpus_veille" / "corpus_v1.jsonl"
 
 DOMAINES_RECONNUS = {"ia", "data", "devops", "developpement", "bureautique", "autre"}
+# Champs v2 (protocole annotation §2 Étape D)
+SPLITS_RECONNUS = {"dev", "test"}
+TYPES_OPPORTUNITE_RECONNUS = {"appel_offres", "mission_directe", "recrutement", "autre"}
 LONGUEUR_MIN_RAW_TEXT = 20
 SEUIL_CDC_NB_DOCUMENTS = 100
+# Seuil en dessous duquel un split est considéré sous-représenté (ex. 10 % → ATTENTION).
+SEUIL_MIN_RATIO_SPLIT = 0.10
 # "null" (Python None) ET l'absence de clé sont STRICTEMENT ÉQUIVALENTS pour
 # benchmark_runner.py (dict.get("champ") renvoie None dans les deux cas) —
 # vérifié sur le corpus réel existant (corpus-0002, budget_expected: null,
@@ -137,6 +142,24 @@ def _valider_ligne(numero: int, brut: str) -> Tuple[Dict[str, Any], List[str], L
                 f"moins fiable — voir protocole §2)"
             )
 
+    # --- Champs v2 ---
+    split = entree.get("split")
+    if split is not None:
+        if split not in SPLITS_RECONNUS:
+            erreurs.append(
+                f"ligne {numero} (id={id_doc!r}) : 'split' = {split!r} non reconnu "
+                f"(valeurs autorisées : {sorted(SPLITS_RECONNUS)})"
+            )
+
+    type_opp = entree.get("type_opportunite")
+    if type_opp is not None and is_opportunity is True:
+        if type_opp not in TYPES_OPPORTUNITE_RECONNUS:
+            avertissements.append(
+                f"ligne {numero} (id={id_doc!r}) : 'type_opportunite' = {type_opp!r} non reconnu "
+                f"(valeurs connues : {sorted(TYPES_OPPORTUNITE_RECONNUS)}) — "
+                f"non bloquant mais peut fausser les statistiques par type"
+            )
+
     return entree, erreurs, avertissements
 
 
@@ -209,6 +232,41 @@ def main(chemin_corpus: Path) -> bool:
     domaines_absents = DOMAINES_RECONNUS - set(domaines_couverts)
     if domaines_absents:
         print(f"   ⚠️  Domaines sans aucun exemple positif : {sorted(domaines_absents)}")
+
+    # --------------------------------------------------------
+    # STRATIFICATION dev/test (champ v2 — Étape D)
+    # --------------------------------------------------------
+    avec_split = [e for e in entrees if "split" in e]
+    sans_split = [e for e in entrees if "split" not in e]
+    if avec_split:
+        print("\n" + "=" * 70)
+        print("📊 STRATIFICATION DEV / TEST")
+        print("=" * 70)
+        par_split: Counter = Counter(e["split"] for e in avec_split if e.get("split") in SPLITS_RECONNUS)
+        for s in ("dev", "test"):
+            nb = par_split[s]
+            print(f"   {s:<6} : {nb} document(s)")
+
+        nb_total_split = sum(par_split.values())
+        for s in ("dev", "test"):
+            nb = par_split[s]
+            ratio = nb / nb_total_split if nb_total_split else 0
+            if ratio < SEUIL_MIN_RATIO_SPLIT:
+                _afficher(
+                    f"équilibre split '{s}'", ATTENTION,
+                    f"seulement {ratio:.0%} des entrées annotées ({nb}/{nb_total_split}) — "
+                    f"le split '{s}' est très sous-représenté (seuil : >{SEUIL_MIN_RATIO_SPLIT:.0%}).",
+                )
+
+        if sans_split:
+            _afficher(
+                "cohérence split", ATTENTION,
+                f"{len(avec_split)} entrée(s) ont un champ 'split', "
+                f"mais {len(sans_split)} n'en ont pas — corpus partiellement annoté split. "
+                f"Annoter toutes les entrées avec 'split' avant de lancer --split dev|test.",
+            )
+        else:
+            _afficher("cohérence split", OK, f"Toutes les {len(entrees)} entrée(s) ont un champ 'split'.")
 
     if total < SEUIL_CDC_NB_DOCUMENTS:
         _afficher(

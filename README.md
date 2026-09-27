@@ -230,3 +230,499 @@ Révision humaine
                   Feedback transmis à l'agent
                      ↓
                   Régénération
+
+
+
+
+### Modules soumis au HITL
+
+| Module               | Agents / Fonction                                                      | Criticité   |
+| -------------------- | ---------------------------------------------------------------------- | ----------- |
+| **M2 — TDR**         | Génération TDR                                                         | 🔴 Critical |
+| **M3 — Offres**      | Offre technique, offre financière                                      | 🔴 Critical |
+| **M5 — Formations**  | FormGenerator, PresenceAnalyzer, AttestationGenerator, ReportGenerator | 🔴 Critical |
+| **M5 — Formations**  | LevelAnalyzer, SatisfactionAnalyzer                                    | 🟡 Medium   |
+| **Préparation**      | EDT, budget                                                            | 🔴 Critical |
+| **M7 — Facturation** | Relance facture                                                        | 🔴 Critical |
+| **C3 — RAG**         | Portfolio, syllabus (export DOCX uniquement après approbation)         | 🔴 Critical |
+
+> **Écart documenté :** M1 (Veille) ne dispose **pas** de HITL — c'est un
+> usage interne, aucun contenu n'est diffusé à l'extérieur.
+
+---
+
+## 🔌 Provider Abstraction — LLM
+
+L'architecture sépare strictement **la logique métier et l'orchestration**
+du **fournisseur LLM**.
+
+```text
+app/services/llm/
+├── llm_provider.py          # Interface abstraite LLMProvider
+├── groq_provider.py         # Implémentation Groq — actif (openai/gpt-oss-20b)
+├── claude_provider.py       # Implémentation Claude — préparée
+└── llm_factory.py           # Sélection du provider via LLM_PROVIDER (.env)
+```
+
+### Configuration `.env`
+
+```bash
+LLM_PROVIDER=groq
+GROQ_API_KEY=xxx
+GROQ_MODEL=openai/gpt-oss-20b
+
+# Migration Claude (préparée)
+ANTHROPIC_API_KEY=xxx
+ANTHROPIC_MODEL=claude-3-5-sonnet-20241022
+```
+
+**Migration Groq → Claude :** estimée à **1 jour-homme maximum** (écriture
+de `claude_provider.py` + tests, sans modification de la logique métier).
+
+### Notes importantes
+
+- **`reasoning_effort='low'`** est requis pour les modèles de raisonnement
+  Groq (évite l'épuisement du budget de tokens avant émission du JSON).
+- **`json_mode`** appliqué automatiquement avec filet de sécurité (le mot
+  « json » est ajouté si absent, exigence de l'API Groq).
+- **Fallback Python** : si le LLM échoue, un gabarit Python prend le relais
+  (jamais d'échec côté route).
+
+---
+
+## 🔍 RAG — Voyage AI + pgvector
+
+### Pourquoi Voyage AI ?
+
+**sentence-transformers + torch** initialement prévus, mais **bloqués par
+Smart App Control** sur le poste de développement (DLL `_regex.cp312-win_amd64.pyd`
+non signée). Migration vers **Voyage AI** (API HTTP via httpx) :
+
+- Aucune installation lourde requise
+- Modèle `voyage-4-large`, dimension 1024
+- Appel direct par `httpx` (pas de SDK officiel)
+
+### Base vectorielle
+
+- **PostgreSQL + extension pgvector** (0.8.6)
+- Migration `Vector(384)` → `Vector(1024)` exécutée sur la base `formaia`
+- Index **HNSW** pour la recherche approximative
+- Similarité **cosinus** (`1 - cosine_distance`)
+
+### Pipeline d'ingestion
+
+```text
+Fichier (PDF/DOCX/PPTX/XLSX)
+   ↓
+Hash (idempotence)
+   ↓
+Vérification confidentialité
+   ↓
+Classification (image / vidéo-audio / PDF scanné → OCR requis)
+   ↓
+Extraction (Segment avec numéro de page/diapo/feuille)
+   ↓
+Nettoyage (text_cleaner_service)
+   ↓
+Découpage (chunk_segments / chunk_pptx_slides)
+   ↓
+Embeddings par lot (rate_limiter + Voyage AI)
+   ↓
+Insertion PostgreSQL (knowledge_base)
+   ↓
+Résumé Groq (résumé support → résumé formation)
+```
+
+### Sécurité ZIP
+
+- Refus > 200 Mo compressé, > 500 Mo décompressé
+- Refus Zip Slip (`..`, chemin absolu)
+- Refus ZIP imbriqué (`.zip` dans `.zip`)
+- Refus > 200 fichiers
+
+### Chat documentaire — MODE STRICT
+
+9 types de questions routées automatiquement :
+
+| Type                       | Voyage | LLM | HITL |
+| -------------------------- | ------ | --- | ---- |
+| `conversationnel`          | Non    | Non | Non  |
+| `catalogue`                | Non    | Non | Non  |
+| `inventaire`               | Non    | Non | Non  |
+| `contenu_formation`        | Non    | Oui | Non  |
+| `localisation`             | Oui    | Oui | Non  |
+| `question_fond`            | Oui    | Oui | Non  |
+| `synthese_thematique`      | Oui    | Oui | Non  |
+| `aide_plateforme`          | Oui    | Oui | Non  |
+| `hors_sujet`               | Non    | Non | Non  |
+
+**Règle MODE STRICT :** si la recherche ne retourne rien, le message fixe
+« Aucun support ALTIORA ne traite ce sujet » est renvoyé **SANS appeler le LLM**.
+
+---
+
+## 📊 Qualité logicielle
+
+### Tests et couverture
+
+| Métrique                  | Valeur                    |
+| ------------------------- | ------------------------- |
+| **Tests passés**          | **624** (au 26/09/2026)   |
+| **Couverture**            | **70 %** (objectif CDC atteint) |
+| **Amélioration**          | 59 % → 70 % (133 nouveaux tests) |
+
+### Corrections critiques pipeline (25/09/2026)
+
+| #   | Module            | Bug                                                            |
+| --- | ----------------- | -------------------------------------------------------------- |
+| 1a  | M5 / Attestations | Pas de revérification du seuil 80% côté Agent 5                 |
+| 1b  | M2 / TDR          | Envoi au Backend **sans validation HITL**                       |
+| 1c  | M1 / Benchmark    | Benchmark polluait la base `formaia`                            |
+| 1d  | M1 / Benchmark    | `extraction_accuracy` comptait sans comparer au gold            |
+| 1e  | M1 / Classification | Pluriels non détectés (`bureautiques`, `applications`)        |
+
+### Bugs réels documentés (extraits)
+
+- Import `langchain.text_splitter` cassé avec langchain 1.4.2
+- `reasoning_effort` manquant sur RAG → Groq épuisait son budget
+- Route `/documents` non montée dans `router.py` → 404 sur toutes les routes
+- `parse_budget('5M Ar')` → 5.0 au lieu de 5 000 000
+- `+{progression_absolue}` → `+-10.0` pour une progression négative
+
+### Health check global
+
+Route `GET /health/ia` retourne l'état de **5 modules** :
+
+```json
+{
+  "status": "healthy",
+  "modules": {
+    "M5": "6/7 agents",
+    "M3": "OK",
+    "PREPARATION": "OK",
+    "M7": "OK",
+    "C3": "OK"
+  }
+}
+```
+
+Retourne `degraded` si un agent requis est indisponible (ex. `pandas` manquant).
+
+---
+
+## 🚀 Lancement
+
+### Développement
+
+Activer l'environnement virtuel :
+
+```powershell
+.\venv\Scripts\Activate.ps1
+```
+
+Démarrer le serveur FastAPI :
+
+```powershell
+python -m uvicorn app.main:app --reload
+```
+
+> **Note Windows :** l'utilisation de `python -m uvicorn` est recommandée
+> si `uvicorn.exe` est bloqué par une stratégie de contrôle d'application
+> (Smart App Control).
+
+Le serveur sera accessible à :
+
+```text
+http://localhost:8000
+```
+
+### 📚 Documentation interactive
+
+- **Swagger UI** : `http://localhost:8000/api/docs`
+- **ReDoc** : `http://localhost:8000/api/redoc`
+- **OpenAPI JSON** : `http://localhost:8000/api/openapi.json`
+
+### 🐳 Production — Docker
+
+```bash
+docker-compose build
+docker-compose up -d
+docker-compose logs -f
+```
+
+---
+
+## 📁 Structure du Projet
+
+```text
+FORMA-IA/
+├── app/
+│   ├── api/
+│   │   ├── v1/
+│   │   │   ├── endpoints/
+│   │   │   │   ├── auth.py                 # Authentification JWT
+│   │   │   │   ├── opportunite.py          # CRUD opportunités
+│   │   │   │   ├── analyse.py              # Analyse M1 + scoring
+│   │   │   │   ├── document.py             # Génération documents
+│   │   │   │   ├── facture.py              # M7 — CRUD factures
+│   │   │   │   ├── facture_ia.py           # M7 — Routes IA
+│   │   │   │   ├── formation.py            # Sessions, participants
+│   │   │   │   ├── formation_ia.py         # M5 — Routes IA + HITL
+│   │   │   │   ├── offre_ia.py             # M3 — Routes IA + HITL
+│   │   │   │   ├── preparation_ia.py       # Préparation — Routes IA
+│   │   │   │   ├── rag_ia.py               # C3 — Routes RAG + chat
+│   │   │   │   └── dashboard.py            # Statistiques
+│   │   │   ├── routes_tdr.py               # M2 — Routes TDR
+│   │   │   ├── routes_veille.py            # M1 — Routes veille + quota
+│   │   │   └── router.py                   # Agrégateur
+│   │   │
+│   │   ├── orchestrator/
+│   │   │   ├── formation_orchestrator.py   # M5
+│   │   │   ├── tdr_orchestrator.py         # M2 + HITL
+│   │   │   ├── veille_orchestrator.py      # M1
+│   │   │   ├── offre_orchestrator.py       # M3 + HITL
+│   │   │   ├── preparation_orchestrator.py # Préparation + HITL
+│   │   │   ├── facturation_orchestrator.py # M7 + HITL
+│   │   │   ├── rag_orchestrator.py         # C3
+│   │   │   └── chat_orchestrator.py        # C3 — chat
+│   │   │
+│   │   ├── services/
+│   │   │   ├── llm/                        # Provider Abstraction
+│   │   │   │   ├── llm_provider.py
+│   │   │   │   ├── groq_provider.py
+│   │   │   │   ├── claude_provider.py
+│   │   │   │   └── llm_factory.py
+│   │   │   ├── hitl/                       # HITL générique
+│   │   │   ├── backend_sync/               # Sync IA → Backend
+│   │   │   │   ├── base_sync.py
+│   │   │   │   ├── review_sync.py
+│   │   │   │   ├── tdr_sync.py
+│   │   │   │   ├── offre_sync.py
+│   │   │   │   ├── preparation_sync.py
+│   │   │   │   ├── facture_sync.py
+│   │   │   │   ├── facture_calculator_service.py
+│   │   │   │   └── opportunity_sync.py
+│   │   │   ├── formations/                 # M5 — 6 agents
+│   │   │   │   ├── form_generator_service.py
+│   │   │   │   ├── level_analyzer_service.py
+│   │   │   │   ├── satisfaction_analyzer_service.py
+│   │   │   │   ├── presence_analyzer_service.py
+│   │   │   │   ├── attestation_generator_service.py
+│   │   │   │   └── report_generator_service.py
+│   │   │   ├── veille/                     # M1
+│   │   │   │   ├── llm_analysis_service.py
+│   │   │   │   ├── classification_service.py
+│   │   │   │   ├── scoring_service.py
+│   │   │   │   ├── auto_detection_service.py
+│   │   │   │   ├── tavily_service.py
+│   │   │   │   └── tavily_quota_service.py
+│   │   │   ├── tdr/                        # M2
+│   │   │   │   ├── tdr_service.py
+│   │   │   │   └── tdr_document_generator.py
+│   │   │   ├── offres/                     # M3
+│   │   │   │   ├── offre_technique_service.py
+│   │   │   │   ├── offre_financiere_service.py
+│   │   │   │   └── grille_tarifaire_service.py
+│   │   │   ├── preparation/                # Préparation
+│   │   │   │   ├── budget_calculator_service.py
+│   │   │   │   └── edt_generator_service.py
+│   │   │   ├── facturation/                # M7
+│   │   │   │   └── relance_generator_service.py
+│   │   │   ├── rag/                        # C3 — RAG complet
+│   │   │   │   ├── embedding_provider.py
+│   │   │   │   ├── embedding_service.py
+│   │   │   │   ├── rate_limiter.py
+│   │   │   │   ├── document_loader_service.py
+│   │   │   │   ├── text_cleaner_service.py
+│   │   │   │   ├── texte_splitter.py       # Python pur
+│   │   │   │   ├── chunking_service.py
+│   │   │   │   ├── zip_securite.py
+│   │   │   │   ├── catalogue_service.py
+│   │   │   │   ├── registry_service.py
+│   │   │   │   ├── resume_service.py
+│   │   │   │   ├── knowledge_repository.py
+│   │   │   │   ├── recherche_service.py
+│   │   │   │   ├── query_cache_service.py
+│   │   │   │   ├── formation_resolver_service.py
+│   │   │   │   ├── type_detection_service.py
+│   │   │   │   ├── conversation_service.py
+│   │   │   │   ├── chat_log_service.py
+│   │   │   │   ├── portfolio_service.py
+│   │   │   │   ├── syllabus_service.py
+│   │   │   │   ├── questions_service.py
+│   │   │   │   ├── rag_document_generator.py
+│   │   │   │   └── llm_json_helper.py
+│   │   │   ├── benchmark/                  # Benchmark M1
+│   │   │   ├── generator/                  # PDF/Word
+│   │   │   └── ia_health.py                # Health check IA
+│   │   │
+│   │   ├── schemas/                        # Pydantic schemas
+│   │   ├── models/                         # SQLAlchemy models
+│   │   │   └── knowledge_base.py           # C3 — pgvector
+│   │   ├── prompts/                        # Prompts RTFCE — YAML
+│   │   │   ├── m1/                         # Veille
+│   │   │   ├── m2/                         # TDR
+│   │   │   ├── m3/                         # Offres
+│   │   │   ├── m5/                         # Formations
+│   │   │   ├── m7/                         # Facturation
+│   │   │   ├── m_prep/                     # Préparation
+│   │   │   └── rag/                        # RAG (10 prompts)
+│   │   ├── templates/                      # Templates Word
+│   │   ├── core/                           # Configuration, sécurité
+│   │   └── utils/                          # Helpers
+│   │
+│   ├── scripts/                            # Scripts utilitaires
+│   │   ├── setup_pgvector.py
+│   │   ├── migrer_knowledge_base_v1024.py
+│   │   ├── verifier_voyage.py
+│   │   ├── diagnostic_rag.py
+│   │   ├── importer_corpus.py
+│   │   ├── valider_corpus.py
+│   │   ├── prechauffer_cache.py
+│   │   ├── evaluer_rag.py
+│   │   ├── stats_chat.py
+│   │   ├── verifier_sync.py
+│   │   └── verifier_provider.py
+│   │
+│   ├── tests/
+│   │   ├── unit/                           # ~500 tests
+│   │   └── integration/                    # ~120 tests
+│   │
+│   ├── docs/
+│   │   ├── guide_utilisateur/              # 9 fichiers Markdown indexés
+│   │   └── protocole_annotation_corpus_m1.md
+│   │
+│   ├── data/                               # Données persistées (gitignore)
+│   │   ├── rag/
+│   │   │   ├── index_registry.json
+│   │   │   ├── query_cache.json
+│   │   │   ├── conversations/
+│   │   │   ├── chat_logs.jsonl
+│   │   │   └── fichiers/{hash}.{ext}
+│   │   ├── backend_sync_registry.json
+│   │   ├── hitl_reviews.json
+│   │   ├── veille_auto_state.json
+│   │   └── tavily_quota.json
+│   │
+│   ├── requirements.txt
+│   ├── trace-claude.ps1                    # Journal des modifications
+│   └── README.md
+│
+├── docker-compose.yml
+└── ...
+```
+
+---
+
+## 📊 Avancement Global
+
+```text
+██████████████████████████████░░░░░░░░░  ~75 %
+```
+
+### État actuel (au 26/09/2026)
+
+| Domaine                      | Avancement                                        |
+| ---------------------------- | ------------------------------------------------- |
+| Détection marché + TDR (M1, M2) | ✅ Développé (HITL sur M2)                     |
+| Offre technique + financière (M3) | ✅ Développé (HITL)                          |
+| Préparation formation        | 🟡 Partiel (budget non persisté)                 |
+| RAG / Base de connaissances (C3) | ✅ Développé (chat, portfolio, syllabus)     |
+| Gestion de la formation (M5, M6) | ✅ Développé — 6/7 agents                    |
+| Facturation + paiements (M7) | 🟡 Partiel (relance non persistée)               |
+| Tableau de bord (M8a)        | 🟡 Partiel                                       |
+| **Qualité**                  | ✅ 624 tests, 70% couverture                    |
+| **Avancement global estimé** | **~75 %**                                         |
+
+---
+
+## 🔐 Principes d'architecture
+
+FORMA-IA repose sur plusieurs principes structurants :
+
+1. **Python calcule, le LLM rédige** — les montants, scores, dates, seuils
+   sont toujours calculés en Python pur. Le LLM ne fait que rédiger du texte.
+2. **Human-In-The-Loop généralisé** — tout contenu à diffusion externe passe
+   par une validation humaine.
+3. **Provider Abstraction** — indépendance vis-à-vis du fournisseur LLM
+   (Groq actif, Claude préparé).
+4. **Fallback systématique** — si le LLM échoue, un gabarit Python prend le
+   relais. Aucune route ne plante à cause de l'IA.
+5. **MODE STRICT du RAG** — aucune réponse sans source indexée.
+6. **Idempotence des synchronisations** — un seul envoi par review approuvé.
+7. **Traçabilité complète** — journal `trace-claude.ps1` documente chaque
+   modification.
+8. **API-first** — exposition des fonctionnalités métier via FastAPI.
+9. **Sécurité ZIP** — protections contre bombes ZIP, Zip Slip, ZIP imbriqués.
+10. **Tests isolés** — aucun test ne touche la base réelle ni le réseau.
+
+---
+
+## ⚠️ Limites connues
+
+À assumer honnêtement devant le jury :
+
+| Limite                                | Module       | Statut        |
+| ------------------------------------- | ------------ | ------------- |
+| Budget non persisté côté Backend      | Préparation  | Documenté     |
+| Relance non persistée côté Backend    | M7           | Documenté     |
+| Enchaînement inter-modules via Frontend | Pipeline   | Documenté     |
+| Latence chat RAG > 3s sur certaines questions | C3   | À surveiller  |
+| Mesure précision M1 (>85%) non réalisée | M1         | À faire       |
+| Import corpus réel RAG non effectué   | C3           | À faire       |
+| Intégration Google Forms réelle       | M5           | À faire       |
+| Déploiement Docker production         | Infrastructure | À faire     |
+
+Ces limites sont **documentées** dans le code et les prompts, et ne sont
+**jamais masquées**.
+
+---
+
+## 📌 Statut du projet
+
+**FORMA-IA est en phase finale de développement.**
+
+Le socle fonctionnel actuel couvre :
+
+- **M1** — Veille marché (avec quota Tavily)
+- **M2** — Génération TDR (avec HITL)
+- **M3** — Offres technique et financière (avec HITL)
+- **Préparation** — EDT et budget (partiel)
+- **C3** — RAG complet (chat, portfolio, syllabus, questions)
+- **M5/M6** — 6 agents IA (avec HITL)
+- **M7** — Relances facture (avec HITL)
+
+**Avancement global estimé : ~75 %.**
+
+**Qualité :** 624 tests passants, couverture 70 % (objectif CDC atteint).
+
+---
+
+*Documentation maintenue à jour grâce au journal `trace-claude.ps1`.*
+```
+
+---
+
+## 📌 Résumé des modifications apportées au README
+
+| Section | Ancien | Nouveau |
+|---------|--------|---------|
+| **Badges** | 4 badges | **7 badges** (+ Voyage AI, pgvector, Tests 624, Coverage 70%) |
+| **Description** | 7 agents | **13 agents/services** + RAG complet |
+| **Étape 1** | Simplifiée | Détails M1 (quota Tavily) + M2 (HITL) |
+| **Étape 2** | En cours | ✅ Développé (HITL) |
+| **Étape 3** | À développer | 🟡 Partiel (budget non persisté) |
+| **Étape 4** | À développer (LangChain+ChromaDB) | ✅ Développé (**Voyage AI + pgvector**, LangChain retiré) |
+| **Étape 5** | 7 agents | 6 agents réels + note Agent 7 vestige |
+| **Étape finale** | Partiel | 🟡 Partiel (relance non persistée) |
+| **Agents IA** | Tableau 7 agents | **3 tableaux** (M5, C3, autres modules) |
+| **HITL** | 5 modules | **7 modules** (+ M2, Préparation, C3) |
+| **Provider Abstraction** | 4 fichiers | + `.env` + notes `reasoning_effort`/`json_mode` |
+| **Nouveau** | ❌ | **Section RAG complète** (Voyage, pgvector, pipeline, ZIP sécurité, chat MODE STRICT) |
+| **Nouveau** | ❌ | **Section Qualité logicielle** (624 tests, 70%, 5 corrections critiques, bugs réels) |
+| **Structure projet** | ~50 lignes | **~120 lignes** (tous les modules réels) |
+| **Avancement** | ~55% | **~75%** |
+| **Principes** | 7 | **10** (+ Python calcule, MODE STRICT, Idempotence) |
+| **Nouveau** | ❌ | **Section Limites connues** (honnêteté scientifique) |
+
+Le README reflète maintenant **fidèlement l'état réel** documenté dans `trace-claude.ps1`. 🎯

@@ -232,8 +232,6 @@ Révision humaine
                   Régénération
 
 
-
-
 ### Modules soumis au HITL
 
 | Module               | Agents / Fonction                                                      | Criticité   |
@@ -605,7 +603,6 @@ FORMA-IA/
 │   │   └── tavily_quota.json
 │   │
 │   ├── requirements.txt
-│   ├── trace-claude.ps1                    # Journal des modifications
 │   └── README.md
 │
 ├── docker-compose.yml
@@ -696,12 +693,7 @@ Le socle fonctionnel actuel couvre :
 
 **Qualité :** 624 tests passants, couverture 70 % (objectif CDC atteint).
 
----
-
-*Documentation maintenue à jour grâce au journal `trace-claude.ps1`.*
 ```
-
----
 
 ## 📌 Résumé des modifications apportées au README
 
@@ -724,5 +716,3 @@ Le socle fonctionnel actuel couvre :
 | **Avancement** | ~55% | **~75%** |
 | **Principes** | 7 | **10** (+ Python calcule, MODE STRICT, Idempotence) |
 | **Nouveau** | ❌ | **Section Limites connues** (honnêteté scientifique) |
-
-Le README reflète maintenant **fidèlement l'état réel** documenté dans `trace-claude.ps1`. 🎯

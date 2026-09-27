@@ -7,7 +7,8 @@ from app.database import get_db
 from app.core.dependencies import get_current_user, require_role
 from app.models.user import User
 from app.schemas.facture import (
-    FactureCreate, FactureResponse, PaiementCreate, PaiementResponse, RelanceResponse
+    FactureCreate, FactureResponse, PaiementCreate, PaiementResponse,
+    RelanceResponse, RelanceIACreate, RelanceIAResponse,
 )
 from app.services.facture_service import FactureService
 
@@ -62,3 +63,32 @@ def generer_relance(
 ):
     texte = service.generer_relance(facture_id)
     return RelanceResponse(texte=texte)
+
+
+@router.post(
+    "/{facture_id}/relances",
+    response_model=RelanceIAResponse,
+    status_code=201,
+    summary="Enregistrer une relance IA approuvée (HITL)",
+)
+def enregistrer_relance_ia(
+    facture_id: UUID,
+    data: RelanceIACreate,
+    service: FactureService = Depends(get_facture_service),
+    current_user: User = Depends(require_role("DIRECTION", "COMPTABLE")),
+):
+    """Persiste une relance rédigée par l'IA M7 et approuvée via HITL."""
+    return service.enregistrer_relance_ia(facture_id, data)
+
+
+@router.get(
+    "/{facture_id}/relances",
+    response_model=List[RelanceIAResponse],
+    summary="Lister les relances IA d'une facture",
+)
+def lister_relances(
+    facture_id: UUID,
+    service: FactureService = Depends(get_facture_service),
+    current_user: User = Depends(get_current_user),
+):
+    return service.lister_relances(facture_id)

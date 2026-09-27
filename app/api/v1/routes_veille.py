@@ -16,7 +16,7 @@ from fastapi import Depends, Query
 from app.utils.security import verify_api_key
 from app.services.benchmark.benchmark_runner import BenchmarkRunner
 
-import PyPDF2
+import pypdf
 
 from fastapi import (
     APIRouter,
@@ -354,6 +354,7 @@ async def analyser_texte(
         result = await orchestrator.analyser_texte(
             texte=texte,
             source=request.source or "manuel",
+            sync_backend=False,
         )
 
         return {
@@ -419,7 +420,7 @@ async def analyser_pdf(
             )
 
         try:
-            reader = PyPDF2.PdfReader(io.BytesIO(contents))
+            reader = pypdf.PdfReader(io.BytesIO(contents))
         except Exception:
             raise HTTPException(
                 status_code=400,
@@ -446,6 +447,7 @@ async def analyser_pdf(
         resultat = await orchestrator.analyser_texte(
             texte=texte_complet,
             source=source,
+            sync_backend=False,
         )
 
         return {

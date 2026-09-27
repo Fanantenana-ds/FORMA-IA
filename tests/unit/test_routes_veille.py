@@ -119,7 +119,7 @@ def test_detecter_statut(client, monkeypatch):
 # ---- POST /ia/veille/analyser-texte ----
 
 def test_analyser_texte_success(client, monkeypatch):
-    monkeypatch.setattr(routes_veille.orchestrator, "analyser_texte", _async(lambda texte, source: RESULTAT_VIDE))
+    monkeypatch.setattr(routes_veille.orchestrator, "analyser_texte", _async(lambda texte, source, **kw: RESULTAT_VIDE))
     resp = client.post("/ia/veille/analyser-texte", json={"texte": "Un appel d'offre pour une formation."})
     assert resp.status_code == 200
     assert resp.json()["success"] is True
@@ -183,7 +183,7 @@ def test_analyser_pdf_aucun_texte_exploitable(client, monkeypatch):
         def __init__(self, *a, **k):
             self.pages = [FausseePage()]
 
-    monkeypatch.setattr(routes_veille.PyPDF2, "PdfReader", FauxReader)
+    monkeypatch.setattr(routes_veille.pypdf, "PdfReader", FauxReader)
     resp = client.post(
         "/ia/veille/analyser-pdf",
         files={"file": ("scan_image.pdf", b"%PDF-1.4 ...", "application/pdf")},
@@ -201,8 +201,8 @@ def test_analyser_pdf_success(client, monkeypatch):
         def __init__(self, *a, **k):
             self.pages = [FausseePage()]
 
-    monkeypatch.setattr(routes_veille.PyPDF2, "PdfReader", FauxReader)
-    monkeypatch.setattr(routes_veille.orchestrator, "analyser_texte", _async(lambda texte, source: RESULTAT_VIDE))
+    monkeypatch.setattr(routes_veille.pypdf, "PdfReader", FauxReader)
+    monkeypatch.setattr(routes_veille.orchestrator, "analyser_texte", _async(lambda texte, source, **kw: RESULTAT_VIDE))
 
     resp = client.post(
         "/ia/veille/analyser-pdf",
@@ -223,7 +223,7 @@ def test_analyser_pdf_exception_apres_extraction_renvoie_500(client, monkeypatch
         def __init__(self, *a, **k):
             self.pages = [FausseePage()]
 
-    monkeypatch.setattr(routes_veille.PyPDF2, "PdfReader", FauxReader)
+    monkeypatch.setattr(routes_veille.pypdf, "PdfReader", FauxReader)
 
     async def echoue(texte, source):
         raise RuntimeError("Groq indisponible")

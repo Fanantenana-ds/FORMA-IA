@@ -14,6 +14,16 @@ class GenererRelanceRequest(BaseModel):
     facture_id: str = Field(..., description="UUID Backend de la facture")
 
 
+class SynchroniserRelanceRequest(BaseModel):
+    """Corps de la requête pour synchroniser une relance approuvée vers le Backend."""
+
+    review_id: str = Field(..., description="ID du review HITL APPROUVÉ (agent_m7_relance)")
+    force: bool = Field(
+        default=False,
+        description="Renvoyer même si déjà synchronisé (crée une NOUVELLE entrée côté Backend)",
+    )
+
+
 class CalculerMontantsRequest(BaseModel):
     """
     Corps de la requête pour calculer les montants d'une facture

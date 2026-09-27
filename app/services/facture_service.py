@@ -4,8 +4,8 @@ from uuid import UUID
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from app.models.facture import Facture, Paiement, StatutFacture
-from app.schemas.facture import FactureCreate, PaiementCreate
+from app.models.facture import Facture, Paiement, Relance, StatutFacture
+from app.schemas.facture import FactureCreate, PaiementCreate, RelanceIACreate
 
 
 class FactureService:
@@ -76,6 +76,25 @@ class FactureService:
             f"Échéance dépassée le : {facture.date_echeance}\n"
             f"Merci de bien vouloir régulariser cette facture dans les meilleurs délais."
         )
+
+    def enregistrer_relance_ia(self, facture_id: UUID, data: RelanceIACreate) -> Relance:
+        """Persiste une relance IA approuvée (HITL) liée à une facture."""
+        self.get_facture(facture_id)  # lève 404 si introuvable
+        relance = Relance(
+            facture_id=facture_id,
+            niveau=data.niveau,
+            objet=data.objet,
+            texte=data.texte,
+            review_id=data.review_id,
+        )
+        self.db.add(relance)
+        self.db.commit()
+        self.db.refresh(relance)
+        return relance
+
+    def lister_relances(self, facture_id: UUID):
+        self.get_facture(facture_id)
+        return self.db.query(Relance).filter(Relance.facture_id == facture_id).all()
 
     def lister(self):
         return self.db.query(Facture).all()

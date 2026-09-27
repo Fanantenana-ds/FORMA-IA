@@ -5,7 +5,7 @@ import time
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-import PyPDF2
+import pypdf
 
 from app.services.veille.tavily_service import TavilyService
 from app.services.veille.prefilter_service import rank_results
@@ -486,7 +486,7 @@ class VeilleOrchestrator:
     def _extract_pdf_text(pdf_bytes: bytes) -> str:
         """Extrait le texte d'un PDF (PyPDF2, même logique que la route
         /ia/veille/analyser-pdf qui fait sa propre extraction en pratique)."""
-        reader = PyPDF2.PdfReader(io.BytesIO(pdf_bytes))
+        reader = pypdf.PdfReader(io.BytesIO(pdf_bytes))
         pages = []
         for page in reader.pages:
             text = (page.extract_text() or "").strip()

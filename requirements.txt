@@ -54,7 +54,7 @@ pydantic==2.10.4
 pydantic-settings==2.7.0
 pydantic_core==2.27.2
 pyparsing==3.3.2
-PyPDF2==3.0.1
+pypdf>=6.0.0
 pytest==8.3.4
 pytest-asyncio==0.23.8
 pytest-cov==6.0.0

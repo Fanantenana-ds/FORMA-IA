@@ -3,14 +3,15 @@
 # SYNC M7 — Facturation IA ↔ Backend
 # ============================================================
 # Routes Backend utilisées (contrat réel, app/api/v1/endpoints/facture.py) :
-#   POST /factures        FactureCreate {client, montant (HT, > 0),
-#                         tva_taux, date_echeance}   rôle DIRECTION/COMPTABLE
-#   GET  /factures/{id}   FactureResponse (paiements inclus)
+#   POST /factures               FactureCreate {client, montant (HT, > 0),
+#                                tva_taux, date_echeance}  rôle DIRECTION/COMPTABLE
+#   GET  /factures/{id}          FactureResponse (paiements inclus)
+#   POST /factures/{id}/relances RelanceIACreate {niveau, objet, texte, review_id}
+#                                rôle DIRECTION/COMPTABLE — retourne RelanceIAResponse
 #
 # Le numéro de facture, le TTC et le statut sont calculés par le Backend.
 #
-# ⚠️ HITL : une facture créée est immédiatement "EMISE" côté Backend.
-#    N'appeler sync_facture_to_backend() qu'APRÈS approbation humaine.
+# ⚠️ HITL : n'appeler sync_*() qu'APRÈS approbation humaine.
 # ============================================================
 
 import logging
@@ -69,6 +70,54 @@ async def sync_facture_to_backend(
     result.update(sent)
     if isinstance(sent.get("data"), dict):
         result["numero"] = sent["data"].get("numero")
+    return result
+
+
+async def sync_relance_to_backend(
+    facture_id: str,
+    niveau: str,
+    objet: str,
+    texte: str,
+    review_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Persiste une relance IA approuvée (POST /factures/{id}/relances).
+
+    Args:
+        facture_id: UUID de la facture côté Backend.
+        niveau: "1", "2" ou "3".
+        objet: objet du courrier de relance.
+        texte: corps complet de la relance (max 10 000 caractères).
+        review_id: ID du review HITL approuvé (traçabilité).
+
+    Returns:
+        Résultat standard (base_sync.new_result) + "relance_id" si créée.
+    """
+    result = base_sync.new_result(relance_id=None)
+    if not result["enabled"]:
+        logger.info("ℹ️ Backend sync DÉSACTIVÉ — relance non envoyée")
+        return result
+
+    if not base_sync.is_valid_uuid(facture_id):
+        result["error"] = "facture_id n'est pas un UUID valide"
+        return result
+
+    payload: Dict[str, Any] = {
+        "niveau": str(niveau),
+        "objet": objet[:200],
+        "texte": texte[:10000],
+    }
+    if review_id:
+        payload["review_id"] = str(review_id)[:100]
+
+    response = await base_sync.backend_request(
+        "POST", f"/factures/{facture_id}/relances", payload
+    )
+    result["sent"] = response["ok"]
+    result["error"] = response.get("error")
+    if response["ok"] and isinstance(response["data"], dict):
+        result["relance_id"] = response["data"].get("id")
+        result["verified"] = True
     return result
 
 

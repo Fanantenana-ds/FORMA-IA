@@ -26,6 +26,7 @@ from typing import Any, Dict, Optional
 from app.services.facturation import RelanceGeneratorService
 from app.services.backend_sync.facture_calculator_service import FactureCalculatorService
 from app.services.backend_sync import facture_sync
+from app.services.backend_sync import review_sync
 from app.services.hitl import create_review
 
 logger = logging.getLogger(__name__)
@@ -206,6 +207,64 @@ class FacturationOrchestrator:
         except Exception as e:
             self._log_error("generer_relance", start, e)
             raise
+
+    # =========================================================================
+    # SYNCHRONISATION BACKEND (après approbation HITL)
+    # =========================================================================
+
+    async def synchroniser_backend(
+        self,
+        review_id: str,
+        force: bool = False,
+    ) -> Dict[str, Any]:
+        """
+        Enregistre la relance APPROUVÉE côté Backend (POST /factures/{id}/relances).
+
+        Garde-fous : review approuvé uniquement (agent_m7_relance), un seul
+        envoi par review (sauf force=True).
+
+        Args:
+            review_id: ID du review HITL de la relance.
+            force: renvoyer même si déjà synchronisé.
+
+        Raises:
+            ValueError: review introuvable / non approuvé / d'un autre agent.
+        """
+        start = self._log_start(
+            "synchroniser_backend",
+            **{"🔍 Review": review_id, "🔁 Force": force},
+        )
+
+        review = review_sync.load_approved_review(
+            review_id, agent_ids=("agent_m7_relance",)
+        )
+        data = review.get("data") or {}
+        facture_id = data.get("facture_id")
+        if not facture_id:
+            raise ValueError(
+                f"Review '{review_id}' ne contient pas de facture_id — "
+                "relancez /ia/facturation/relances/generer."
+            )
+
+        async def _envoyer() -> Dict[str, Any]:
+            return await facture_sync.sync_relance_to_backend(
+                facture_id=facture_id,
+                niveau=str(data.get("niveau", "1")),
+                objet=data.get("objet", "Relance"),
+                texte=data.get("texte", ""),
+                review_id=review_id,
+            )
+
+        result = await review_sync.sync_once(review_id, _envoyer, force=force)
+        self._log_end(
+            "synchroniser_backend", start,
+            **{
+                "📤 Envoyé": (result["backend_sync"] or {}).get("sent"),
+                "♻️  Déjà synchronisé": result["already_synced"],
+                "🆔 Relance ID": (result["backend_sync"] or {}).get("relance_id"),
+            },
+        )
+        return result
 
 
 # =============================================================================

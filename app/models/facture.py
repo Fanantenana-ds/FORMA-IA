@@ -45,3 +45,17 @@ class Paiement(Base):
     mode = Column(String(20), nullable=True)
 
     facture = relationship("Facture", back_populates="paiements")
+
+
+class Relance(Base):
+    __tablename__ = "relances"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    facture_id = Column(UUID(as_uuid=True), ForeignKey("factures.id"), nullable=False)
+    niveau = Column(String(1), nullable=False)          # "1", "2" ou "3"
+    objet = Column(String(200), nullable=False)
+    texte = Column(String(10000), nullable=False)
+    review_id = Column(String(100), nullable=True)      # ID du review HITL approuvé
+    date_creation = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+
+    facture = relationship("Facture")

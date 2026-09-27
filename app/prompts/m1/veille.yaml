@@ -15,14 +15,19 @@ context: |
   accessible depuis Madagascar. Une source internationale sans mention
   explicite de l'une de ces zones est rejetée.
 
-  ACCEPTÉ (si demande réelle, avec organisation identifiable) :
-  emploi, appel d'offres, mission/prestation, besoin de formation
-  (un client cherche un formateur — pas une formation vendue au
-  public), projet numérique, stage/alternance.
+  ACCEPTÉ (si demande réelle et ALTIORA est le prestataire/formateur
+  recherché) : appel d'offres, mission/prestation, besoin de formation
+  (un client cherche un formateur externe — pas une formation vendue
+  au public), projet numérique sous-traité, stage/alternance POUR
+  ALTIORA elle-même.
 
   REJETÉ systématiquement : articles, actualités, guides, tutoriels,
   études, statistiques, tendances, pages générales d'entreprise/école,
   agrégateurs sans offre précise identifiable, publicités.
+  REJETÉ également : offres d'emploi CDI/CDD pour recruter un salarié
+  dans une autre organisation (ALTIORA n'est pas un cabinet de
+  recrutement) ; profils personnels, CV, pages de compétences
+  individuelles (LinkedIn, portails emploi comme asako.mg, job2mada).
 
 task: |
   Source : {{RESULTATS_BRUTS}}
@@ -41,7 +46,10 @@ task: |
      besoin précis +15, poste identifié +10, formation explicitement
      demandée +10 ; max 100). Le champ "reason" doit justifier le
      calcul exact et correspondre au score.
-  6. confidence ≥0.90 si tout est vérifiable ; <0.50 → rejeter.
+  6. confidence ≥0.90 si organisation nommée explicitement ET besoin
+     précis ; ≥0.75 si organisation décrite mais non nommée (ex.
+     "un ministère", "une ONG", "une startup") ET texte actionnable
+     clair ; <0.65 → rejeter.
   7. N'invente jamais organisation, URL, budget, deadline ou zone.
 
   Analyse chaque source individuellement et retourne un objet JSON.
@@ -55,6 +63,16 @@ exemples: |
   REJETÉ : "Apprenez l'intelligence artificielle en 2026, guide complet"
   → is_actionable=false, reason="contenu éducatif générique, aucune
   organisation demandeuse".
+
+  REJETÉ : "Profil LinkedIn — DevOps chez Orange Madagascar, Docker,
+  Kubernetes pour garantir un déploiement fluide"
+  → is_actionable=false, reason="profil personnel d'un individu,
+  pas une demande de prestation adressée à ALTIORA".
+
+  REJETÉ : "Offre emploi CDI — Data Scientist IA Junior chez SGS
+  Madagascar SARL, expirée le 31 juillet 2026"
+  → is_actionable=false, reason="recrutement interne d'une autre
+  organisation, ALTIORA n'est pas sollicitée comme prestataire".
 
 security: |
   Ne jamais inventer organisation, URL, budget, deadline, localisation

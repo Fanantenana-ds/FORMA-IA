@@ -91,7 +91,7 @@ class VeilleOrchestrator:
         for name in inactive:
             vlog(f"   ⏳ {name} (en attente)")
         vlog("=" * 70)
-        vlog("✅ VeilleOrchestrator initialisé avec succès.")
+        vlog(" VeilleOrchestrator initialisé avec succès.")
 
     # ========================================================
     # ENTRÉE 1 — RECHERCHE WEB

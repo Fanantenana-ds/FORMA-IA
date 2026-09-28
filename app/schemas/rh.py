@@ -115,8 +115,11 @@ class EntretienResponse(BaseModel):
     candidat_id: UUID
     date_entretien: Optional[datetime] = None
     interviewers: Optional[str] = None
+    notes_brutes: Optional[str] = None
+    compte_rendu: Optional[str] = None
     decision: Optional[str] = None
     review_id_entretien: Optional[str] = None
+    email_brouillon: Optional[str] = None
     review_id_email: Optional[str] = None
     date_creation: datetime
     model_config = {"from_attributes": True}

@@ -1,10 +1,29 @@
+# app/api/v1/endpoints/facture.py
+# ============================================================
+# ROUTES BACKEND — Facturation
+# ============================================================
+#
+#   POST /factures                        Émettre une facture (DIRECTION, COMPTABLE)
+#   GET  /factures                        Lister (filtres : statut, client + pagination)
+#   GET  /factures/{id}                   Lire une facture
+#   PATCH /factures/{id}                  Mettre à jour partielle (PATCH)
+#   POST /factures/{id}/paiments          Ajouter un paiement
+#   POST /factures/{id}/relance           Générer un texte de relance simple
+#   POST /factures/{id}/relances          Enregistrer une relance IA HITL
+#   GET  /factures/{id}/relances          Lister les relances IA d'une facture
+#
+# ⚙️  Pagination GET : skip (défaut 0) + limit (défaut 100)
+# ⚙️  Filtres GET : statut (EMISE|PARTIELLEMENT_PAYEE|PAYEE|EN_RETARD), client (recherche partielle)
+# ============================================================
+
+from typing import List, Optional
 from uuid import UUID
-from typing import List
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.core.dependencies import get_current_user, require_role
+from app.models.facture import StatutFacture
 from app.models.user import User
 from app.schemas.facture import (
     FactureCreate, FactureUpdate, FactureResponse,
@@ -29,12 +48,30 @@ def emettre_facture(
     return service.emettre_facture(data)
 
 
-@router.get("", response_model=List[FactureResponse])
+@router.get(
+    "",
+    response_model=List[FactureResponse],
+    summary="Lister les factures (avec filtres et pagination)",
+    description=(
+        "Retourne la liste des factures, triées par date de création décroissante.\n\n"
+        "**Filtres optionnels :**\n"
+        "- `statut` : `EMISE` | `PARTIELLEMENT_PAYEE` | `PAYEE` | `EN_RETARD`\n"
+        "- `client` : recherche partielle (insensible à la casse)\n\n"
+        "**Pagination :**\n"
+        "- `skip` : nombre d'éléments à sauter (défaut : 0)\n"
+        "- `limit` : nombre max d'éléments retournés (défaut : 100)\n\n"
+        "**Exemple :** `GET /factures?statut=EN_RETARD&client=SONAPAR&skip=0&limit=20`"
+    ),
+)
 def lister_factures(
+    statut: Optional[StatutFacture] = Query(default=None, description="Filtrer par statut"),
+    client: Optional[str] = Query(default=None, description="Recherche partielle sur le nom du client"),
+    skip: int = Query(default=0, ge=0, description="Nombre d'éléments à ignorer"),
+    limit: int = Query(default=100, ge=1, le=500, description="Nombre max d'éléments"),
     service: FactureService = Depends(get_facture_service),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
-    return service.lister()
+    return service.lister(statut=statut, client=client, skip=skip, limit=limit)
 
 
 @router.get("/{facture_id}", response_model=FactureResponse)

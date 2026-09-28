@@ -1,15 +1,17 @@
+from typing import List, Optional
+from uuid import UUID
 from fastapi import HTTPException, status
 from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 from app.core.security import (
     create_access_token, decode_access_token, hash_password, verify_password
 )
-from app.models.user import User
+from app.models.user import User, RoleEnum
 from app.repositories.user_repository import UserRepository
 from app.repositories.revoked_token_repository import (
     RevokedTokenRepository
     )
-from app.schemas.user import UserCreate
+from app.schemas.user import UserCreate, UserUpdate
 
 class AuthService:
     def __init__(self, db: Session):
@@ -115,8 +117,47 @@ class AuthService:
             expire_at = expire_at
         )
 
-        return {
-            "message": "Déconnexion réussie"
-        }
+        return {"message": "Déconnexion réussie"}
 
-        
+    # -------------------------------------------------------------------------
+    # ADMIN — gestion des utilisateurs (DIRECTION uniquement)
+    # -------------------------------------------------------------------------
+
+    def _get_user_or_404(self, user_id: UUID) -> User:
+        user = self.user_repository.find_by_id(user_id)
+        if not user:
+            raise HTTPException(status_code=404, detail="Utilisateur introuvable")
+        return user
+
+    def lister_utilisateurs(
+        self,
+        role: Optional[RoleEnum] = None,
+        actif: Optional[bool] = None,
+    ) -> List[User]:
+        return self.user_repository.find_all(role=role, actif=actif)
+
+    def get_utilisateur(self, user_id: UUID) -> User:
+        return self._get_user_or_404(user_id)
+
+    def mettre_a_jour_utilisateur(self, user_id: UUID, data: UserUpdate) -> User:
+        user = self._get_user_or_404(user_id)
+        updates = data.model_dump(exclude_none=True)
+        if "email" in updates:
+            existing = self.user_repository.find_by_email(updates["email"])
+            if existing and existing.id != user_id:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Cet email est déjà associé à un autre compte.",
+                )
+        for field, value in updates.items():
+            setattr(user, field, value)
+        return self.user_repository.save(user)
+
+    def supprimer_utilisateur(self, user_id: UUID, current_user_id: UUID) -> None:
+        if user_id == current_user_id:
+            raise HTTPException(
+                status_code=400,
+                detail="Impossible de supprimer son propre compte.",
+            )
+        user = self._get_user_or_404(user_id)
+        self.user_repository.delete(user)

@@ -13,6 +13,16 @@ class SessionCreate(BaseModel):
     date_fin: Optional[date] = None
     formateur_id: Optional[UUID] = None
 
+
+class SessionUpdate(BaseModel):
+    """Mise à jour partielle d'une session (tous les champs sont optionnels)."""
+    titre: Optional[str] = Field(default=None, min_length=1)
+    client: Optional[str] = None
+    date_debut: Optional[date] = None
+    date_fin: Optional[date] = None
+    formateur_id: Optional[UUID] = None
+
+
 class SessionResponse(BaseModel):
     id: UUID
     titre: str

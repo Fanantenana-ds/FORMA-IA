@@ -4,7 +4,7 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session as DbSession
 
 from app.models.formation import Session, Seance, Participant, Inscription, Presence
-from app.schemas.formation import SessionCreate, SeanceCreate, ParticipantCreate, PresenceCreate, InscriptionCreate
+from app.schemas.formation import SessionCreate, SessionUpdate, SeanceCreate, ParticipantCreate, PresenceCreate, InscriptionCreate
 
 class FormationService:
     def __init__(self, db: DbSession):
@@ -63,6 +63,27 @@ class FormationService:
     # -------------------------------------------------------------------------
     # LISTE DES SESSIONS
     # -------------------------------------------------------------------------
+
+    def mettre_a_jour_session(self, session_id: UUID, data: SessionUpdate) -> Session:
+        """Mise à jour partielle d'une session (PATCH semantics)."""
+        session = self.get_session(session_id)
+        for field, value in data.model_dump(exclude_none=True).items():
+            setattr(session, field, value)
+        # Cohérence : date_fin ne peut pas être avant date_debut
+        if session.date_fin and session.date_debut and session.date_fin < session.date_debut:
+            raise HTTPException(
+                status_code=422,
+                detail="date_fin ne peut pas être antérieure à date_debut.",
+            )
+        self.db.commit()
+        self.db.refresh(session)
+        return session
+
+    def supprimer_session(self, session_id: UUID) -> None:
+        """Supprime une session et toutes ses séances (cascade définie en DB)."""
+        session = self.get_session(session_id)
+        self.db.delete(session)
+        self.db.commit()
 
     def lister_sessions(
         self,

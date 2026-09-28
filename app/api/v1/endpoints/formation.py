@@ -35,7 +35,7 @@ from app.core.dependencies import get_current_user, require_role
 from app.models.user import User
 from app.schemas.formation import (
     SeanceCreate, SeanceResponse,
-    SessionCreate, SessionResponse,
+    SessionCreate, SessionUpdate, SessionResponse,
     ParticipantCreate, ParticipantResponse,
     PresenceCreate, PresenceResponse,
     InscriptionCreate, InscriptionResponse,
@@ -96,6 +96,49 @@ def lister_sessions(
     current_user: User = Depends(get_current_user),
 ):
     return service.lister_sessions(formateur_id=formateur_id, client=client)
+
+
+@router.patch(
+    "/{session_id}",
+    response_model=SessionResponse,
+    summary="Mettre à jour une session (PATCH partiel)",
+    description=(
+        "Modifie un ou plusieurs champs d'une session existante.\n\n"
+        "**Tous les champs sont optionnels** — seuls les champs fournis sont modifiés "
+        "(PATCH semantics).\n\n"
+        "**Champs modifiables :** `titre`, `client`, `date_debut`, `date_fin`, `formateur_id`.\n\n"
+        "Retourne **422** si `date_fin` est antérieure à `date_debut`.\n\n"
+        "Retourne **404** si la session n'existe pas.\n\n"
+        "**Rôles autorisés :** DIRECTION, FORMATEUR."
+    ),
+)
+def mettre_a_jour_session(
+    session_id: UUID,
+    data: SessionUpdate,
+    service: FormationService = Depends(get_formation_service),
+    current_user: User = Depends(require_role("DIRECTION", "FORMATEUR")),
+):
+    return service.mettre_a_jour_session(session_id, data)
+
+
+@router.delete(
+    "/{session_id}",
+    status_code=204,
+    summary="Supprimer une session",
+    description=(
+        "Supprime définitivement une session et toutes ses séances (cascade).\n\n"
+        "⚠️ **Action irréversible** : les séances et présences associées sont également supprimées.\n\n"
+        "Retourne **404** si la session n'existe pas.\n\n"
+        "Retourne **204 No Content** en cas de succès.\n\n"
+        "**Rôles autorisés :** DIRECTION."
+    ),
+)
+def supprimer_session(
+    session_id: UUID,
+    service: FormationService = Depends(get_formation_service),
+    current_user: User = Depends(require_role("DIRECTION")),
+):
+    service.supprimer_session(session_id)
 
 
 @router.get(

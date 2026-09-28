@@ -39,6 +39,12 @@ class SeanceCreate(BaseModel):
     duree: Optional[str] = None
     theme: Optional[str] = None
 
+class SeanceUpdate(BaseModel):
+    """Mise à jour partielle d'une séance (tous les champs sont optionnels)."""
+    date: Optional[date] = None
+    duree: Optional[str] = None
+    theme: Optional[str] = None
+
 class SeanceResponse(BaseModel):
     id: UUID
     session_id: UUID
@@ -50,6 +56,12 @@ class SeanceResponse(BaseModel):
 
 class ParticipantCreate(BaseModel):
     nom: str = Field(..., min_length=1)
+    email: Optional[str] = None
+    entreprise: Optional[str] = None
+
+class ParticipantUpdate(BaseModel):
+    """Mise à jour partielle d'un participant (tous les champs sont optionnels)."""
+    nom: Optional[str] = Field(default=None, min_length=1)
     email: Optional[str] = None
     entreprise: Optional[str] = None
 
@@ -66,8 +78,13 @@ class PresenceCreate(BaseModel):
     statut: StatutPresence
     source: SourcePresence = SourcePresence.MANUEL
 
+class PresenceUpdate(BaseModel):
+    """Correction du statut d'une présence (PRESENT / ABSENT / EXCUSE)."""
+    statut: StatutPresence
+
 class PresenceResponse(BaseModel):
     id: UUID
+    seance_id: UUID
     participant_id: UUID
     statut: StatutPresence
     source: SourcePresence

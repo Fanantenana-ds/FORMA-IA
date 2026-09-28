@@ -4,7 +4,13 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session as DbSession
 
 from app.models.formation import Session, Seance, Participant, Inscription, Presence
-from app.schemas.formation import SessionCreate, SessionUpdate, SeanceCreate, ParticipantCreate, PresenceCreate, InscriptionCreate
+from app.schemas.formation import (
+    SessionCreate, SessionUpdate,
+    SeanceCreate, SeanceUpdate,
+    ParticipantCreate, ParticipantUpdate,
+    PresenceCreate, PresenceUpdate,
+    InscriptionCreate,
+)
 
 class FormationService:
     def __init__(self, db: DbSession):
@@ -172,6 +178,76 @@ class FormationService:
         if not inscription:
             raise HTTPException(status_code=404, detail="Inscription introuvable")
         self.db.delete(inscription)
+        self.db.commit()
+
+    # -------------------------------------------------------------------------
+    # SÉANCES — PATCH / DELETE + lister présences
+    # -------------------------------------------------------------------------
+
+    def get_seance(self, seance_id: UUID) -> Seance:
+        seance = self.db.query(Seance).filter(Seance.id == seance_id).first()
+        if not seance:
+            raise HTTPException(status_code=404, detail="Séance introuvable")
+        return seance
+
+    def mettre_a_jour_seance(self, seance_id: UUID, data: SeanceUpdate) -> Seance:
+        """Mise à jour partielle d'une séance (PATCH semantics)."""
+        seance = self.get_seance(seance_id)
+        for field, value in data.model_dump(exclude_none=True).items():
+            setattr(seance, field, value)
+        self.db.commit()
+        self.db.refresh(seance)
+        return seance
+
+    def supprimer_seance(self, seance_id: UUID) -> None:
+        """Supprime une séance et toutes ses présences (cascade)."""
+        seance = self.get_seance(seance_id)
+        self.db.delete(seance)
+        self.db.commit()
+
+    # -------------------------------------------------------------------------
+    # PRÉSENCES — lister + corriger
+    # -------------------------------------------------------------------------
+
+    def lister_presences(self, seance_id: UUID) -> List[Presence]:
+        self.get_seance(seance_id)
+        return (
+            self.db.query(Presence)
+            .filter(Presence.seance_id == seance_id)
+            .all()
+        )
+
+    def get_presence(self, presence_id: UUID) -> Presence:
+        presence = self.db.query(Presence).filter(Presence.id == presence_id).first()
+        if not presence:
+            raise HTTPException(status_code=404, detail="Présence introuvable")
+        return presence
+
+    def mettre_a_jour_presence(self, presence_id: UUID, data: PresenceUpdate) -> Presence:
+        """Corrige le statut d'une présence (PATCH semantics)."""
+        presence = self.get_presence(presence_id)
+        presence.statut = data.statut
+        self.db.commit()
+        self.db.refresh(presence)
+        return presence
+
+    # -------------------------------------------------------------------------
+    # PARTICIPANTS — PATCH / DELETE
+    # -------------------------------------------------------------------------
+
+    def mettre_a_jour_participant(self, participant_id: UUID, data: ParticipantUpdate) -> Participant:
+        """Mise à jour partielle d'un participant (PATCH semantics)."""
+        participant = self.get_participant(participant_id)
+        for field, value in data.model_dump(exclude_none=True).items():
+            setattr(participant, field, value)
+        self.db.commit()
+        self.db.refresh(participant)
+        return participant
+
+    def supprimer_participant(self, participant_id: UUID) -> None:
+        """Supprime un participant (et ses présences/inscriptions via cascade DB)."""
+        participant = self.get_participant(participant_id)
+        self.db.delete(participant)
         self.db.commit()
 
     def lister_participants_session(self, session_id: UUID) -> List[Participant]:

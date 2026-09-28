@@ -4,20 +4,34 @@
 # ============================================================
 #
 # SESSIONS
-#   POST   /sessions                             Créer une session de formation
-#   GET    /sessions                             Lister toutes les sessions (filtres : formateur_id, client)
-#   GET    /sessions/{session_id}                Lire une session par ID
-#   GET    /sessions/{session_id}/seances        Lister les séances d'une session (ordre chronologique)
-#   POST   /sessions/{session_id}/seances        Ajouter une séance à une session
-#   POST   /sessions/{session_id}/inscrire       Inscrire un participant à une session
-#   DELETE /sessions/{session_id}/inscrire/{id}  Désinscrire un participant d'une session
-#   GET    /sessions/{session_id}/participants   Lister les participants inscrits à une session
-#   POST   /sessions/seances/{seance_id}/presences  Enregistrer une présence à une séance
+#   POST   /sessions                                  Créer une session de formation
+#   GET    /sessions                                  Lister (filtres : formateur_id, client)
+#   GET    /sessions/{id}                             Lire une session par ID
+#   PATCH  /sessions/{id}                             Modifier une session (PATCH partiel)
+#   DELETE /sessions/{id}                             Supprimer une session (cascade séances)
+#
+# SÉANCES D'UNE SESSION
+#   GET    /sessions/{id}/seances                     Lister les séances (ordre chronologique)
+#   POST   /sessions/{id}/seances                     Ajouter une séance
+#   PATCH  /sessions/seances/{seance_id}              Modifier une séance (date, durée, thème)
+#   DELETE /sessions/seances/{seance_id}              Supprimer une séance (cascade présences)
+#
+# PRÉSENCES D'UNE SÉANCE
+#   POST   /sessions/seances/{seance_id}/presences    Enregistrer une présence
+#   GET    /sessions/seances/{seance_id}/presences    Lister les présences d'une séance
+#   PATCH  /sessions/seances/presences/{presence_id} Corriger le statut d'une présence
+#
+# INSCRIPTIONS
+#   POST   /sessions/{id}/inscrire                    Inscrire un participant
+#   DELETE /sessions/{id}/inscrire/{participant_id}   Désinscrire un participant
+#   GET    /sessions/{id}/participants                Lister les participants inscrits
 #
 # PARTICIPANTS (ressource indépendante)
-#   POST   /participants                         Créer un participant
-#   GET    /participants                         Lister tous les participants (filtre : nom)
-#   GET    /participants/{participant_id}        Lire un participant par ID
+#   POST   /participants                              Créer un participant
+#   GET    /participants                              Lister (filtre : nom)
+#   GET    /participants/{id}                         Lire un participant par ID
+#   PATCH  /participants/{id}                         Modifier un participant (PATCH partiel)
+#   DELETE /participants/{id}                         Supprimer un participant
 #
 # ⚙️  Rôles :
 #   Lecture  → tout utilisateur authentifié (get_current_user)
@@ -34,10 +48,10 @@ from app.database import get_db
 from app.core.dependencies import get_current_user, require_role
 from app.models.user import User
 from app.schemas.formation import (
-    SeanceCreate, SeanceResponse,
+    SeanceCreate, SeanceUpdate, SeanceResponse,
     SessionCreate, SessionUpdate, SessionResponse,
-    ParticipantCreate, ParticipantResponse,
-    PresenceCreate, PresenceResponse,
+    ParticipantCreate, ParticipantUpdate, ParticipantResponse,
+    PresenceCreate, PresenceUpdate, PresenceResponse,
     InscriptionCreate, InscriptionResponse,
 )
 from app.services.formation_service import FormationService
@@ -205,6 +219,91 @@ def ajouter_seance(
     return service.ajouter_seance(session_id, data)
 
 
+@router.patch(
+    "/seances/{seance_id}",
+    response_model=SeanceResponse,
+    summary="Modifier une séance (PATCH partiel)",
+    description=(
+        "Modifie un ou plusieurs champs d'une séance existante.\n\n"
+        "**Tous les champs sont optionnels** (PATCH semantics).\n\n"
+        "**Champs modifiables :** `date`, `duree` (ex. `'8h'`), `theme`.\n\n"
+        "Retourne **404** si la séance n'existe pas.\n\n"
+        "**Rôles autorisés :** DIRECTION, FORMATEUR."
+    ),
+)
+def mettre_a_jour_seance(
+    seance_id: UUID,
+    data: SeanceUpdate,
+    service: FormationService = Depends(get_formation_service),
+    current_user: User = Depends(require_role("DIRECTION", "FORMATEUR")),
+):
+    return service.mettre_a_jour_seance(seance_id, data)
+
+
+@router.delete(
+    "/seances/{seance_id}",
+    status_code=204,
+    summary="Supprimer une séance",
+    description=(
+        "Supprime définitivement une séance et toutes ses présences (cascade).\n\n"
+        "⚠️ **Action irréversible** : les présences liées à cette séance sont également supprimées.\n\n"
+        "Retourne **404** si la séance n'existe pas.\n\n"
+        "Retourne **204 No Content** en cas de succès.\n\n"
+        "**Rôles autorisés :** DIRECTION, FORMATEUR."
+    ),
+)
+def supprimer_seance(
+    seance_id: UUID,
+    service: FormationService = Depends(get_formation_service),
+    current_user: User = Depends(require_role("DIRECTION", "FORMATEUR")),
+):
+    service.supprimer_seance(seance_id)
+
+
+# =============================================================================
+# PRÉSENCES D'UNE SÉANCE
+# =============================================================================
+
+@router.get(
+    "/seances/{seance_id}/presences",
+    response_model=List[PresenceResponse],
+    summary="Lister les présences d'une séance",
+    description=(
+        "Retourne toutes les présences enregistrées pour une séance donnée.\n\n"
+        "Retourne **404** si la séance n'existe pas.\n\n"
+        "Retourne une liste vide si aucune présence n'a encore été enregistrée.\n\n"
+        "**Rôles autorisés :** tout utilisateur authentifié."
+    ),
+)
+def lister_presences(
+    seance_id: UUID,
+    service: FormationService = Depends(get_formation_service),
+    current_user: User = Depends(get_current_user),
+):
+    return service.lister_presences(seance_id)
+
+
+@router.patch(
+    "/seances/presences/{presence_id}",
+    response_model=PresenceResponse,
+    summary="Corriger le statut d'une présence (PATCH)",
+    description=(
+        "Modifie le statut d'une présence existante.\n\n"
+        "**Corps de la requête :** `{ \"statut\": \"PRESENT\" | \"ABSENT\" | \"EXCUSE\" }`\n\n"
+        "Utile pour corriger une erreur de saisie après coup.\n\n"
+        "Retourne **404** si la présence n'existe pas.\n\n"
+        "**Rôles autorisés :** DIRECTION, FORMATEUR."
+    ),
+)
+def mettre_a_jour_presence(
+    presence_id: UUID,
+    data: PresenceUpdate,
+    service: FormationService = Depends(get_formation_service),
+    current_user: User = Depends(require_role("DIRECTION", "FORMATEUR")),
+):
+    return service.mettre_a_jour_presence(presence_id, data)
+
+
 # =============================================================================
 # INSCRIPTIONS — inscrire / désinscrire / lister participants d'une session
 # =============================================================================
@@ -369,3 +468,44 @@ def get_participant(
     current_user: User = Depends(get_current_user),
 ):
     return service.get_participant(participant_id)
+
+
+@participants_router.patch(
+    "/{participant_id}",
+    response_model=ParticipantResponse,
+    summary="Modifier un participant (PATCH partiel)",
+    description=(
+        "Modifie un ou plusieurs champs d'un participant existant.\n\n"
+        "**Tous les champs sont optionnels** (PATCH semantics).\n\n"
+        "**Champs modifiables :** `nom`, `email`, `entreprise`.\n\n"
+        "Retourne **404** si le participant n'existe pas.\n\n"
+        "**Rôles autorisés :** DIRECTION, FORMATEUR, ASSISTANT."
+    ),
+)
+def mettre_a_jour_participant(
+    participant_id: UUID,
+    data: ParticipantUpdate,
+    service: FormationService = Depends(get_formation_service),
+    current_user: User = Depends(require_role("DIRECTION", "FORMATEUR", "ASSISTANT")),
+):
+    return service.mettre_a_jour_participant(participant_id, data)
+
+
+@participants_router.delete(
+    "/{participant_id}",
+    status_code=204,
+    summary="Supprimer un participant",
+    description=(
+        "Supprime définitivement un participant.\n\n"
+        "⚠️ **Action irréversible** : ses présences et inscriptions sont également supprimées.\n\n"
+        "Retourne **404** si le participant n'existe pas.\n\n"
+        "Retourne **204 No Content** en cas de succès.\n\n"
+        "**Rôles autorisés :** DIRECTION."
+    ),
+)
+def supprimer_participant(
+    participant_id: UUID,
+    service: FormationService = Depends(get_formation_service),
+    current_user: User = Depends(require_role("DIRECTION")),
+):
+    service.supprimer_participant(participant_id)

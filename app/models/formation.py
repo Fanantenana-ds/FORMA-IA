@@ -51,8 +51,8 @@ class Participant(Base):
     email = Column(String(30), nullable=True)
     entreprise = Column(String(30), nullable=True)
 
-    presences = relationship("Presence", back_populates="participant")
-    inscriptions = relationship("Inscription", back_populates="participant")
+    presences = relationship("Presence", back_populates="participant", cascade="all, delete-orphan")
+    inscriptions = relationship("Inscription", back_populates="participant", cascade="all, delete-orphan")
 
 class Inscription(Base):
     __tablename__ = "inscriptions"

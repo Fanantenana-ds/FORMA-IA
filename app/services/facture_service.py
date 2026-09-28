@@ -1,4 +1,5 @@
 from datetime import date as date_type
+from typing import List, Optional
 from uuid import UUID
 
 from fastapi import HTTPException
@@ -105,5 +106,16 @@ class FactureService:
         self.get_facture(facture_id)
         return self.db.query(Relance).filter(Relance.facture_id == facture_id).all()
 
-    def lister(self):
-        return self.db.query(Facture).all()
+    def lister(
+        self,
+        statut: Optional[StatutFacture] = None,
+        client: Optional[str] = None,
+        skip: int = 0,
+        limit: int = 100,
+    ) -> List[Facture]:
+        q = self.db.query(Facture)
+        if statut is not None:
+            q = q.filter(Facture.statut == statut)
+        if client is not None:
+            q = q.filter(Facture.client.ilike(f"%{client}%"))
+        return q.order_by(Facture.date_creation.desc()).offset(skip).limit(limit).all()

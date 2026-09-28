@@ -1,9 +1,9 @@
-from typing import Optional
+from typing import List, Optional
 from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from app.models.opportunite import Opportunite
+from app.models.opportunite import Opportunite, Domaine, StatutOpportunite
 from app.repositories.interfaces.iopportunite_repository import IOpportuniteRepository
 
 class OpportuniteRepository(IOpportuniteRepository):
@@ -24,10 +24,22 @@ class OpportuniteRepository(IOpportuniteRepository):
             .first()
         )
 
-    def find_all(self) -> list[Opportunite]:
+    def find_all(
+        self,
+        statut: Optional[StatutOpportunite] = None,
+        domaine: Optional[Domaine] = None,
+        skip: int = 0,
+        limit: int = 100,
+    ) -> List[Opportunite]:
+        q = self.db.query(Opportunite)
+        if statut is not None:
+            q = q.filter(Opportunite.statut == statut)
+        if domaine is not None:
+            q = q.filter(Opportunite.domaine == domaine)
         return (
-            self.db.query(Opportunite)
-            .order_by(Opportunite.date_creation.desc())
+            q.order_by(Opportunite.date_creation.desc())
+            .offset(skip)
+            .limit(limit)
             .all()
         )
 

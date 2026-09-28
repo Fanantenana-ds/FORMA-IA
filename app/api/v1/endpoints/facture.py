@@ -7,7 +7,8 @@ from app.database import get_db
 from app.core.dependencies import get_current_user, require_role
 from app.models.user import User
 from app.schemas.facture import (
-    FactureCreate, FactureResponse, PaiementCreate, PaiementResponse,
+    FactureCreate, FactureUpdate, FactureResponse,
+    PaiementCreate, PaiementResponse,
     RelanceResponse, RelanceIACreate, RelanceIAResponse,
 )
 from app.services.facture_service import FactureService
@@ -43,6 +44,33 @@ def get_facture(
     current_user: User = Depends(get_current_user)
 ):
     return service.get_facture(facture_id)
+
+
+@router.patch(
+    "/{facture_id}",
+    response_model=FactureResponse,
+    summary="Mettre à jour une facture (PATCH partiel)",
+    description=(
+        "Modifie un ou plusieurs champs d'une facture existante.\n\n"
+        "**Tous les champs sont optionnels** (PATCH semantics).\n\n"
+        "**Champs modifiables :**\n"
+        "- `client` : nom du client\n"
+        "- `date_echeance` : nouvelle date d'échéance (`YYYY-MM-DD`)\n"
+        "- `statut` : `EMISE` | `PARTIELLEMENT_PAYEE` | `PAYEE` | `EN_RETARD`\n\n"
+        "⚠️ Modifier le statut manuellement n'est prévu que pour des corrections "
+        "exceptionnelles (ex. passage à `EN_RETARD` ou `ANNULEE`). "
+        "Les paiements normaux passent par `POST /factures/{id}/paiments`.\n\n"
+        "Retourne **404** si la facture n'existe pas.\n\n"
+        "**Rôles autorisés :** DIRECTION, COMPTABLE."
+    ),
+)
+def mettre_a_jour_facture(
+    facture_id: UUID,
+    data: FactureUpdate,
+    service: FactureService = Depends(get_facture_service),
+    current_user: User = Depends(require_role("DIRECTION", "COMPTABLE")),
+):
+    return service.mettre_a_jour_facture(facture_id, data)
 
 
 @router.post("/{facture_id}/paiments", response_model=FactureResponse, status_code=201)

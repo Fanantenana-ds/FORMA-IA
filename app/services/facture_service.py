@@ -5,7 +5,7 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.models.facture import Facture, Paiement, Relance, StatutFacture
-from app.schemas.facture import FactureCreate, PaiementCreate, RelanceIACreate
+from app.schemas.facture import FactureCreate, FactureUpdate, PaiementCreate, RelanceIACreate
 
 
 class FactureService:
@@ -50,6 +50,15 @@ class FactureService:
         elif total_paye > 0:
             facture.statut = StatutFacture.PARTIELLEMENT_PAYEE
 
+        self.db.commit()
+        self.db.refresh(facture)
+        return facture
+
+    def mettre_a_jour_facture(self, facture_id: UUID, data: FactureUpdate) -> Facture:
+        """Mise à jour partielle d'une facture (PATCH semantics)."""
+        facture = self.get_facture(facture_id)
+        for field, value in data.model_dump(exclude_none=True).items():
+            setattr(facture, field, value)
         self.db.commit()
         self.db.refresh(facture)
         return facture

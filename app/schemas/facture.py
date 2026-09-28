@@ -44,6 +44,13 @@ class FactureResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class FactureUpdate(BaseModel):
+    """Mise à jour partielle d'une facture (tous les champs sont optionnels)."""
+    client: Optional[str] = Field(default=None, min_length=1)
+    date_echeance: Optional[date] = None
+    statut: Optional[StatutFacture] = None
+
+
 class RelanceResponse(BaseModel):
     texte: str
 

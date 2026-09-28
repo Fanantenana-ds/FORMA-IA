@@ -63,3 +63,16 @@ class PresenceResponse(BaseModel):
     source: SourcePresence
 
     model_config = {"from_attributes": True}
+
+
+class InscriptionCreate(BaseModel):
+    """Inscrit un participant existant à une session."""
+    participant_id: UUID
+
+
+class InscriptionResponse(BaseModel):
+    id: UUID
+    session_id: UUID
+    participant_id: UUID
+
+    model_config = {"from_attributes": True}

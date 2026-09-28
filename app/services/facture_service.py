@@ -118,4 +118,4 @@ class FactureService:
             q = q.filter(Facture.statut == statut)
         if client is not None:
             q = q.filter(Facture.client.ilike(f"%{client}%"))
-        return q.order_by(Facture.date_creation.desc()).offset(skip).limit(limit).all()
+        return q.order_by(Facture.date_emission.desc()).offset(skip).limit(limit).all()

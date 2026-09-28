@@ -27,7 +27,7 @@ class UserLogin(BaseModel):
 class UserResponse(BaseModel):
     id: UUID
     nom: str
-    email: EmailStr
+    email: str
     role: RoleEnum
 
     class Config:
@@ -38,7 +38,7 @@ class UserAdminResponse(BaseModel):
     """Réponse enrichie pour la DIRECTION (inclut le statut actif/inactif)."""
     id: UUID
     nom: str
-    email: EmailStr
+    email: str
     role: RoleEnum
     actif: bool
 

@@ -699,6 +699,15 @@ $Journal = @(
     [pscustomobject]@{ Date = "2026-09-28"; Action = "MODIFIE"; Fichier = "app/api/v1/endpoints/opportunite.py + app/services/opportunite_service.py + app/repositories/opportunite_repository.py + app/api/v1/endpoints/facture.py + app/services/facture_service.py"
         Explication = "BACKEND Bloc G. Filtres + pagination sur les collections. GET /opportunites : filtres statut (EN_ATTENTE|ANALYSEE|ARCHIVEE) et domaine, pagination skip/limit (defaut 0/100, max 500). GET /factures : filtres statut (EMISE|PARTIELLEMENT_PAYEE|PAYEE|EN_RETARD) et client (ilike recherche partielle), pagination skip/limit. Toutes les routes GET ont descriptions Swagger completes pour le Frontend. Commit c0be442." }
 
+    [pscustomobject]@{ Date = "2026-09-28"; Action = "MODIFIE"; Fichier = "app/api/v1/endpoints/formation.py + app/services/formation_service.py + app/schemas/formation.py + app/models/formation.py"
+        Explication = "BACKEND Bloc H. CRUD complet Seances, Presences, Participants. Seances : PATCH /sessions/seances/{id} (date, duree, theme), DELETE /sessions/seances/{id} cascade presences. Presences : GET /sessions/seances/{id}/presences (liste), PATCH /sessions/seances/presences/{id} (correction statut PRESENT/ABSENT/EXCUSE). Participants : PATCH /participants/{id} (nom, email, entreprise), DELETE /participants/{id} (DIRECTION uniquement). Modele Participant : ajout cascade='all, delete-orphan' sur presences + inscriptions. Schemas ajoutes : SeanceUpdate, ParticipantUpdate, PresenceUpdate. PresenceResponse enrichi avec seance_id. Commit d4c7f7e." }
+
+    [pscustomobject]@{ Date = "2026-09-28"; Action = "MODIFIE"; Fichier = "app/api/v1/endpoints/rh.py + app/services/rh_service.py + app/schemas/rh.py"
+        Explication = "BACKEND Bloc I. RH CRUD complet + descriptions Swagger. Routes ajoutees : DELETE /rh/candidats/{id} avec cascade entretiens, GET /rh/entretiens/{id} lecture directe, DELETE /rh/entretiens/{id}. EntretienResponse enrichi avec notes_brutes, compte_rendu, email_brouillon. Header comment complet + descriptions Swagger sur toutes les routes pour le Frontend. Commit 6867015." }
+
+    [pscustomobject]@{ Date = "2026-09-28"; Action = "CREE"; Fichier = "tests/test_backend_blocs_b_i.py"
+        Explication = "BACKEND Tests. 39 tests couvrant tous les Blocs B a I : Sessions PATCH/DELETE/filtres, Seances PATCH/DELETE, Presences GET/PATCH, Participants PATCH/DELETE, Inscriptions POST/DELETE/409, Factures PATCH/filtres/pagination, Auth utilisateurs GET/PATCH/DELETE, RH Formateurs/Candidats/Entretiens CRUD complet. 2 corrections detectees par les tests : facture_service.py order_by date_creation -> date_emission, schemas/user.py EmailStr -> str pour les Response. Suite complete : 797 passed, 0 regression. Commit 02df92b." }
+
     # === FIN DU JOURNAL — ajouter les nouvelles entrees AVANT cette ligne ===
 )
 

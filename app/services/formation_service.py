@@ -1,9 +1,10 @@
+from typing import List, Optional
 from uuid import UUID
 from fastapi import HTTPException
 from sqlalchemy.orm import Session as DbSession
 
-from app.models.formation import Session, Seance, Participant, Presence
-from app.schemas.formation import SessionCreate, SeanceCreate, ParticipantCreate, PresenceCreate
+from app.models.formation import Session, Seance, Participant, Inscription, Presence
+from app.schemas.formation import SessionCreate, SeanceCreate, ParticipantCreate, PresenceCreate, InscriptionCreate
 
 class FormationService:
     def __init__(self, db: DbSession):
@@ -58,3 +59,114 @@ class FormationService:
         self.db.commit()
         self.db.refresh(presence)
         return presence
+
+    # -------------------------------------------------------------------------
+    # LISTE DES SESSIONS
+    # -------------------------------------------------------------------------
+
+    def lister_sessions(
+        self,
+        formateur_id: Optional[UUID] = None,
+        client: Optional[str] = None,
+    ) -> List[Session]:
+        q = self.db.query(Session)
+        if formateur_id:
+            q = q.filter(Session.formateur_id == formateur_id)
+        if client:
+            q = q.filter(Session.client.ilike(f"%{client}%"))
+        return q.order_by(Session.date_debut.desc()).all()
+
+    # -------------------------------------------------------------------------
+    # SÉANCES D'UNE SESSION
+    # -------------------------------------------------------------------------
+
+    def lister_seances(self, session_id: UUID) -> List[Seance]:
+        self.get_session(session_id)   # lève 404 si absente
+        return (
+            self.db.query(Seance)
+            .filter(Seance.session_id == session_id)
+            .order_by(Seance.date)
+            .all()
+        )
+
+    # -------------------------------------------------------------------------
+    # PARTICIPANTS
+    # -------------------------------------------------------------------------
+
+    def get_participant(self, participant_id: UUID) -> Participant:
+        p = self.db.query(Participant).filter(Participant.id == participant_id).first()
+        if not p:
+            raise HTTPException(status_code=404, detail="Participant introuvable")
+        return p
+
+    def lister_participants(self, nom: Optional[str] = None) -> List[Participant]:
+        q = self.db.query(Participant)
+        if nom:
+            q = q.filter(Participant.nom.ilike(f"%{nom}%"))
+        return q.order_by(Participant.nom).all()
+
+    # -------------------------------------------------------------------------
+    # INSCRIPTIONS — inscrire / désinscrire / lister
+    # -------------------------------------------------------------------------
+
+    def inscrire_participant(self, session_id: UUID, data: InscriptionCreate) -> Inscription:
+        """Inscrit un participant existant à une session (clé unique session+participant)."""
+        self.get_session(session_id)
+        self.get_participant(data.participant_id)
+
+        doublon = (
+            self.db.query(Inscription)
+            .filter(
+                Inscription.session_id == session_id,
+                Inscription.participant_id == data.participant_id,
+            )
+            .first()
+        )
+        if doublon:
+            raise HTTPException(
+                status_code=409,
+                detail="Ce participant est déjà inscrit à cette session.",
+            )
+
+        inscription = Inscription(
+            session_id=session_id,
+            participant_id=data.participant_id,
+        )
+        self.db.add(inscription)
+        self.db.commit()
+        self.db.refresh(inscription)
+        return inscription
+
+    def desinscrire_participant(self, session_id: UUID, participant_id: UUID) -> None:
+        """Supprime l'inscription d'un participant à une session."""
+        self.get_session(session_id)
+        inscription = (
+            self.db.query(Inscription)
+            .filter(
+                Inscription.session_id == session_id,
+                Inscription.participant_id == participant_id,
+            )
+            .first()
+        )
+        if not inscription:
+            raise HTTPException(status_code=404, detail="Inscription introuvable")
+        self.db.delete(inscription)
+        self.db.commit()
+
+    def lister_participants_session(self, session_id: UUID) -> List[Participant]:
+        """Retourne les participants inscrits à une session (via la table inscriptions)."""
+        self.get_session(session_id)
+        inscriptions = (
+            self.db.query(Inscription)
+            .filter(Inscription.session_id == session_id)
+            .all()
+        )
+        participant_ids = [i.participant_id for i in inscriptions]
+        if not participant_ids:
+            return []
+        return (
+            self.db.query(Participant)
+            .filter(Participant.id.in_(participant_ids))
+            .order_by(Participant.nom)
+            .all()
+        )

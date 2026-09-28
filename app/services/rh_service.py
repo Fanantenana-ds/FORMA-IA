@@ -99,6 +99,11 @@ class RhService:
         self.db.refresh(c)
         return c
 
+    def supprimer_candidat(self, candidat_id: UUID) -> None:
+        c = self.get_candidat(candidat_id)
+        self.db.delete(c)
+        self.db.commit()
+
     # =========================================================================
     # ENTRETIENS
     # =========================================================================
@@ -135,3 +140,8 @@ class RhService:
         self.db.commit()
         self.db.refresh(e)
         return e
+
+    def supprimer_entretien(self, entretien_id: UUID) -> None:
+        e = self.get_entretien(entretien_id)
+        self.db.delete(e)
+        self.db.commit()

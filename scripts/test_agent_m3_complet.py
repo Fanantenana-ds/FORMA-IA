@@ -14,6 +14,7 @@ import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
+
 load_dotenv()
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -24,10 +25,8 @@ logging.basicConfig(
 )
 
 from app.orchestrator.offre_orchestrator import (
-    OffreOrchestrator,
     get_offre_orchestrator,
 )
-
 
 # ============================================================
 # DONNÉES DE TEST
@@ -94,7 +93,7 @@ async def main():
             session_info=SESSION_INFO,
             options=OPTIONS,
         )
-        print(f"   ✅ Offre complète générée")
+        print("   ✅ Offre complète générée")
     except Exception as e:
         print(f"   ❌ Échec : {e}")
         import traceback
@@ -123,27 +122,27 @@ async def main():
     offre_fin = result.get("offre_financiere", {})
     resume = result.get("resume_financier", {})
 
-    print(f"\n📝 OFFRE TECHNIQUE :")
+    print("\n📝 OFFRE TECHNIQUE :")
     print(f"   • Référence : {offre_tech.get('reference')}")
     print(f"   • Titre     : {offre_tech.get('titre_offre')}")
     print(f"   • Modules   : {len(offre_tech.get('programme', {}).get('modules', []))}")
     print(f"   • Source    : {offre_tech.get('metadata', {}).get('source')}")
 
-    print(f"\n💰 OFFRE FINANCIÈRE :")
+    print("\n💰 OFFRE FINANCIÈRE :")
     print(f"   • Référence : {offre_fin.get('reference')}")
     print(f"   • Sous-total HT : {resume.get('sous_total_ht', 0):>12,} MGA")
     print(f"   • Total TTC     : {resume.get('total_ttc', 0):>12,} MGA")
     print(f"   • NET À PAYER   : {resume.get('net_a_payer', 0):>12,} MGA")
     print(f"   • Source        : {offre_fin.get('metadata', {}).get('source')}")
 
-    print(f"\n🔗 REVIEWS HITL :")
+    print("\n🔗 REVIEWS HITL :")
     reviews = result.get("reviews_individuels", {})
     print(f"   • Review TECH individuel   : {reviews.get('technique')}")
     print(f"   • Review FIN individuel    : {reviews.get('financiere')}")
     print(f"   • Review GLOBAL (à valider): {result.get('_review_id')}")
     print(f"   • Statut global            : {result.get('_review_status')}")
 
-    print(f"\n⏱️  DURÉES :")
+    print("\n⏱️  DURÉES :")
     print(f"   • Offre technique  : {offre_tech.get('metadata', {}).get('duration_seconds')}s")
     print(f"   • Offre financière : {offre_fin.get('metadata', {}).get('duration_seconds')}s")
 
@@ -158,7 +157,7 @@ async def main():
     print("\n" + "=" * 70)
     if ok:
         print("✅ TEST TERMINÉ AVEC SUCCÈS")
-        print(f"\n🎯 Action suivante :")
+        print("\n🎯 Action suivante :")
         print(f"   Approuver le review : POST /ia/formations/reviews/"
               f"{result.get('_review_id')}/approve")
     else:

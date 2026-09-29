@@ -2,11 +2,13 @@ import uuid
 from datetime import datetime, timezone
 from enum import Enum
 
-from sqlalchemy import Column, String, DateTime, Text, ForeignKey, Float, Enum as SQLEnum
+from sqlalchemy import Column, DateTime, Float, ForeignKey, String, Text
+from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
 from app.database import Base
+
 
 class TypeDocument(str, Enum):
     TDR = "TDR"

@@ -1,10 +1,12 @@
 import io
+
 from docx import Document as DocxDocument
-from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import cm
+from reportlab.pdfgen import canvas
 
-from app.models.document import Document, TypeDocument, FormatExport
+from app.models.document import Document, FormatExport, TypeDocument
+
 
 class DocumentExportService:
     def exporter(self, document: Document, format: FormatExport) -> tuple[bytes, str, str]:

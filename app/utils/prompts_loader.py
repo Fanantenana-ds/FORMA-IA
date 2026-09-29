@@ -3,10 +3,12 @@
 # ============================================================
 
 import os
-import yaml
-from typing import Dict, Any
+from typing import Any
 
-def load_prompt(file_path: str) -> Dict[str, Any]:
+import yaml
+
+
+def load_prompt(file_path: str) -> dict[str, Any]:
     """
     Charge un prompt depuis un fichier YAML
 
@@ -22,7 +24,7 @@ def load_prompt(file_path: str) -> Dict[str, Any]:
     with open(file_path, 'r', encoding='utf-8') as f:
         return yaml.safe_load(f)
 
-def build_system_prompt(prompt_data: Dict[str, Any]) -> str:
+def build_system_prompt(prompt_data: dict[str, Any]) -> str:
     """
     Construit le prompt système complet à partir des données YAML
 
@@ -34,12 +36,12 @@ def build_system_prompt(prompt_data: Dict[str, Any]) -> str:
     """
     sections = []
     for key in ["role", "task", "format", "context", "examples", "security"]:
-        if key in prompt_data and prompt_data[key]:
+        if prompt_data.get(key):
             sections.append(prompt_data[key])
 
     return "\n\n".join(sections)
 
-def load_prompt_from_module(module: str, prompt_name: str) -> Dict[str, Any]:
+def load_prompt_from_module(module: str, prompt_name: str) -> dict[str, Any]:
     """
     Charge un prompt spécifique d'un module
 

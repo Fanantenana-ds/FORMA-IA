@@ -9,7 +9,6 @@
 import asyncio
 import logging
 import random
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +31,7 @@ async def retry_with_backoff(
     l'appelant aux erreurs transitoires — jamais une erreur de
     parsing/logique métier).
     """
-    last_exc: Optional[Exception] = None
+    last_exc: Exception | None = None
 
     for attempt in range(max_retries):
         try:

@@ -1,10 +1,10 @@
-import os
 import logging
-from typing import Optional, Dict, Any
+import os
+from typing import Any
 
-from .llm_provider import LLMProvider, LLMNotAvailableError
-from .groq_provider import GroqProvider
 from .claude_provider import ClaudeProvider
+from .groq_provider import GroqProvider
+from .llm_provider import LLMNotAvailableError, LLMProvider
 
 logger = logging.getLogger(__name__)
 
@@ -20,14 +20,14 @@ def vlog(msg: str, level: str = "info") -> None:
 # CACHE DES INSTANCES (Singleton par provider)
 # =============================================================================
 
-_providers_cache: Dict[str, LLMProvider] = {}
+_providers_cache: dict[str, LLMProvider] = {}
 
 
 # =============================================================================
 # FONCTION PRINCIPALE
 # =============================================================================
 
-def get_llm_provider(force_provider: Optional[str] = None) -> LLMProvider:
+def get_llm_provider(force_provider: str | None = None) -> LLMProvider:
     """
     Retourne l'instance du provider LLM configuré.
 
@@ -58,7 +58,7 @@ def get_llm_provider(force_provider: Optional[str] = None) -> LLMProvider:
     # ─────────────────────────────────────────────────────────────
     # CAS 2 : Provider à instancier
     # ─────────────────────────────────────────────────────────────
-    provider: Optional[LLMProvider] = None
+    provider: LLMProvider | None = None
 
     if provider_name == "groq":
         provider = GroqProvider()
@@ -112,7 +112,7 @@ def get_llm_provider(force_provider: Optional[str] = None) -> LLMProvider:
 # FONCTION UTILITAIRE — INFO PROVIDER
 # =============================================================================
 
-def get_provider_info() -> Dict[str, Any]:
+def get_provider_info() -> dict[str, Any]:
     """
     Retourne les informations sur le provider actif.
 

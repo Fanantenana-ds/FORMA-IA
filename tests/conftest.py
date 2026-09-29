@@ -4,10 +4,10 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session as DbSession
 
-from app.main import app
 from app.core.dependencies import get_current_user
 from app.database import engine, get_db
-from app.models.user import User, RoleEnum
+from app.main import app
+from app.models.user import RoleEnum, User
 
 FAKE_USER_ID = "1f12722d-7108-4fc8-9de3-ffb258195f12"
 

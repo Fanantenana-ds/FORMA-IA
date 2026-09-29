@@ -1,10 +1,10 @@
-from typing import Optional
 from uuid import UUID
 
 from sqlalchemy.orm import Session
 
 from app.models.opportunite import Opportunite
 from app.repositories.interfaces.iopportunite_repository import IOpportuniteRepository
+
 
 class OpportuniteRepository(IOpportuniteRepository):
     def __init__(self, db: Session):
@@ -17,7 +17,7 @@ class OpportuniteRepository(IOpportuniteRepository):
 
         return opportunite
 
-    def find_by_id(self, opportunite_id: UUID) -> Optional[Opportunite]:
+    def find_by_id(self, opportunite_id: UUID) -> Opportunite | None:
         return (
             self.db.query(Opportunite)
             .filter(Opportunite.id == opportunite_id)

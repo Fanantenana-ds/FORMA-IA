@@ -22,7 +22,7 @@ import unicodedata
 import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
 
 from docxtpl import DocxTemplate
 
@@ -139,9 +139,9 @@ class TDRDocumentGenerator:
 
     def generate(
         self,
-        tdr_content: Dict[str, Any],
+        tdr_content: dict[str, Any],
         client: str = "Client",
-    ) -> Tuple[Optional[str], Optional[str]]:
+    ) -> tuple[str | None, str | None]:
         """
         Génère le TDR en Word et PDF.
         Retourne (docx_filename, pdf_filename).
@@ -275,9 +275,9 @@ class TDRDocumentGenerator:
 
     def _build_context(
         self,
-        tdr_content: Dict[str, Any],
+        tdr_content: dict[str, Any],
         client: str,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Construit le contexte pour le template."""
 
         today = datetime.now()
@@ -392,17 +392,20 @@ class TDRDocumentGenerator:
 
     def _generate_pdf_reportlab(
         self,
-        tdr_content: Dict[str, Any],
+        tdr_content: dict[str, Any],
         client: str,
         pdf_path: Path,
     ) -> None:
         """Fallback : génère le PDF avec reportlab."""
-        from reportlab.lib.pagesizes import A4
-        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-        from reportlab.lib.units import cm
         from reportlab.lib import colors
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+        from reportlab.lib.units import cm
         from reportlab.platypus import (
-            SimpleDocTemplate, Paragraph, Spacer, PageBreak,
+            PageBreak,
+            Paragraph,
+            SimpleDocTemplate,
+            Spacer,
         )
 
         doc = SimpleDocTemplate(

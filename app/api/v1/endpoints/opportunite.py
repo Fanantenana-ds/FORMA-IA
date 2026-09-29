@@ -1,21 +1,22 @@
 from uuid import UUID
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from app.core.dependencies import get_current_user, require_role, get_opportunite_analyse_service
-from app.models.user import User
 
+from app.core.dependencies import (
+    get_current_user,
+    require_role,
+)
 from app.database import get_db
+from app.models.user import User
 from app.repositories.opportunite_repository import OpportuniteRepository
 from app.schemas.opportunite import (
     OpportuniteCreate,
-    OpportuniteUpdate,
-    OpportuniteResponse,
     OpportuniteList,
-    OpportuniteAnalyseResult,
-    OpportuniteAnalyseRequest
+    OpportuniteResponse,
+    OpportuniteUpdate,
 )
 from app.services.opportunite_service import OpportuniteService
-from app.services.opportunite_analyse_service import OpportuniteAnalyseService
 
 #Route opportunité
 router = APIRouter(
@@ -88,7 +89,6 @@ def delete_opportunite(
             detail="Opportunité introuvable"
         )
 
-    return None
 
 @router.put(
     "/{opportunite_id}",

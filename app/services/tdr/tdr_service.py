@@ -11,11 +11,11 @@ import os
 import re
 import time
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 import yaml
 
-from app.services.llm import LLMError, LLMNotAvailableError, get_llm_provider
+from app.services.llm import LLMNotAvailableError, get_llm_provider
 
 logger = logging.getLogger(__name__)
 
@@ -49,14 +49,14 @@ class TDRService:
 
         parts = []
         for key in ["role", "task", "format", "context", "examples", "security"]:
-            if key in data and data[key]:
+            if data.get(key):
                 parts.append(str(data[key]).strip())
 
         prompt = "\n\n".join(parts)
         logger.info("✅ Prompt tdr.yaml chargé (%d chars)", len(prompt))
         return prompt
 
-    def _build_prompt(self, brief: Dict[str, Any]) -> str:
+    def _build_prompt(self, brief: dict[str, Any]) -> str:
         """
         Injecte le brief dans le prompt.
         
@@ -82,7 +82,7 @@ class TDRService:
 
         return prompt
 
-    async def generate(self, brief: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    async def generate(self, brief: dict[str, Any]) -> dict[str, Any] | None:
         """Génère un TDR complet à partir du brief."""
         if not brief:
             return None
@@ -130,7 +130,7 @@ class TDRService:
             return None
 
     @staticmethod
-    def _extract_json(content: str) -> Optional[Dict[str, Any]]:
+    def _extract_json(content: str) -> dict[str, Any] | None:
         """Extrait le JSON d'une réponse Groq."""
         try:
             return json.loads(content)

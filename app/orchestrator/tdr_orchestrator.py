@@ -1,12 +1,11 @@
+import logging
 import os
 import time
-import logging
-from datetime import datetime
-from typing import Dict, Any, Optional
+from typing import Any
 
-from app.services.tdr.tdr_service import TDRService
-from app.services.tdr.tdr_document_generator import TDRDocumentGenerator
 from app.services.backend_sync.tdr_sync import sync_tdr_to_backend
+from app.services.tdr.tdr_document_generator import TDRDocumentGenerator
+from app.services.tdr.tdr_service import TDRService
 
 logger = logging.getLogger(__name__)
 
@@ -126,7 +125,7 @@ class TdrOrchestrator:
     # GÉNÉRATION COMPLÈTE
     # =========================================================================
 
-    async def generate(self, brief: Dict[str, Any]) -> Dict[str, Any]:
+    async def generate(self, brief: dict[str, Any]) -> dict[str, Any]:
         """
         Pipeline complet : brief → TDR JSON → Word → PDF → Backend.
 
@@ -249,7 +248,7 @@ class TdrOrchestrator:
 # SINGLETON — pour FastAPI Depends
 # =============================================================================
 
-_tdr_orchestrator_instance: Optional[TdrOrchestrator] = None
+_tdr_orchestrator_instance: TdrOrchestrator | None = None
 
 
 def get_tdr_orchestrator() -> TdrOrchestrator:

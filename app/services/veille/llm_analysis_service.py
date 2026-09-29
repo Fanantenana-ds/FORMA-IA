@@ -24,7 +24,7 @@ import os
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from app.services.llm import (
     LLMError,
@@ -129,7 +129,7 @@ class LLMAnalysisService:
 
         return rendered
 
-    def _build_source_blocks(self, results: List[Dict[str, Any]]) -> str:
+    def _build_source_blocks(self, results: list[dict[str, Any]]) -> str:
         blocks = []
         total_chars = 0
 
@@ -159,7 +159,7 @@ class LLMAnalysisService:
 
         return "\n".join(blocks)
 
-    def _build_prompt(self, query: str, results: List[Dict[str, Any]]) -> str:
+    def _build_prompt(self, query: str, results: list[dict[str, Any]]) -> str:
         current_date = datetime.now().strftime("%Y-%m-%d")
         results_text = self._build_source_blocks(results)
 
@@ -209,7 +209,7 @@ class LLMAnalysisService:
         return prompt
 
     def build_prompt_with_budget(
-        self, query: str, results: List[Dict[str, Any]]
+        self, query: str, results: list[dict[str, Any]]
     ) -> str:
         """Conserve le YAML complet, réduit uniquement les sources si besoin."""
 
@@ -244,8 +244,8 @@ class LLMAnalysisService:
     # --------------------------------------------------------
 
     async def analyze(
-        self, query: str, results: List[Dict[str, Any]]
-    ) -> Optional[Dict[str, Any]]:
+        self, query: str, results: list[dict[str, Any]]
+    ) -> dict[str, Any] | None:
         """
         Construit le prompt et interroge le LLM. Retourne le JSON
         brut du modèle, ou None en cas d'échec (réseau ou format).

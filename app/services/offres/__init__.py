@@ -13,12 +13,12 @@ __author__ = "Équipe IA — ALTIORA Prest"
 
 
 __all__ = [
-    "__version__",
+    "GrilleTarifaireService",
+    "OffreFinanciereGeneratorService",
+    "OffreTechniqueGeneratorService",
     "__module_code__",
     "__module_name__",
-    "GrilleTarifaireService",
-    "OffreTechniqueGeneratorService",
-    "OffreFinanciereGeneratorService",
+    "__version__",
     "get_package_status",
 ]
 

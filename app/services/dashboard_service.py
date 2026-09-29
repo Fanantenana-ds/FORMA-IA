@@ -1,9 +1,10 @@
-from sqlalchemy.orm import Session
 from sqlalchemy import func
+from sqlalchemy.orm import Session
 
-from app.models.formation import Session as FormationSession, Presence, StatutPresence
-from app.models.opportunite import Opportunite
 from app.models.facture import Facture, Paiement
+from app.models.formation import Presence, StatutPresence
+from app.models.formation import Session as FormationSession
+from app.models.opportunite import Opportunite
 from app.schemas.dashboard import StatistiquesResponse
 
 

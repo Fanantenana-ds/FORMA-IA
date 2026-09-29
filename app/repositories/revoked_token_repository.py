@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.models.revoked_token import RevokedToken
 
+
 class RevokedTokenRepository:
     def __init__(self, db: Session):
         self.db = db

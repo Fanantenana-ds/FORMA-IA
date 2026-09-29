@@ -1,13 +1,14 @@
+import json
+import logging
 import os
 import re
-import json
-import yaml
-import logging
+from datetime import datetime
 from pathlib import Path
-from datetime import datetime, timedelta
-from typing import Dict, Any, List, Optional
+from typing import Any
 
-from app.services.llm import get_llm_provider, LLMError
+import yaml
+
+from app.services.llm import LLMError, get_llm_provider
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +49,7 @@ class EDTGeneratorService:
     # PROMPT
     # =========================================================================
 
-    def _load_prompt(self) -> Dict[str, Any]:
+    def _load_prompt(self) -> dict[str, Any]:
         if not PROMPT_PATH.exists():
             raise FileNotFoundError(f"❌ Prompt introuvable : {PROMPT_PATH}")
 
@@ -84,11 +85,11 @@ class EDTGeneratorService:
     def _build_user_prompt(
         self,
         titre_formation: str,
-        modules: List[Dict[str, Any]],
-        dates: List[str],
-        formateur: Optional[Dict[str, Any]],
-        salle: Optional[Dict[str, Any]],
-        feedback: Optional[str] = None,
+        modules: list[dict[str, Any]],
+        dates: list[str],
+        formateur: dict[str, Any] | None,
+        salle: dict[str, Any] | None,
+        feedback: str | None = None,
     ) -> str:
         lines = [
             f"Génère l'emploi du temps de la formation : {titre_formation}",
@@ -138,14 +139,14 @@ class EDTGeneratorService:
     async def generate(
         self,
         titre_formation: str,
-        modules: List[Dict[str, Any]],
-        dates: List[str],
-        formateur: Optional[Dict[str, Any]] = None,
-        salle: Optional[Dict[str, Any]] = None,
+        modules: list[dict[str, Any]],
+        dates: list[str],
+        formateur: dict[str, Any] | None = None,
+        salle: dict[str, Any] | None = None,
         temperature: float = 0.3,
         max_tokens: int = 30000,
-        feedback: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        feedback: str | None = None,
+    ) -> dict[str, Any]:
         """
         Génère l'emploi du temps d'une formation.
 
@@ -261,7 +262,7 @@ class EDTGeneratorService:
             raw = raw[:end + 1]
         return raw
 
-    def _normalize_output(self, data: Any) -> Dict[str, Any]:
+    def _normalize_output(self, data: Any) -> dict[str, Any]:
         if isinstance(data, list):
             items = [x for x in data if isinstance(x, dict)]
             if not items:
@@ -273,7 +274,7 @@ class EDTGeneratorService:
             raise ValueError(f"Attendu dict, reçu {type(data).__name__}")
         return data
 
-    def _validate_minimal(self, data: Dict[str, Any]) -> None:
+    def _validate_minimal(self, data: dict[str, Any]) -> None:
         required = ["titre_formation", "duree_totale_jours", "jours"]
         for k in required:
             if k not in data:
@@ -288,11 +289,11 @@ class EDTGeneratorService:
     def _generate_with_template(
         self,
         titre_formation: str,
-        modules: List[Dict[str, Any]],
-        dates: List[str],
-        formateur: Optional[Dict[str, Any]],
-        salle: Optional[Dict[str, Any]],
-    ) -> Dict[str, Any]:
+        modules: list[dict[str, Any]],
+        dates: list[str],
+        formateur: dict[str, Any] | None,
+        salle: dict[str, Any] | None,
+    ) -> dict[str, Any]:
         """Template Python (fallback) — EDT standard."""
 
         jours = []

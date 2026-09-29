@@ -7,9 +7,9 @@ agents IA (Groq) avant de les transmettre au Backend.
 ⚠️ Ne pas confondre avec app/schemas/formation.py (schémas Backend).
 """
 
-from typing import List, Optional, Literal, Dict, Any
-from pydantic import BaseModel, Field
+from typing import Any, Literal
 
+from pydantic import BaseModel, Field
 
 # ============================================================
 # AGENT 1 — FormGeneratorAgent
@@ -30,8 +30,8 @@ class ScaleConfig(BaseModel):
     """Configuration pour les questions de type linear_scale."""
     min: int = Field(1, ge=1, le=10)
     max: int = Field(5, ge=1, le=10)
-    min_label: Optional[str] = None
-    max_label: Optional[str] = None
+    min_label: str | None = None
+    max_label: str | None = None
 
 
 class FormQuestion(BaseModel):
@@ -40,21 +40,21 @@ class FormQuestion(BaseModel):
     type: QuestionType
     label: str
     required: bool = True
-    options: Optional[List[str]] = None
-    scale: Optional[ScaleConfig] = None
+    options: list[str] | None = None
+    scale: ScaleConfig | None = None
     # Champs spécifiques aux tests (AVANT / APRÈS)
-    correct_answer: Optional[str] = None
-    score: Optional[int] = None
-    difficulty: Optional[DifficultyLevel] = None
-    concept: Optional[str] = None
+    correct_answer: str | None = None
+    score: int | None = None
+    difficulty: DifficultyLevel | None = None
+    concept: str | None = None
 
 
 class FormSection(BaseModel):
     """Une section du formulaire (inscription, test_avant, etc.)."""
     title: str
-    description: Optional[str] = None
-    duration_minutes: Optional[int] = None
-    questions: List[FormQuestion]
+    description: str | None = None
+    duration_minutes: int | None = None
+    questions: list[FormQuestion]
 
 
 class FormGenerationMetadata(BaseModel):
@@ -168,8 +168,8 @@ class NoteworthyCase(BaseModel):
 
 class LevelNoteworthyCases(BaseModel):
     """Cas remarquables."""
-    meilleure_progression: Optional[NoteworthyCase] = None
-    progressions_faibles: List[NoteworthyCase] = []
+    meilleure_progression: NoteworthyCase | None = None
+    progressions_faibles: list[NoteworthyCase] = []
 
 
 class LevelAnalysisMetadata(BaseModel):
@@ -177,7 +177,7 @@ class LevelAnalysisMetadata(BaseModel):
     source: Literal["llm", "fallback_template"]
     generated_at: str
     duration_seconds: float
-    session_id: Optional[int] = None
+    session_id: int | None = None
 
 
 class LevelAnalysisResponse(BaseModel):
@@ -192,7 +192,7 @@ class LevelAnalysisResponse(BaseModel):
     distribution_avant: LevelDistributionSet
     distribution_apres: LevelDistributionSet
     cas_remarquables: LevelNoteworthyCases
-    recommandations: List[str] = Field(..., min_length=3, max_length=5)
+    recommandations: list[str] = Field(..., min_length=3, max_length=5)
     interpretation: str
     metadata: LevelAnalysisMetadata  
 
@@ -231,7 +231,7 @@ class SatisfactionAnalysisMetadata(BaseModel):
     source: Literal["llm", "fallback_template"]
     generated_at: str
     duration_seconds: float
-    session_id: Optional[int] = None
+    session_id: int | None = None
 
 
 class SatisfactionAnalysisResponse(BaseModel):
@@ -241,10 +241,10 @@ class SatisfactionAnalysisResponse(BaseModel):
     success: bool = True
     resume: str
     statistiques: SatisfactionStats
-    points_forts: List[str] = Field(..., min_length=1, max_length=3)
-    axes_amelioration: List[str] = Field(..., min_length=1, max_length=3)
-    themes_recurrents: List[SatisfactionTheme] = []
-    recommandations: List[str] = Field(..., min_length=3, max_length=5)
+    points_forts: list[str] = Field(..., min_length=1, max_length=3)
+    axes_amelioration: list[str] = Field(..., min_length=1, max_length=3)
+    themes_recurrents: list[SatisfactionTheme] = []
+    recommandations: list[str] = Field(..., min_length=3, max_length=5)
     interpretation: str
     metadata: SatisfactionAnalysisMetadata      
 
@@ -264,7 +264,7 @@ class PresenceStatistics(BaseModel):
 
 class ParticipantPresence(BaseModel):
     """Résumé de présence d'un participant."""
-    participant_id: Optional[int] = None
+    participant_id: int | None = None
     nom: str
     nb_presences: int = Field(..., ge=0)
     nb_seances: int = Field(..., ge=0)
@@ -291,16 +291,16 @@ class PresenceAnomaly(BaseModel):
     ]
     severity: Literal["info", "warning", "error"]
     message: str
-    participant_nom: Optional[str] = None
-    participant_id: Optional[int] = None
-    details: Optional[Dict[str, Any]] = None
+    participant_nom: str | None = None
+    participant_id: int | None = None
+    details: dict[str, Any] | None = None
 
 
 class PresenceAnalysisMetadata(BaseModel):
     """Métadonnées de l'analyse."""
     generated_at: str
     duration_seconds: float
-    session_id: Optional[int] = None
+    session_id: int | None = None
     methode: str = "python_deterministic"
 
 
@@ -313,17 +313,17 @@ class PresenceAnalysisResponse(BaseModel):
     success: bool = True
     resume: str
     statistiques: PresenceStatistics
-    participants: List[ParticipantPresence] = []
-    anomalies: List[PresenceAnomaly] = []
-    eligibles_attestation: List[str] = Field(
+    participants: list[ParticipantPresence] = []
+    anomalies: list[PresenceAnomaly] = []
+    eligibles_attestation: list[str] = Field(
         default_factory=list,
         description="Noms des participants éligibles (≥ 80%)",
     )
-    non_eligibles_attestation: List[str] = Field(
+    non_eligibles_attestation: list[str] = Field(
         default_factory=list,
         description="Noms des participants non éligibles (< 80%)",
     )
-    recommandations: List[str] = []
+    recommandations: list[str] = []
     metadata: PresenceAnalysisMetadata
 
 # ============================================================
@@ -347,7 +347,7 @@ class AttestationContent(BaseModel):
     introduction: str
     corps: str
     details: AttestationDetails
-    competences: List[str] = Field(..., min_length=3, max_length=5)
+    competences: list[str] = Field(..., min_length=3, max_length=5)
     cloture: str = (
         "En foi de quoi, la présente attestation lui est délivrée "
         "pour servir et valoir ce que de droit."
@@ -364,8 +364,8 @@ class AttestationGenerationMetadata(BaseModel):
     )
     generated_at: str
     duration_seconds: float
-    participant_id: Optional[int] = None
-    session_id: Optional[int] = None
+    participant_id: int | None = None
+    session_id: int | None = None
 
 
 class AttestationGenerationResponse(BaseModel):
@@ -375,7 +375,7 @@ class AttestationGenerationResponse(BaseModel):
     Utilisé par le Backend (attestation_service.py) pour générer le PDF.
     """
     success: bool = True
-    participant: Dict[str, Any]
+    participant: dict[str, Any]
     content: AttestationContent
     numero_unique: str = Field(
         ...,
@@ -387,12 +387,12 @@ class AttestationGenerationResponse(BaseModel):
 class BatchAttestationResponse(BaseModel):
     """Réponse batch — pour tous les participants éligibles."""
     success: bool = True
-    session_id: Optional[int] = None
+    session_id: int | None = None
     total_eligible: int
     total_generated: int
     total_failed: int = 0
-    attestations: List[AttestationGenerationResponse]
-    failed_participants: List[Dict[str, Any]] = []
+    attestations: list[AttestationGenerationResponse]
+    failed_participants: list[dict[str, Any]] = []
     duration_seconds: float
     
 # ============================================================
@@ -415,7 +415,7 @@ class ReportStatsParticipants(BaseModel):
     total_inscrits: int
     total_presents: int
     taux_presence_moyen: str
-    entreprises: List[str] = []
+    entreprises: list[str] = []
     commentaire: str = ""
 
 
@@ -441,8 +441,8 @@ class ReportSatisfaction(BaseModel):
     note_contenu: str
     note_supports: str
     note_organisation: str
-    points_forts: List[str] = []
-    axes_amelioration: List[str] = []
+    points_forts: list[str] = []
+    axes_amelioration: list[str] = []
     taux_recommandation: str = ""
 
 
@@ -451,7 +451,7 @@ class ReportGenerationMetadata(BaseModel):
     source: Literal["llm", "fallback_template"]
     generated_at: str
     duration_seconds: float
-    session_id: Optional[int] = None
+    session_id: int | None = None
 
 
 class ReportGenerationResponse(BaseModel):
@@ -468,7 +468,7 @@ class ReportGenerationResponse(BaseModel):
     statistiques_participants: ReportStatsParticipants
     analyse_niveaux: ReportAnalyseNiveaux
     satisfaction: ReportSatisfaction
-    recommandations: List[str] = Field(..., min_length=3, max_length=5)
+    recommandations: list[str] = Field(..., min_length=3, max_length=5)
     conclusion: str
     lieu_emission: str 
     date_emission: str

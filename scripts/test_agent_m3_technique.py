@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
+
 load_dotenv()
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -17,7 +18,6 @@ logging.basicConfig(
 from app.services.offres.offre_technique_service import (
     OffreTechniqueGeneratorService,
 )
-
 
 # ============================================================
 # DONNÉES DE TEST
@@ -71,7 +71,7 @@ async def main():
             tdr_data=TDR_DATA,
             session_info=SESSION_INFO,
         )
-        print(f"   ✅ Offre générée")
+        print("   ✅ Offre générée")
     except Exception as e:
         print(f"   ❌ Échec génération : {e}")
         import traceback

@@ -1,5 +1,4 @@
-from datetime import datetime, date
-from typing import Optional, List
+from datetime import date, datetime
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -11,20 +10,20 @@ class FactureCreate(BaseModel):
     client: str = Field(..., min_length=1)
     montant: float = Field(...,gt=0)
     tva_taux: float = Field(default=20.0, ge=0)
-    date_echeance: Optional[date] = None
+    date_echeance: date | None = None
 
 
 class PaiementCreate(BaseModel):
     montant: float = Field(..., gt=0)
     date: date
-    mode: Optional[str] = None
+    mode: str | None = None
 
 
 class PaiementResponse(BaseModel):
     id: UUID
     montant: float
     date: date
-    mode: Optional[str] = None
+    mode: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -38,8 +37,8 @@ class FactureResponse(BaseModel):
     montant_ttc: float
     statut: StatutFacture
     date_emission: datetime
-    date_echeance: Optional[date] = None
-    paiements: List[PaiementResponse] = []
+    date_echeance: date | None = None
+    paiements: list[PaiementResponse] = []
 
     model_config = {"from_attributes": True}
 

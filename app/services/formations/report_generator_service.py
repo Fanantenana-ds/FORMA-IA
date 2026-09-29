@@ -14,13 +14,14 @@ Auteur  : Équipe IA — ALTIORA Solutions
 Version : 1.2.0 (verbose + HITL)
 """
 
-import os
 import json
-import yaml
 import logging
-from pathlib import Path
+import os
 from datetime import datetime, timedelta
-from typing import Dict, Any
+from pathlib import Path
+from typing import Any
+
+import yaml
 
 from app.services.hitl import create_review
 from app.services.llm import LLMNotAvailableError, get_llm_provider
@@ -64,7 +65,7 @@ class ReportGeneratorService:
     # --------------------------------------------------------
     # PROMPT
     # --------------------------------------------------------
-    def _load_prompt(self) -> Dict[str, Any]:
+    def _load_prompt(self) -> dict[str, Any]:
         if not PROMPT_PATH.exists():
             raise FileNotFoundError(f"❌ Prompt introuvable : {PROMPT_PATH}")
         with open(PROMPT_PATH, "r", encoding="utf-8") as f:
@@ -86,7 +87,7 @@ class ReportGeneratorService:
             else "\n".join(f"- {r}" for r in cfg.get("regles", [])),
         ])
 
-    def _build_user_prompt(self, session_data: Dict[str, Any]) -> str:
+    def _build_user_prompt(self, session_data: dict[str, Any]) -> str:
         s = session_data
         lines = [
             "Génère le rapport final pour la session suivante :",
@@ -132,10 +133,10 @@ class ReportGeneratorService:
     # --------------------------------------------------------
     async def generate(
         self,
-        session_data: Dict[str, Any],
+        session_data: dict[str, Any],
         temperature: float = 0.4,
         max_tokens: int = 3000,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         start = datetime.now()
         vlog("=" * 70)
         vlog("🚀 [ReportAgent] Génération du rapport final...")
@@ -196,10 +197,10 @@ class ReportGeneratorService:
     # --------------------------------------------------------
     async def _generate_with_llm(
         self,
-        session_data: Dict[str, Any],
+        session_data: dict[str, Any],
         temperature: float,
         max_tokens: int,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         response = await self.llm.generate(
             system_prompt=self._build_system_prompt(),
             user_prompt=self._build_user_prompt(session_data),
@@ -218,7 +219,7 @@ class ReportGeneratorService:
         self._validate_llm_output(data)
         return data
 
-    def _validate_llm_output(self, data: Dict[str, Any]) -> None:
+    def _validate_llm_output(self, data: dict[str, Any]) -> None:
         required = [
             "titre_rapport", "resume_executif", "presentation",
             "statistiques_participants", "analyse_niveaux",
@@ -234,7 +235,7 @@ class ReportGeneratorService:
     # --------------------------------------------------------
     # FALLBACK TEMPLATE
     # --------------------------------------------------------
-    def _generate_with_template(self, session_data: Dict[str, Any]) -> Dict[str, Any]:
+    def _generate_with_template(self, session_data: dict[str, Any]) -> dict[str, Any]:
         s = session_data
         date_fin = s.get("date_fin", datetime.now().strftime("%Y-%m-%d"))
 

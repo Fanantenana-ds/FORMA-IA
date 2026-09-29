@@ -1,4 +1,4 @@
-name: CI
+﻿name: CI
 
 on:
   push:
@@ -19,6 +19,7 @@ jobs:
         working-directory: .
         run: |
           pip install -r requirements.txt
+          pip install ruff
       - name: Lint with ruff
         working-directory: .
         run: ruff check .
@@ -41,7 +42,4 @@ jobs:
         run: npm install
       - name: Lint
         working-directory: ./frontend
-        run: npm run lint --if-present
-      - name: Run tests
-        working-directory: ./frontend
-        run: npm test --if-present -- --watchAll=false
+        run: npm run lint

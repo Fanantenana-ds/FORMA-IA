@@ -1,4 +1,4 @@
-﻿name: CI
+name: CI
 
 on:
   push:
@@ -16,14 +16,14 @@ jobs:
         with:
           python-version: "3.10"
       - name: Install dependencies
-        working-directory: ./backend
+        working-directory: .
         run: |
           pip install -r requirements.txt
       - name: Lint with ruff
-        working-directory: ./backend
+        working-directory: .
         run: ruff check .
       - name: Run tests with coverage
-        working-directory: ./backend
+        working-directory: .
         run: |
           coverage run -m pytest
           coverage report --fail-under=70

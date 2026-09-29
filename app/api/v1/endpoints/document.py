@@ -1,16 +1,20 @@
 from uuid import UUID
+
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 
-from app.database import get_db
 from app.core.dependencies import get_current_user, require_role
-from app.models.user import User
+from app.database import get_db
 from app.models.document import Document, FormatExport
-from app.schemas.document import TDRRequest, DocumentResponse, ValidationRequest, OffreRequest
-from app.services.document_service import DocumentService
+from app.models.user import User
+from app.schemas.document import (
+    DocumentResponse,
+    OffreRequest,
+    TDRRequest,
+    ValidationRequest,
+)
 from app.services.document_export_service import DocumentExportService
-
-from typing import List
+from app.services.document_service import DocumentService
 
 router = APIRouter(
     prefix="/documents",
@@ -57,7 +61,7 @@ def get_document(
     return document
 
 
-@router.post("/attestations/{session_id}", response_model=List[DocumentResponse], status_code=201)
+@router.post("/attestations/{session_id}", response_model=list[DocumentResponse], status_code=201)
 def generer_attestations(
     session_id: UUID,
     service: DocumentService = Depends(get_document_service),

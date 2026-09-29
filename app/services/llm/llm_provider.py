@@ -1,6 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Dict, Any, Optional, List
-
+from typing import Any
 
 # =============================================================================
 # EXCEPTIONS PERSONNALISÉES
@@ -8,27 +7,22 @@ from typing import Dict, Any, Optional, List
 
 class LLMError(Exception):
     """Exception de base pour toutes les erreurs LLM."""
-    pass
 
 
 class LLMTimeoutError(LLMError):
     """Timeout dépassé lors de l'appel au LLM."""
-    pass
 
 
 class LLMRateLimitError(LLMError):
     """Quota API dépassé (rate limit)."""
-    pass
 
 
 class LLMInvalidResponseError(LLMError):
     """Réponse invalide du LLM (JSON malformé, etc.)."""
-    pass
 
 
 class LLMNotAvailableError(LLMError):
     """Fournisseur LLM non disponible (clé API manquante, etc.)."""
-    pass
 
 
 # =============================================================================
@@ -55,9 +49,9 @@ class LLMProvider(ABC):
         temperature: float = 0.4,
         max_tokens: int = 4000,
         json_mode: bool = True,
-        reasoning_effort: Optional[str] = None,
-        timeout: Optional[float] = None,
-    ) -> Dict[str, Any]:
+        reasoning_effort: str | None = None,
+        timeout: float | None = None,
+    ) -> dict[str, Any]:
         """
         Génère une réponse à partir d'un prompt système et utilisateur.
 
@@ -96,22 +90,18 @@ class LLMProvider(ABC):
             LLMRateLimitError: En cas de quota dépassé.
             LLMInvalidResponseError: En cas de réponse invalide.
         """
-        pass
 
     @abstractmethod
     def get_model_name(self) -> str:
         """Retourne le nom du modèle utilisé (ex: 'openai/gpt-oss-20b')."""
-        pass
 
     @abstractmethod
     def get_provider_name(self) -> str:
         """Retourne le nom du fournisseur (ex: 'groq' ou 'claude')."""
-        pass
 
     @abstractmethod
     def is_available(self) -> bool:
         """Vérifie si le provider est correctement configuré (clé API, etc.)."""
-        pass
 
     # =========================================================================
     # MÉTHODES CONCRÈTES (implémentées ici pour tous les providers)
@@ -124,11 +114,11 @@ class LLMProvider(ABC):
         temperature: float = 0.4,
         max_tokens: int = 4000,
         json_mode: bool = True,
-        reasoning_effort: Optional[str] = None,
-        timeout: Optional[float] = None,
+        reasoning_effort: str | None = None,
+        timeout: float | None = None,
         max_retries: int = 3,
         backoff_factor: float = 2.0,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Génère une réponse avec retry automatique (backoff exponentiel).
 
@@ -145,7 +135,7 @@ class LLMProvider(ABC):
         """
         import asyncio
 
-        last_error: Optional[Exception] = None
+        last_error: Exception | None = None
         delay = 1.0
 
         for attempt in range(1, max_retries + 1):
@@ -183,11 +173,11 @@ class LLMProvider(ABC):
 
     async def generate_multi_messages(
         self,
-        messages: List[Dict[str, str]],
+        messages: list[dict[str, str]],
         temperature: float = 0.4,
         max_tokens: int = 4000,
         json_mode: bool = True,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Génère une réponse à partir d'une liste de messages
         (format conversationnel).

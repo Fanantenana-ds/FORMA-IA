@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
+
 load_dotenv()
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -15,10 +16,8 @@ logging.basicConfig(
 )
 
 from app.orchestrator.preparation_orchestrator import (
-    PreparationOrchestrator,
     get_preparation_orchestrator,
 )
-
 
 # ============================================================
 # DONNÉES DE TEST
@@ -121,7 +120,7 @@ async def main():
     budget = result.get("budget", {})
     edt = result.get("edt", {})
 
-    print(f"\n💰 BUDGET :")
+    print("\n💰 BUDGET :")
     print(f"   • Formateur      : {budget.get('cout_formateur', 0):>12,} MGA")
     print(f"   • Salle          : {budget.get('cout_salle', 0):>12,} MGA")
     print(f"   • Supports       : {budget.get('cout_supports', 0):>12,} MGA")
@@ -130,13 +129,13 @@ async def main():
     print(f"   {'─' * 35}")
     print(f"   • TOTAL          : {budget.get('cout_total', 0):>12,} MGA")
 
-    print(f"\n📅 EDT :")
+    print("\n📅 EDT :")
     print(f"   • Formation      : {edt.get('titre_formation')}")
     print(f"   • Durée          : {edt.get('duree_totale_jours')} jour(s)")
     print(f"   • Sessions       : {sum(len(j.get('sessions', [])) for j in edt.get('jours', []))}")
     print(f"   • Source         : {edt.get('metadata', {}).get('source')}")
 
-    print(f"\n🔗 HITL :")
+    print("\n🔗 HITL :")
     print(f"   • Review ID      : {result.get('_review_id')}")
     print(f"   • Statut         : {result.get('_review_status')}")
 
@@ -151,7 +150,7 @@ async def main():
     print("\n" + "=" * 70)
     if ok:
         print("✅ TEST TERMINÉ AVEC SUCCÈS")
-        print(f"\n🎯 Action suivante :")
+        print("\n🎯 Action suivante :")
         print(f"   Approuver le review : POST /ia/formations/reviews/"
               f"{result.get('_review_id')}/approve")
     else:

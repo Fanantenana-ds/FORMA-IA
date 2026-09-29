@@ -19,13 +19,13 @@
 # ============================================================
 
 import logging
-from typing import Any, Dict, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 TYPES_CLIENT = ("participant", "entreprise")
 
-DEFAULTS: Dict[str, Any] = {
+DEFAULTS: dict[str, Any] = {
     "devise": "MGA",
     "tva_taux": 20.0,
     "remise_seuil_participants": 15,
@@ -41,10 +41,10 @@ class FactureCalculatorService:
         type_client: str,
         nb_participants: int,
         tarif_unitaire: float,
-        tva_taux: Optional[float] = None,
-        remise_pct: Optional[float] = None,
-        session_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        tva_taux: float | None = None,
+        remise_pct: float | None = None,
+        session_id: str | None = None,
+    ) -> dict[str, Any]:
         """
         Args:
             type_client: "participant" ou "entreprise".
@@ -126,7 +126,7 @@ class FactureCalculatorService:
         }
 
     @staticmethod
-    def calculer_reste_du(facture: Dict[str, Any]) -> float:
+    def calculer_reste_du(facture: dict[str, Any]) -> float:
         """
         Montant restant dû d'une facture Backend (GET /factures/{id}) :
         montant_ttc − somme des paiements (jamais négatif).

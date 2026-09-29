@@ -3,7 +3,6 @@ from sqlalchemy.orm import declarative_base, sessionmaker
 
 from app.config.settings import settings
 
-
 # ============================================================
 # DATABASE ENGINE
 # ============================================================

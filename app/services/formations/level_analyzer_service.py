@@ -1,12 +1,12 @@
-import os
 import json
-import yaml
 import logging
-from pathlib import Path
 from datetime import datetime
-from typing import Dict, Any, List, Optional
+from pathlib import Path
+from typing import Any
 
 import pandas as pd
+import yaml
+
 from app.services.hitl import create_review
 from app.services.llm import LLMNotAvailableError, get_llm_provider
 
@@ -52,7 +52,7 @@ class LevelAnalyzerService:
     # --------------------------------------------------------
     # PROMPT
     # --------------------------------------------------------
-    def _load_prompt(self) -> Dict[str, Any]:
+    def _load_prompt(self) -> dict[str, Any]:
         if not PROMPT_PATH.exists():
             raise FileNotFoundError(f"❌ Prompt introuvable : {PROMPT_PATH}")
         with open(PROMPT_PATH, "r", encoding="utf-8") as f:
@@ -76,8 +76,8 @@ class LevelAnalyzerService:
 
     def _build_user_prompt(
         self,
-        session_info: Dict[str, Any],
-        stats: Dict[str, Any],
+        session_info: dict[str, Any],
+        stats: dict[str, Any],
     ) -> str:
         """Construit le prompt utilisateur avec les stats déjà calculées."""
         lines = [
@@ -115,12 +115,12 @@ class LevelAnalyzerService:
     # --------------------------------------------------------
     async def analyze(
         self,
-        session_info: Dict[str, Any],
-        participants: List[Dict[str, Any]],
-        corrige: Dict[str, str],
+        session_info: dict[str, Any],
+        participants: list[dict[str, Any]],
+        corrige: dict[str, str],
         temperature: float = 0.4,
         max_tokens: int = 2500,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Analyse complète des niveaux.
 
@@ -217,9 +217,9 @@ class LevelAnalyzerService:
     # --------------------------------------------------------
     def _compute_statistics(
         self,
-        participants: List[Dict[str, Any]],
-        corrige: Dict[str, str],
-    ) -> Dict[str, Any]:
+        participants: list[dict[str, Any]],
+        corrige: dict[str, str],
+    ) -> dict[str, Any]:
         """Calcule scores, distributions et cas remarquables (pur Python/pandas)."""
         rows = []
         for p in participants:
@@ -278,7 +278,7 @@ class LevelAnalyzerService:
             },
         }
 
-    def _score(self, reponses: Dict[str, str], corrige: Dict[str, str]) -> float:
+    def _score(self, reponses: dict[str, str], corrige: dict[str, str]) -> float:
         """
         Calcule le score en % (0-100).
 
@@ -301,7 +301,7 @@ class LevelAnalyzerService:
             if reponses_norm.get(q, "").strip().upper() == bonne.strip().upper()
         )
         return round((bonnes / len(corrige)) * 100, 1)
-    def _distribution(self, scores: List[float]) -> Dict[str, Any]:
+    def _distribution(self, scores: list[float]) -> dict[str, Any]:
         """Retourne la distribution Débutant / Intermédiaire / Avancé."""
         n = len(scores)
         if n == 0:
@@ -319,7 +319,7 @@ class LevelAnalyzerService:
             "avances": {"nb": av, "pourcentage": f"{round(av / n * 100)}%"},
         }
 
-    def _empty_statistics(self) -> Dict[str, Any]:
+    def _empty_statistics(self) -> dict[str, Any]:
         """Retourne des stats vides si aucun participant."""
         empty = {"nb": 0, "pourcentage": "0%"}
         return {
@@ -344,11 +344,11 @@ class LevelAnalyzerService:
     # --------------------------------------------------------
     async def _generate_with_llm(
         self,
-        session_info: Dict[str, Any],
-        stats: Dict[str, Any],
+        session_info: dict[str, Any],
+        stats: dict[str, Any],
         temperature: float,
         max_tokens: int,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Appel LLM — génère resume + interpretation + recommandations."""
         response = await self.llm.generate(
             system_prompt=self._build_system_prompt(),
@@ -407,7 +407,7 @@ class LevelAnalyzerService:
     # --------------------------------------------------------
     # FALLBACK TEMPLATE
     # --------------------------------------------------------
-    def _generate_with_template(self, stats: Dict[str, Any]) -> Dict[str, Any]:
+    def _generate_with_template(self, stats: dict[str, Any]) -> dict[str, Any]:
         """Template Python (fallback) pour resume + interpretation + recos."""
         s = stats["statistiques"]
         d_av = stats["distribution_avant"]

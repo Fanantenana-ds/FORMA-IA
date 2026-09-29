@@ -8,7 +8,7 @@
 
 import logging
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from app.services.backend_sync import base_sync
 
@@ -27,7 +27,7 @@ BACKEND_FETCH_TIMEOUT = float(os.getenv("BACKEND_FETCH_TIMEOUT", "15"))
 
 async def fetch_opportunite_by_id(
     opportunite_id: str,
-) -> Optional[Dict[str, Any]]:
+) -> dict[str, Any] | None:
     """
     Récupère une opportunité par son ID depuis le Backend.
 
@@ -63,14 +63,14 @@ async def fetch_opportunite_by_id(
 
 async def fetch_opportunites_list(
     limit: int = 50,
-    statut: Optional[str] = None,
-) -> List[Dict[str, Any]]:
+    statut: str | None = None,
+) -> list[dict[str, Any]]:
     """
     Récupère la liste des opportunités (pour Frontend).
 
     Endpoint Backend attendu : GET /api/v1/opportunites
     """
-    params: Dict[str, Any] = {"limit": limit}
+    params: dict[str, Any] = {"limit": limit}
     if statut:
         params["statut"] = statut
 
@@ -102,7 +102,7 @@ async def fetch_opportunites_list(
 # MAPPING — Opportunité → Brief TDR
 # ============================================================
 
-def opportunity_to_brief(opportunite: Dict[str, Any]) -> Dict[str, Any]:
+def opportunity_to_brief(opportunite: dict[str, Any]) -> dict[str, Any]:
     """
     Convertit une opportunité en brief pour M2.
 

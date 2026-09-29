@@ -1,16 +1,16 @@
+import logging
 import os
 import time
-import logging
 from datetime import datetime
-from typing import Dict, Any, Optional, List
+from typing import Any
 
-from app.services.offres import (
-    OffreTechniqueGeneratorService,
-    OffreFinanciereGeneratorService,
-    GrilleTarifaireService,
-)
-from app.services.hitl import create_review
 from app.services.backend_sync import offre_sync, review_sync
+from app.services.hitl import create_review
+from app.services.offres import (
+    GrilleTarifaireService,
+    OffreFinanciereGeneratorService,
+    OffreTechniqueGeneratorService,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -137,10 +137,10 @@ class OffreOrchestrator:
 
     async def generate_complete(
         self,
-        tdr_data: Dict[str, Any],
-        session_info: Dict[str, Any],
-        options: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+        tdr_data: dict[str, Any],
+        session_info: dict[str, Any],
+        options: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """
         Génère une offre complète (technique + financière).
 
@@ -279,9 +279,9 @@ class OffreOrchestrator:
 
     async def generate_technique(
         self,
-        tdr_data: Dict[str, Any],
-        session_info: Dict[str, Any],
-    ) -> Dict[str, Any]:
+        tdr_data: dict[str, Any],
+        session_info: dict[str, Any],
+    ) -> dict[str, Any]:
         """Génère uniquement l'offre technique."""
         start = self._log_start(
             "generate_technique",
@@ -314,9 +314,9 @@ class OffreOrchestrator:
 
     async def generate_financiere(
         self,
-        offre_technique: Dict[str, Any],
-        options: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+        offre_technique: dict[str, Any],
+        options: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """Génère uniquement l'offre financière."""
         start = self._log_start(
             "generate_financiere",
@@ -352,7 +352,7 @@ class OffreOrchestrator:
         self,
         review_id: str,
         feedback: str,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Régénère une offre à partir d'un review rejeté.
 
@@ -427,9 +427,9 @@ class OffreOrchestrator:
     async def synchroniser_backend(
         self,
         review_id: str,
-        opportunite_id: Optional[str] = None,
+        opportunite_id: str | None = None,
         force: bool = False,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Enregistre l'offre APPROUVÉE côté Backend (POST /documents/offre).
 
@@ -461,7 +461,7 @@ class OffreOrchestrator:
             or (inputs.get("session_info") or {}).get("opportunite_id")
         )
 
-        async def _envoyer() -> Dict[str, Any]:
+        async def _envoyer() -> dict[str, Any]:
             return await offre_sync.sync_offre_to_backend(
                 opportunite_id=opportunite_id,
                 montant=offre_sync.extract_montant(data),
@@ -483,7 +483,7 @@ class OffreOrchestrator:
 # SINGLETON — pour FastAPI Depends
 # =============================================================================
 
-_offre_orchestrator_instance: Optional[OffreOrchestrator] = None
+_offre_orchestrator_instance: OffreOrchestrator | None = None
 
 
 def get_offre_orchestrator() -> OffreOrchestrator:

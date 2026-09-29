@@ -1,53 +1,53 @@
 from datetime import date, datetime
-from typing import Optional
 from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from app.models.formation import StatutPresence, SourcePresence
+from app.models.formation import SourcePresence, StatutPresence
+
 
 class SessionCreate(BaseModel):
     titre: str = Field(..., min_length=1)
-    client: Optional[str] = None
+    client: str | None = None
     date_debut: date
-    date_fin: Optional[date] = None
-    formateur_id: Optional[UUID] = None
+    date_fin: date | None = None
+    formateur_id: UUID | None = None
 
 class SessionResponse(BaseModel):
     id: UUID
     titre: str
-    client: Optional[str] = None
+    client: str | None = None
     date_debut: date
-    date_fin: Optional[date] = None
-    formateur_id: Optional[UUID] = None
+    date_fin: date | None = None
+    formateur_id: UUID | None = None
     date_creation: datetime
 
     model_config = {"from_attributes": True}
 
 class SeanceCreate(BaseModel):
     date: date
-    duree: Optional[str] = None
-    theme: Optional[str] = None
+    duree: str | None = None
+    theme: str | None = None
 
 class SeanceResponse(BaseModel):
     id: UUID
     session_id: UUID
     date: date
-    duree: Optional[str] = None
-    theme: Optional[str] = None
+    duree: str | None = None
+    theme: str | None = None
 
     model_config = {"from_attributes": True}
 
 class ParticipantCreate(BaseModel):
     nom: str = Field(..., min_length=1)
-    email: Optional[str] = None
-    entreprise: Optional[str] = None
+    email: str | None = None
+    entreprise: str | None = None
 
 class ParticipantResponse(BaseModel):
     id: UUID
     nom: str
-    email: Optional[str] = None
-    entreprise: Optional[str] = None
+    email: str | None = None
+    entreprise: str | None = None
 
     model_config = {"from_attributes": True}
 

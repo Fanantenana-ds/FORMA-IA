@@ -11,10 +11,10 @@
 # pattern déjà utilisé par M3 et Préparation.
 # ============================================================
 
+import logging
 import os
 import time
-import logging
-from typing import Any, Dict, Optional
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -75,14 +75,14 @@ class RouteResponse(BaseModel):
     """Réponse standardisée pour les routes M7."""
     success: bool
     message: str
-    duration_seconds: Optional[float] = None
-    review_id: Optional[str] = None
-    review_status: Optional[str] = None
+    duration_seconds: float | None = None
+    review_id: str | None = None
+    review_status: str | None = None
     requires_human_action: bool = False
-    data: Optional[Dict[str, Any]] = None
+    data: dict[str, Any] | None = None
 
 
-def _build_response(result: Dict[str, Any], msg_ok: str, elapsed: float) -> RouteResponse:
+def _build_response(result: dict[str, Any], msg_ok: str, elapsed: float) -> RouteResponse:
     review_id = result.get("_review_id") if isinstance(result, dict) else None
     status_val = result.get("_review_status") if isinstance(result, dict) else None
     requires_action = status_val == "pending_review"
@@ -110,7 +110,7 @@ def _build_response(result: Dict[str, Any], msg_ok: str, elapsed: float) -> Rout
 # =============================================================================
 
 @router.get("/health", summary="[M7] État du module Facturation IA")
-async def health_check() -> Dict[str, Any]:
+async def health_check() -> dict[str, Any]:
     _log_request("GET", "/ia/facturation/health")
     try:
         from app.services.facturation import get_package_status
@@ -128,7 +128,7 @@ async def health_check() -> Dict[str, Any]:
     "/calculer-montants",
     summary="[M7] Calculer les montants d'une facture (HT/TVA/TTC/remise)",
 )
-async def calculer_montants(payload: CalculerMontantsRequest) -> Dict[str, Any]:
+async def calculer_montants(payload: CalculerMontantsRequest) -> dict[str, Any]:
     _log_request(
         "POST", "/ia/facturation/calculer-montants",
         Type=payload.type_client, Participants=payload.nb_participants,

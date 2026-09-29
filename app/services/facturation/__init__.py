@@ -12,10 +12,10 @@ __module_name__ = "Facturation et relances"
 __author__ = "Équipe IA — ALTIORA Prest"
 
 __all__ = [
-    "__version__",
+    "RelanceGeneratorService",
     "__module_code__",
     "__module_name__",
-    "RelanceGeneratorService",
+    "__version__",
     "get_package_status",
 ]
 

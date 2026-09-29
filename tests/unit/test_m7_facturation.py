@@ -18,7 +18,9 @@ from fastapi.testclient import TestClient
 from app.api.v1.endpoints import facture_ia
 from app.orchestrator.facturation_orchestrator import FacturationOrchestrator
 from app.services.backend_sync import facture_sync
-from app.services.backend_sync.facture_calculator_service import FactureCalculatorService
+from app.services.backend_sync.facture_calculator_service import (
+    FactureCalculatorService,
+)
 from app.services.facturation.relance_generator_service import RelanceGeneratorService
 from app.services.hitl import hitl_helper
 

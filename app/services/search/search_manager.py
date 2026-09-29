@@ -5,9 +5,8 @@
 # des résultats provenant de Tavily.
 # ============================================================
 
-import os
 import logging
-from typing import List, Dict, Optional
+
 from app.clients.tavily_client import TavilyClient
 
 logger = logging.getLogger(__name__)
@@ -19,7 +18,7 @@ class SearchManager:
         """Initialise le SearchManager avec le client Tavily"""
         self.tavily_client = TavilyClient()
 
-    def search_and_merge(self, query: str, max_results: int = 20) -> List[Dict]:
+    def search_and_merge(self, query: str, max_results: int = 20) -> list[dict]:
         """
         Recherche, fusionne et déduplique les résultats
         PRIORITÉ : Madagascar d'abord, puis remote international
@@ -82,7 +81,7 @@ class SearchManager:
         # Pour les recherches générales
         return f"{query} (Madagascar OR Antananarivo OR site:.mg) OR ({query} remote Madagascar)"
 
-    def _merge_results(self, results: List[Dict]) -> List[Dict]:
+    def _merge_results(self, results: list[dict]) -> list[dict]:
         """
         Fusionne et déduplique les résultats
         """

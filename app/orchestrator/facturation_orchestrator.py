@@ -18,14 +18,16 @@
 #    Backend à discuter si un envoi automatique est voulu).
 # ============================================================
 
+import logging
 import os
 import time
-import logging
-from typing import Any, Dict, Optional
+from typing import Any
 
-from app.services.facturation import RelanceGeneratorService
-from app.services.backend_sync.facture_calculator_service import FactureCalculatorService
 from app.services.backend_sync import facture_sync
+from app.services.backend_sync.facture_calculator_service import (
+    FactureCalculatorService,
+)
+from app.services.facturation import RelanceGeneratorService
 from app.services.hitl import create_review
 
 logger = logging.getLogger(__name__)
@@ -117,7 +119,7 @@ class FacturationOrchestrator:
     # GÉNÉRER UNE RELANCE (Agent M7 + HITL)
     # =========================================================================
 
-    async def generer_relance(self, facture_id: str) -> Dict[str, Any]:
+    async def generer_relance(self, facture_id: str) -> dict[str, Any]:
         """
         Retourne :
           - {"success": True, "necessaire": False, "raison": ...} si aucune
@@ -212,7 +214,7 @@ class FacturationOrchestrator:
 # SINGLETON — pour FastAPI Depends
 # =============================================================================
 
-_facturation_orchestrator_instance: Optional[FacturationOrchestrator] = None
+_facturation_orchestrator_instance: FacturationOrchestrator | None = None
 
 
 def get_facturation_orchestrator() -> FacturationOrchestrator:

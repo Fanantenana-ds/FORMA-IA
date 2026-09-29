@@ -1,7 +1,10 @@
 from uuid import UUID
+
 from sqlalchemy.orm import Session
-from app.models.opportunite import Opportunite, StatutOpportunite
+
 from app.models.historique_analyse import HistoriqueAnalyse
+from app.models.opportunite import Opportunite, StatutOpportunite
+
 
 class AnalyseService:
     def __init__(self, db: Session):

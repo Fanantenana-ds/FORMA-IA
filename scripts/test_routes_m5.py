@@ -1,6 +1,6 @@
 
+
 import httpx
-import json
 
 BASE = "http://localhost:8000/api/v1/ia/formations"
 

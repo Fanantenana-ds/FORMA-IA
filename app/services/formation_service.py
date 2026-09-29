@@ -1,9 +1,16 @@
 from uuid import UUID
+
 from fastapi import HTTPException
 from sqlalchemy.orm import Session as DbSession
 
-from app.models.formation import Session, Seance, Participant, Presence
-from app.schemas.formation import SessionCreate, SeanceCreate, ParticipantCreate, PresenceCreate
+from app.models.formation import Participant, Presence, Seance, Session
+from app.schemas.formation import (
+    ParticipantCreate,
+    PresenceCreate,
+    SeanceCreate,
+    SessionCreate,
+)
+
 
 class FormationService:
     def __init__(self, db: DbSession):

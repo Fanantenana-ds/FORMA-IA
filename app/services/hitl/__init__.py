@@ -20,27 +20,26 @@ __version__ = "2.0.0"
 __author__ = "Équipe IA — ALTIORA Prest"
 
 __all__ = [
-    "__version__",
-    "create_review",
-    "list_pending",
-    "get_review",
-    "approve_review",
-    "reject_review",
-    "get_stats",
     "AGENT_CRITICITY",
+    "__version__",
+    "approve_review",
+    "create_review",
+    "get_review",
+    "get_stats",
+    "list_pending",
+    "reject_review",
 ]
 
 
 from .hitl_helper import (
-    create_review,
-    list_pending,
-    get_review,
-    approve_review,
-    reject_review,
-    get_stats,
     AGENT_CRITICITY,
+    approve_review,
+    create_review,
+    get_review,
+    get_stats,
+    list_pending,
+    reject_review,
 )
-
 
 logger.info(
     f"📦 Package 'hitl' (Human-In-The-Loop v{__version__}) chargé — "

@@ -1,11 +1,11 @@
 import uuid
-
 from datetime import datetime
 
 from sqlalchemy import Column, DateTime, ForeignKey, String
 from sqlalchemy.dialects.postgresql import UUID
 
 from app.database import Base
+
 
 class RevokedToken(Base):
     __tablename__ = "revoked_token"

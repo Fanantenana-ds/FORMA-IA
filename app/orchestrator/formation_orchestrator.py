@@ -15,18 +15,18 @@ Agents :
 📝 LOGS : contrôle via .env → VERBOSE_LOGS=true|false (défaut: true en dev)
 """
 
+import logging
 import os
 import time
-import logging
-from typing import Dict, Any, Optional, List
+from typing import Any
 
 from app.services.formations import (
+    AttestationGeneratorService,
     FormGeneratorService,
     LevelAnalyzerService,
-    SatisfactionAnalyzerService,
     PresenceAnalyzerService,
-    AttestationGeneratorService,
     ReportGeneratorService,
+    SatisfactionAnalyzerService,
 )
 
 logger = logging.getLogger(__name__)
@@ -159,7 +159,7 @@ class FormationOrchestrator:
     # AGENT 1 — GÉNÉRATION DES FORMULAIRES
     # ========================================================
 
-    async def generate_forms(self, session_info: Dict[str, Any]) -> Dict[str, Any]:
+    async def generate_forms(self, session_info: dict[str, Any]) -> dict[str, Any]:
         """Génère les 4 formulaires Google Forms d'une session."""
         start = self._log_start(
             "generate_forms",
@@ -188,10 +188,10 @@ class FormationOrchestrator:
 
     async def analyze_levels(
         self,
-        session_info: Dict[str, Any],
-        participants: List[Dict[str, Any]],
-        corrige: Dict[str, str],
-    ) -> Dict[str, Any]:
+        session_info: dict[str, Any],
+        participants: list[dict[str, Any]],
+        corrige: dict[str, str],
+    ) -> dict[str, Any]:
         """Agent 2 — Analyse les niveaux (avant/après)."""
         start = self._log_start(
             "analyze_levels",
@@ -218,9 +218,9 @@ class FormationOrchestrator:
 
     async def analyze_satisfaction(
         self,
-        session_info: Dict[str, Any],
-        responses: List[Dict[str, Any]],
-    ) -> Dict[str, Any]:
+        session_info: dict[str, Any],
+        responses: list[dict[str, Any]],
+    ) -> dict[str, Any]:
         """Agent 3 — Analyse la satisfaction des participants."""
         start = self._log_start(
             "analyze_satisfaction",
@@ -247,10 +247,10 @@ class FormationOrchestrator:
 
     async def analyze_presences(
         self,
-        session_info: Dict[str, Any],
-        participants: List[Dict[str, Any]],
-        presences: List[Dict[str, Any]],
-    ) -> Dict[str, Any]:
+        session_info: dict[str, Any],
+        participants: list[dict[str, Any]],
+        presences: list[dict[str, Any]],
+    ) -> dict[str, Any]:
         """Agent 4 — Analyse les présences (Python pur)."""
         start = self._log_start(
             "analyze_presences",
@@ -279,9 +279,9 @@ class FormationOrchestrator:
 
     async def generate_attestations(
         self,
-        session_data: Dict[str, Any],
-        eligible_participants: List[Dict[str, Any]],
-    ) -> Dict[str, Any]:
+        session_data: dict[str, Any],
+        eligible_participants: list[dict[str, Any]],
+    ) -> dict[str, Any]:
         """Agent 5 — Génère les attestations (JSON + PDF)."""
         start = self._log_start(
             "generate_attestations",
@@ -322,7 +322,7 @@ class FormationOrchestrator:
     # AGENT 6 — GÉNÉRATION DU RAPPORT FINAL
     # ========================================================
 
-    async def generate_report(self, session_data: Dict[str, Any]) -> Dict[str, Any]:
+    async def generate_report(self, session_data: dict[str, Any]) -> dict[str, Any]:
         """Agent 6 — Génère le rapport final de formation."""
         start = self._log_start(
             "generate_report",
@@ -347,7 +347,7 @@ class FormationOrchestrator:
     # AGENT 7 — INDEXATION RAG (V2)
     # ========================================================
 
-    async def index_documents(self, documents: Dict[str, Any]) -> Dict[str, Any]:
+    async def index_documents(self, documents: dict[str, Any]) -> dict[str, Any]:
         """Agent 7 — Indexation RAG (à venir — V2)."""
         logger.warning(
             "⚠️  [FormationOrchestrator] index_documents() "
@@ -360,7 +360,7 @@ class FormationOrchestrator:
 # SINGLETON — pour FastAPI Depends
 # ============================================================
 
-_orchestrator_instance: Optional[FormationOrchestrator] = None
+_orchestrator_instance: FormationOrchestrator | None = None
 
 
 def get_formation_orchestrator() -> FormationOrchestrator:

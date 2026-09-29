@@ -15,13 +15,14 @@ import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
+
 load_dotenv()
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from sqlalchemy import text  # noqa: E402
+from sqlalchemy import text
 
-from app.database import engine  # noqa: E402
+from app.database import engine
 
 
 def main() -> None:

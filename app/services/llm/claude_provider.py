@@ -17,17 +17,13 @@ Version : 1.0.0 (placeholder)
 =============================================================================
 """
 
-import os
 import logging
-from typing import Dict, Any, Optional
+import os
+from typing import Any
 
 from .llm_provider import (
-    LLMProvider,
-    LLMError,
-    LLMTimeoutError,
-    LLMRateLimitError,
-    LLMInvalidResponseError,
     LLMNotAvailableError,
+    LLMProvider,
 )
 
 logger = logging.getLogger(__name__)
@@ -89,9 +85,9 @@ class ClaudeProvider(LLMProvider):
         temperature: float = 0.4,
         max_tokens: int = 4000,
         json_mode: bool = True,
-        reasoning_effort: Optional[str] = None,
-        timeout: Optional[float] = None,
-    ) -> Dict[str, Any]:
+        reasoning_effort: str | None = None,
+        timeout: float | None = None,
+    ) -> dict[str, Any]:
         """
         Génère une réponse via Claude API.
 

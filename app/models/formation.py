@@ -1,12 +1,14 @@
 import uuid
-from datetime import date as date_type, datetime, timezone
+from datetime import datetime, timezone
 from enum import Enum
 
-from sqlalchemy import Column, String, Date, DateTime, ForeignKey, Enum as sqlEnum
+from sqlalchemy import Column, Date, DateTime, ForeignKey, String
+from sqlalchemy import Enum as sqlEnum
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
 from app.database import Base
+
 
 class StatutPresence(str, Enum):
     PRESENT = "PRESENT"

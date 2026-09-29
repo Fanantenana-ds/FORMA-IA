@@ -16,7 +16,7 @@
 # ============================================================
 
 import logging
-from typing import Any, Dict, List
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +28,7 @@ def _est_optionnel(nom: str) -> bool:
     return any(nom.startswith(prefixe) for prefixe in OPTIONNELS)
 
 
-def _packages() -> Dict[str, Any]:
+def _packages() -> dict[str, Any]:
     from app.services import facturation, formations, offres, preparation
 
     return {
@@ -39,14 +39,14 @@ def _packages() -> Dict[str, Any]:
     }
 
 
-def collecter() -> Dict[str, Any]:
+def collecter() -> dict[str, Any]:
     """État de chaque module + statut global."""
-    modules: Dict[str, Any] = {}
-    manquants_global: List[str] = []
+    modules: dict[str, Any] = {}
+    manquants_global: list[str] = []
 
     for code, package in _packages().items():
         etat = package.get_package_status()
-        elements: Dict[str, bool] = etat.get("agents") or etat.get("services") or {}
+        elements: dict[str, bool] = etat.get("agents") or etat.get("services") or {}
 
         manquants = [
             nom for nom, charge in elements.items()
@@ -67,7 +67,7 @@ def collecter() -> Dict[str, Any]:
     }
 
 
-def journaliser_au_demarrage() -> Dict[str, Any]:
+def journaliser_au_demarrage() -> dict[str, Any]:
     """Alerte visible (ERROR) si un agent requis est indisponible."""
     etat = collecter()
     if etat["status"] == "degraded":

@@ -2,8 +2,6 @@
 # TESTS — M2 TDR
 # ============================================================
 
-import pytest
-import json
 from app.orchestrator.tdr_orchestrator import TdrOrchestrator
 
 

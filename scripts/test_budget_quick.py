@@ -28,7 +28,7 @@ def main():
     print(f"   • Supports      : {result['cout_supports']:>12,} MGA")
     print(f"   • Logistique    : {result['cout_logistique']:>12,} MGA")
     print(f"   • Administration: {result['cout_administration']:>12,} MGA")
-    print(f"   ─────────────────────────────")
+    print("   ─────────────────────────────")
     print(f"   • TOTAL         : {result['cout_total']:>12,} MGA")
 
     print("\n✅ Test terminé")

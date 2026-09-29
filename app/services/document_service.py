@@ -1,15 +1,21 @@
 from datetime import datetime, timezone
 from uuid import UUID
+
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
-from typing import List
 
-from app.models.document import Document, TDR, Attestation, StatutValidation, FormatExport, Offre
-from app.models.formation import Session as FormationSession, Seance, Presence, Participant, StatutPresence
+from app.models.document import (
+    TDR,
+    Attestation,
+    Document,
+    FormatExport,
+    Offre,
+    StatutValidation,
+)
+from app.models.formation import Participant, Presence, Seance, StatutPresence
+from app.models.formation import Session as FormationSession
 from app.models.opportunite import Opportunite
-from app.schemas.document import TDRRequest, OffreRequest
-
-
+from app.schemas.document import OffreRequest, TDRRequest
 
 
 class DocumentService:
@@ -56,7 +62,7 @@ class DocumentService:
         self.db.refresh(document)
         return document
 
-    def generer_attestations(self, session_id: UUID) -> List[Attestation]:
+    def generer_attestations(self, session_id: UUID) -> list[Attestation]:
         session = self.db.query(FormationSession).filter(FormationSession.id == session_id).first()
         if not session:
             raise HTTPException(status_code=404, detail= "Session introuvable")

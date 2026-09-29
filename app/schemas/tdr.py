@@ -3,7 +3,8 @@
 # SCHÉMAS TDR — Pydantic (V4.0)
 # ============================================================
 
-from typing import Any, Dict, List, Optional
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 
@@ -13,11 +14,11 @@ class TDRRequest(BaseModel):
     objectifs: str = Field(..., min_length=5)
     public: str = Field(..., min_length=2)
     duree: str = Field(..., min_length=1)
-    format: Optional[str] = "Présentiel"
-    budget: Optional[str] = None
-    lieu: Optional[str] = None
-    deadline: Optional[str] = None
-    opportunite_id: Optional[str] = None       # ✅ Lien vers M1
+    format: str | None = "Présentiel"
+    budget: str | None = None
+    lieu: str | None = None
+    deadline: str | None = None
+    opportunite_id: str | None = None       # ✅ Lien vers M1
 
 
 class TDRFromOpportuniteRequest(BaseModel):
@@ -28,18 +29,18 @@ class TDRFromOpportuniteRequest(BaseModel):
 class TDRFromOpportuniteResponse(BaseModel):
     """Réponse avec le brief pré-rempli."""
     success: bool
-    brief: Optional[Dict[str, Any]] = None
-    opportunite: Optional[Dict[str, Any]] = None
-    error: Optional[str] = None
+    brief: dict[str, Any] | None = None
+    opportunite: dict[str, Any] | None = None
+    error: str | None = None
 
 
 class TDRFiles(BaseModel):
-    docx: Optional[str] = None
-    pdf: Optional[str] = None
+    docx: str | None = None
+    pdf: str | None = None
 
 
 class TDRResponse(BaseModel):
     success: bool
-    data: Optional[Dict[str, Any]] = None
-    files: Optional[TDRFiles] = None
-    error: Optional[str] = None
+    data: dict[str, Any] | None = None
+    files: TDRFiles | None = None
+    error: str | None = None

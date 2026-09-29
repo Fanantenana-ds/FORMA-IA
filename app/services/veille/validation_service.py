@@ -7,7 +7,7 @@
 
 import logging
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pydantic import ValidationError
 
@@ -88,7 +88,7 @@ _JOB_KEYWORDS_END_REGEX = re.compile(
 )
 
 
-def _extract_employer_from_url(url: str) -> Optional[str]:
+def _extract_employer_from_url(url: str) -> str | None:
     """Extrait le nom de l'employeur depuis l'URL d'une offre."""
     if not url:
         return None
@@ -142,7 +142,7 @@ def _extract_employer_from_url(url: str) -> Optional[str]:
 # FLAG ORGANIZER AMBIGU
 # ============================================================
 
-def _flag_ambiguous_organizer(opportunity: Dict[str, Any]) -> None:
+def _flag_ambiguous_organizer(opportunity: dict[str, Any]) -> None:
     """Ajoute le flag 'organizer_unclear' si source == organizer."""
     source = str(opportunity.get("source", "") or "").strip().lower()
     organizer = str(opportunity.get("organizer", "") or "").strip().lower()
@@ -177,7 +177,7 @@ def _flag_ambiguous_organizer(opportunity: Dict[str, Any]) -> None:
 # QUALITY FILTER — AVEC LOGS DÉTAILLÉS
 # ============================================================
 
-def quality_filter(opportunity: Dict[str, Any]) -> bool:
+def quality_filter(opportunity: dict[str, Any]) -> bool:
     """Filtre anti-faux-positifs — AVEC LOGS DÉTAILLÉS."""
     title = str(opportunity.get("title", "")).strip()
     summary = str(opportunity.get("summary", "") or "").strip()
@@ -282,7 +282,7 @@ def quality_filter(opportunity: Dict[str, Any]) -> bool:
 # NORMALISATION — AVEC LOGS
 # ============================================================
 
-def normalize_opportunity(opportunity: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+def normalize_opportunity(opportunity: dict[str, Any]) -> dict[str, Any] | None:
     """Normalise les champs — AVEC LOGS."""
 
     if not isinstance(opportunity, dict):
@@ -382,7 +382,7 @@ def normalize_opportunity(opportunity: Dict[str, Any]) -> Optional[Dict[str, Any
 # DÉDUPLICATION — AVEC LOGS
 # ============================================================
 
-def deduplicate(opportunities: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def deduplicate(opportunities: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Déduplication par URL puis par titre normalisé — AVEC LOGS."""
 
     seen_urls = set()
@@ -422,7 +422,7 @@ def deduplicate(opportunities: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 # VALIDATION SCHÉMA (PYDANTIC) — AVEC LOGS
 # ============================================================
 
-def validate_against_schema(opportunity: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+def validate_against_schema(opportunity: dict[str, Any]) -> dict[str, Any] | None:
     """
     Valide la forme finale via le schéma Pydantic.
     Si validation échoue → bypass gracieux (retourne l'opportunité).
@@ -452,7 +452,7 @@ def validate_against_schema(opportunity: Dict[str, Any]) -> Optional[Dict[str, A
 # FALLBACK RESPONSE
 # ============================================================
 
-def fallback_response(results: List[Dict[str, Any]]) -> Dict[str, Any]:
+def fallback_response(results: list[dict[str, Any]]) -> dict[str, Any]:
     """Réponse de repli stricte."""
     logger.warning("⚠️ FALLBACK M1 : zéro opportunité pour éviter les faux positifs")
 

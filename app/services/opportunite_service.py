@@ -1,10 +1,10 @@
-from typing import Optional
 from uuid import UUID
 
 from app.models.opportunite import Opportunite
-from app.schemas.opportunite import OpportuniteCreate, OpportuniteUpdate
 from app.repositories.interfaces.iopportunite_repository import IOpportuniteRepository
+from app.schemas.opportunite import OpportuniteCreate, OpportuniteUpdate
 from app.services.interfaces.iopportunite_service import IOpportuniteService
+
 
 class OpportuniteService(IOpportuniteService):
     def __init__(self, repository: IOpportuniteRepository):
@@ -22,7 +22,7 @@ class OpportuniteService(IOpportuniteService):
 
         return self.repository.save(opportunite)
 
-    def get_by_id(self, opportunite_id: UUID) -> Optional[Opportunite]:
+    def get_by_id(self, opportunite_id: UUID) -> Opportunite | None:
 
         return self.repository.find_by_id(opportunite_id)
 
@@ -33,7 +33,7 @@ class OpportuniteService(IOpportuniteService):
     def delete(self, opportunite_id: UUID) -> bool:
         return self.repository.delete(opportunite_id)
 
-    def update(self, opportunite_id: UUID, data: OpportuniteUpdate) -> Optional[Opportunite]:
+    def update(self, opportunite_id: UUID, data: OpportuniteUpdate) -> Opportunite | None:
         opportunite = self.repository.find_by_id(opportunite_id)
 
         if not opportunite:

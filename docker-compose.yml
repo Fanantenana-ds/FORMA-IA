@@ -11,15 +11,16 @@
     volumes:
       - pgdata:/var/lib/postgresql/data
   backend:
-    build: ./backend
+    build: .
     ports:
       - "8000:8000"
     volumes:
-      - ./backend:/app
+      - .:/app
     depends_on:
       - db
     environment:
       DATABASE_URL: postgresql://forma_user:forma_pass@db:5432/forma_ia
+      SECRET_KEY: ${SECRET_KEY}
   frontend:
     build: ./frontend
     ports:

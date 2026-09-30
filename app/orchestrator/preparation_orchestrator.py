@@ -441,9 +441,9 @@ class PreparationOrchestrator:
         force: bool = False,
     ) -> Dict[str, Any]:
         """
-        Enregistre la préparation APPROUVÉE côté Backend : une session et
-        une séance par jour d'EDT (le budget n'a pas de route Backend :
-        il n'est pas persisté, voir preparation_sync).
+        Enregistre la préparation APPROUVÉE côté Backend :
+        POST /projets + POST /projets/{id}/edt par jour
+        + POST /projets/{id}/budget si présent.
 
         Garde-fous : review approuvé uniquement (agent_preparation), un seul
         envoi par review (sauf force=True : crée alors une NOUVELLE session).

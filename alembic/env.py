@@ -17,6 +17,12 @@ from app.models.user import User
 from app.models.revoked_token import RevokedToken
 from app.models.opportunite import Opportunite
 from app.models.historique_analyse import HistoriqueAnalyse
+from app.models.formation import Session, Seance, Participant, Inscription, Presence
+from app.models.facture import Facture, Paiement, Relance
+from app.models.document import Document
+from app.models.rh import Formateur, Candidat, Entretien
+from app.models.offre import Offre
+from app.models.projet import Projet, Salle, EdtSession, BudgetFormation
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

@@ -24,6 +24,7 @@ from app.orchestrator.facturation_orchestrator import (
     get_facturation_orchestrator,
 )
 from app.schemas.facture_ia import CalculerMontantsRequest, GenererRelanceRequest, SynchroniserRelanceRequest
+from app.utils.security import verify_api_key
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +42,7 @@ def vlog(msg: str, level: str = "info") -> None:
 router = APIRouter(
     prefix="/ia/facturation",
     tags=["M7 — IA Facturation"],
+    dependencies=[Depends(verify_api_key)],
 )
 
 

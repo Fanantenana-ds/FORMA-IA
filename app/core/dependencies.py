@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.services.opportunite_analyse_service import OpportuniteAnalyseService
-from app.core.security import decode_access_token
+from app.core.security import decode_access_token, TokenExpiredError
 from app.repositories.user_repository import UserRepository
 from app.repositories.revoked_token_repository import (
     RevokedTokenRepository
@@ -15,25 +15,27 @@ from typing import Callable
 security_scheme = HTTPBearer(auto_error=False)
 
 def get_current_user(credential: HTTPAuthorizationCredentials = Depends(security_scheme), db: Session = Depends(get_db)):
-    # Décodage et vérification du JWT
     if not credential:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token invalide ou expiré",
-            headers={
-                "WWW-Authenticate": "Bearer"
-            }
+            detail="Authentification requise — veuillez vous connecter via POST /api/v1/auth/login",
+            headers={"WWW-Authenticate": "Bearer"},
         )
     token = credential.credentials
-    payload = decode_access_token(token)
+    try:
+        payload = decode_access_token(token)
+    except TokenExpiredError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Session expirée — veuillez vous reconnecter via POST /api/v1/auth/login",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
     if not payload:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token invalide ou expiré",
-            headers={
-                "WWW-Authenticate": "Bearer"
-            }
+            detail="Token invalide",
+            headers={"WWW-Authenticate": "Bearer"},
         )
 
     # Récupérationdes informations du JWT

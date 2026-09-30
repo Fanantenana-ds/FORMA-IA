@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     # ========================================================
     SECRET_KEY: str = "votre_secret_key_aleatoire_longue_et_complexe"
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 480  # 8h en dev (surcharger via .env en prod)
     
     # ========================================================
     # GROQ (ta config principale)

@@ -58,7 +58,7 @@ async def sync_evaluation_formateur(
         return result
 
     response = await base_sync.backend_request(
-        "PATCH", f"/rh/formateurs/{formateur_id}", payload
+        "PATCH", f"/rh/formateurs/{formateur_id}", json=payload
     )
     result["sent"] = response["ok"]
     result["error"] = response.get("error")
@@ -93,10 +93,53 @@ async def sync_candidat_to_backend(
     if review_id_preselection is not None:
         payload["review_id_preselection"] = str(review_id_preselection)[:100]
 
-    response = await base_sync.backend_request("POST", "/rh/candidats", payload)
+    response = await base_sync.backend_request("POST", "/rh/candidats", json=payload)
     result["sent"] = response["ok"]
     result["error"] = response.get("error")
     if response["ok"] and isinstance(response["data"], dict):
         result["candidat_id"] = response["data"].get("id")
+        result["verified"] = True
+    return result
+
+
+async def sync_entretien_cr_to_backend(
+    candidat_id: str,
+    compte_rendu: str,
+    decision: Optional[str] = None,
+    interviewers: Optional[str] = None,
+    date_entretien: Optional[str] = None,
+    review_id_entretien: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Crée un entretien avec son CR approuvé (POST /rh/candidats/{id}/entretiens).
+    Appelé après approbation HITL du CR (A2).
+    """
+    result = base_sync.new_result(entretien_id=None)
+    if not result["enabled"]:
+        return result
+
+    if not base_sync.is_valid_uuid(candidat_id):
+        result["error"] = "candidat_id n'est pas un UUID valide"
+        return result
+
+    payload: Dict[str, Any] = {
+        "compte_rendu": compte_rendu[:10000] if compte_rendu else "",
+    }
+    if decision:
+        payload["decision"] = decision
+    if interviewers:
+        payload["interviewers"] = interviewers[:500]
+    if date_entretien:
+        payload["date_entretien"] = date_entretien[:20]
+    if review_id_entretien:
+        payload["review_id_entretien"] = str(review_id_entretien)[:100]
+
+    response = await base_sync.backend_request(
+        "POST", f"/rh/candidats/{candidat_id}/entretiens", json=payload
+    )
+    result["sent"] = response["ok"]
+    result["error"] = response.get("error")
+    if response["ok"] and isinstance(response["data"], dict):
+        result["entretien_id"] = response["data"].get("id")
         result["verified"] = True
     return result

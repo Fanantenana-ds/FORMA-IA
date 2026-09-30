@@ -11,6 +11,7 @@
 #   POST /factures/{id}/relance           Générer un texte de relance simple
 #   POST /factures/{id}/relances          Enregistrer une relance IA HITL
 #   GET  /factures/{id}/relances          Lister les relances IA d'une facture
+#   DELETE /factures/{id}                 Supprimer une facture (DIRECTION uniquement)
 #
 # ⚙️  Pagination GET : skip (défaut 0) + limit (défaut 100)
 # ⚙️  Filtres GET : statut (EMISE|PARTIELLEMENT_PAYEE|PAYEE|EN_RETARD), client (recherche partielle)
@@ -157,3 +158,22 @@ def lister_relances(
     current_user: User = Depends(get_current_user),
 ):
     return service.lister_relances(facture_id)
+
+
+@router.delete(
+    "/{facture_id}",
+    status_code=204,
+    summary="Supprimer une facture",
+    description=(
+        "Supprime définitivement une facture et toutes ses données associées "
+        "(paiements, relances IA). Irréversible.\n\n"
+        "Retourne **404** si la facture n'existe pas.\n\n"
+        "**Rôle autorisé :** DIRECTION uniquement."
+    ),
+)
+def supprimer_facture(
+    facture_id: UUID,
+    service: FactureService = Depends(get_facture_service),
+    current_user: User = Depends(require_role("DIRECTION")),
+):
+    service.supprimer_facture(facture_id)

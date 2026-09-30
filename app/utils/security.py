@@ -24,13 +24,12 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 logger = logging.getLogger(__name__)
 
-IA_API_KEY = os.getenv("IA_API_KEY")
+SHARED_INTERNAL_TOKEN = os.getenv("SHARED_INTERNAL_TOKEN") or os.getenv("IA_API_KEY")
 
-if not IA_API_KEY:
+if not SHARED_INTERNAL_TOKEN:
     logger.warning(
-        "⚠️ IA_API_KEY non définie dans .env — les endpoints IA "
-        "protégés par verify_api_key refuseront TOUTES les requêtes "
-        "tant qu'une clé n'est pas configurée. Génère-en une avec : "
+        "⚠️ SHARED_INTERNAL_TOKEN non définie dans .env — les endpoints IA "
+        "refuseront TOUTES les requêtes. Génère-en une avec : "
         "python -c \"import secrets; print(secrets.token_urlsafe(32))\""
     )
 
@@ -54,22 +53,20 @@ async def verify_api_key(
         router = APIRouter(dependencies=[Depends(verify_api_key)])
     """
 
-    if not IA_API_KEY:
+    if not SHARED_INTERNAL_TOKEN:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="IA_API_KEY non configurée côté serveur.",
+            detail="SHARED_INTERNAL_TOKEN non configurée côté serveur.",
         )
 
     if credentials is None or not credentials.credentials:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authentification requise : clé API manquante.",
+            detail="Authentification requise : token interne manquant.",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # Comparaison à temps constant : évite les attaques par mesure
-    # du temps de réponse pour deviner la clé caractère par caractère.
-    if not secrets.compare_digest(credentials.credentials, IA_API_KEY):
+    if not secrets.compare_digest(credentials.credentials, SHARED_INTERNAL_TOKEN):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Clé API invalide.",

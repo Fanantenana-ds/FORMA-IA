@@ -54,7 +54,7 @@ def _cfg() -> Dict[str, Any]:
         "api_url": os.getenv(
             "BACKEND_API_URL", "http://localhost:8000/api/v1"
         ).rstrip("/"),
-        "token": os.getenv("BACKEND_SYNC_TOKEN", ""),
+        "token": os.getenv("BACKEND_SYNC_TOKEN", "") or os.getenv("SHARED_INTERNAL_TOKEN", ""),
         "email": os.getenv("BACKEND_SERVICE_EMAIL", ""),
         "password": os.getenv("BACKEND_SERVICE_PASSWORD", ""),
         "timeout": float(os.getenv("BACKEND_SYNC_TIMEOUT", "30")),

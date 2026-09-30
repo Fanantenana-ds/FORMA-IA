@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, select
 
 from app.models.formation import Session as FormationSession, Presence, StatutPresence
 from app.models.opportunite import Opportunite, StatutOpportunite, Domaine
@@ -98,16 +98,20 @@ class DashboardService:
         )
 
         # Montant impayé = somme TTC des factures non soldées - somme des paiements reçus
-        total_facture_ttc = (
-            self.db.query(func.sum(Facture.montant * (1 + Facture.tva_taux / 100)))
+        factures_non_soldees = (
+            self.db.query(Facture)
             .filter(Facture.statut != StatutFacture.PAYEE)
-            .scalar() or 0.0
+            .all()
         )
-        total_encaisse = (
-            self.db.query(func.sum(Paiement.montant))
-            .scalar() or 0.0
-        )
-        montant_impaye = round(max(total_facture_ttc - total_encaisse, 0.0), 2)
+
+        montant_impaye = 0.0
+        for facture in factures_non_soldees:
+            total_paye = sum(p.montant for p in facture.paiements)
+            reste = facture.montant_ttc - total_paye
+            if reste > 0:
+                montant_impaye += reste
+
+        montant_impaye = round(montant_impaye, 2)
 
         relances_envoyees = self.db.query(Relance).count()
 

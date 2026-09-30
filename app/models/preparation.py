@@ -7,6 +7,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
 from app.database import Base
+from app.models.rh import Formateur
 
 
 class StatutProjet(str, Enum):
@@ -42,21 +43,6 @@ class Projet(Base):
     budget_formation = relationship("BudgetFormation", back_populates="projet", uselist=False, cascade="all, delete-orphan")
 
 
-class Formateur(Base):
-    __tablename__ = "formateurs"
-
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    nom = Column(String(30), nullable=False)
-    prenom = Column(String(20), nullable=True)
-    email = Column(String(30), nullable=True)
-    specialite = Column(String(30), nullable=True)
-    tarif_journalier = Column(Float, nullable=True)
-    disponible = Column(Boolean, default=True, nullable=False)
-    commentaire = Column(Text, nullable=True)
-
-    edts = relationship("EDT", back_populates="formateur", foreign_keys="EDT.formateur_id")
-
-
 class Salle(Base):
     __tablename__ = "salles"
 
@@ -64,7 +50,7 @@ class Salle(Base):
     nom = Column(String(30), nullable=False)
     adresse = Column(String(50), nullable=True)
     capacite = Column(Integer, nullable=True)
-    tarif_journalier = Column(Boolean, nullable=True)
+    tarif_journalier = Column(Float, nullable=True)
     disponible = Column(Boolean, default=True, nullable=False)
     commentaire = Column(Text, nullable=True)
 
@@ -94,7 +80,7 @@ class EDT(Base):
     formateur_id = Column(UUID(as_uuid=True), ForeignKey("formateurs.id"), nullable=True)
     salle_id = Column(UUID(as_uuid=True), ForeignKey("salles.id"), nullable=True)
 
-    projet = relationship("Projet", back_populates="edts")
+    projet = relationship("Projet")
     formateur = relationship("Formateur", back_populates="edts", foreign_keys=[formateur_id])
     salle = relationship("Salle", back_populates="edts", foreign_keys=[salle_id])
 

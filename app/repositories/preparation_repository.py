@@ -1,7 +1,8 @@
 import uuid
 from typing import Optional
 from sqlalchemy.orm import Session
-from app.models.preparation import Projet, Formateur, Salle, EDT
+from app.models.preparation import Projet, Salle, EDT
+from app.models.rh import Formateur
 
 
 class PreparationRepository:
@@ -33,7 +34,7 @@ class PreparationRepository:
             self.db.flush()
 
     def get_or_create_formateur(self, nom: str, specialite: Optional[str] = None) -> Formateur:
-        formateur = self.db.query(Formateur).filter(Formateur.nom.ilike(nom.strip())).filter()
+        formateur = self.db.query(Formateur).filter(Formateur.nom.ilike(nom.strip())).first()
         if not formateur:
             formateur = Formateur(nom=nom.strip(), specialite=specialite)
             

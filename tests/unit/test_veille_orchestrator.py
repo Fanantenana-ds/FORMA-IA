@@ -12,6 +12,7 @@ import pytest
 
 from app.orchestrator import veille_orchestrator as vo_module
 from app.orchestrator.veille_orchestrator import VeilleOrchestrator
+import app.services.hitl.hitl_helper as hitl_helper_module
 
 
 def run(coro):
@@ -34,6 +35,10 @@ def orchestrateur(monkeypatch):
     monkeypatch.setattr(
         vo_module, "sync_new_opportunities_to_backend",
         _async(lambda opps: {"enabled": True, "sent": len(opps), "failed": 0, "already_present": 0}),
+    )
+    monkeypatch.setattr(
+        vo_module, "create_review",
+        lambda agent_id, data, summary, criticity: "review-test-001",
     )
     return o
 
@@ -134,7 +139,10 @@ def test_analyser_opportunites_success_complet(orchestrateur, monkeypatch):
     assert resultat["total"] == 1
     assert resultat["opportunities"][0]["status"] == "validated"
     assert resultat["opportunities"][0]["country_scope"] == "Madagascar"
-    assert resultat["statistics"]["backend_sync"]["sent"] == 1
+    # HITL : le sync est différé jusqu'à approbation humaine
+    assert resultat["statistics"]["backend_sync"]["deferred"] is True
+    assert resultat["_review_id"] == "review-test-001"
+    assert resultat["_review_status"] == "pending_review"
 
 
 def test_analyser_opportunites_rejets_normalize_et_quality_et_score_bas(orchestrateur, monkeypatch):

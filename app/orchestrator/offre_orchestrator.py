@@ -431,7 +431,7 @@ class OffreOrchestrator:
         force: bool = False,
     ) -> Dict[str, Any]:
         """
-        Enregistre l'offre APPROUVÉE côté Backend (POST /documents/offre).
+        Enregistre l'offre APPROUVÉE côté Backend (POST /offres).
 
         Garde-fous : review approuvé uniquement (agent_m3_complete), un seul
         envoi par review (sauf force=True : crée alors un nouveau document).
@@ -463,9 +463,12 @@ class OffreOrchestrator:
 
         async def _envoyer() -> Dict[str, Any]:
             return await offre_sync.sync_offre_to_backend(
+                titre=offre_sync.extract_titre(data),
+                client=offre_sync.extract_client(data),
                 opportunite_id=opportunite_id,
-                montant=offre_sync.extract_montant(data),
-                contenu=offre_sync.build_contenu(data),
+                trame_technique=offre_sync.build_trame_technique(data),
+                trame_financiere=offre_sync.build_trame_financiere(data),
+                montant_ht=offre_sync.extract_montant(data),
             )
 
         result = await review_sync.sync_once(review_id, _envoyer, force=force)

@@ -10,6 +10,7 @@ from app.orchestrator.offre_orchestrator import (
     OffreOrchestrator,
     get_offre_orchestrator,
 )
+from app.utils.security import verify_api_key
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +28,7 @@ def vlog(msg: str, level: str = "info") -> None:
 router = APIRouter(
     prefix="/ia/offres",
     tags=["M3 — IA Offres"],
+    dependencies=[Depends(verify_api_key)],
 )
 
 
@@ -352,7 +354,7 @@ async def regenerer(
     response_model=RouteResponse,
     summary="[M3] Enregistrer une offre APPROUVÉE dans le Backend",
     description=(
-        "Envoie l'offre au Backend (POST /documents/offre) avec son contenu.\n\n"
+        "Envoie l'offre au Backend (POST /offres) avec trame_technique et trame_financiere.\n\n"
         "⚠️ Refusé (422) tant que le review n'est pas **approuvé** : aucun "
         "contenu IA n'atteint le Backend sans validation humaine.\n\n"
         "Un seul envoi par review (sauf `force`). Nécessite "

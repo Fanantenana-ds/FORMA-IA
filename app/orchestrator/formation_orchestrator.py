@@ -355,6 +355,144 @@ class FormationOrchestrator:
         )
         raise NotImplementedError("Agent 7 (KnowledgeBase/RAG) à venir — V2.")
 
+    # ========================================================
+    # CRÉER LES VRAIS GOOGLE FORMS (après approbation HITL)
+    # ========================================================
+
+    async def creer_formulaires_google(
+        self,
+        review_id: str,
+        session_title: str = "",
+    ) -> Dict[str, Any]:
+        """
+        Crée les 4 Google Forms réels depuis le JSON approuvé par HITL.
+
+        Args:
+            review_id: ID du review APPROUVÉ (agent_1_forms).
+            session_title: titre de la session (préfixe dans le nom des formulaires).
+
+        Returns:
+            Dict avec URL de chaque formulaire créé.
+        """
+        from app.services.hitl import get_review
+        from app.services.formations.google_forms_service import GoogleFormsService
+
+        start = self._log_start(
+            "creer_formulaires_google",
+            **{"🔍 Review": review_id, "📋 Session": session_title or "N/A"},
+        )
+
+        review = get_review(review_id)
+        if not review:
+            raise ValueError(f"Review '{review_id}' introuvable.")
+        if review.get("status") != "approved":
+            raise ValueError(
+                f"Review '{review_id}' non approuvé "
+                f"(statut actuel : {review.get('status')})."
+            )
+        if review.get("agent_id") != "agent_1_forms":
+            raise ValueError(
+                f"Review '{review_id}' ne correspond pas à agent_1_forms "
+                f"(agent : {review.get('agent_id')})."
+            )
+
+        approved_data = review.get("data") or {}
+        try:
+            gfs = GoogleFormsService()
+            result = await gfs.create_forms(
+                approved_data=approved_data,
+                session_title=session_title,
+            )
+            self._log_end(
+                "creer_formulaires_google", start,
+                **{"✅ Créés": result.get("total_created", 0)},
+            )
+            return result
+        except Exception as e:
+            self._log_error("creer_formulaires_google", start, e)
+            raise
+
+
+    # ========================================================
+    # SYNC BACKEND — Présences (après approbation HITL A4)
+    # ========================================================
+
+    async def synchroniser_presences(
+        self,
+        review_id: str,
+        seance_id: str,
+        force: bool = False,
+    ) -> Dict[str, Any]:
+        """
+        Enregistre les présences validées côté Backend
+        (POST /sessions/seances/{seance_id}/presences).
+
+        Args:
+            review_id: ID du review HITL approuvé (agent_4_presences).
+            seance_id: UUID Backend de la séance.
+            force: relance même si déjà envoyé.
+        """
+        from app.services.backend_sync import review_sync, formation_sync
+
+        start = self._log_start(
+            "synchroniser_presences",
+            **{"🔍 Review": review_id, "🗓 Seance": seance_id},
+        )
+
+        review = review_sync.load_approved_review(
+            review_id, agent_ids=("agent_4_presences",)
+        )
+        data = review.get("data") or {}
+        presences = data.get("presences_brutes") or data.get("presences") or []
+
+        async def _envoyer() -> Dict[str, Any]:
+            return await formation_sync.sync_presences_to_backend(
+                seance_id=seance_id,
+                presences=presences,
+                source="GOOGLE_FORMS",
+            )
+
+        result = await review_sync.sync_once(review_id, _envoyer, force=force)
+        self._log_end("synchroniser_presences", start)
+        return result
+
+    # ========================================================
+    # SYNC BACKEND — Attestations (après approbation HITL A5)
+    # ========================================================
+
+    async def synchroniser_attestations(
+        self,
+        review_id: str,
+        session_id: str,
+        force: bool = False,
+    ) -> Dict[str, Any]:
+        """
+        Déclenche la création des attestations côté Backend
+        (POST /documents/attestations/{session_id}).
+
+        Args:
+            review_id: ID du review HITL approuvé (agent_5_attestations).
+            session_id: UUID Backend de la session.
+            force: relance même si déjà envoyé.
+        """
+        from app.services.backend_sync import review_sync, formation_sync
+
+        start = self._log_start(
+            "synchroniser_attestations",
+            **{"🔍 Review": review_id, "📋 Session": session_id},
+        )
+
+        review_sync.load_approved_review(
+            review_id, agent_ids=("agent_5_attestations",)
+        )
+
+        async def _envoyer() -> Dict[str, Any]:
+            return await formation_sync.sync_attestations_to_backend(session_id)
+
+        result = await review_sync.sync_once(review_id, _envoyer, force=force)
+        self._log_end("synchroniser_attestations", start)
+        return result
+
 
 # ============================================================
 # SINGLETON — pour FastAPI Depends

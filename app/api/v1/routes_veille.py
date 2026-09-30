@@ -40,8 +40,7 @@ from app.services.veille.tavily_quota_service import QuotaTavilyDepasseError
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter()
-# dependencies=[Depends(verify_api_key)]  # ← décommenter pour activer la protection
+router = APIRouter(dependencies=[Depends(verify_api_key)])
 
 
 # ============================================================
@@ -475,4 +474,46 @@ async def analyser_pdf(
         raise HTTPException(
             status_code=500,
             detail="Erreur interne lors de l'analyse PDF.",
+        )
+
+
+# ============================================================
+# 4. SYNCHRONISATION BACKEND — APRÈS APPROBATION HITL
+# ============================================================
+
+class SynchroniserBackendRequest(BaseModel):
+    review_id: str
+    force: bool = False
+
+
+@router.post(
+    "/ia/veille/synchroniser-backend",
+    response_model=SearchResponse,
+    tags=["M1 - Veille Marché"],
+    operation_id="synchroniserBackendVeille",
+    summary="Sync M1 → Backend après approbation HITL (agent_m1_veille)",
+    description=(
+        "Envoie les opportunités approuvées au Backend.\n\n"
+        "⚠️ Requiert une review HITL approuvée (agent_m1_veille). "
+        "Sans approbation humaine, la requête est rejetée (403)."
+    ),
+)
+async def synchroniser_backend(
+    request: SynchroniserBackendRequest,
+):
+    try:
+        result = await orchestrator.synchroniser_backend(
+            review_id=request.review_id,
+            force=request.force,
+        )
+        return {"success": True, "data": result, "error": None}
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    except Exception as exc:
+        logger.exception("❌ Erreur sync veille Backend : %s", exc)
+        raise HTTPException(
+            status_code=500,
+            detail="Erreur interne lors de la synchronisation Backend.",
         )

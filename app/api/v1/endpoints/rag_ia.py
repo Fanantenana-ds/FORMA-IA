@@ -12,8 +12,9 @@ import logging
 from dataclasses import asdict
 from pathlib import Path
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from fastapi.responses import FileResponse
+from app.utils.security import verify_api_key
 
 from app.orchestrator.chat_orchestrator import get_chat_orchestrator
 from app.orchestrator.rag_orchestrator import get_rag_orchestrator
@@ -27,7 +28,11 @@ from app.services.rag import registry_service as registre
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/ia/rag", tags=["C3 — IA RAG"])
+router = APIRouter(
+    prefix="/ia/rag",
+    tags=["C3 — IA RAG"],
+    dependencies=[Depends(verify_api_key)],
+)
 
 DOSSIER_FICHIERS_ORIGINAUX = Path(__file__).resolve().parents[3] / "data" / "rag" / "fichiers"
 

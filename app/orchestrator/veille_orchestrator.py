@@ -22,6 +22,7 @@ from app.services.backend_sync.opportunity_sync import (
     sync_opportunities_to_backend,
 )
 from app.services.backend_sync import base_sync
+from app.services.hitl.hitl_helper import create_review
 
 logger = logging.getLogger(__name__)
 
@@ -701,20 +702,25 @@ class VeilleOrchestrator:
         vlog(f"📊 Après validation schéma : {len(schema_valid)}/{len(normalized)}")
 
         # ────────────────────────────────────────────────────
-        # 8 — SYNC BACKEND
+        # 8 — HITL (validation humaine avant sync Backend)
         # ────────────────────────────────────────────────────
+        review_id = None
         if sync_backend:
-            vlog("🔄 Sync Backend...")
-            sync_result = await sync_opportunities_to_backend(schema_valid)
-            vlog(f"   ✅ Sync : {sync_result}")
-        else:
-            sync_result = {
-                "enabled": base_sync.is_sync_enabled(),
-                "sent": 0,
-                "failed": 0,
-                "deferred": True,
-            }
-            vlog("⏭️ Sync Backend différée (détection automatique)")
+            vlog("⏳ Création review HITL (CDC : validation avant Backend)...")
+            top_title = schema_valid[0].get("title", "N/A")[:60] if schema_valid else "N/A"
+            review_id = create_review(
+                agent_id="agent_m1_veille",
+                data={"opportunities": schema_valid},
+                summary=f"Veille M1 — {len(schema_valid)} opportunité(s) — {top_title}",
+                criticity="medium",
+            )
+            vlog(f"   ✅ Review HITL créée : {review_id}")
+        sync_result = {
+            "enabled": base_sync.is_sync_enabled(),
+            "sent": 0,
+            "deferred": True,
+            "review_id": review_id,
+        }
 
         # ────────────────────────────────────────────────────
         # 9 — STATISTIQUES + RÉPONSE
@@ -748,7 +754,7 @@ class VeilleOrchestrator:
         if extra_statistics:
             statistics.update(extra_statistics)
 
-        return {
+        result = {
             "opportunities": schema_valid[:20],
             "market_signals": groq_response.get("market_signals", []),
             "total": len(schema_valid),
@@ -759,6 +765,10 @@ class VeilleOrchestrator:
                 "notes", "Analyse M1 effectuée avec veille.yaml."
             ),
         }
+        if review_id:
+            result["_review_id"] = review_id
+            result["_review_status"] = "pending_review"
+        return result
 
     # ========================================================
     # HELPER — réponse vide
@@ -787,6 +797,38 @@ class VeilleOrchestrator:
             },
             "notes": notes,
         }
+
+    # ========================================================
+    # SYNCHRONISATION BACKEND — APRÈS APPROBATION HITL
+    # ========================================================
+
+    async def synchroniser_backend(
+        self,
+        review_id: str,
+        force: bool = False,
+    ) -> Dict[str, Any]:
+        """
+        Envoie les opportunités approuvées au Backend.
+        Appelé après validation HITL de l'analyse M1.
+
+        Args:
+            review_id: ID de la review HITL (agent_m1_veille).
+            force: relance même si déjà envoyé.
+        """
+        from app.services.backend_sync import review_sync
+
+        vlog(f"🔄 [M1] synchroniser_backend — review={review_id}")
+        review = review_sync.load_approved_review(
+            review_id, agent_ids=("agent_m1_veille",)
+        )
+        opportunities = (review.get("data") or {}).get("opportunities", [])
+
+        async def _envoyer() -> Dict[str, Any]:
+            return await sync_opportunities_to_backend(opportunities)
+
+        result = await review_sync.sync_once(review_id, _envoyer, force=force)
+        vlog(f"   ✅ [M1] synchroniser_backend terminé : {result}")
+        return result
 
     # ========================================================
     # ALIAS

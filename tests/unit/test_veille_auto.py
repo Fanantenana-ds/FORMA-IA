@@ -232,20 +232,22 @@ DONNEES_LLM = {
 
 
 def test_mode_recherche_synchronise_toujours_par_defaut(monkeypatch):
-    envois = []
+    reviews = []
 
-    async def faux_sync(opportunites):
-        envois.append(list(opportunites))
-        return {"enabled": True, "sent": len(opportunites), "failed": 0}
+    def faux_create_review(agent_id, data, summary, criticity):
+        reviews.append(agent_id)
+        return "review-veille-001"
 
-    monkeypatch.setattr(orch_module, "sync_opportunities_to_backend", faux_sync)
+    monkeypatch.setattr(orch_module, "create_review", faux_create_review)
 
     resultat = run(VeilleOrchestrator()._finalize_opportunities(
         groq_opportunities=[dict(DONNEES_LLM)], groq_response={}, start_total=0.0))
 
     assert resultat["total"] == 1
-    assert len(envois) == 1                                   # comportement du mode 1
-    assert resultat["statistics"]["backend_sync"]["sent"] == 1
+    assert len(reviews) == 1                                   # HITL créée
+    assert reviews[0] == "agent_m1_veille"
+    assert resultat["_review_id"] == "review-veille-001"
+    assert resultat["statistics"]["backend_sync"]["deferred"] is True
 
 
 def test_finalisation_sans_sync_quand_demandee(monkeypatch):

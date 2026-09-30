@@ -29,6 +29,7 @@ class Facture(Base):
     date_echeance = Column(Date, nullable=True)
 
     paiements = relationship("Paiement", back_populates="facture", cascade="all, delete-orphan")
+    relances = relationship("Relance", back_populates="facture", cascade="all, delete-orphan")
 
     @property
     def montant_ttc(self) -> float:
@@ -58,4 +59,4 @@ class Relance(Base):
     review_id = Column(String(100), nullable=True)      # ID du review HITL approuvé
     date_creation = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
 
-    facture = relationship("Facture")
+    facture = relationship("Facture", back_populates="relances")

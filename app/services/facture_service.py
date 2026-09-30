@@ -106,6 +106,12 @@ class FactureService:
         self.get_facture(facture_id)
         return self.db.query(Relance).filter(Relance.facture_id == facture_id).all()
 
+    def supprimer_facture(self, facture_id: UUID) -> None:
+        """Supprime une facture et ses paiements/relances (cascade ORM)."""
+        facture = self.get_facture(facture_id)
+        self.db.delete(facture)
+        self.db.commit()
+
     def lister(
         self,
         statut: Optional[StatutFacture] = None,

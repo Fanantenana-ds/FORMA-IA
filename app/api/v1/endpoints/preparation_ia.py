@@ -10,6 +10,7 @@ from app.orchestrator.preparation_orchestrator import (
     PreparationOrchestrator,
     get_preparation_orchestrator,
 )
+from app.utils.security import verify_api_key
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +28,7 @@ def vlog(msg: str, level: str = "info") -> None:
 router = APIRouter(
     prefix="/ia/preparation",
     tags=["Préparation — IA"],
+    dependencies=[Depends(verify_api_key)],
 )
 
 

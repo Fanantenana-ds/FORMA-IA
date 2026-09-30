@@ -2,13 +2,16 @@
 # ============================================================
 # ROUTES IA — M4 (Assistance RH — bonus)
 # ============================================================
-# 6 routes :
+# 9 routes :
 #   GET  /ia/rh/health
-#   POST /ia/rh/preselection            — A1 : Présélection CV
-#   POST /ia/rh/entretien/compte-rendu  — A2 : CR Entretien
-#   POST /ia/rh/email/brouillon         — A3 : Email RH
-#   POST /ia/rh/contrat-formateur       — A4 : Contrat formateur
-#   POST /ia/rh/formateur/evaluer       — A5 : Évaluation post-session
+#   POST /ia/rh/preselection                   — A1 : Présélection CV
+#   POST /ia/rh/entretien/compte-rendu         — A2 : CR Entretien
+#   POST /ia/rh/email/brouillon                — A3 : Email RH
+#   POST /ia/rh/contrat-formateur              — A4 : Contrat formateur
+#   POST /ia/rh/formateur/evaluer              — A5 : Évaluation post-session
+#   POST /ia/rh/synchroniser/candidat          — Sync A1 → Backend POST /rh/candidats
+#   POST /ia/rh/synchroniser/entretien-cr      — Sync A2 → Backend POST /rh/candidats/{id}/entretiens
+#   POST /ia/rh/synchroniser/evaluation        — Sync A5 → Backend PATCH /rh/formateurs/{id}
 # ============================================================
 
 import os
@@ -27,6 +30,7 @@ from app.schemas.rh_ia import (
     ContratFormateurRequest,
     EvaluationFormateurRequest,
 )
+from app.utils.security import verify_api_key
 
 logger = logging.getLogger(__name__)
 VERBOSE = os.getenv("VERBOSE_LOGS", "true").lower() == "true"
@@ -40,6 +44,7 @@ def vlog(msg: str, level: str = "info") -> None:
 router = APIRouter(
     prefix="/ia/rh",
     tags=["M4 — IA Assistance RH (bonus)"],
+    dependencies=[Depends(verify_api_key)],
 )
 
 
@@ -262,4 +267,114 @@ async def evaluer_formateur(
         )
     except Exception as e:
         _handle_exception(e, "evaluer_formateur")
+        return RouteResponse(success=False, message="")
+
+
+# =============================================================================
+# ROUTES SYNC BACKEND (après approbation HITL)
+# =============================================================================
+
+class SyncCandidatRequest(BaseModel):
+    review_id: str
+    force: bool = False
+
+
+class SyncEntretienCrRequest(BaseModel):
+    review_id: str
+    candidat_id: str
+    force: bool = False
+
+
+class SyncEvaluationRequest(BaseModel):
+    review_id: str
+    formateur_id: str
+    force: bool = False
+
+
+@router.post(
+    "/synchroniser/candidat",
+    response_model=RouteResponse,
+    summary="[M4] Sync A1 → Backend POST /rh/candidats (après approbation HITL)",
+)
+async def synchroniser_candidat(
+    payload: SyncCandidatRequest,
+    orchestrator: RhOrchestrator = Depends(get_rh_orchestrator),
+) -> RouteResponse:
+    start = time.perf_counter()
+    try:
+        result = await orchestrator.synchroniser_candidat(
+            review_id=payload.review_id,
+            force=payload.force,
+        )
+        elapsed = round(time.perf_counter() - start, 2)
+        sent = (result.get("backend_sync") or {}).get("sent", False)
+        return RouteResponse(
+            success=True,
+            message="Candidat enregistré côté Backend." if sent else "Déjà synchronisé.",
+            duration_seconds=elapsed,
+            review_id=payload.review_id,
+            data=result,
+        )
+    except Exception as e:
+        _handle_exception(e, "synchroniser_candidat")
+        return RouteResponse(success=False, message="")
+
+
+@router.post(
+    "/synchroniser/entretien-cr",
+    response_model=RouteResponse,
+    summary="[M4] Sync A2 → Backend POST /rh/candidats/{id}/entretiens",
+)
+async def synchroniser_entretien_cr(
+    payload: SyncEntretienCrRequest,
+    orchestrator: RhOrchestrator = Depends(get_rh_orchestrator),
+) -> RouteResponse:
+    start = time.perf_counter()
+    try:
+        result = await orchestrator.synchroniser_entretien_cr(
+            review_id=payload.review_id,
+            candidat_id=payload.candidat_id,
+            force=payload.force,
+        )
+        elapsed = round(time.perf_counter() - start, 2)
+        sent = (result.get("backend_sync") or {}).get("sent", False)
+        return RouteResponse(
+            success=True,
+            message="CR entretien enregistré côté Backend." if sent else "Déjà synchronisé.",
+            duration_seconds=elapsed,
+            review_id=payload.review_id,
+            data=result,
+        )
+    except Exception as e:
+        _handle_exception(e, "synchroniser_entretien_cr")
+        return RouteResponse(success=False, message="")
+
+
+@router.post(
+    "/synchroniser/evaluation",
+    response_model=RouteResponse,
+    summary="[M4] Sync A5 → Backend PATCH /rh/formateurs/{id}",
+)
+async def synchroniser_evaluation(
+    payload: SyncEvaluationRequest,
+    orchestrator: RhOrchestrator = Depends(get_rh_orchestrator),
+) -> RouteResponse:
+    start = time.perf_counter()
+    try:
+        result = await orchestrator.synchroniser_evaluation_formateur(
+            review_id=payload.review_id,
+            formateur_id=payload.formateur_id,
+            force=payload.force,
+        )
+        elapsed = round(time.perf_counter() - start, 2)
+        sent = (result.get("backend_sync") or {}).get("sent", False)
+        return RouteResponse(
+            success=True,
+            message="Évaluation formateur mise à jour côté Backend." if sent else "Déjà synchronisé.",
+            duration_seconds=elapsed,
+            review_id=payload.review_id,
+            data=result,
+        )
+    except Exception as e:
+        _handle_exception(e, "synchroniser_evaluation")
         return RouteResponse(success=False, message="")

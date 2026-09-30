@@ -2,16 +2,15 @@
 # ============================================================
 # SYNC M3 — Offres IA → Backend
 # ============================================================
-# Route Backend utilisée (contrat réel, app/api/v1/endpoints/document.py) :
-#   POST /documents/offre   OffreRequest {opportunite_id (UUID, obligatoire),
-#                           montant (>= 0), contenu (texte, <= 500 000 car.)}
-#                           rôle DIRECTION/ASSISTANT
-#   GET  /documents/{id}    contrôle après création
+# Route Backend utilisée (contrat réel, app/api/v1/endpoints/offre.py) :
+#   POST /offres    OffreCreate {titre (obligatoire), client (obligatoire),
+#                   trame_technique, trame_financiere, montant_ht,
+#                   opportunite_id, tva_taux, statut}
+#   GET  /offres/{id}    contrôle après création
 #
-# `contenu` = offre technique + financière générées par l'IA. Le
-# Backend imprime ce texte tel quel dans son export Word/PDF : on lui
-# envoie donc un TEXTE LISIBLE (build_contenu) et non un bloc JSON.
-# Sans `contenu`, le Backend retombe sur son texte par défaut.
+# trame_technique / trame_financiere = texte lisible extrait de l'IA.
+# Le Backend persiste ces colonnes dans la table Offre et les expose
+# dans son export Word/PDF.
 #
 # ⚠️ HITL : à n'appeler qu'APRÈS approbation humaine de l'offre.
 # ============================================================
@@ -23,7 +22,7 @@ from app.services.backend_sync import base_sync
 
 logger = logging.getLogger(__name__)
 
-_CONTENU_MAX = 500_000  # OffreRequest.contenu (max_length côté Backend)
+_TRAME_MAX = 500_000  # trame_technique / trame_financiere (colonnes TEXT)
 
 # Clés internes de l'IA, sans intérêt pour le lecteur de l'offre
 _CLES_IGNOREES = {"success", "metadata", "reviews_individuels"}
@@ -123,12 +122,26 @@ def _render(value: Any, indent: int = 0) -> List[str]:
     return lines
 
 
+def build_trame_technique(offre_result: Dict[str, Any]) -> Optional[str]:
+    """Texte lisible de la partie technique uniquement."""
+    bloc = offre_result.get("offre_technique")
+    if not isinstance(bloc, dict) or not bloc:
+        return None
+    lines = ["OFFRE TECHNIQUE", "=" * 16, *_render(bloc)]
+    return "\n".join(lines).strip() or None
+
+
+def build_trame_financiere(offre_result: Dict[str, Any]) -> Optional[str]:
+    """Texte lisible de la partie financière uniquement."""
+    bloc = offre_result.get("offre_financiere")
+    if not isinstance(bloc, dict) or not bloc:
+        return None
+    lines = ["OFFRE FINANCIÈRE", "=" * 16, *_render(bloc)]
+    return "\n".join(lines).strip() or None
+
+
 def build_contenu(offre_result: Dict[str, Any]) -> str:
-    """
-    Texte lisible de l'offre à partir du résultat de
-    OffreOrchestrator.generate_complete() (offre_technique + offre_financiere)
-    ou d'une offre seule (generate_technique / generate_financiere).
-    """
+    """Texte complet (technique + financière) — conservé pour compatibilité."""
     parts: List[str] = []
     for titre, cle in (
         ("OFFRE TECHNIQUE", "offre_technique"),
@@ -138,10 +151,32 @@ def build_contenu(offre_result: Dict[str, Any]) -> str:
         if isinstance(bloc, dict) and bloc:
             parts += [titre, "=" * len(titre), *_render(bloc), ""]
 
-    if not parts:  # une seule offre fournie directement
+    if not parts:
         parts = _render(offre_result)
 
     return "\n".join(parts).strip()
+
+
+def extract_titre(offre_result: Dict[str, Any]) -> str:
+    """Titre de l'offre depuis les inputs IA ou la référence technique."""
+    inputs = offre_result.get("_inputs") or {}
+    tdr = inputs.get("tdr_data") or {}
+    titre = tdr.get("titre") or ""
+    if not titre:
+        offre_tech = offre_result.get("offre_technique") or {}
+        titre = offre_tech.get("titre_offre") or offre_tech.get("reference") or ""
+    return titre[:255] if titre else "Offre sans titre"
+
+
+def extract_client(offre_result: Dict[str, Any]) -> str:
+    """Client depuis session_info ou offre_technique."""
+    inputs = offre_result.get("_inputs") or {}
+    session = inputs.get("session_info") or {}
+    client = session.get("client") or ""
+    if not client:
+        offre_tech = offre_result.get("offre_technique") or {}
+        client = offre_tech.get("client") or ""
+    return client[:100] if client else "Client inconnu"
 
 
 def extract_montant(offre_result: Dict[str, Any]) -> Optional[float]:
@@ -164,19 +199,25 @@ def extract_montant(offre_result: Dict[str, Any]) -> Optional[float]:
 
 
 async def sync_offre_to_backend(
-    opportunite_id: Optional[str],
-    montant: Optional[float] = None,
-    contenu: Optional[str] = None,
+    titre: str,
+    client: str,
+    opportunite_id: Optional[str] = None,
+    trame_technique: Optional[str] = None,
+    trame_financiere: Optional[str] = None,
+    montant_ht: Optional[float] = None,
+    statut: str = "brouillon",
 ) -> Dict[str, Any]:
     """
-    Enregistre l'offre côté Backend (POST /documents/offre).
+    Enregistre l'offre côté Backend (POST /offres).
 
     Args:
-        opportunite_id: UUID de l'opportunité Backend liée (obligatoire
-            côté Backend). Absent ou invalide → aucun envoi.
-        montant: montant proposé (voir extract_montant()).
-        contenu: texte de l'offre (voir build_contenu()) ; tronqué à
-            500 000 caractères. Absent → texte par défaut du Backend.
+        titre: titre de l'offre (obligatoire, max 255 car.).
+        client: nom du client (obligatoire, max 100 car.).
+        opportunite_id: UUID de l'opportunité liée (optionnel).
+        trame_technique: texte lisible de la partie technique.
+        trame_financiere: texte lisible de la partie financière.
+        montant_ht: montant HT en devise locale (> 0).
+        statut: statut initial de l'offre (défaut : brouillon).
 
     Returns:
         Résultat standard (base_sync.new_result).
@@ -186,23 +227,39 @@ async def sync_offre_to_backend(
         logger.info("ℹ️ Backend sync DÉSACTIVÉ — offre non envoyée")
         return result
 
-    if not base_sync.is_valid_uuid(opportunite_id):
-        result["error"] = "opportunite_id manquant ou invalide (UUID attendu)"
+    if not titre or not titre.strip():
+        result["error"] = "titre manquant ou vide"
         logger.warning("⚠️ Sync offre non envoyée : %s", result["error"])
         return result
-    if montant is not None and montant < 0:
-        result["error"] = "montant doit être >= 0"
+    if not client or not client.strip():
+        result["error"] = "client manquant ou vide"
+        logger.warning("⚠️ Sync offre non envoyée : %s", result["error"])
+        return result
+    if montant_ht is not None and montant_ht <= 0:
+        result["error"] = "montant_ht doit être > 0"
+        return result
+    if opportunite_id is not None and not base_sync.is_valid_uuid(opportunite_id):
+        result["error"] = "opportunite_id invalide (UUID attendu)"
+        logger.warning("⚠️ Sync offre non envoyée : %s", result["error"])
         return result
 
-    payload: Dict[str, Any] = {"opportunite_id": str(opportunite_id)}
-    if montant is not None:
-        payload["montant"] = montant
-    if contenu and contenu.strip():
-        payload["contenu"] = contenu[:_CONTENU_MAX]
+    payload: Dict[str, Any] = {
+        "titre": titre[:255],
+        "client": client[:100],
+        "statut": statut,
+    }
+    if opportunite_id and base_sync.is_valid_uuid(opportunite_id):
+        payload["opportunite_id"] = str(opportunite_id)
+    if trame_technique and trame_technique.strip():
+        payload["trame_technique"] = trame_technique[:_TRAME_MAX]
+    if trame_financiere and trame_financiere.strip():
+        payload["trame_financiere"] = trame_financiere[:_TRAME_MAX]
+    if montant_ht is not None:
+        payload["montant_ht"] = montant_ht
 
     return await base_sync.post_and_verify(
-        "/documents/offre",
+        "/offres",
         payload,
-        verify_path="/documents/{id}",
+        verify_path="/offres/{id}",
         label="offre",
     )

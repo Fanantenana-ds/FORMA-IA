@@ -20,6 +20,7 @@ import time
 import logging
 from typing import Any, Dict, List, Optional
 
+from app.services.backend_sync import rh_sync, review_sync
 from app.services.rh import (
     CvPreselecteurService,
     EntretienService,
@@ -240,6 +241,111 @@ class RhOrchestrator:
             donnees_session=donnees_session,
         )
         self._end("evaluer_formateur", t0)
+        return result
+
+    # =========================================================================
+    # SYNC BACKEND — A1 : Candidat après présélection approuvée
+    # =========================================================================
+
+    async def synchroniser_candidat(
+        self,
+        review_id: str,
+        force: bool = False,
+    ) -> Dict[str, Any]:
+        """
+        Enregistre un candidat côté Backend après approbation HITL A1.
+        (POST /rh/candidats)
+        """
+        t0 = self._start("synchroniser_candidat", Review=review_id)
+        review = review_sync.load_approved_review(
+            review_id, agent_ids=("agent_m4_preselection",)
+        )
+        data = review.get("data") or {}
+
+        async def _envoyer() -> Dict[str, Any]:
+            return await rh_sync.sync_candidat_to_backend(
+                nom=str(data.get("nom_candidat") or "Candidat inconnu")[:200],
+                poste_vise=str(data.get("poste_vise") or "N/A")[:200],
+                score_preselection=data.get("score_global"),
+                decision_preselection=str(data.get("decision") or "")[:50] or None,
+                review_id_preselection=review_id,
+            )
+
+        result = await review_sync.sync_once(review_id, _envoyer, force=force)
+        self._end("synchroniser_candidat", t0)
+        return result
+
+    # =========================================================================
+    # SYNC BACKEND — A2 : CR entretien après approbation
+    # =========================================================================
+
+    async def synchroniser_entretien_cr(
+        self,
+        review_id: str,
+        candidat_id: str,
+        force: bool = False,
+    ) -> Dict[str, Any]:
+        """
+        Persiste le CR d'entretien côté Backend après approbation HITL A2.
+        (POST /rh/candidats/{id}/entretiens)
+        """
+        t0 = self._start(
+            "synchroniser_entretien_cr", Review=review_id, Candidat=candidat_id
+        )
+        review = review_sync.load_approved_review(
+            review_id, agent_ids=("agent_m4_entretien",)
+        )
+        data = review.get("data") or {}
+
+        async def _envoyer() -> Dict[str, Any]:
+            return await rh_sync.sync_entretien_cr_to_backend(
+                candidat_id=candidat_id,
+                compte_rendu=str(data.get("resume_entretien") or "")[:10000],
+                decision=str(data.get("decision") or "")[:50] or None,
+                review_id_entretien=review_id,
+            )
+
+        result = await review_sync.sync_once(review_id, _envoyer, force=force)
+        self._end("synchroniser_entretien_cr", t0)
+        return result
+
+    # =========================================================================
+    # SYNC BACKEND — A5 : Évaluation formateur (POST ou PATCH)
+    # =========================================================================
+
+    async def synchroniser_evaluation_formateur(
+        self,
+        review_id: str,
+        formateur_id: str,
+        force: bool = False,
+    ) -> Dict[str, Any]:
+        """
+        Met à jour le profil formateur Backend après évaluation A5.
+        (PATCH /rh/formateurs/{id})
+
+        Args:
+            formateur_id: UUID Backend du formateur (obligatoire).
+        """
+        t0 = self._start(
+            "synchroniser_evaluation_formateur",
+            Review=review_id, FormateurID=formateur_id
+        )
+        review = review_sync.load_approved_review(
+            review_id, agent_ids=("agent_m4_evaluation",)
+        )
+        data = review.get("data") or {}
+
+        async def _envoyer() -> Dict[str, Any]:
+            return await rh_sync.sync_evaluation_formateur(
+                formateur_id=formateur_id,
+                score_moyen=data.get("score_global"),
+                nb_sessions=None,
+                recommandation=str(data.get("recommandation") or "")[:200] or None,
+                notes_internes=str(data.get("justification_recommandation") or "")[:2000] or None,
+            )
+
+        result = await review_sync.sync_once(review_id, _envoyer, force=force)
+        self._end("synchroniser_evaluation_formateur", t0)
         return result
 
 

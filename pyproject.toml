@@ -1,0 +1,31 @@
+[tool.ruff]
+line-length = 120
+exclude = ["scripts", "alembic/versions"]
+
+[tool.ruff.lint]
+ignore = [
+    "DTZ001",
+    "DTZ005",
+    "DTZ007",
+    "DTZ011",
+    "TRY401",
+    "TRY201",
+    "TRY004",
+    "BLE001",
+    "F401",
+    "F841",
+    "UP035",
+    "C401",
+    "SIM102",
+    "SIM103",
+    "RUF012",
+    "RUF022",
+    "RUF059",
+    "B008",
+    "ASYNC230",
+    "S112",
+    "PERF102",
+    "PIE810",
+    "PLW0602",
+    "ISC004",
+]

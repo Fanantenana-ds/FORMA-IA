@@ -25,11 +25,6 @@ def get_document_service(db: Session = Depends(get_db)) -> DocumentService:
     return DocumentService(db)
 
 
-def get_document_service(db: Session = Depends(get_db)) -> DocumentService:
-    return DocumentService(db)
-
-
-
 @router.post("/tdr", response_model=DocumentResponse, status_code=201)
 def generer_tdr(
     data: TDRRequest,

@@ -1,6 +1,7 @@
 # ============================================================
 # TESTS — M2 TDR
 # ============================================================
+import pytest
 
 from app.orchestrator.tdr_orchestrator import TdrOrchestrator
 
@@ -11,7 +12,8 @@ class TestTdrOrchestrator:
     def setup_method(self):
         self.orchestrator = TdrOrchestrator()
 
-    def test_generer_tdr_success(self):
+    @pytest.mark.asyncio
+    async def test_generer_tdr_success(self):
         """Test de génération de TDR avec brief valide"""
         brief = {
             "client": "Ministère de la Santé",
@@ -22,13 +24,14 @@ class TestTdrOrchestrator:
             "budget": "150 000 000 Ar"
         }
 
-        resultat = self.orchestrator.generer_tdr(brief)
+        resultat = await self.orchestrator.generate(brief)
 
         assert resultat["success"] is True
         assert "tdr" in resultat["data"]
         assert "documents" in resultat["data"]
 
-    def test_generer_tdr_missing_field(self):
+    @pytest.mark.asyncio
+    async def test_generer_tdr_missing_field(self):
         """Test de génération de TDR avec champ manquant"""
         brief = {
             "client": "Ministère de la Santé",
@@ -36,12 +39,13 @@ class TestTdrOrchestrator:
             # manque public, duree
         }
 
-        resultat = self.orchestrator.generer_tdr(brief)
+        resultat = await self.orchestrator.generate(brief)
 
         assert resultat["success"] is False
         assert resultat["error"] is not None
 
-    def test_generer_tdr_empty_fields(self):
+    @pytest.mark.asyncio
+    async def test_generer_tdr_empty_fields(self):
         """Test de génération de TDR avec champ vide"""
         brief = {
             "client": "",
@@ -50,7 +54,7 @@ class TestTdrOrchestrator:
             "duree": "5 jours"
         }
 
-        resultat = self.orchestrator.generer_tdr(brief)
+        resultat = await self.orchestrator.generate(brief)
 
         assert resultat["success"] is False
         assert "vide" in resultat["error"].lower() or "manquant" in resultat["error"].lower()

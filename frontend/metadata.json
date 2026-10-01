@@ -1,0 +1,6 @@
+{
+  "name": "FORMA-IA",
+  "description": "Plateforme de gestion de formation IA et pilotage d'activité",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

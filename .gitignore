@@ -68,6 +68,7 @@ htmlcov/
 outputs/
 exports/
 data/
+!frontend/src/data/
 logs/
 *.log
 *.out

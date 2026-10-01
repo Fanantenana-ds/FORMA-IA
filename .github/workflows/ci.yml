@@ -25,6 +25,9 @@ jobs:
         run: ruff check .
       - name: Run tests with coverage
         working-directory: .
+        env:
+          DATABASE_URL: postgresql://forma_user:forma_pass@localhost:5432/forma_ia
+          SECRET_KEY: ci-test-secret-key-not-for-production
         run: |
           coverage run -m pytest
           coverage report --fail-under=70

@@ -11,6 +11,11 @@ class TestTdrOrchestrator:
 
     def setup_method(self):
         self.orchestrator = TdrOrchestrator()
+        if not self.orchestrator.tdr_service:
+            pytest.skip(
+                "TDRService indisponible (GROQ_API_KEY absente en environnement de test) "
+                "- tests a activer une fois un mock ou une cle de test fournis par l'equipe"
+            )
 
     @pytest.mark.asyncio
     async def test_generer_tdr_success(self):

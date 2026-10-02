@@ -83,7 +83,7 @@ class ApiService {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 2000);
 
-      const res = await fetch(`${this.baseUrl}/api/health`, {
+      const res = await fetch(`${this.baseUrl}/health`, {
         method: 'GET',
         signal: controller.signal
       });
@@ -160,7 +160,7 @@ class ApiService {
   }
 
   public async getSessions(): Promise<Session[]> {
-    return this.request<Session[]>('/api/sessions', initialSessions);
+    return this.request<Session[]>('/api/v1/sessions', initialSessions);
   }
 
   public async createSession(session: Partial<Session>): Promise<Session> {
@@ -179,14 +179,14 @@ class ApiService {
       prixUnitaire: session.prixUnitaire || 1200
     };
 
-    return this.request<Session>('/api/sessions', newSession, {
+    return this.request<Session>('/api/v1/sessions', newSession, {
       method: 'POST',
       body: JSON.stringify(newSession)
     });
   }
 
   public async getOpportunites(): Promise<OpportuniteCRM[]> {
-    return this.request<OpportuniteCRM[]>('/api/opportunities', initialOpportunites);
+    return this.request<OpportuniteCRM[]>('/api/v1/opportunites', initialOpportunites);
   }
 
   public async createOpportunite(opp: Partial<OpportuniteCRM>): Promise<OpportuniteCRM> {
@@ -204,7 +204,7 @@ class ApiService {
       dateDetection: new Date().toLocaleDateString('fr-FR')
     };
 
-    return this.request<OpportuniteCRM>('/api/opportunities', newOpp, {
+    return this.request<OpportuniteCRM>('/api/v1/opportunites', newOpp, {
       method: 'POST',
       body: JSON.stringify(newOpp)
     });
@@ -219,7 +219,7 @@ class ApiService {
   }
 
   public async getFactures(): Promise<DevisFacture[]> {
-    return this.request<DevisFacture[]>('/api/invoices', initialFactures);
+    return this.request<DevisFacture[]>('/api/v1/factures', initialFactures);
   }
 
   public async createFacture(fac: Partial<DevisFacture>): Promise<DevisFacture> {
@@ -235,7 +235,7 @@ class ApiService {
       statut: fac.type === 'Devis' ? 'Envoyé' : 'En attente'
     };
 
-    return this.request<DevisFacture>('/api/invoices', newFacture, {
+    return this.request<DevisFacture>('/api/v1/factures', newFacture, {
       method: 'POST',
       body: JSON.stringify(newFacture)
     });

@@ -16,6 +16,7 @@
       - "8000:8000"
     volumes:
       - .:/app
+      - generated_files:/app/exports
     depends_on:
       - db
     environment:
@@ -32,3 +33,4 @@
       - backend
 volumes:
   pgdata:
+  generated_files:

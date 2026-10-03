@@ -1,0 +1,33 @@
+services:
+  db:
+    image: postgres:15
+    restart: always
+    environment:
+      POSTGRES_USER: forma_user
+      POSTGRES_PASSWORD: forma_pass
+      POSTGRES_DB: forma_ia_recette
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata_recette:/var/lib/postgresql/data
+  backend:
+    build: .
+    ports:
+      - "8001:8000"
+    volumes:
+      - generated_files_recette:/app/exports
+    depends_on:
+      - db
+    environment:
+      DATABASE_URL: postgresql://forma_user:forma_pass@db:5432/forma_ia_recette
+      SECRET_KEY: ${SECRET_KEY_RECETTE}
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+  frontend:
+    build: ./frontend
+    ports:
+      - "3001:3000"
+    depends_on:
+      - backend
+volumes:
+  pgdata_recette:
+  generated_files_recette:

@@ -17,7 +17,7 @@ class TDRRequest(BaseModel):
 class DocumentResponse(BaseModel):
     id: UUID
     type: TypeDocument
-    contenu: str
+    contenu: Optional[str] = None
     client: Optional[str] = None
     objectifs: Optional[str] = None
     format_export: Optional[FormatExport] = None

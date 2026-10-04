@@ -111,7 +111,7 @@ def mettre_a_jour_facture(
     return service.mettre_a_jour_facture(facture_id, data)
 
 
-@router.post("/{facture_id}/paiments", response_model=FactureResponse, status_code=201)
+@router.post("/{facture_id}/paiements", response_model=FactureResponse, status_code=201)
 def ajouter_paiement(
     facture_id: UUID,
     data: PaiementCreate,

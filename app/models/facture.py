@@ -14,6 +14,7 @@ class StatutFacture(str, Enum):
     PARTIELLEMENT_PAYEE = "PARTIELLEMENT_PAYEE"
     PAYEE = "PAYEE"
     EN_RETARD = "EN_RETARD"
+    ANNULEE = "ANNULEE"
 
 
 class Facture(Base):

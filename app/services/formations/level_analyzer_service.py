@@ -78,6 +78,7 @@ class LevelAnalyzerService:
         self,
         session_info: Dict[str, Any],
         stats: Dict[str, Any],
+        contexte_rag: str = "",
     ) -> str:
         """Construit le prompt utilisateur avec les stats déjà calculées."""
         lines = [
@@ -108,6 +109,17 @@ class LevelAnalyzerService:
             "Retourne UNIQUEMENT le JSON valide (resume + interpretation + recommandations).",
             "⚠️  Ne recalcule PAS les statistiques — utilise celles ci-dessus.",
         ]
+
+        if contexte_rag:
+            lines.extend([
+                "",
+                "=== CONTENU DE LA FORMATION (extraits des supports indexés) ===",
+                contexte_rag,
+                "",
+                "↑ Utilise ces extraits pour personnaliser tes recommandations "
+                "au contenu réel de la formation.",
+            ])
+
         return "\n".join(lines)
 
     # --------------------------------------------------------
@@ -145,6 +157,21 @@ class LevelAnalyzerService:
         logger.info(f"   ✅ Corrigé : {len(corrige)} questions")
         logger.info("=" * 70)
 
+        # ── ÉTAPE 0 : CONTEXTE RAG (optionnel — améliore la qualité des recos) ──
+        contexte_rag = ""
+        try:
+            from app.services.formations.knowledge_base_service import KnowledgeBaseService
+            kb = KnowledgeBaseService()
+            contexte_rag = await kb.get_formation_context(
+                formation_titre=session_info.get("titre", ""),
+                domaine=session_info.get("domaine", ""),
+                formation_code=session_info.get("formation_code"),
+            )
+            if contexte_rag:
+                logger.info("   📚 [LevelAgent] Contexte RAG injecté dans le prompt")
+        except Exception as e:
+            logger.debug(f"   ℹ️  [LevelAgent] RAG non disponible (normal si pas de supports) : {e}")
+
         # ── ÉTAPE 1 : CALCUL DÉTERMINISTE (pandas) ──
         stats = self._compute_statistics(participants, corrige)
         prog = stats['statistiques']['progression_absolue']
@@ -161,7 +188,8 @@ class LevelAnalyzerService:
         if self.llm:
             try:
                 enrichment = await self._generate_with_llm(
-                    session_info, stats, temperature, max_tokens
+                    session_info, stats, temperature, max_tokens,
+                    contexte_rag=contexte_rag,
                 )
                 source = "llm"
                 logger.info("   ✅ Recommandations générées par LLM")
@@ -348,11 +376,12 @@ class LevelAnalyzerService:
         stats: Dict[str, Any],
         temperature: float,
         max_tokens: int,
+        contexte_rag: str = "",
     ) -> Dict[str, Any]:
         """Appel LLM — génère resume + interpretation + recommandations."""
         response = await self.llm.generate(
             system_prompt=self._build_system_prompt(),
-            user_prompt=self._build_user_prompt(session_info, stats),
+            user_prompt=self._build_user_prompt(session_info, stats, contexte_rag=contexte_rag),
             temperature=temperature,
             max_tokens=max_tokens,
             json_mode=True,

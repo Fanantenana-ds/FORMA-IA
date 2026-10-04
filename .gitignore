@@ -157,3 +157,4 @@ trace-claude.ps1
 test.http
 formaia-backend.zip
 backups/
+!.env.production.example

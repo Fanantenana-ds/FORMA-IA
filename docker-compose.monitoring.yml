@@ -1,0 +1,18 @@
+services:
+  uptime-kuma:
+    image: louislam/uptime-kuma:2
+    ports:
+      - "3001:3001"
+    volumes:
+      - uptime_kuma_data:/app/data
+    restart: always
+    networks:
+      - default
+
+networks:
+  default:
+    name: altiora-forma-ia_default
+    external: true
+
+volumes:
+  uptime_kuma_data:

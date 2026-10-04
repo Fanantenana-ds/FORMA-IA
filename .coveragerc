@@ -1,0 +1,9 @@
+[run]
+source = app
+omit =
+    app/migrations/*
+    venv/*
+
+[report]
+fail_under = 75
+show_missing = true

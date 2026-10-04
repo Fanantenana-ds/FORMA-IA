@@ -2,8 +2,10 @@ from typing import List, Optional
 from uuid import UUID
 from fastapi import HTTPException
 from sqlalchemy.orm import Session as DbSession
+from datetime import date as date_type
 
-from app.models.formation import Session, Seance, Participant, Inscription, Presence
+
+from app.models.formation import Session, Session as FormationSession, Seance, Participant, Inscription, Presence
 from app.schemas.formation import (
     SessionCreate, SessionUpdate,
     SeanceCreate, SeanceUpdate,
@@ -48,14 +50,14 @@ class FormationService:
         self.db.refresh(seance)
         return seance
 
-    def creer_participant(self, data: ParticipantCreate) -> ParticipantCreate:
+    def creer_participant(self, data: ParticipantCreate) -> Participant:
         participant = Participant(**data.model_dump())
         self.db.add(participant)
         self.db.commit()
         self.db.refresh(participant)
         return participant
 
-    def enregistrer_presence(self, seance_id: UUID, data: PresenceCreate) -> PresenceCreate:
+    def enregistrer_presence(self, seance_id: UUID, data: PresenceCreate) -> Presence:
         seance = self.db.query(Seance).filter(Seance.id == seance_id).first()
         if not seance:
             raise HTTPException(status_code=404, detail="Séance introuvable")
@@ -95,14 +97,26 @@ class FormationService:
         self,
         formateur_id: Optional[UUID] = None,
         client: Optional[str] = None,
-    ) -> List[Session]:
-        q = self.db.query(Session)
-        if formateur_id:
-            q = q.filter(Session.formateur_id == formateur_id)
+        date_debut_min: Optional[date_type] = None,
+        date_debut_max: Optional[date_type] = None,
+        skip: int = 0,
+        limit: int = 100,
+    ) -> List[FormationSession]:
+        q = self.db.query(FormationSession)
+        if formateur_id is not None:
+            q = q.filter(FormationSession.formateur_id == formateur_id)
         if client:
-            q = q.filter(Session.client.ilike(f"%{client}%"))
-        return q.order_by(Session.date_debut.desc()).all()
-
+            q = q.filter(FormationSession.client.ilike(f"%{client}%"))
+        if date_debut_min is not None:
+            q = q.filter(FormationSession.date_debut >= date_debut_min)
+        if date_debut_max is not None:
+            q = q.filter(FormationSession.date_debut <= date_debut_max)
+        return (
+            q.order_by(FormationSession.date_debut.desc())
+            .offset(skip)
+            .limit(limit)
+            .all()
+        )
     # -------------------------------------------------------------------------
     # SÉANCES D'UNE SESSION
     # -------------------------------------------------------------------------
@@ -126,12 +140,16 @@ class FormationService:
             raise HTTPException(status_code=404, detail="Participant introuvable")
         return p
 
-    def lister_participants(self, nom: Optional[str] = None) -> List[Participant]:
+    def lister_participants(
+    self,
+    nom: Optional[str] = None,
+    skip: int = 0,
+    limit: int = 100,
+    ) -> List[Participant]:
         q = self.db.query(Participant)
         if nom:
             q = q.filter(Participant.nom.ilike(f"%{nom}%"))
-        return q.order_by(Participant.nom).all()
-
+        return q.order_by(Participant.nom).offset(skip).limit(limit).all()
     # -------------------------------------------------------------------------
     # INSCRIPTIONS — inscrire / désinscrire / lister
     # -------------------------------------------------------------------------

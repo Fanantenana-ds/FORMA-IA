@@ -72,6 +72,30 @@ Les preuves concrètes de désynchronisation sont :
 5. **Faire la recette CDC** : corpus annoté d’au moins 100 documents, métriques IA, latence et charge, flux complet de chaque MUST, intégrations externes et disponibilité.
 6. **Arbitrer et documenter les écarts** : activation réelle de Claude, déviation LangChain, priorisation C3, stockage HITL, Docker/CI/TLS et éventuel SMTP avec l’encadreur.
 
+## Mise à jour — 3 octobre 2026
+
+Cette mise à jour complète le bilan du 29 septembre ; elle ne remplace pas la recette complète du frontend et du CDC.
+
+### Ce qui avance
+
+- Le backend a reçu de nouveaux changements CRUD et tests, dont un chantier Préparation : modèles/schémas pour les ressources de préparation, services budget/EDT et ingestion d’un EDT lié à un projet.
+- Le backend expose déjà une part importante des services métier décrits dans le bilan initial ; l’écart prioritaire demeure l’intégration réelle de l’interface React, de l’authentification et des parcours humains (HITL).
+- La branche locale est en avance d’un commit et en retard de neuf commits sur `origin/main`. Les changements locaux sont nombreux, majoritairement staged, avec aussi une modification unstaged de `requirements.txt` : ils ne sont pas encore un état intégré et vérifié.
+
+### Ce qui bloque encore
+
+- Les tests `tests/test_preparation.py` et `tests/test_dashboard.py` donnent **7 réussites et 5 échecs**. Les cinq échecs sont des réponses HTTP **401** (« token interne manquant ») sur les tests Préparation IA ; le contrat d’authentification et les fixtures de tests doivent être réalignés.
+- Dans les changements locaux, la route d’ingestion d’EDT est déclarée `/{projet_id}/edt/ingest-ia}` avec une accolade fermante en trop. Corriger le chemin et ajouter un test qui appelle cette route.
+- Les conclusions du 29 septembre sur le frontend restent à revalider : aucun élément récent ne démontre que les routes, le JWT, les données simulées ou les vues manquantes ont été corrigés.
+- Le corpus de référence, les critères de performance, la recette E2E et les intégrations externes réelles restent à prouver comme indiqué dans le bilan initial.
+
+### Prochaines actions recommandées
+
+1. Corriger la route d’ingestion EDT et les tests/authentifications Préparation ; relancer les suites ciblées.
+2. Stabiliser et intégrer les changements locaux avec les neuf commits distants, après revue des modifications déjà présentes.
+3. Raccorder le frontend au contrat API réel (routes `/api/v1`, authentification JWT/clé IA, erreurs visibles, aucune réussite simulée), puis livrer les parcours HITL et modules manquants.
+4. Reprendre la recette du CDC : corpus annoté, métriques, tests E2E, sécurité des rôles, intégrations et déploiement.
+
 ## Verdict
 
 **Le projet est nettement au-delà d’un simple prototype backend, mais le livrable complet du CDC n’est pas encore démontré. Le blocage prioritaire est l’intégration frontend–backend/authentification ; viennent ensuite les parcours UI manquants et la preuve mesurée des critères d’acceptation.**

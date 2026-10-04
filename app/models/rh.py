@@ -71,7 +71,7 @@ class Formateur(Base):
     candidatures = relationship(
         "Candidat", back_populates="formateur", cascade="all, delete-orphan"
     )
-
+    
 
 # ============================================================
 # CANDIDAT — dossier de présélection (A1) et entretien (A2)

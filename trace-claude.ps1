@@ -780,6 +780,15 @@ $Journal = @(
     [pscustomobject]@{ Date = "2026-09-29"; Action = "CORRIGE"; Fichier = "app/services/backend_sync/offre_sync.py + tests/unit/test_backend_sync.py"
         Explication = "REGRESSION FIX — 4 tests test_backend_sync.py utilisant l'ancienne signature sync_offre_to_backend(opp_id, montant, contenu) et l'ancienne route /sessions. Ajout validation opportunite_id dans offre_sync.py (UUID invalide => sent=False + error). Mise a jour tests : (1) test_offre_sync_envoie_opportunite_et_montant : nouvel appel titre/client/opportunite_id/montant_ht, route /offres, verify /offres/{id}. (2) test_offre_sync_transmet_le_contenu_ia : contenu => trame_technique, suppression args positionnels. (3) test_offre_sync_refuse_un_opportunite_id_invalide : signature corrigee + validation UUID maintenant dans offre_sync. (4) test_preparation_sync_session_seances_et_budget_non_persiste : route /sessions => /projets, seances => edt, result[seances] => result[edt], titre 50 => 80, payload theme/duree => module. 42 tests passes (--noconftest)." }
 
+    [pscustomobject]@{ Date = "2026-09-30"; Action = "CORRIGE"; Fichier = "app/api/v1/endpoints/document.py"
+        Explication = "Resolution du conflit Git entre les routes CRUD Documents et les routes RAG d'upload/liste/suppression. Fusion des deux implementations : routes TDR, Offres, attestations, lecture/liste, validation, export et suppression des documents conservees ; upload multipart, registre, listing et suppression des supports RAG conserves egalement. Le garde-fou qui interdit la suppression d'un document valide est maintenu. Suppression des marqueurs de conflit et des imports dupliques/inutilises. Verification : 39 tests cibles passes (test_documents_route.py, test_backend_bloc_j.py, test_document.py, test_document_export.py) ; routes montees verifiees ; py_compile et git diff --check valides." }
+
+    [pscustomobject]@{ Date = "2026-10-03"; Action = "AUDIT"; Fichier = "docs/bilan-ecart-cdc-2026-09-29.md"
+        Explication = "Mise a jour de situation au 03/10 : chantier CRUD/Preparation present dans les changements locaux, mais non integre. Tests tests/test_preparation.py + tests/test_dashboard.py : 7 passed, 5 failed ; les 5 echecs sont des 401 (token interne manquant) sur Preparation IA. Anomalie relevee dans app/api/v1/endpoints/preparation.py : route d'ingestion EDT terminee par une accolade en trop (ingest-ia}). Branche locale : 1 commit en avance, 9 en retard sur origin/main ; changements locaux staged et unstaged a preserver. L'integration frontend/backend et les preuves de recette CDC restent les priorites. Actions recommandees et detail dans le bilan." }
+
+    [pscustomobject]@{ Date = "2026-10-03"; Action = "MODIFIE"; Fichier = "trace-claude.ps1 (racine et backend)"
+        Explication = "Ajout du bilan d'etat au 03/10/2026 et de ses constats de test/route aux deux copies du journal Claude." }
+
     # === FIN DU JOURNAL — ajouter les nouvelles entrees AVANT cette ligne ===
 )
 

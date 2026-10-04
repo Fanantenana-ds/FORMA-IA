@@ -96,6 +96,7 @@ class SatisfactionAnalyzerService:
         session_info: Dict[str, Any],
         stats: Dict[str, Any],
         feedbacks: List[Dict[str, Any]],
+        contexte_rag: str = "",
     ) -> str:
         """Prompt avec stats calculées + feedbacks bruts."""
         s = stats["statistiques"]
@@ -147,6 +148,17 @@ class SatisfactionAnalyzerService:
             "",
             "⚠️  NE PAS recalculer les notes — utilise celles ci-dessus.",
         ])
+
+        if contexte_rag:
+            lines.extend([
+                "",
+                "=== CONTENU DE LA FORMATION (extraits des supports indexés) ===",
+                contexte_rag,
+                "",
+                "↑ Utilise ces extraits pour contextualiser tes recommandations "
+                "d'amélioration au contenu réel de la formation.",
+            ])
+
         return "\n".join(lines)
 
     # --------------------------------------------------------
@@ -187,6 +199,21 @@ class SatisfactionAnalyzerService:
         logger.info(f"   👥 Réponses : {len(responses)}")
         logger.info("=" * 70)
 
+        # ── ÉTAPE 0 : CONTEXTE RAG (optionnel — personnalise les recommandations) ──
+        contexte_rag = ""
+        try:
+            from app.services.formations.knowledge_base_service import KnowledgeBaseService
+            kb = KnowledgeBaseService()
+            contexte_rag = await kb.get_formation_context(
+                formation_titre=session_info.get("titre", ""),
+                domaine=session_info.get("domaine", ""),
+                formation_code=session_info.get("formation_code"),
+            )
+            if contexte_rag:
+                logger.info("   📚 [SatisfactionAgent] Contexte RAG injecté dans le prompt")
+        except Exception as e:
+            logger.debug(f"   ℹ️  [SatisfactionAgent] RAG non disponible : {e}")
+
         # ── ÉTAPE 1 : CALCUL DÉTERMINISTE ──
         stats = self._compute_statistics(responses)
         logger.info(
@@ -201,7 +228,8 @@ class SatisfactionAnalyzerService:
         if self.llm and responses:
             try:
                 enrichment = await self._generate_with_llm(
-                    session_info, stats, responses, temperature, max_tokens
+                    session_info, stats, responses, temperature, max_tokens,
+                    contexte_rag=contexte_rag,
                 )
                 source = "llm"
                 logger.info("   ✅ Analyse qualitative générée par LLM")
@@ -316,6 +344,7 @@ class SatisfactionAnalyzerService:
         responses: List[Dict[str, Any]],
         temperature: float,
         max_tokens: int,
+        contexte_rag: str = "",
     ) -> Dict[str, Any]:
         """Appel Groq — analyse qualitative uniquement."""
         # Extraire les feedbacks textuels
@@ -330,7 +359,7 @@ class SatisfactionAnalyzerService:
 
         response = await self.llm.generate(
             system_prompt=self._build_system_prompt(),
-            user_prompt=self._build_user_prompt(session_info, stats, feedbacks),
+            user_prompt=self._build_user_prompt(session_info, stats, feedbacks, contexte_rag=contexte_rag),
             temperature=temperature,
             max_tokens=max_tokens,
             json_mode=True,

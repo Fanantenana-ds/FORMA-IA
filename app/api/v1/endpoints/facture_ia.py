@@ -19,6 +19,7 @@ from typing import Any, Dict, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from app.schemas.common import RouteResponse
+from app.api.v1.endpoints._helpers import log_request as _log_req, handle_exception as _handle_exc, build_response as _build_resp
 
 from app.orchestrator.facturation_orchestrator import (
     FacturationOrchestrator,
@@ -52,49 +53,22 @@ router = APIRouter(
 # =============================================================================
 
 def _log_request(method: str, path: str, **kwargs) -> None:
-    vlog("=" * 70)
-    vlog(f"🌐 [Route M7] {method} {path}")
-    for k, val in kwargs.items():
-        vlog(f"   {k} : {val}")
-    vlog("=" * 70)
+    _log_req(logger, "Route M7", method, path, **kwargs)
 
 
 def _handle_exception(e: Exception, context: str) -> None:
-    if isinstance(e, ValueError):
-        if "introuvable" in str(e).lower():
-            raise HTTPException(status_code=404, detail=str(e))
-        raise HTTPException(status_code=422, detail=f"Données invalides : {e}")
-    if isinstance(e, RuntimeError):
-        logger.error(f"❌ [Route M7] {context} — service : {e}")
-        raise HTTPException(status_code=503, detail=str(e))
-    logger.exception(f"💥 [Route M7] {context} : {e}")
-    raise HTTPException(
-        status_code=500,
-        detail=f"Erreur interne : {type(e).__name__} — {e}",
-    )
+    _handle_exc(e, context, "Route M7", logger, not_found_on_value_error=True)
 
 
 def _build_response(result: Dict[str, Any], msg_ok: str, elapsed: float) -> RouteResponse:
-    review_id = result.get("_review_id") if isinstance(result, dict) else None
-    status_val = result.get("_review_status") if isinstance(result, dict) else None
-    requires_action = status_val == "pending_review"
-
+    # Cas spécifique M7 : pas de relance nécessaire
     if isinstance(result, dict) and result.get("necessaire") is False:
-        message = result.get("raison", "Aucune relance nécessaire.")
-    else:
-        message = msg_ok
-        if requires_action:
-            message += f" ⚠️ En attente validation (review={review_id})."
-
-    return RouteResponse(
-        success=True,
-        message=message,
-        duration_seconds=elapsed,
-        review_id=review_id,
-        review_status=status_val,
-        requires_human_action=requires_action,
-        data=result,
-    )
+        return RouteResponse(
+            success=True,
+            message=result.get("raison", "Aucune relance nécessaire."),
+            data=result,
+        )
+    return _build_resp(result, msg_ok, elapsed)
 
 
 # =============================================================================

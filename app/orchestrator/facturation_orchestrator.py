@@ -18,11 +18,10 @@
 #    Backend à discuter si un envoi automatique est voulu).
 # ============================================================
 
-import os
-import time
 import logging
 from typing import Any, Dict, Optional
 
+from app.orchestrator.base_orchestrator import BaseOrchestrator, _vlog as vlog
 from app.services.facturation import RelanceGeneratorService
 from app.services.backend_sync.facture_calculator_service import FactureCalculatorService
 from app.services.backend_sync import facture_sync
@@ -31,20 +30,15 @@ from app.services.hitl import create_review
 
 logger = logging.getLogger(__name__)
 
-VERBOSE = os.getenv("VERBOSE_LOGS", "true").lower() == "true"
-
-
-def vlog(msg: str, level: str = "info") -> None:
-    if VERBOSE:
-        getattr(logger, level)(msg)
-
 
 # =============================================================================
 # ORCHESTRATEUR
 # =============================================================================
 
-class FacturationOrchestrator:
+class FacturationOrchestrator(BaseOrchestrator):
     """Orchestrateur du module M7 — Facturation et relances."""
+
+    _name = "FacturationOrchestrator"
 
     def __init__(self):
         vlog("=" * 70)
@@ -58,61 +52,10 @@ class FacturationOrchestrator:
             FactureCalculatorService, "FactureCalculatorService"
         )
 
-        self._log_startup_summary()
-
-    # =========================================================================
-    # HELPERS INTERNES
-    # =========================================================================
-
-    def _safe_init(self, service_cls, label: str):
-        try:
-            instance = service_cls()
-            vlog(f"   ✅ {label} prêt")
-            return instance
-        except Exception as e:
-            logger.error(f"   ❌ {label} indisponible : {type(e).__name__} — {e}")
-            return None
-
-    def _log_startup_summary(self) -> None:
-        services_status = {
-            "Agent M7 — RelanceGenerator": self.relance_generator is not None,
-            "FactureCalculatorService":    self.calculator is not None,
-        }
-        active = [k for k, v in services_status.items() if v]
-        inactive = [k for k, v in services_status.items() if not v]
-
-        vlog("=" * 70)
-        vlog(f"📊 Bilan démarrage : {len(active)}/2 services actifs")
-        for name in active:
-            vlog(f"   ✅ {name}")
-        for name in inactive:
-            vlog(f"   ⏳ {name} (en attente)")
-        vlog("=" * 70)
-        vlog("✅ FacturationOrchestrator initialisé avec succès.")
-
-    def _log_start(self, method: str, **kwargs) -> float:
-        vlog("=" * 70)
-        vlog(f"🎬 [FacturationOrchestrator] → {method}()")
-        for k, v in kwargs.items():
-            vlog(f"   {k} : {v}")
-        vlog("=" * 70)
-        return time.perf_counter()
-
-    def _log_end(self, method: str, start: float, **counts) -> float:
-        elapsed = round(time.perf_counter() - start, 2)
-        vlog("=" * 70)
-        vlog(f"✅ [FacturationOrchestrator] {method}() terminé en {elapsed}s")
-        for k, v in counts.items():
-            vlog(f"   {k} : {v}")
-        vlog("=" * 70)
-        return elapsed
-
-    def _log_error(self, method: str, start: float, e: Exception) -> None:
-        elapsed = round(time.perf_counter() - start, 2)
-        logger.error("=" * 70)
-        logger.error(f"❌ [FacturationOrchestrator] {method}() ÉCHEC ({elapsed}s)")
-        logger.error(f"   💥 Erreur : {type(e).__name__} — {e}")
-        logger.error("=" * 70)
+        self._log_startup_summary({
+            "Agent M7 — RelanceGenerator": self.relance_generator,
+            "FactureCalculatorService":    self.calculator,
+        })
 
     # =========================================================================
     # GÉNÉRER UNE RELANCE (Agent M7 + HITL)

@@ -27,6 +27,7 @@ __all__ = [
     "approve_review",
     "reject_review",
     "get_stats",
+    "patch_review",
     "AGENT_CRITICITY",
 ]
 
@@ -38,6 +39,7 @@ from .hitl_helper import (
     approve_review,
     reject_review,
     get_stats,
+    patch_review,
     AGENT_CRITICITY,
 )
 

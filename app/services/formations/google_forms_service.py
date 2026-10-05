@@ -31,6 +31,7 @@ VERBOSE = os.getenv("VERBOSE_LOGS", "true").lower() == "true"
 
 FORMS_SCOPES = [
     "https://www.googleapis.com/auth/forms.body",
+    "https://www.googleapis.com/auth/forms.responses.readonly",
     "https://www.googleapis.com/auth/drive.file",
 ]
 
@@ -262,4 +263,67 @@ class GoogleFormsService:
             1 for f in results["forms"].values()
             if "form_id" in f
         )
+        return results
+
+    # ----------------------------------------------------------
+    # RÉCUPÉRATION DES RÉPONSES
+    # ----------------------------------------------------------
+    async def fetch_responses(
+        self,
+        form_ids: Dict[str, str],
+    ) -> Dict[str, Any]:
+        """
+        Récupère les réponses de chaque formulaire via l'API Google Forms.
+
+        Args:
+            form_ids: dict {section_key: form_id}
+                ex: {"inscription": "1abc...", "satisfaction": "1xyz..."}
+
+        Returns:
+            dict {section_key: {"form_id": ..., "responses": [...], "count": int}}
+            Chaque réponse est un dict {question_id: réponse_brute}.
+        """
+        service = self._get_service()
+        results: Dict[str, Any] = {}
+
+        for key, form_id in form_ids.items():
+            if not form_id:
+                results[key] = {"form_id": form_id, "responses": [], "count": 0, "skipped": True}
+                continue
+            try:
+                vlog(f"   📥 Récupération réponses [{key}] form_id={form_id}")
+                resp = service.forms().responses().list(formId=form_id).execute()
+                raw_responses = resp.get("responses", [])
+
+                parsed = []
+                for r in raw_responses:
+                    answers: Dict[str, Any] = {}
+                    for q_id, answer_obj in (r.get("answers") or {}).items():
+                        # textAnswers → liste de valeurs
+                        text_answers = answer_obj.get("textAnswers", {}).get("answers", [])
+                        values = [a.get("value", "") for a in text_answers]
+                        answers[q_id] = values[0] if len(values) == 1 else values
+                    parsed.append({
+                        "response_id": r.get("responseId"),
+                        "submitted_at": r.get("lastSubmittedTime"),
+                        "answers": answers,
+                    })
+
+                results[key] = {
+                    "form_id": form_id,
+                    "responses": parsed,
+                    "count": len(parsed),
+                }
+                vlog(f"   ✅ [{key}] {len(parsed)} réponse(s) récupérée(s)")
+            except Exception as e:
+                logger.error(f"❌ Erreur fetch réponses '{key}' (form_id={form_id}) : {e}")
+                results[key] = {
+                    "form_id": form_id,
+                    "responses": [],
+                    "count": 0,
+                    "error": str(e),
+                }
+
+        total = sum(v.get("count", 0) for v in results.values())
+        vlog(f"✅ fetch_responses terminé — {total} réponse(s) au total")
         return results

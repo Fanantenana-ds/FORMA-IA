@@ -5,6 +5,7 @@ from typing import Dict, Any, Optional, List
 
 from fastapi import APIRouter, HTTPException, Depends, status
 from pydantic import BaseModel, Field
+from app.schemas.common import RouteResponse
 
 from app.orchestrator.preparation_orchestrator import (
     PreparationOrchestrator,
@@ -178,19 +179,6 @@ class SynchroniserRequest(BaseModel):
         description="Renvoyer même si déjà synchronisé (crée une NOUVELLE session côté Backend)",
     )
 
-
-# =============================================================================
-# SCHÉMAS — RÉPONSES
-# =============================================================================
-
-class RouteResponse(BaseModel):
-    success: bool
-    message: str
-    duration_seconds: Optional[float] = None
-    review_id: Optional[str] = None
-    review_status: Optional[str] = None
-    requires_human_action: bool = False
-    data: Optional[Dict[str, Any]] = None
 
 
 # =============================================================================

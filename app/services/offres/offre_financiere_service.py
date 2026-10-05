@@ -1,3 +1,4 @@
+from app.utils.json_repair import repair_json
 import os
 import re
 import json
@@ -297,19 +298,7 @@ class OffreFinanciereGeneratorService:
     # =========================================================================
 
     def _repair_json(self, raw: str) -> str:
-        if not raw:
-            return raw
-        raw = re.sub(r"^```(?:json)?\s*", "", raw.strip())
-        raw = re.sub(r"\s*```\s*$", "", raw)
-        raw = raw.replace("\\'", "'").replace("\\/", "/")
-        start = raw.find("{")
-        if start > 0:
-            raw = raw[start:]
-        end = raw.rfind("}")
-        if end > 0:
-            raw = raw[:end + 1]
-        return raw
-
+        return repair_json(raw)
     def _normalize_output(self, data: Any) -> Dict[str, Any]:
         if isinstance(data, list):
             dict_items = [item for item in data if isinstance(item, dict)]

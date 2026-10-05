@@ -5,6 +5,7 @@ from typing import Dict, Any, Optional, List
 
 from fastapi import APIRouter, HTTPException, Depends, status
 from pydantic import BaseModel, Field
+from app.schemas.common import RouteResponse
 
 from app.orchestrator.offre_orchestrator import (
     OffreOrchestrator,
@@ -169,19 +170,6 @@ class SynchroniserRequest(BaseModel):
     )
 
 
-# =============================================================================
-# SCHÉMAS — RÉPONSES
-# =============================================================================
-
-class RouteResponse(BaseModel):
-    """Réponse standardisée pour les routes M3."""
-    success: bool
-    message: str
-    duration_seconds: Optional[float] = None
-    review_id: Optional[str] = None
-    review_status: Optional[str] = None
-    requires_human_action: bool = False
-    data: Optional[Dict[str, Any]] = None
 
 
 # =============================================================================

@@ -21,6 +21,7 @@ from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from app.schemas.common import RouteResponse
 
 from app.orchestrator.rh_orchestrator import RhOrchestrator, get_rh_orchestrator
 from app.schemas.rh_ia import (
@@ -51,16 +52,6 @@ router = APIRouter(
 # =============================================================================
 # HELPERS
 # =============================================================================
-
-class RouteResponse(BaseModel):
-    success: bool
-    message: str
-    duration_seconds: Optional[float] = None
-    review_id: Optional[str] = None
-    review_status: Optional[str] = None
-    requires_human_action: bool = False
-    data: Optional[Dict[str, Any]] = None
-
 
 def _handle_exception(e: Exception, context: str) -> None:
     if isinstance(e, ValueError):

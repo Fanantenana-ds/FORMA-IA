@@ -9,6 +9,7 @@ from app.services.hitl import get_stats ,list_pending
 from app.services.hitl import approve_review as _approve
 from app.services.hitl import reject_review as _reject
 from pydantic import BaseModel, Field
+from app.schemas.common import RouteResponse
 
 from app.orchestrator.formation_orchestrator import (
     FormationOrchestrator,
@@ -146,16 +147,6 @@ class RejectReviewRequest(BaseModel):
 # =============================================================================
 # SCHÉMAS — RÉPONSES
 # =============================================================================
-
-class RouteResponse(BaseModel):
-    success: bool
-    message: str
-    duration_seconds: Optional[float] = None
-    review_id: Optional[str] = None
-    review_status: Optional[str] = None
-    requires_human_action: bool = False
-    data: Optional[Dict[str, Any]] = None
-
 
 class ReviewResponse(BaseModel):
     success: bool

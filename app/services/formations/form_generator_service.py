@@ -1,3 +1,4 @@
+from app.utils.json_repair import repair_json
 import os
 import re
 import json
@@ -256,28 +257,7 @@ class FormGeneratorService:
     # REPAIR JSON
     # --------------------------------------------------------
     def _repair_json(self, raw: str) -> str:
-        if not raw:
-            return raw
-        raw = re.sub(r"^```(?:json)?\s*", "", raw.strip())
-        raw = re.sub(r"\s*```\s*$", "", raw)
-        raw = raw.replace("\\'", "'")
-        raw = raw.replace("\\/", "/")
-        start = raw.find("{")
-        if start == -1:
-            start = raw.find("[")
-        if start > 0:
-            raw = raw[start:]
-        last_brace = raw.rfind("}")
-        last_bracket = raw.rfind("]")
-        end = max(last_brace, last_bracket)
-        if end > 0:
-            raw = raw[:end + 1]
-        vlog("   🔧 JSON réparé")
-        return raw
-
-    # --------------------------------------------------------
-    # NORMALISATION
-    # --------------------------------------------------------
+        return repair_json(raw)
     def _normalize_llm_output(self, data: Any) -> Dict[str, Any]:
         if isinstance(data, list):
             logger.warning(f"⚠️  LLM a retourné une liste [{len(data)}] → fusion")

@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
+
 load_dotenv()
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -16,7 +17,6 @@ logging.basicConfig(
 from app.services.formations.attestation_generator_service import (
     AttestationGeneratorService,
 )
-
 
 SESSION = {
     "id": 1,

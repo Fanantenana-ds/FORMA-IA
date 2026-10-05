@@ -213,7 +213,7 @@
 import logging
 import os
 import re
-from typing import Any, Dict, List
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -291,9 +291,9 @@ def _is_hard_rejected(title: str, url: str) -> bool:
 
 
 def rank_results(
-    results: List[Dict[str, Any]],
+    results: list[dict[str, Any]],
     query: str,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """
     Trie TOUS les résultats par score de pertinence heuristique.
     Garde les agrégateurs, rejette uniquement le bruit évident.
@@ -406,9 +406,9 @@ def rank_results(
 
 
 def prefilter_results(
-    results: List[Dict[str, Any]],
+    results: list[dict[str, Any]],
     query: str,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Compatibilité : retourne uniquement les MAX_RESULTS_AI meilleurs."""
     ranked = rank_results(results, query)
     selected = ranked[:MAX_RESULTS_AI]

@@ -1,23 +1,23 @@
-import os
 import json
 import logging
-from typing import Dict, Any, Optional
+import os
+from typing import Any
 
-from openai import AsyncOpenAI
 from openai import (
-    APITimeoutError,
-    RateLimitError,
-    APIError,
     APIConnectionError,
+    APIError,
+    APITimeoutError,
+    AsyncOpenAI,
+    RateLimitError,
 )
 
 from .llm_provider import (
-    LLMProvider,
     LLMError,
-    LLMTimeoutError,
-    LLMRateLimitError,
     LLMInvalidResponseError,
     LLMNotAvailableError,
+    LLMProvider,
+    LLMRateLimitError,
+    LLMTimeoutError,
 )
 
 logger = logging.getLogger(__name__)
@@ -89,9 +89,9 @@ class GroqProvider(LLMProvider):
         temperature: float = 0.4,
         max_tokens: int = 4000,
         json_mode: bool = True,
-        reasoning_effort: Optional[str] = None,
-        timeout: Optional[float] = None,
-    ) -> Dict[str, Any]:
+        reasoning_effort: str | None = None,
+        timeout: float | None = None,
+    ) -> dict[str, Any]:
         """Génère une réponse via Groq API."""
         if not self.is_available():
             raise LLMNotAvailableError(
@@ -112,7 +112,7 @@ class GroqProvider(LLMProvider):
             user_prompt = user_prompt + _JSON_SAFETY_SUFFIX
 
         # Construire les kwargs de base
-        kwargs: Dict[str, Any] = {
+        kwargs: dict[str, Any] = {
             "model": self.model,
             "messages": [
                 {"role": "system", "content": system_prompt},

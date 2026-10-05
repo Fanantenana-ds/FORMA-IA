@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
+
 load_dotenv()
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -17,7 +18,6 @@ logging.basicConfig(
 from app.services.formations.report_generator_service import (
     ReportGeneratorService,
 )
-
 
 # ============================================================
 # DONNÉES AGRÉGÉES DE SESSION (comme si le Backend les avait fournies)
@@ -77,7 +77,7 @@ async def main():
     print(f"💡 Recos    : {len(result.get('recommandations', []))}")
     print(f"\n📝 Résumé exécutif :\n{result.get('resume_executif')}")
 
-    print(f"\n💡 Recommandations :")
+    print("\n💡 Recommandations :")
     for i, r in enumerate(result["recommandations"], 1):
         print(f"   {i}. {r}")
 

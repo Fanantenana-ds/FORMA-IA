@@ -1,6 +1,6 @@
-from typing import List, Optional, Dict, Any, Literal
-from pydantic import BaseModel, Field
+from typing import Any, Literal
 
+from pydantic import BaseModel, Field
 
 # ============================================================
 # EDT — SESSIONS
@@ -17,9 +17,9 @@ class EDTSession(BaseModel):
     module: str = Field(..., description="Titre du module")
     type: SessionType = Field(..., description="Type d'activité")
     duree_minutes: int = Field(..., ge=0, description="Durée en minutes")
-    formateur: Optional[str] = None
-    salle: Optional[str] = None
-    objectifs: List[str] = Field(default_factory=list)
+    formateur: str | None = None
+    salle: str | None = None
+    objectifs: list[str] = Field(default_factory=list)
 
 
 class EDTPause(BaseModel):
@@ -33,21 +33,21 @@ class EDTJour(BaseModel):
     """Une journée de formation."""
     numero: int = Field(..., ge=1, description="Numéro du jour (1, 2, ...)")
     date: str = Field(..., description="Date (YYYY-MM-DD)")
-    jour_semaine: Optional[str] = None
-    sessions: List[EDTSession] = Field(default_factory=list)
-    pauses: List[EDTPause] = Field(default_factory=list)
+    jour_semaine: str | None = None
+    sessions: list[EDTSession] = Field(default_factory=list)
+    pauses: list[EDTPause] = Field(default_factory=list)
 
 
 class EDTFormateur(BaseModel):
     """Informations sur le formateur."""
     nom: str
-    specialite: Optional[str] = None
+    specialite: str | None = None
 
 
 class EDTSalle(BaseModel):
     """Informations sur la salle."""
     nom: str
-    adresse: Optional[str] = None
+    adresse: str | None = None
 
 
 class EDTResume(BaseModel):
@@ -69,15 +69,15 @@ class EDTResponse(BaseModel):
     duree_totale_jours: int = Field(..., ge=1)
     nombre_modules: int = Field(..., ge=0)
 
-    formateur: Optional[EDTFormateur] = None
-    salle: Optional[EDTSalle] = None
+    formateur: EDTFormateur | None = None
+    salle: EDTSalle | None = None
 
-    jours: List[EDTJour] = Field(default_factory=list)
-    resume_hebdomadaire: Optional[EDTResume] = None
-    notes: List[str] = Field(default_factory=list)
+    jours: list[EDTJour] = Field(default_factory=list)
+    resume_hebdomadaire: EDTResume | None = None
+    notes: list[str] = Field(default_factory=list)
 
     # Métadonnées
-    metadata: Optional[Dict[str, Any]] = None
+    metadata: dict[str, Any] | None = None
 
 
 # ============================================================
@@ -87,10 +87,10 @@ class EDTResponse(BaseModel):
 class CoutDetail(BaseModel):
     """Détail d'un poste de coût."""
     libelle: str = Field(..., description="Libellé du poste")
-    base: Optional[float] = Field(None, description="Base de calcul (tarif, forfait)")
-    quantite: Optional[int] = Field(None, description="Quantité (jours, participants)")
+    base: float | None = Field(None, description="Base de calcul (tarif, forfait)")
+    quantite: int | None = Field(None, description="Quantité (jours, participants)")
     montant: int = Field(..., ge=0, description="Montant total en MGA")
-    description: Optional[str] = None
+    description: str | None = None
 
 
 class BudgetPrevisionnel(BaseModel):
@@ -111,7 +111,7 @@ class BudgetPrevisionnel(BaseModel):
     cout_total: int = Field(..., ge=0, description="Coût total prévisionnel")
 
     # Détails par poste (optionnel)
-    details: List[CoutDetail] = Field(default_factory=list)
+    details: list[CoutDetail] = Field(default_factory=list)
 
 
 # ============================================================
@@ -136,20 +136,20 @@ class PreparationCompleteResponse(BaseModel):
     success: bool = True
 
     # Identifiants
-    projet_id: Optional[int] = None
-    offre_id: Optional[int] = None
-    client_id: Optional[int] = None
+    projet_id: int | None = None
+    offre_id: int | None = None
+    client_id: int | None = None
 
     # Résultats
-    budget: Optional[BudgetPrevisionnel] = None
-    edt: Optional[EDTResponse] = None
+    budget: BudgetPrevisionnel | None = None
+    edt: EDTResponse | None = None
 
     # HITL
-    review_id: Optional[str] = Field(None, alias="_review_id")
-    review_status: Optional[str] = Field(None, alias="_review_status")
+    review_id: str | None = Field(None, alias="_review_id")
+    review_status: str | None = Field(None, alias="_review_status")
 
     # Métadonnées
-    metadata: Optional[Dict[str, Any]] = None
+    metadata: dict[str, Any] | None = None
 
     class Config:
         populate_by_name = True
@@ -161,11 +161,11 @@ class PreparationCompleteResponse(BaseModel):
 
 class CalculateBudgetRequest(BaseModel):
     """Corps de la requête pour calculer le budget."""
-    formateur_info: Dict[str, Any] = Field(
+    formateur_info: dict[str, Any] = Field(
         ...,
         description="Infos formateur (nom, tarif_journalier)",
     )
-    salle_info: Dict[str, Any] = Field(
+    salle_info: dict[str, Any] = Field(
         ...,
         description="Infos salle (nom, tarif_journalier)",
     )
@@ -192,19 +192,19 @@ class CalculateBudgetRequest(BaseModel):
 class GenerateEDTRequest(BaseModel):
     """Corps de la requête pour générer l'EDT."""
     titre_formation: str = Field(..., min_length=3)
-    modules: List[Dict[str, Any]] = Field(
+    modules: list[dict[str, Any]] = Field(
         ...,
         description="Liste des modules (titre, duree)",
     )
-    dates: List[str] = Field(
+    dates: list[str] = Field(
         ...,
         description="Dates des jours de formation (YYYY-MM-DD)",
     )
-    formateur: Optional[Dict[str, Any]] = Field(
+    formateur: dict[str, Any] | None = Field(
         None,
         description="Infos formateur (nom, specialite)",
     )
-    salle: Optional[Dict[str, Any]] = Field(
+    salle: dict[str, Any] | None = Field(
         None,
         description="Infos salle (nom, adresse)",
     )
@@ -226,19 +226,19 @@ class GenerateEDTRequest(BaseModel):
 
 class GeneratePreparationCompleteRequest(BaseModel):
     """Corps de la requête pour générer la préparation complète."""
-    offre_data: Dict[str, Any] = Field(
+    offre_data: dict[str, Any] = Field(
         ...,
         description="Données de l'offre approuvée (M3)",
     )
-    projet_info: Dict[str, Any] = Field(
+    projet_info: dict[str, Any] = Field(
         ...,
         description="Informations du projet (client, participants)",
     )
-    ressources: Dict[str, Any] = Field(
+    ressources: dict[str, Any] = Field(
         ...,
         description="Ressources : formateur + salle",
     )
-    options: Dict[str, Any] = Field(
+    options: dict[str, Any] = Field(
         default_factory=dict,
         description="Options (date_debut, date_fin)",
     )

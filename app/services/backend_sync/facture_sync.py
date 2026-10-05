@@ -14,7 +14,7 @@
 # ============================================================
 
 import logging
-from typing import Any, Dict, Optional
+from typing import Any
 
 from app.services.backend_sync import base_sync
 
@@ -27,8 +27,8 @@ async def sync_facture_to_backend(
     client: str,
     montant_ht: float,
     tva_taux: float = 20.0,
-    date_echeance: Optional[str] = None,
-) -> Dict[str, Any]:
+    date_echeance: str | None = None,
+) -> dict[str, Any]:
     """
     Crée la facture côté Backend (POST /factures).
 
@@ -55,7 +55,7 @@ async def sync_facture_to_backend(
         result["error"] = "montant_ht doit être > 0"
         return result
 
-    payload: Dict[str, Any] = {
+    payload: dict[str, Any] = {
         "client": client_name,
         "montant": montant_ht,
         "tva_taux": tva_taux,
@@ -72,7 +72,7 @@ async def sync_facture_to_backend(
     return result
 
 
-async def fetch_facture(facture_id: str) -> Optional[Dict[str, Any]]:
+async def fetch_facture(facture_id: str) -> dict[str, Any] | None:
     """
     Lit une facture Backend (GET /factures/{id}) — statut, TTC, paiements,
     échéance — pour préparer une relance.

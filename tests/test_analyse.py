@@ -2,10 +2,10 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.database import get_db
+from app.main import app
 from app.models.historique_analyse import HistoriqueAnalyse
 from app.services.backend_sync import base_sync
 from app.services.veille import opportunity_analysis_service as analyse_ia
-from app.main import app
 
 client = TestClient(app)
 

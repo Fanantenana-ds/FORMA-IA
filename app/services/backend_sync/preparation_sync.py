@@ -27,7 +27,7 @@
 
 import logging
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from app.services.backend_sync import base_sync
 
@@ -45,7 +45,7 @@ _BUDGET_REASON = (
 )
 
 
-def _iso_date(value: Any) -> Optional[str]:
+def _iso_date(value: Any) -> str | None:
     text = str(value or "").strip()
     return text[:10] if _DATE_RE.match(text) else None
 
@@ -57,14 +57,14 @@ def _minutes(session: Any) -> int:
         return 0
 
 
-def _seance_payload(jour: Dict[str, Any], date_iso: str) -> Dict[str, Any]:
+def _seance_payload(jour: dict[str, Any], date_iso: str) -> dict[str, Any]:
     """Un jour d'EDT → SeanceCreate (duree et theme jamais vides : NOT NULL en base)."""
     sessions = [s for s in (jour.get("sessions") or []) if isinstance(s, dict)]
 
     total_minutes = sum(_minutes(s) for s in sessions)
     duree = f"{total_minutes / 60:g}h" if total_minutes else "1 jour"
 
-    modules: List[str] = []
+    modules: list[str] = []
     for s in sessions:
         module = str(s.get("module") or "").strip()
         if module and module not in modules:
@@ -78,11 +78,11 @@ def _seance_payload(jour: Dict[str, Any], date_iso: str) -> Dict[str, Any]:
 
 
 async def sync_preparation_to_backend(
-    edt: Dict[str, Any],
-    projet_info: Optional[Dict[str, Any]] = None,
-    budget: Optional[Dict[str, Any]] = None,
-    formateur_id: Optional[str] = None,
-) -> Dict[str, Any]:
+    edt: dict[str, Any],
+    projet_info: dict[str, Any] | None = None,
+    budget: dict[str, Any] | None = None,
+    formateur_id: str | None = None,
+) -> dict[str, Any]:
     """
     Enregistre la préparation côté Backend (session + séances).
 
@@ -113,7 +113,7 @@ async def sync_preparation_to_backend(
 
     dates = sorted(d for _, d in dated)
     client = base_sync.truncate((projet_info or {}).get("client"), _CLIENT_MAX)
-    session_payload: Dict[str, Any] = {
+    session_payload: dict[str, Any] = {
         "titre": base_sync.truncate(edt.get("titre_formation"), _TITRE_MAX)
         or "Formation",
         "date_debut": dates[0],

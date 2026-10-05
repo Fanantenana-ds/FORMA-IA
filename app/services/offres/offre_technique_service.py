@@ -1,14 +1,15 @@
+import json
+import logging
 import os
 import re
-import json
-import yaml
-import logging
-from pathlib import Path
 from datetime import datetime
-from typing import Dict, Any, Optional
+from pathlib import Path
+from typing import Any
 
-from app.services.llm import get_llm_provider, LLMError
+import yaml
+
 from app.services.hitl import create_review
+from app.services.llm import LLMError, get_llm_provider
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +51,7 @@ class OffreTechniqueGeneratorService:
     # PROMPT
     # =========================================================================
 
-    def _load_prompt(self) -> Dict[str, Any]:
+    def _load_prompt(self) -> dict[str, Any]:
         """Charge le prompt RTFCE depuis le YAML."""
         if not PROMPT_PATH.exists():
             raise FileNotFoundError(f"❌ Prompt introuvable : {PROMPT_PATH}")
@@ -87,9 +88,9 @@ class OffreTechniqueGeneratorService:
 
     def _build_user_prompt(
         self,
-        tdr_data: Dict[str, Any],
-        session_info: Dict[str, Any],
-        feedback: Optional[str] = None,
+        tdr_data: dict[str, Any],
+        session_info: dict[str, Any],
+        feedback: str | None = None,
     ) -> str:
         """Construit le user prompt avec les données du TDR + session."""
         lines = [
@@ -127,12 +128,12 @@ class OffreTechniqueGeneratorService:
 
     async def generate(
         self,
-        tdr_data: Dict[str, Any],
-        session_info: Dict[str, Any],
+        tdr_data: dict[str, Any],
+        session_info: dict[str, Any],
         temperature: float = 0.4,
         max_tokens: int = 8000,
-        feedback: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        feedback: str | None = None,
+    ) -> dict[str, Any]:
         """
         Génère la trame technique d'une offre.
 
@@ -273,7 +274,7 @@ class OffreTechniqueGeneratorService:
     # NORMALISATION
     # =========================================================================
 
-    def _normalize_output(self, data: Any) -> Dict[str, Any]:
+    def _normalize_output(self, data: Any) -> dict[str, Any]:
         """Normalise la structure LLM (liste → dict)."""
         if isinstance(data, list):
             dict_items = [item for item in data if isinstance(item, dict)]
@@ -296,7 +297,7 @@ class OffreTechniqueGeneratorService:
     # VALIDATION
     # =========================================================================
 
-    def _validate_minimal(self, data: Dict[str, Any]) -> None:
+    def _validate_minimal(self, data: dict[str, Any]) -> None:
         """Vérifie la présence des clés minimales."""
         required = [
             "titre_offre", "reference", "date_emission",
@@ -315,9 +316,9 @@ class OffreTechniqueGeneratorService:
 
     def _generate_with_template(
         self,
-        tdr_data: Dict[str, Any],
-        session_info: Dict[str, Any],
-    ) -> Dict[str, Any]:
+        tdr_data: dict[str, Any],
+        session_info: dict[str, Any],
+    ) -> dict[str, Any]:
         """Template Python (fallback) — trame technique standard."""
         year = datetime.now().year
         titre = tdr_data.get("titre", "Formation professionnelle")
@@ -433,7 +434,7 @@ class OffreTechniqueGeneratorService:
                 "Supports modernes",
             ],
             "conclusion": (
-                f"ALTIORA Prest s'engage à fournir une formation de qualité "
-                f"adaptée aux besoins spécifiques du client."
+                "ALTIORA Prest s'engage à fournir une formation de qualité "
+                "adaptée aux besoins spécifiques du client."
             ),
         }

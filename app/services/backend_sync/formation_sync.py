@@ -24,7 +24,7 @@
 # ============================================================
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from app.services.backend_sync import base_sync
 
@@ -39,12 +39,12 @@ _STATUTS = {
 _SOURCES = ("MANUEL", "GOOGLE_FORMS")
 
 
-def map_statut_presence(value: Any) -> Optional[str]:
+def map_statut_presence(value: Any) -> str | None:
     """'présent' / 'Absent' / 'EXCUSE'… → enum Backend, ou None si inconnu."""
     return _STATUTS.get(str(value or "").strip().lower())
 
 
-async def fetch_session(session_id: str) -> Optional[Dict[str, Any]]:
+async def fetch_session(session_id: str) -> dict[str, Any] | None:
     """
     Lit une session Backend (GET /sessions/{id}) : titre, client, dates.
     Permet de construire `session_info` à partir d'un session_id
@@ -67,9 +67,9 @@ async def fetch_session(session_id: str) -> Optional[Dict[str, Any]]:
 
 async def sync_presences_to_backend(
     seance_id: str,
-    presences: List[Dict[str, Any]],
+    presences: list[dict[str, Any]],
     source: str = "GOOGLE_FORMS",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Enregistre des présences (ex. réponses Google Forms) sur une séance.
 
@@ -135,7 +135,7 @@ async def sync_presences_to_backend(
     return result
 
 
-async def sync_attestations_to_backend(session_id: str) -> Dict[str, Any]:
+async def sync_attestations_to_backend(session_id: str) -> dict[str, Any]:
     """
     Demande au Backend de créer les attestations de la session
     (POST /documents/attestations/{session_id}).

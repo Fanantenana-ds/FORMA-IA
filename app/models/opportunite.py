@@ -2,11 +2,13 @@ import uuid
 from datetime import datetime, timezone
 from enum import Enum
 
-from sqlalchemy import Column, String, DateTime, Enum as SqlEnum, Float, Text
+from sqlalchemy import Column, DateTime, Float, String, Text
+from sqlalchemy import Enum as SqlEnum
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
 from app.database import Base
+
 
 class SourceOpportunite(str, Enum):
     TEXTE = "TEXTE"

@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
+
 load_dotenv()
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -17,7 +18,6 @@ logging.basicConfig(
 from app.services.offres.offre_financiere_service import (
     OffreFinanciereGeneratorService,
 )
-
 
 # ============================================================
 # DONNÉES DE TEST
@@ -80,7 +80,7 @@ async def main():
             offre_technique=OFFRE_TECHNIQUE,
             options=OPTIONS,
         )
-        print(f"   ✅ Offre financière générée")
+        print("   ✅ Offre financière générée")
     except Exception as e:
         print(f"   ❌ Échec : {e}")
         import traceback
@@ -114,7 +114,7 @@ async def main():
 
     # Détails coûts
     details = result.get("details_couts", {})
-    print(f"\n💵 DÉTAILS DES COÛTS :")
+    print("\n💵 DÉTAILS DES COÛTS :")
     for name, cout in details.items():
         if isinstance(cout, dict) and "sous_total" in cout:
             print(f"   • {name:25s} : {cout['sous_total']:>12,} MGA")
@@ -123,7 +123,7 @@ async def main():
 
     # Récapitulatif
     recap = result.get("recapitulatif", {})
-    print(f"\n💰 RÉCAPITULATIF :")
+    print("\n💰 RÉCAPITULATIF :")
     print(f"   • Sous-total HT : {recap.get('sous_total_ht', 0):>12,} MGA")
     tva = recap.get("tva", {})
     print(f"   • TVA ({tva.get('taux', 0)}%)    : {tva.get('montant', 0):>12,} MGA")

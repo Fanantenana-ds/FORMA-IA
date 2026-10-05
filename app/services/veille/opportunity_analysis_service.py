@@ -33,7 +33,7 @@ import logging
 import os
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from app.models.opportunite import Domaine
 from app.services.backend_sync.opportunity_sync import (
@@ -43,9 +43,9 @@ from app.services.backend_sync.opportunity_sync import (
 )
 from app.services.veille.classification_service import ClassificationService
 from app.services.veille.llm_analysis_service import (
-    LLMAnalysisService,
     MAX_SOURCE_CHARS_EACH,
     MAX_SOURCE_CHARS_TOTAL,
+    LLMAnalysisService,
 )
 from app.services.veille.scoring_service import ScoringService
 
@@ -95,9 +95,9 @@ def _titre_depuis_contenu(contenu: str) -> str:
     return ""
 
 
-def _decouper_en_sources(contenu: str) -> List[Dict[str, Any]]:
+def _decouper_en_sources(contenu: str) -> list[dict[str, Any]]:
     """Même découpage que M1 « texte collé » : blocs bornés pour le prompt."""
-    sources: List[Dict[str, Any]] = []
+    sources: list[dict[str, Any]] = []
     total = 0
     for debut in range(0, len(contenu), MAX_SOURCE_CHARS_EACH):
         bloc = contenu[debut:debut + MAX_SOURCE_CHARS_EACH]
@@ -112,7 +112,7 @@ def _decouper_en_sources(contenu: str) -> List[Dict[str, Any]]:
     return sources or [{"title": "Opportunité", "url": "", "content": contenu[:MAX_SOURCE_CHARS_EACH]}]
 
 
-def _date_vers_datetime(date_iso: Optional[str]) -> Optional[datetime]:
+def _date_vers_datetime(date_iso: str | None) -> datetime | None:
     """'YYYY-MM-DD' → datetime UTC (le contrat recommande un fuseau explicite)."""
     if not date_iso:
         return None
@@ -133,7 +133,7 @@ class OpportuniteAnalyseIAService:
     # EXTRACTION LLM (optionnelle)
     # --------------------------------------------------------
 
-    async def _extraire_par_llm(self, contenu: str, source: str) -> Optional[Dict[str, Any]]:
+    async def _extraire_par_llm(self, contenu: str, source: str) -> dict[str, Any] | None:
         """Retourne la première opportunité lue par le LLM, ou None."""
         try:
             llm = _creer_llm_service()
@@ -163,16 +163,16 @@ class OpportuniteAnalyseIAService:
         self,
         *,
         contenu: str,
-        objet: Optional[str] = None,
-        budget: Optional[float] = None,
-        echeance: Optional[datetime] = None,
-        domaine: Optional[Domaine] = None,
+        objet: str | None = None,
+        budget: float | None = None,
+        echeance: datetime | None = None,
+        domaine: Domaine | None = None,
         source: str = "TEXTE",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         contenu = str(contenu or "").strip()
 
         # Valeurs déjà renseignées par l'utilisateur : jamais écrasées.
-        extrait: Optional[Dict[str, Any]] = None
+        extrait: dict[str, Any] | None = None
         if contenu and _llm_actif():
             extrait = await self._extraire_par_llm(contenu, source)
         extrait = extrait or {}
@@ -184,7 +184,7 @@ class OpportuniteAnalyseIAService:
             or "Opportunité sans intitulé"
         )[:MAX_TITRE_CHARS]
 
-        budget_final: Optional[float] = budget if budget else (
+        budget_final: float | None = budget if budget else (
             _parse_budget(extrait.get("budget")) or None
         )
 
@@ -194,7 +194,7 @@ class OpportuniteAnalyseIAService:
         echeance_final = echeance or _date_vers_datetime(echeance_iso)
 
         # ---- Classification (Python) : le domaine saisi prime ----
-        entree: Dict[str, Any] = {
+        entree: dict[str, Any] = {
             "title": objet_final,
             "summary": contenu[:MAX_RESUME_CHARS],
             "url": "",
@@ -230,6 +230,6 @@ class OpportuniteAnalyseIAService:
             "llm_utilise": bool(extrait),
         }
 
-    def analyser(self, **kwargs) -> Dict[str, Any]:
+    def analyser(self, **kwargs) -> dict[str, Any]:
         """Version synchrone (les routes FastAPI de ce projet sont en `def`)."""
         return _run(self.analyser_async(**kwargs))

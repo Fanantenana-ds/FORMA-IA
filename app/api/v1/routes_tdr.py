@@ -5,18 +5,17 @@
 
 import logging
 from pathlib import Path
-from typing import List, Dict, Any
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse
 
+from app.orchestrator.tdr_orchestrator import TdrOrchestrator
 from app.schemas.tdr import (
-    TDRRequest,
-    TDRResponse,
     TDRFiles,
     TDRFromOpportuniteResponse,
+    TDRRequest,
+    TDRResponse,
 )
-from app.orchestrator.tdr_orchestrator import TdrOrchestrator
 from app.services.backend_sync.opportunity_fetcher import (
     fetch_opportunite_by_id,
     fetch_opportunites_list,

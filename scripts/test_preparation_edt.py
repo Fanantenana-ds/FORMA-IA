@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
+
 load_dotenv()
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -15,7 +16,6 @@ logging.basicConfig(
 )
 
 from app.services.preparation import EDTGeneratorService
-
 
 # ============================================================
 # DONNÉES DE TEST
@@ -107,7 +107,7 @@ async def main():
     # Résumé
     resume = result.get("resume_hebdomadaire", {})
     if resume:
-        print(f"\n📊 RÉSUMÉ :")
+        print("\n📊 RÉSUMÉ :")
         print(f"   • Total heures   : {resume.get('total_heures')}h")
         print(f"   • Total sessions : {resume.get('total_sessions')}")
         print(f"   • Modules        : {resume.get('modules_couverts')}")

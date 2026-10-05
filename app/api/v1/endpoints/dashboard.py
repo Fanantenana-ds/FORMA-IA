@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from app.database import get_db
 from app.core.dependencies import require_role
+from app.database import get_db
 from app.models.user import User
 from app.schemas.dashboard import StatistiquesResponse
 from app.services.dashboard_service import DashboardService

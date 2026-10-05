@@ -1,15 +1,15 @@
+import logging
 import os
 import time
-import logging
-from datetime import datetime,timedelta
-from typing import Dict, Any, Optional, List
+from datetime import datetime, timedelta
+from typing import Any
 
+from app.services.backend_sync import preparation_sync, review_sync
+from app.services.hitl import create_review, get_review
 from app.services.preparation import (
     BudgetCalculatorService,
     EDTGeneratorService,
 )
-from app.services.hitl import create_review, get_review
-from app.services.backend_sync import preparation_sync, review_sync
 
 logger = logging.getLogger(__name__)
 
@@ -122,12 +122,12 @@ class PreparationOrchestrator:
 
     def calculer_budget(
         self,
-        formateur_info: Dict[str, Any],
-        salle_info: Dict[str, Any],
+        formateur_info: dict[str, Any],
+        salle_info: dict[str, Any],
         nb_jours: int,
         nb_participants: int,
-        options: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+        options: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """Calcule uniquement le budget prévisionnel."""
         options = options or {}
         start = self._log_start(
@@ -170,11 +170,11 @@ class PreparationOrchestrator:
     async def generer_edt(
         self,
         titre_formation: str,
-        modules: List[Dict[str, Any]],
-        dates: List[str],
-        formateur: Optional[Dict[str, Any]] = None,
-        salle: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+        modules: list[dict[str, Any]],
+        dates: list[str],
+        formateur: dict[str, Any] | None = None,
+        salle: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """Génère uniquement l'emploi du temps."""
         start = self._log_start(
             "generer_edt",
@@ -216,11 +216,11 @@ class PreparationOrchestrator:
 
     async def generate_complete(
         self,
-        offre_data: Dict[str, Any],
-        projet_info: Dict[str, Any],
-        ressources: Dict[str, Any],
-        options: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+        offre_data: dict[str, Any],
+        projet_info: dict[str, Any],
+        ressources: dict[str, Any],
+        options: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """
         Génère la préparation complète (budget + EDT + HITL).
 
@@ -373,7 +373,7 @@ class PreparationOrchestrator:
         self,
         review_id: str,
         feedback: str,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Régénère une préparation à partir d'un review rejeté."""
         start = self._log_start(
             "regenerate",
@@ -437,9 +437,9 @@ class PreparationOrchestrator:
     async def synchroniser_backend(
         self,
         review_id: str,
-        formateur_id: Optional[str] = None,
+        formateur_id: str | None = None,
         force: bool = False,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Enregistre la préparation APPROUVÉE côté Backend : une session et
         une séance par jour d'EDT (le budget n'a pas de route Backend :
@@ -466,7 +466,7 @@ class PreparationOrchestrator:
         data = review.get("data") or {}
         inputs = data.get("_inputs") or {}
 
-        async def _envoyer() -> Dict[str, Any]:
+        async def _envoyer() -> dict[str, Any]:
             return await preparation_sync.sync_preparation_to_backend(
                 edt=data.get("edt") or {},
                 projet_info=inputs.get("projet_info"),
@@ -489,7 +489,7 @@ class PreparationOrchestrator:
     # =========================================================================
 
     @staticmethod
-    def _build_dates(date_debut: str, date_fin: str) -> List[str]:
+    def _build_dates(date_debut: str, date_fin: str) -> list[str]:
         """Construit la liste des dates entre date_debut et date_fin."""
         try:
             d1 = datetime.strptime(date_debut, "%Y-%m-%d")
@@ -507,7 +507,7 @@ class PreparationOrchestrator:
 # SINGLETON
 # =============================================================================
 
-_preparation_orchestrator_instance: Optional[PreparationOrchestrator] = None
+_preparation_orchestrator_instance: PreparationOrchestrator | None = None
 
 
 def get_preparation_orchestrator() -> PreparationOrchestrator:

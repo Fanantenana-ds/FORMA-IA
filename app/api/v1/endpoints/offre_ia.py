@@ -1,9 +1,9 @@
+import logging
 import os
 import time
-import logging
-from typing import Dict, Any, Optional, List
+from typing import Any
 
-from fastapi import APIRouter, HTTPException, Depends, status
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from app.orchestrator.offre_orchestrator import (
@@ -59,7 +59,7 @@ def _handle_exception(e: Exception, context: str) -> None:
     )
 
 
-def _build_response(result: Dict[str, Any], msg_ok: str, elapsed: float) -> "RouteResponse":
+def _build_response(result: dict[str, Any], msg_ok: str, elapsed: float) -> "RouteResponse":
     """Construit une réponse uniforme avec info HITL."""
     review_id = result.get("_review_id") if isinstance(result, dict) else None
     status_val = result.get("_review_status") if isinstance(result, dict) else None
@@ -86,17 +86,17 @@ def _build_response(result: Dict[str, Any], msg_ok: str, elapsed: float) -> "Rou
 
 class GenerateTechniqueRequest(BaseModel):
     """Corps de la requête pour générer uniquement l'offre technique."""
-    tdr_data: Dict[str, Any] = Field(..., description="Données du TDR (issu du M2)")
-    session_info: Dict[str, Any] = Field(..., description="Informations de session")
+    tdr_data: dict[str, Any] = Field(..., description="Données du TDR (issu du M2)")
+    session_info: dict[str, Any] = Field(..., description="Informations de session")
 
 
 class GenerateFinanciereRequest(BaseModel):
     """Corps de la requête pour générer uniquement l'offre financière."""
-    offre_technique: Dict[str, Any] = Field(
+    offre_technique: dict[str, Any] = Field(
         ...,
         description="Offre technique (issue du M3-1)",
     )
-    options: Dict[str, Any] = Field(
+    options: dict[str, Any] = Field(
         default_factory=dict,
         description="Options (type_formateur, type_salle, nb_participants, tva_applicable)",
     )
@@ -104,9 +104,9 @@ class GenerateFinanciereRequest(BaseModel):
 
 class GenerateCompleteRequest(BaseModel):
     """Corps de la requête pour générer une offre complète (⭐ principal)."""
-    tdr_data: Dict[str, Any] = Field(..., description="Données du TDR")
-    session_info: Dict[str, Any] = Field(..., description="Informations de session")
-    options: Dict[str, Any] = Field(
+    tdr_data: dict[str, Any] = Field(..., description="Données du TDR")
+    session_info: dict[str, Any] = Field(..., description="Informations de session")
+    options: dict[str, Any] = Field(
         default_factory=dict,
         description=(
             "Options : "
@@ -157,7 +157,7 @@ class SynchroniserRequest(BaseModel):
     review_id: str = Field(
         ..., description="ID du review APPROUVÉ de l'offre complète (agent_m3_complete)"
     )
-    opportunite_id: Optional[str] = Field(
+    opportunite_id: str | None = Field(
         default=None,
         description="UUID de l'opportunité Backend liée (sinon lu dans tdr_data / session_info)",
     )
@@ -175,11 +175,11 @@ class RouteResponse(BaseModel):
     """Réponse standardisée pour les routes M3."""
     success: bool
     message: str
-    duration_seconds: Optional[float] = None
-    review_id: Optional[str] = None
-    review_status: Optional[str] = None
+    duration_seconds: float | None = None
+    review_id: str | None = None
+    review_status: str | None = None
     requires_human_action: bool = False
-    data: Optional[Dict[str, Any]] = None
+    data: dict[str, Any] | None = None
 
 
 # =============================================================================
@@ -187,7 +187,7 @@ class RouteResponse(BaseModel):
 # =============================================================================
 
 @router.get("/health", summary="[M3] État des agents IA Offres")
-async def health_check() -> Dict[str, Any]:
+async def health_check() -> dict[str, Any]:
     """Retourne l'état du module M3."""
     _log_request("GET", "/ia/offres/health")
     try:

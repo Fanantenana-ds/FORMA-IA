@@ -3,7 +3,6 @@
 # SCHÉMAS — ROUTES IA M7 (Facturation / relances)
 # ============================================================
 
-from typing import Optional
 
 from pydantic import BaseModel, Field
 
@@ -23,11 +22,11 @@ class CalculerMontantsRequest(BaseModel):
     type_client: str = Field(..., description="'participant' ou 'entreprise'")
     nb_participants: int = Field(..., ge=1)
     tarif_unitaire: float = Field(..., gt=0)
-    tva_taux: Optional[float] = Field(default=None, ge=0)
-    remise_pct: Optional[float] = Field(
+    tva_taux: float | None = Field(default=None, ge=0)
+    remise_pct: float | None = Field(
         default=None, ge=0, le=100,
         description="None = règle automatique (5% dès 15 participants)",
     )
-    session_id: Optional[str] = Field(
+    session_id: str | None = Field(
         default=None, description="Référence Backend, recopiée dans la réponse"
     )

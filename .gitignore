@@ -1,4 +1,4 @@
-# ═══════════════════════════════════════════════════════════════
+﻿# ═══════════════════════════════════════════════════════════════
 # FORMA-IA — .gitignore
 # ═══════════════════════════════════════════════════════════════
 
@@ -58,6 +58,7 @@ ENV/
 .ruff_cache/
 .coverage
 .coverage.*
+coverage.json
 htmlcov/
 .tox/
 .hypothesis/
@@ -68,6 +69,7 @@ htmlcov/
 outputs/
 exports/
 data/
+!frontend/src/data/
 logs/
 *.log
 *.out
@@ -155,3 +157,5 @@ trace-claude.ps1
 # Fichiers de test / temporaires du projet
 test.http
 formaia-backend.zip
+backups/
+!.env.production.example

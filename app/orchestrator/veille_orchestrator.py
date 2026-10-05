@@ -1,23 +1,23 @@
 import logging
 import os
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any
 
-from app.services.veille.tavily_service import TavilyService
-from app.services.veille.prefilter_service import rank_results
-from app.services.veille.llm_analysis_service import (
-    LLMAnalysisService,
-    MAX_SOURCE_CHARS_EACH,
-    MAX_SOURCE_CHARS_TOTAL,
-)
-from app.services.veille.classification_service import ClassificationService
-from app.services.veille.scoring_service import ScoringService
-from app.services.veille import validation_service
+from app.services.backend_sync import base_sync
 from app.services.backend_sync.opportunity_sync import (
     sync_new_opportunities_to_backend,
     sync_opportunities_to_backend,
 )
-from app.services.backend_sync import base_sync
+from app.services.veille import validation_service
+from app.services.veille.classification_service import ClassificationService
+from app.services.veille.llm_analysis_service import (
+    MAX_SOURCE_CHARS_EACH,
+    MAX_SOURCE_CHARS_TOTAL,
+    LLMAnalysisService,
+)
+from app.services.veille.prefilter_service import rank_results
+from app.services.veille.scoring_service import ScoringService
+from app.services.veille.tavily_service import TavilyService
 
 logger = logging.getLogger(__name__)
 
@@ -99,7 +99,7 @@ class VeilleOrchestrator:
 
     async def analyser_opportunites(
         self, query: str, sync_backend: bool = True
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Pipeline complet : recherche web → analyse → opportunités.
 
@@ -151,8 +151,8 @@ class VeilleOrchestrator:
         # ── 3/4. ANALYSE LLM PAR LOTS ──
         vlog(f"🤖 [3] Analyse LLM (max {MAX_FALLBACK_BATCHES} lot(s))...")
         groq_response = None
-        groq_opportunities: List[Dict[str, Any]] = []
-        filtered_results: List[Dict[str, Any]] = []
+        groq_opportunities: list[dict[str, Any]] = []
+        filtered_results: list[dict[str, Any]] = []
         last_notes = None
         any_groq_success = False
         batch_index = 0
@@ -251,11 +251,11 @@ class VeilleOrchestrator:
 
     async def detecter_automatiquement(
         self,
-        queries: List[str],
+        queries: list[str],
         min_score: int = 40,
         limit: int = 20,
         sync_backend: bool = True,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Détection sans requête utilisateur : exécute la série de requêtes
         `queries` (profil ALTIORA, cf. auto_detection_service), fusionne les
@@ -277,8 +277,8 @@ class VeilleOrchestrator:
         vlog(f"🤖 M1 DÉTECTION AUTOMATIQUE — DÉBUT ({len(queries)} requête(s))")
         vlog("=" * 70)
 
-        par_requete: List[Dict[str, Any]] = []
-        collectees: List[Dict[str, Any]] = []
+        par_requete: list[dict[str, Any]] = []
+        collectees: list[dict[str, Any]] = []
 
         for query in queries:
             try:
@@ -367,7 +367,7 @@ class VeilleOrchestrator:
 
     async def analyser_texte(
         self, texte: str, source: str = "manuel"
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Pipeline : texte collé → analyse directe (sans recherche web)."""
 
         texte = str(texte or "").strip()
@@ -419,9 +419,9 @@ class VeilleOrchestrator:
     @staticmethod
     def _split_texte_en_sources(
         texte: str, source_label: str
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Découpe un texte long en plusieurs blocs 'source'."""
-        chunks: List[Dict[str, Any]] = []
+        chunks: list[dict[str, Any]] = []
         total_chars = 0
 
         for start in range(0, len(texte), MAX_SOURCE_CHARS_EACH):
@@ -457,7 +457,7 @@ class VeilleOrchestrator:
 
     async def analyser_pdf(
         self, pdf_bytes: bytes, filename: str = "document.pdf"
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Pipeline : PDF → extraction texte → analyse IA.
 
@@ -529,12 +529,12 @@ class VeilleOrchestrator:
     # ========================================================
     async def _finalize_opportunities(
         self,
-        groq_opportunities: List[Dict[str, Any]],
-        groq_response: Dict[str, Any],
+        groq_opportunities: list[dict[str, Any]],
+        groq_response: dict[str, Any],
         start_total: float,
-        extra_statistics: Optional[Dict[str, Any]] = None,
+        extra_statistics: dict[str, Any] | None = None,
         sync_backend: bool = True,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Post-traitement : normalisation, qualité, classification, scoring,
         déduplication, validation, sync backend (si sync_backend)."""
 
@@ -545,7 +545,7 @@ class VeilleOrchestrator:
         # ────────────────────────────────────────────────────
         # 5 — NORMALISATION / QUALITÉ / CLASSIFICATION / SCORING
         # ────────────────────────────────────────────────────
-        normalized: List[Dict[str, Any]] = []
+        normalized: list[dict[str, Any]] = []
         stats_rejected = {
             "normalize": 0,
             "quality_filter": 0,
@@ -655,7 +655,7 @@ class VeilleOrchestrator:
         # ────────────────────────────────────────────────────
         # 7 — VALIDATION FINALE (schéma Pydantic)
         # ────────────────────────────────────────────────────
-        schema_valid: List[Dict[str, Any]] = []
+        schema_valid: list[dict[str, Any]] = []
         for idx, opportunity in enumerate(normalized, start=1):
             validated = validation_service.validate_against_schema(opportunity)
             if validated is not None:
@@ -738,7 +738,7 @@ class VeilleOrchestrator:
         notes: str,
         elapsed: float = 0.0,
         raw_count: int = 0,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         return {
             "opportunities": [],
             "market_signals": [],
@@ -760,5 +760,5 @@ class VeilleOrchestrator:
     # ALIAS
     # ========================================================
 
-    async def rechercher(self, query: str) -> Dict[str, Any]:
+    async def rechercher(self, query: str) -> dict[str, Any]:
         return await self.analyser_opportunites(query)

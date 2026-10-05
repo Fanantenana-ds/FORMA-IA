@@ -2,13 +2,13 @@
 # FORMA-IA — UTILS PACKAGE
 # ============================================================
 
-from .db import get_db_session, engine
+from .db import engine, get_db_session
 from .logger import logger
 from .prompts_loader import load_prompt
 
 __all__ = [
-    "get_db_session",
     "engine",
-    "logger",
-    "load_prompt"
+    "get_db_session",
+    "load_prompt",
+    "logger"
 ]

@@ -11,15 +11,15 @@ Stratégie :
 Pattern : identique à LevelAnalyzerService (Agent 2).
 """
 
-import os
 import json
-import yaml
 import logging
-from pathlib import Path
 from datetime import datetime
-from typing import Dict, Any, List
+from pathlib import Path
+from typing import Any
 
 import pandas as pd
+import yaml
+
 from app.services.hitl import create_review
 from app.services.llm import LLMNotAvailableError, get_llm_provider
 
@@ -69,7 +69,7 @@ class SatisfactionAnalyzerService:
     # --------------------------------------------------------
     # PROMPT
     # --------------------------------------------------------
-    def _load_prompt(self) -> Dict[str, Any]:
+    def _load_prompt(self) -> dict[str, Any]:
         if not PROMPT_PATH.exists():
             raise FileNotFoundError(f"❌ Prompt introuvable : {PROMPT_PATH}")
         with open(PROMPT_PATH, "r", encoding="utf-8") as f:
@@ -93,9 +93,9 @@ class SatisfactionAnalyzerService:
 
     def _build_user_prompt(
         self,
-        session_info: Dict[str, Any],
-        stats: Dict[str, Any],
-        feedbacks: List[Dict[str, Any]],
+        session_info: dict[str, Any],
+        stats: dict[str, Any],
+        feedbacks: list[dict[str, Any]],
     ) -> str:
         """Prompt avec stats calculées + feedbacks bruts."""
         s = stats["statistiques"]
@@ -154,11 +154,11 @@ class SatisfactionAnalyzerService:
     # --------------------------------------------------------
     async def analyze(
         self,
-        session_info: Dict[str, Any],
-        responses: List[Dict[str, Any]],
+        session_info: dict[str, Any],
+        responses: list[dict[str, Any]],
         temperature: float = 0.4,
         max_tokens: int = 3000,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Analyse complète de la satisfaction.
 
@@ -259,7 +259,7 @@ class SatisfactionAnalyzerService:
     # --------------------------------------------------------
     # CALCUL DÉTERMINISTE 
     # --------------------------------------------------------
-    def _compute_statistics(self, responses: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def _compute_statistics(self, responses: list[dict[str, Any]]) -> dict[str, Any]:
         """Calcule notes moyennes + taux de recommandation (pur Python/pandas)."""
         if not responses:
             return self._empty_statistics()
@@ -294,7 +294,7 @@ class SatisfactionAnalyzerService:
             }
         }
 
-    def _empty_statistics(self) -> Dict[str, Any]:
+    def _empty_statistics(self) -> dict[str, Any]:
         return {
             "statistiques": {
                 "notes": {k: 0.0 for k in self.NOTES_KEYS},
@@ -311,12 +311,12 @@ class SatisfactionAnalyzerService:
     # --------------------------------------------------------
     async def _generate_with_llm(
         self,
-        session_info: Dict[str, Any],
-        stats: Dict[str, Any],
-        responses: List[Dict[str, Any]],
+        session_info: dict[str, Any],
+        stats: dict[str, Any],
+        responses: list[dict[str, Any]],
         temperature: float,
         max_tokens: int,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Appel Groq — analyse qualitative uniquement."""
         # Extraire les feedbacks textuels
         feedbacks = []
@@ -408,7 +408,7 @@ class SatisfactionAnalyzerService:
     # --------------------------------------------------------
     # FALLBACK TEMPLATE
     # --------------------------------------------------------
-    def _generate_with_template(self, stats: Dict[str, Any]) -> Dict[str, Any]:
+    def _generate_with_template(self, stats: dict[str, Any]) -> dict[str, Any]:
         """Template Python (fallback)."""
         s = stats["statistiques"]
         n = s["notes"]

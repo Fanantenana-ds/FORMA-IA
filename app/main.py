@@ -6,38 +6,35 @@ Plateforme intelligente de gestion de la formation pour ALTIORA PREST.
 =============================================================================
 """
 
+import logging
 import os
 import time
-import logging
 from datetime import datetime
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from app.config.settings import settings
-from app.database import Base, engine
-
-# ─────────────────────────────────────────────────────────────
-# MODÈLES
-# ─────────────────────────────────────────────────────────────
-from app.models.user import User
-from app.models.revoked_token import RevokedToken
-from app.models.opportunite import Opportunite
-from app.models.historique_analyse import HistoriqueAnalyse
+from app.api.v1.router import api_router
+from app.api.v1.routes_tdr import router as tdr_router
+from app.api.v1.routes_veille import (
+    orchestrator as veille_orchestrator,
+)
 
 # ─────────────────────────────────────────────────────────────
 # ROUTERS
 # ─────────────────────────────────────────────────────────────
 from app.api.v1.routes_veille import (
     router as veille_router,
-    orchestrator as veille_orchestrator,
 )
-from app.api.v1.routes_tdr import router as tdr_router
-from app.api.v1.router import api_router
-from app.services.veille import auto_detection_service
-from app.services import ia_health
+from app.config.settings import settings
+from app.database import Base, engine
 
+# ─────────────────────────────────────────────────────────────
+# MODÈLES
+# ─────────────────────────────────────────────────────────────
+from app.services import ia_health
+from app.services.veille import auto_detection_service
 
 # =============================================================================
 # CONFIG — VERBOSE
@@ -274,8 +271,8 @@ async def startup():
     logger.info(f"   🤖 Provider LLM   : Groq (modèle={settings.GROQ_MODEL})")
     logger.info(f"   🔧 Verbose logs   : {VERBOSE_LOGS}")
     logger.info(f"   🔧 Verbose HTTP   : {VERBOSE_HTTP}")
-    logger.info(f"   📚 Docs           : /api/docs")
-    logger.info(f"   ❤️  Health IA      : /health/ia")
+    logger.info("   📚 Docs           : /api/docs")
+    logger.info("   ❤️  Health IA      : /health/ia")
     logger.info("=" * 70)
 
     # Alerte ERROR si un agent IA requis n'a pas pu être chargé

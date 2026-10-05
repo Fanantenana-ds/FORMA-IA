@@ -1,10 +1,11 @@
-import os
 import json
-import yaml
 import logging
-from pathlib import Path
+import os
 from datetime import datetime
-from typing import Dict, Any, List, Optional
+from pathlib import Path
+from typing import Any
+
+import yaml
 
 from app.services.hitl import create_review
 from app.services.llm import LLMNotAvailableError, get_llm_provider
@@ -65,7 +66,7 @@ class AttestationGeneratorService:
     # --------------------------------------------------------
     # PROMPT
     # --------------------------------------------------------
-    def _load_prompt(self) -> Dict[str, Any]:
+    def _load_prompt(self) -> dict[str, Any]:
         if not PROMPT_PATH.exists():
             raise FileNotFoundError(f"❌ Prompt introuvable : {PROMPT_PATH}")
         with open(PROMPT_PATH, "r", encoding="utf-8") as f:
@@ -89,8 +90,8 @@ class AttestationGeneratorService:
 
     def _build_user_prompt(
         self,
-        session_info: Dict[str, Any],
-        participant: Dict[str, Any],
+        session_info: dict[str, Any],
+        participant: dict[str, Any],
     ) -> str:
         lines = [
             "Génère le contenu de l'attestation pour le participant suivant.",
@@ -119,12 +120,12 @@ class AttestationGeneratorService:
     # --------------------------------------------------------
     async def generate_one(
         self,
-        session_info: Dict[str, Any],
-        participant: Dict[str, Any],
+        session_info: dict[str, Any],
+        participant: dict[str, Any],
         index: int = 1,
         temperature: float = 0.4,
         max_tokens: int = 8000,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         start = datetime.now()
         numero = self._build_unique_number(session_info, index)
 
@@ -172,9 +173,9 @@ class AttestationGeneratorService:
     # --------------------------------------------------------
     async def generate_batch(
         self,
-        session_info: Dict[str, Any],
-        eligible_participants: List[Dict[str, Any]],
-    ) -> Dict[str, Any]:
+        session_info: dict[str, Any],
+        eligible_participants: list[dict[str, Any]],
+    ) -> dict[str, Any]:
         start = datetime.now()
         vlog("=" * 70)
         vlog(f"🚀 [AttestationAgent] BATCH — {len(eligible_participants)} participants")
@@ -215,11 +216,11 @@ class AttestationGeneratorService:
     # --------------------------------------------------------
     async def _generate_with_llm(
         self,
-        session_info: Dict[str, Any],
-        participant: Dict[str, Any],
+        session_info: dict[str, Any],
+        participant: dict[str, Any],
         temperature: float,
         max_tokens: int,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         response = await self.llm.generate(
             system_prompt=self._build_system_prompt(),
             user_prompt=self._build_user_prompt(session_info, participant),
@@ -238,7 +239,7 @@ class AttestationGeneratorService:
         self._validate_llm_output(data)
         return data
 
-    def _validate_llm_output(self, data: Dict[str, Any]) -> None:
+    def _validate_llm_output(self, data: dict[str, Any]) -> None:
         required = ["titre_attestation", "introduction", "corps", "details",
                     "competences", "cloture", "lieu_emission", "date_emission"]
         for k in required:
@@ -252,9 +253,9 @@ class AttestationGeneratorService:
     # --------------------------------------------------------
     def _generate_with_template(
         self,
-        session_info: Dict[str, Any],
-        participant: Dict[str, Any],
-    ) -> Dict[str, Any]:
+        session_info: dict[str, Any],
+        participant: dict[str, Any],
+    ) -> dict[str, Any]:
         nom = participant.get("nom", "Participant")
         genre = (participant.get("genre") or "").lower()
         civilite = "Madame" if genre in ("f", "feminin", "féminin", "femme") else "Monsieur"
@@ -301,7 +302,7 @@ class AttestationGeneratorService:
     # --------------------------------------------------------
     # HELPERS
     # --------------------------------------------------------
-    def _build_unique_number(self, session_info: Dict[str, Any], index: int) -> str:
+    def _build_unique_number(self, session_info: dict[str, Any], index: int) -> str:
         year = datetime.now().year
         domaine = session_info.get("domaine", "GEN")
         code = self.DOMAIN_CODES.get(domaine, domaine[:3].upper() if domaine else "GEN")
@@ -329,9 +330,9 @@ class AttestationGeneratorService:
     # --------------------------------------------------------
     def _build_attestation_pdf(
         self,
-        attestation_result: Dict[str, Any],
-        participant: Dict[str, Any],
-    ) -> Optional[str]:
+        attestation_result: dict[str, Any],
+        participant: dict[str, Any],
+    ) -> str | None:
         try:
             self.OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
             numero = attestation_result["numero_unique"]
@@ -346,7 +347,7 @@ class AttestationGeneratorService:
                         f"Bascule reportlab."
                     )
             else:
-                vlog(f"   ℹ️  Template absent. Utilisation reportlab direct.")
+                vlog("   ℹ️  Template absent. Utilisation reportlab direct.")
 
             return self._build_pdf_with_reportlab(attestation_result, pdf_path)
 
@@ -354,9 +355,12 @@ class AttestationGeneratorService:
             logger.error(f"   ❌ PDF échoué : {type(e).__name__} — {e}")
             return None
 
-    def _build_pdf_from_template(self, result: Dict[str, Any], pdf_path: Path) -> str:
+    def _build_pdf_from_template(self, result: dict[str, Any], pdf_path: Path) -> str:
+        import shutil
+        import subprocess
+        import tempfile
+
         from docxtpl import DocxTemplate
-        import subprocess, shutil, tempfile
 
         content = result["content"]
         context = {**content, "numero_unique": result["numero_unique"]}
@@ -384,13 +388,19 @@ class AttestationGeneratorService:
         vlog(f"   ✅ PDF (template) : {pdf_path.name}")
         return str(pdf_path)
 
-    def _build_pdf_with_reportlab(self, result: Dict[str, Any], pdf_path: Path) -> str:
-        from reportlab.lib.pagesizes import A4, landscape
-        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-        from reportlab.lib.units import cm
+    def _build_pdf_with_reportlab(self, result: dict[str, Any], pdf_path: Path) -> str:
         from reportlab.lib import colors
-        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
         from reportlab.lib.enums import TA_CENTER, TA_RIGHT
+        from reportlab.lib.pagesizes import A4, landscape
+        from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+        from reportlab.lib.units import cm
+        from reportlab.platypus import (
+            Paragraph,
+            SimpleDocTemplate,
+            Spacer,
+            Table,
+            TableStyle,
+        )
 
         content = result["content"]
         d = content["details"]
@@ -472,10 +482,10 @@ class AttestationGeneratorService:
     # --------------------------------------------------------
     async def generate_one_with_pdf(
         self,
-        session_info: Dict[str, Any],
-        participant: Dict[str, Any],
+        session_info: dict[str, Any],
+        participant: dict[str, Any],
         index: int = 1,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         result = await self.generate_one(session_info, participant, index)
         pdf_path = self._build_attestation_pdf(result, participant)
 
@@ -489,9 +499,9 @@ class AttestationGeneratorService:
 
     async def generate_batch_with_pdf(
         self,
-        session_info: Dict[str, Any],
-        eligible_participants: List[Dict[str, Any]],
-    ) -> Dict[str, Any]:
+        session_info: dict[str, Any],
+        eligible_participants: list[dict[str, Any]],
+    ) -> dict[str, Any]:
         start = datetime.now()
         vlog("=" * 70)
         vlog(f"🚀 [AttestationAgent] BATCH+PDF — {len(eligible_participants)} participants")

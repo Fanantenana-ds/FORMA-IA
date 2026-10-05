@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
+
 load_dotenv()
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -17,7 +18,6 @@ logging.basicConfig(
 from app.services.formations.presence_analyzer_service import (
     PresenceAnalyzerService,
 )
-
 
 # ============================================================
 # DONNÉES DE TEST
@@ -75,7 +75,7 @@ async def main():
     print(f"⏱️  Durée            : {result['metadata']['duration_seconds']}s")
     print(f"\n📝 Résumé :\n   {result['resume']}")
 
-    print(f"\n📈 STATS GLOBALES :")
+    print("\n📈 STATS GLOBALES :")
     s = result["statistiques"]
     print(f"   • Participants    : {s['total_participants']}")
     print(f"   • Séances         : {s['total_seances']}")
@@ -83,7 +83,7 @@ async def main():
     print(f"   • Présents moyen  : {s['nb_presents_moyen']}/séance")
     print(f"   • Absents total   : {s['nb_absents_total']}")
 
-    print(f"\n👥 STATS PAR PARTICIPANT :")
+    print("\n👥 STATS PAR PARTICIPANT :")
     for p in result["participants"]:
         flag = "✅" if p["eligible_attestation"] else "❌"
         print(f"   {flag} {p['nom']:15s} : {p['taux_presence']:>6s} "

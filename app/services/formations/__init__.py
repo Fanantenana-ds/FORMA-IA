@@ -12,9 +12,9 @@ __module_name__ = "Gestion des Formations"
 __author__ = "Équipe IA — ALTIORA Solutions"
 
 __all__ = [
-    "__version__",
     "__module_code__",
     "__module_name__",
+    "__version__",
     "get_package_status",
 ]
 
@@ -101,6 +101,18 @@ try:
     logger.debug("✅ [formations] Agent 7 — KnowledgeBaseService importé")
 except ImportError:
     logger.debug("⏳ [formations] Agent 7 non implémenté (V2)")
+
+
+# =============================================================================
+# GOOGLE FORMS PUBLISHER — Agent 1b (publication après HITL)
+# =============================================================================
+GoogleFormsPublisherService = None
+try:
+    from .google_forms_publisher_service import GoogleFormsPublisherService
+    __all__.append("GoogleFormsPublisherService")
+    logger.debug("✅ [formations] GoogleFormsPublisherService importé")
+except ImportError as e:
+    logger.warning(f"⚠️  [formations] GoogleFormsPublisherService indisponible : {e}")
 
 
 # =============================================================================

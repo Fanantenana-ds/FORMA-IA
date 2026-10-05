@@ -1,5 +1,8 @@
 from app.schemas.opportunite import OpportuniteAnalyseResult
-from app.services.interfaces.iopportunite_analyse_service import IOpportuniteAnalyseService
+from app.services.interfaces.iopportunite_analyse_service import (
+    IOpportuniteAnalyseService,
+)
+
 
 class OpportuniteAnalyseService(IOpportuniteAnalyseService):
     def analyse(self, contenu: str) -> OpportuniteAnalyseResult:

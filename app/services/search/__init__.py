@@ -6,8 +6,10 @@
 # des résultats provenant de Tavily.
 # ============================================================
 
-from typing import List, Dict
+from typing import Dict, List
+
 from app.clients.tavily_client import TavilyClient
+
 
 class SearchManager:
     """Gestionnaire de recherche avec fusion et déduplication"""
@@ -15,7 +17,7 @@ class SearchManager:
     def __init__(self):
         self.tavily_client = TavilyClient()
 
-    def search_and_merge(self, query: str, max_results: int = 20) -> List[Dict]:
+    def search_and_merge(self, query: str, max_results: int = 20) -> list[dict]:
         """
         Recherche, fusionne et déduplique les résultats
 
@@ -35,7 +37,7 @@ class SearchManager:
         # 3. Limiter le nombre de résultats
         return merged[:max_results]
 
-    def _merge_results(self, results: List[Dict]) -> List[Dict]:
+    def _merge_results(self, results: list[dict]) -> list[dict]:
         """
         Fusionne et déduplique les résultats
 

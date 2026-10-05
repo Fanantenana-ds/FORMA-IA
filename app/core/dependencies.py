@@ -1,16 +1,14 @@
-from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from collections.abc import Callable
 
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
-from app.database import get_db
-from app.services.opportunite_analyse_service import OpportuniteAnalyseService
 from app.core.security import decode_access_token
+from app.database import get_db
+from app.repositories.revoked_token_repository import RevokedTokenRepository
 from app.repositories.user_repository import UserRepository
-from app.repositories.revoked_token_repository import (
-    RevokedTokenRepository
-)
-from typing import Callable
+from app.services.opportunite_analyse_service import OpportuniteAnalyseService
 
 security_scheme = HTTPBearer(auto_error=False)
 

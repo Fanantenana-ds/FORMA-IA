@@ -4,10 +4,12 @@ import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
+
 load_dotenv()
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import logging
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)-7s | %(name)s | %(message)s",
@@ -15,12 +17,10 @@ logging.basicConfig(
 )
 
 from app.services.hitl import (
-    create_review,
-    list_pending,
-    get_review,
     approve_review,
-    reject_review,
+    create_review,
     get_stats,
+    list_pending,
 )
 
 
@@ -68,7 +68,7 @@ def main():
     print(f"   ✅ Pending  : {stats['pending']}")
     print(f"   ✅ Approved : {stats['approved']}")
     print(f"   ✅ Rejected : {stats['rejected']}")
-    print(f"   ✅ Par agent :")
+    print("   ✅ Par agent :")
     for agent, s in stats["by_agent"].items():
         print(f"      • {agent} : {s}")
 

@@ -8,6 +8,7 @@ from pathlib import Path
 
 # Charge .env
 from dotenv import load_dotenv
+
 load_dotenv()
 
 # Ajoute la racine du projet au PYTHONPATH
@@ -21,7 +22,6 @@ logging.basicConfig(
 )
 
 from app.services.formations.form_generator_service import FormGeneratorService
-
 
 # ============================================================
 # DONNÉES DE TEST
@@ -99,7 +99,7 @@ async def main():
     print("\n" + "=" * 70)
     print("✅ TEST TERMINÉ AVEC SUCCÈS")
     print("=" * 70)
-    print(f"📊 Résumé:")
+    print("📊 Résumé:")
     print(f"   • Inscription   : {len(result['inscription']['questions'])} questions")
     print(f"   • Test AVANT    : {len(result['test_avant']['questions'])} questions")
     print(f"   • Test APRÈS    : {len(result['test_apres']['questions'])} questions")

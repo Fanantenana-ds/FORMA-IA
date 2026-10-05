@@ -326,6 +326,18 @@ class FormationOrchestrator(BaseOrchestrator):
                 approved_data=approved_data,
                 session_title=session_title,
             )
+
+            # Stocker les form_id dans la review pour les récupérer plus tard
+            from app.services.hitl import patch_review
+            form_ids = {
+                key: info.get("form_id", "")
+                for key, info in result.get("forms", {}).items()
+                if isinstance(info, dict) and "form_id" in info
+            }
+            if form_ids:
+                patch_review(review_id, {"google_form_ids": form_ids})
+                vlog(f"💾 form_id stockés dans review {review_id} : {list(form_ids.keys())}")
+
             self._log_end(
                 "creer_formulaires_google", start,
                 **{"✅ Créés": result.get("total_created", 0)},
@@ -335,6 +347,94 @@ class FormationOrchestrator(BaseOrchestrator):
             self._log_error("creer_formulaires_google", start, e)
             raise
 
+
+    # ========================================================
+    # SYNC RÉPONSES GOOGLE FORMS
+    # ========================================================
+
+    async def sync_responses(
+        self,
+        review_id: str,
+        sections: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Récupère les réponses des formulaires Google liés à une review.
+
+        Lit les form_id stockés dans review["meta"]["google_form_ids"]
+        (enregistrés lors de creer_formulaires_google), appelle l'API
+        Google Forms pour chaque section demandée, et retourne les
+        réponses structurées prêtes pour les agents 2, 3, 4.
+
+        Args:
+            review_id: ID de la review agent_1_forms (contient les form_id).
+            sections:  Liste de sections à récupérer, ex: ["satisfaction", "test_avant"].
+                       None → toutes les sections disponibles.
+
+        Returns:
+            {
+                "review_id": ...,
+                "sections": {
+                    "inscription": {"form_id": ..., "responses": [...], "count": int},
+                    "test_avant":  {...},
+                    "test_apres":  {...},
+                    "satisfaction":{...},
+                },
+                "total_responses": int,
+            }
+        """
+        from app.services.hitl import get_review
+        from app.services.formations.google_forms_service import GoogleFormsService
+
+        start = self._log_start(
+            "sync_responses",
+            **{"🔍 Review": review_id, "📋 Sections": sections or "toutes"},
+        )
+
+        review = get_review(review_id)
+        if not review:
+            raise ValueError(f"Review '{review_id}' introuvable.")
+        if review.get("agent_id") != "agent_1_forms":
+            raise ValueError(
+                f"Review '{review_id}' n'est pas une review agent_1_forms "
+                f"(agent : {review.get('agent_id')})."
+            )
+
+        meta = review.get("meta") or {}
+        form_ids: Dict[str, str] = meta.get("google_form_ids") or {}
+
+        if not form_ids:
+            raise ValueError(
+                f"Aucun form_id trouvé dans la review '{review_id}'. "
+                "Appelez d'abord POST /ia/formations/creer-formulaires-google."
+            )
+
+        # Filtrer les sections demandées
+        if sections:
+            form_ids = {k: v for k, v in form_ids.items() if k in sections}
+            if not form_ids:
+                raise ValueError(
+                    f"Aucune section parmi {sections} trouvée dans la review."
+                )
+
+        vlog(f"📥 Récupération réponses pour {list(form_ids.keys())}")
+
+        try:
+            gfs = GoogleFormsService()
+            fetched = await gfs.fetch_responses(form_ids)
+
+            total = sum(v.get("count", 0) for v in fetched.values())
+            self._log_end(
+                "sync_responses", start,
+                **{"📊 Total réponses": total},
+            )
+            return {
+                "review_id": review_id,
+                "sections": fetched,
+                "total_responses": total,
+            }
+        except Exception as e:
+            self._log_error("sync_responses", start, e)
+            raise
 
     # ========================================================
     # SYNC BACKEND — Présences (après approbation HITL A4)

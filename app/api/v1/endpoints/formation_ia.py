@@ -479,6 +479,71 @@ async def creer_formulaires(
 
 
 # =============================================================================
+# ROUTE — POST /sync-responses  (Récupération réponses Google Forms)
+# =============================================================================
+
+class SyncResponsesRequest(BaseModel):
+    review_id: str = Field(
+        ...,
+        description="ID de la review agent_1_forms contenant les form_id Google",
+    )
+    sections: Optional[List[str]] = Field(
+        default=None,
+        description=(
+            "Sections à récupérer : inscription, test_avant, test_apres, satisfaction. "
+            "Absent → toutes les sections."
+        ),
+    )
+
+
+@router.post(
+    "/sync-responses",
+    response_model=RouteResponse,
+    summary="[M5] Récupérer les réponses des formulaires Google Forms",
+    description=(
+        "Appelle l'API Google Forms v1 pour récupérer les réponses des participants "
+        "aux 4 formulaires créés lors de `/creer-formulaires`.\n\n"
+        "**Pré-requis :** la route `/creer-formulaires` doit avoir été appelée "
+        "pour cette review (les form_id sont stockés automatiquement).\n\n"
+        "**Réponses retournées :** structurées par section "
+        "(inscription / test_avant / test_apres / satisfaction), prêtes à passer "
+        "directement aux agents 2 (analyze-levels), 3 (analyze-satisfaction) et "
+        "4 (analyze-presences).\n\n"
+        "Nécessite GOOGLE_CREDENTIALS_PATH défini dans .env."
+    ),
+)
+async def sync_responses(
+    payload: SyncResponsesRequest,
+    orchestrator: FormationOrchestrator = Depends(get_formation_orchestrator),
+) -> RouteResponse:
+    """Récupère les réponses Google Forms et les retourne structurées."""
+    _log_request(
+        "POST", "/ia/formations/sync-responses",
+        Review_ID=payload.review_id,
+        Sections=payload.sections or "toutes",
+    )
+    start = time.perf_counter()
+    try:
+        result = await orchestrator.sync_responses(
+            review_id=payload.review_id,
+            sections=payload.sections,
+        )
+        elapsed = round(time.perf_counter() - start, 2)
+        total = result.get("total_responses", 0)
+        vlog(f"✅ [Route M5] sync-responses OK en {elapsed}s — {total} réponse(s)")
+        return RouteResponse(
+            success=True,
+            message=f"{total} réponse(s) récupérée(s) depuis Google Forms.",
+            duration_seconds=elapsed,
+            review_id=payload.review_id,
+            data=result,
+        )
+    except Exception as e:
+        _handle_exception(e, "sync_responses")
+        return RouteResponse(success=False, message="")
+
+
+# =============================================================================
 # SYNC BACKEND — Présences (après approbation HITL A4)
 # =============================================================================
 

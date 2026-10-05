@@ -277,6 +277,33 @@ def reject_review(
     vlog("=" * 70)
     return review
 
+def patch_review(review_id: str, extra: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """
+    Ajoute / met à jour des champs dans la section `meta` d'une review existante.
+    Utilisé pour stocker les form_id Google après création des formulaires.
+
+    Args:
+        review_id: ID du review à patcher.
+        extra: dict de champs à fusionner dans review["meta"].
+
+    Returns:
+        Le review mis à jour ou None si non trouvé.
+    """
+    store = _load_store()
+    if review_id not in store["reviews"]:
+        logger.warning(f"⚠️  [HITL] patch_review : Review non trouvé : {review_id}")
+        return None
+
+    review = store["reviews"][review_id]
+    if "meta" not in review:
+        review["meta"] = {}
+    review["meta"].update(extra)
+    review["updated_at"] = datetime.now().isoformat()
+    _save_store(store)
+    vlog(f"✅ [HITL] patch_review : {review_id} mis à jour avec {list(extra.keys())}")
+    return review
+
+
 def get_stats() -> Dict[str, Any]:
     """
     Statistiques globales des reviews.

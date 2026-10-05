@@ -1,9 +1,9 @@
-import os
-import time
 import logging
+import time
 from datetime import datetime
 from typing import Dict, Any, Optional
 
+from app.orchestrator.base_orchestrator import BaseOrchestrator, _vlog as vlog
 from app.services.tdr.tdr_service import TDRService
 from app.services.tdr.tdr_document_generator import TDRDocumentGenerator
 from app.services.backend_sync.tdr_sync import sync_tdr_to_backend
@@ -12,26 +12,20 @@ from app.services.hitl import create_review
 
 logger = logging.getLogger(__name__)
 
-VERBOSE = os.getenv("VERBOSE_LOGS", "true").lower() == "true"
-
-
-def vlog(msg: str, level: str = "info") -> None:
-    """Log verbeux — contrôlé par VERBOSE_LOGS."""
-    if VERBOSE:
-        getattr(logger, level)(msg)
-
 
 # =============================================================================
 # ORCHESTRATEUR
 # =============================================================================
 
-class TdrOrchestrator:
+class TdrOrchestrator(BaseOrchestrator):
     """
     Orchestrateur M2 — coordonne service IA + générateur + sync.
 
     Pipeline :
         brief → TDR JSON → Word → PDF → Sync Backend
     """
+
+    _name = "TdrOrchestrator"
 
     def __init__(self):
         vlog("=" * 70)
@@ -51,39 +45,10 @@ class TdrOrchestrator:
         )
 
         # Bilan démarrage
-        self._log_startup_summary()
-
-    # =========================================================================
-    # HELPERS INTERNES
-    # =========================================================================
-
-    def _safe_init(self, cls, label: str):
-        """Initialise un service avec try/except + log uniforme."""
-        try:
-            instance = cls()
-            vlog(f"   ✅ {label} prêt")
-            return instance
-        except Exception as e:
-            logger.error(f"   ❌ {label} indisponible : {type(e).__name__} — {e}")
-            return None
-
-    def _log_startup_summary(self) -> None:
-        """Log un récapitulatif des services actifs."""
-        services_status = {
-            "TDRService (IA)":              self.tdr_service is not None,
-            "TDRDocumentGenerator":         self.document_generator is not None,
-        }
-        active = [k for k, v in services_status.items() if v]
-        inactive = [k for k, v in services_status.items() if not v]
-
-        vlog("=" * 70)
-        vlog(f"📊 Bilan démarrage M2 : {len(active)}/2 services actifs")
-        for name in active:
-            vlog(f"   ✅ {name}")
-        for name in inactive:
-            vlog(f"   ⏳ {name} (en attente)")
-        vlog("=" * 70)
-        vlog("✅ TdrOrchestrator initialisé avec succès.")
+        self._log_startup_summary({
+            "TDRService (IA)":    self.tdr_service,
+            "TDRDocumentGenerator": self.document_generator,
+        })
 
     def _check_services(self) -> None:
         """Vérifie que tous les services sont disponibles."""
@@ -96,33 +61,6 @@ class TdrOrchestrator:
             raise RuntimeError(
                 f"❌ Services M2 manquants : {', '.join(missing)}"
             )
-
-    def _log_start(self, method: str, **kwargs) -> float:
-        """Log de début uniforme — retourne le timestamp start."""
-        vlog("=" * 70)
-        vlog(f"🎬 [TdrOrchestrator] → {method}()")
-        for k, v in kwargs.items():
-            vlog(f"   {k} : {v}")
-        vlog("=" * 70)
-        return time.perf_counter()
-
-    def _log_end(self, method: str, start: float, **counts) -> float:
-        """Log de fin uniforme — retourne l'élapsed en secondes."""
-        elapsed = round(time.perf_counter() - start, 2)
-        vlog("=" * 70)
-        vlog(f"✅ [TdrOrchestrator] {method}() terminé en {elapsed}s")
-        for k, v in counts.items():
-            vlog(f"   {k} : {v}")
-        vlog("=" * 70)
-        return elapsed
-
-    def _log_error(self, method: str, start: float, e: Exception) -> None:
-        """Log d'erreur uniforme."""
-        elapsed = round(time.perf_counter() - start, 2)
-        logger.error("=" * 70)
-        logger.error(f"❌ [TdrOrchestrator] {method}() ÉCHEC ({elapsed}s)")
-        logger.error(f"   💥 Erreur : {type(e).__name__} — {e}")
-        logger.error("=" * 70)
 
     # =========================================================================
     # GÉNÉRATION COMPLÈTE

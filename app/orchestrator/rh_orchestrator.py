@@ -15,11 +15,10 @@
 #   A5 → lit résultats M5 (satisfaction + présences) → enrichit profil
 # ============================================================
 
-import os
-import time
 import logging
 from typing import Any, Dict, List, Optional
 
+from app.orchestrator.base_orchestrator import BaseOrchestrator, _vlog as vlog
 from app.services.backend_sync import rh_sync, review_sync
 from app.services.rh import (
     CvPreselecteurService,
@@ -30,16 +29,12 @@ from app.services.rh import (
 )
 
 logger = logging.getLogger(__name__)
-VERBOSE = os.getenv("VERBOSE_LOGS", "true").lower() == "true"
 
 
-def vlog(msg: str, level: str = "info") -> None:
-    if VERBOSE:
-        getattr(logger, level)(msg)
-
-
-class RhOrchestrator:
+class RhOrchestrator(BaseOrchestrator):
     """Orchestrateur du module M4 — Assistance RH."""
+
+    _name = "RhOrchestrator"
 
     def __init__(self):
         vlog("=" * 70)
@@ -51,40 +46,21 @@ class RhOrchestrator:
         self.contrat      = self._safe_init(ContratFormateurService, "Agent M4-4 — ContratFormateur")
         self.evaluation   = self._safe_init(EvaluationFormateurService, "Agent M4-5 — EvaluationFormateur")
 
-        self._log_startup_summary()
+        self._log_startup_summary({
+            "Agent M4-1 — CvPreselecteur":      self.preselection,
+            "Agent M4-2 — Entretien":           self.entretien,
+            "Agent M4-3 — EmailRh":             self.email,
+            "Agent M4-4 — ContratFormateur":    self.contrat,
+            "Agent M4-5 — EvaluationFormateur": self.evaluation,
+        })
 
-    def _safe_init(self, cls, label: str):
-        try:
-            instance = cls()
-            vlog(f"   ✅ {label} prêt")
-            return instance
-        except Exception as e:
-            logger.error(f"   ❌ {label} indisponible : {type(e).__name__} — {e}")
-            return None
-
-    def _log_startup_summary(self) -> None:
-        agents = {
-            "CvPreselecteur":      self.preselection,
-            "Entretien":           self.entretien,
-            "EmailRh":             self.email,
-            "ContratFormateur":    self.contrat,
-            "EvaluationFormateur": self.evaluation,
-        }
-        actifs = [k for k, v in agents.items() if v]
-        vlog(f"📊 Bilan : {len(actifs)}/5 agents actifs — {actifs}")
-        vlog("✅ RhOrchestrator initialisé.")
+    # _start / _end sont des alias locaux — on délègue à _log_start / _log_end
 
     def _start(self, method: str, **kw) -> float:
-        vlog("=" * 70)
-        vlog(f"🎬 [RhOrchestrator] → {method}()")
-        for k, v in kw.items():
-            vlog(f"   {k} : {v}")
-        return time.perf_counter()
+        return self._log_start(method, **kw)
 
     def _end(self, method: str, t0: float, **kw) -> float:
-        elapsed = round(time.perf_counter() - t0, 2)
-        vlog(f"✅ [RhOrchestrator] {method}() — {elapsed}s")
-        return elapsed
+        return self._log_end(method, t0, **kw)
 
     # =========================================================================
     # A1 — Présélection CV

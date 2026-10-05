@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional
 
 import pypdf
 
+from app.orchestrator.base_orchestrator import BaseOrchestrator, _vlog as vlog
 from app.services.veille.tavily_service import TavilyService
 from app.services.veille.prefilter_service import rank_results
 from app.services.veille.llm_analysis_service import (
@@ -26,15 +27,6 @@ from app.services.hitl.hitl_helper import create_review
 
 logger = logging.getLogger(__name__)
 
-VERBOSE = os.getenv("VERBOSE_LOGS", "true").lower() == "true"
-
-
-def vlog(msg: str, level: str = "info") -> None:
-    """Log verbeux — contrôlé par VERBOSE_LOGS."""
-    if VERBOSE:
-        getattr(logger, level)(msg)
-
-
 # ============================================================
 # SEUILS — PERMISSIFS
 # ============================================================
@@ -49,8 +41,10 @@ MAX_FALLBACK_BATCHES = int(os.getenv("MAX_FALLBACK_BATCHES", "2"))
 # ORCHESTRATEUR
 # =============================================================================
 
-class VeilleOrchestrator:
+class VeilleOrchestrator(BaseOrchestrator):
     """Coordonne le pipeline M1 sans porter lui-même de logique métier."""
+
+    _name = "VeilleOrchestrator"
 
     def __init__(self):
         vlog("=" * 70)
@@ -64,39 +58,12 @@ class VeilleOrchestrator:
         )
         self.scoring_service = self._safe_init(ScoringService, "ScoringService")
 
-        self._log_startup_summary()
-
-    # =========================================================================
-    # HELPERS INTERNES
-    # =========================================================================
-
-    def _safe_init(self, cls, label: str):
-        try:
-            instance = cls()
-            vlog(f"   ✅ {label} prêt")
-            return instance
-        except Exception as e:
-            logger.error(f"   ❌ {label} indisponible : {type(e).__name__} — {e}")
-            return None
-
-    def _log_startup_summary(self) -> None:
-        services_status = {
-            "TavilyService":         self.tavily_service is not None,
-            "LLMAnalysisService":    self.llm_service is not None,
-            "ClassificationService": self.classification_service is not None,
-            "ScoringService":        self.scoring_service is not None,
-        }
-        active = [k for k, v in services_status.items() if v]
-        inactive = [k for k, v in services_status.items() if not v]
-
-        vlog("=" * 70)
-        vlog(f"📊 Bilan démarrage M1 : {len(active)}/4 services actifs")
-        for name in active:
-            vlog(f"   ✅ {name}")
-        for name in inactive:
-            vlog(f"   ⏳ {name} (en attente)")
-        vlog("=" * 70)
-        vlog("✅ VeilleOrchestrator initialisé avec succès.")
+        self._log_startup_summary({
+            "TavilyService":         self.tavily_service,
+            "LLMAnalysisService":    self.llm_service,
+            "ClassificationService": self.classification_service,
+            "ScoringService":        self.scoring_service,
+        })
 
     # ========================================================
     # ENTRÉE 1 — RECHERCHE WEB

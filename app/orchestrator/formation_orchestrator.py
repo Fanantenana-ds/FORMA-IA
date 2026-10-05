@@ -15,11 +15,10 @@ Agents :
 📝 LOGS : contrôle via .env → VERBOSE_LOGS=true|false (défaut: true en dev)
 """
 
-import os
-import time
 import logging
 from typing import Dict, Any, Optional, List
 
+from app.orchestrator.base_orchestrator import BaseOrchestrator, _vlog as vlog
 from app.services.formations import (
     FormGeneratorService,
     LevelAnalyzerService,
@@ -33,23 +32,12 @@ logger = logging.getLogger(__name__)
 
 
 # ============================================================
-# CONFIG
-# ============================================================
-VERBOSE = os.getenv("VERBOSE_LOGS", "true").lower() == "true"
-
-
-def vlog(msg: str, level: str = "info") -> None:
-    """Log verbeux — contrôlé par VERBOSE_LOGS."""
-    if not VERBOSE:
-        return
-    getattr(logger, level)(msg)
-
-
-# ============================================================
 # ORCHESTRATEUR
 # ============================================================
-class FormationOrchestrator:
+class FormationOrchestrator(BaseOrchestrator):
     """Orchestrateur du module M5 — Gestion des Formations."""
+
+    _name = "FormationOrchestrator"
 
     def __init__(self):
         vlog("=" * 70)
@@ -80,80 +68,15 @@ class FormationOrchestrator:
         self.knowledge_base = None
 
         # ---- Bilan de démarrage ----
-        self._log_startup_summary()
-
-    # ========================================================
-    # HELPERS INTERNES
-    # ========================================================
-
-    def _safe_init(self, service_cls, label: str):
-        """Initialise un service avec try/except + log uniforme."""
-        try:
-            instance = service_cls()
-            vlog(f"   ✅ {label} prêt")
-            return instance
-        except Exception as e:
-            logger.error(f"   ❌ {label} indisponible : {type(e).__name__} — {e}")
-            return None
-
-    def _log_startup_summary(self) -> None:
-        """Log un récapitulatif des agents actifs / inactifs."""
-        agents_status = {
-            "Agent 1 — FormGenerator":         self.form_generator is not None,
-            "Agent 2 — LevelAnalyzer":         self.level_analyzer is not None,
-            "Agent 3 — SatisfactionAnalyzer":  self.satisfaction_analyzer is not None,
-            "Agent 4 — PresenceAnalyzer":      self.presence_analyzer is not None,
-            "Agent 5 — AttestationGenerator":  self.attestation_generator is not None,
-            "Agent 6 — ReportGenerator":       self.report_generator is not None,
-            "Agent 7 — KnowledgeBase (RAG)":   self.knowledge_base is not None,
-        }
-        active = [k for k, v in agents_status.items() if v]
-        inactive = [k for k, v in agents_status.items() if not v]
-
-        vlog("=" * 70)
-        vlog(f"📊 Bilan démarrage : {len(active)}/7 agents actifs")
-        for name in active:
-            vlog(f"   ✅ {name}")
-        for name in inactive:
-            vlog(f"   ⏳ {name} (en attente)")
-        vlog("=" * 70)
-        vlog("✅ FormationOrchestrator initialisé avec succès.")
-
-    # ========================================================
-    # HELPERS — GESTION D'ERREUR UNIFORME
-    # ========================================================
-
-    def _check_agent(self, agent, name: str) -> None:
-        """Vérifie qu'un agent est disponible, sinon RuntimeError."""
-        if not agent:
-            raise RuntimeError(f"❌ {name} non disponible.")
-
-    def _log_start(self, method: str, **kwargs) -> float:
-        """Log de début uniforme — retourne le timestamp start."""
-        vlog("=" * 70)
-        vlog(f"🎬 [FormationOrchestrator] → {method}()")
-        for k, v in kwargs.items():
-            vlog(f"   {k} : {v}")
-        vlog("=" * 70)
-        return time.perf_counter()
-
-    def _log_end(self, method: str, start: float, **counts) -> float:
-        """Log de fin uniforme — retourne l'élapsed en secondes."""
-        elapsed = round(time.perf_counter() - start, 2)
-        vlog("=" * 70)
-        vlog(f"✅ [FormationOrchestrator] {method}() terminé en {elapsed}s")
-        for k, v in counts.items():
-            vlog(f"   {k} : {v}")
-        vlog("=" * 70)
-        return elapsed
-
-    def _log_error(self, method: str, start: float, e: Exception) -> None:
-        """Log d'erreur uniforme."""
-        elapsed = round(time.perf_counter() - start, 2)
-        logger.error("=" * 70)
-        logger.error(f"❌ [FormationOrchestrator] {method}() ÉCHEC ({elapsed}s)")
-        logger.error(f"   💥 Erreur : {type(e).__name__} — {e}")
-        logger.error("=" * 70)
+        self._log_startup_summary({
+            "Agent 1 — FormGenerator":         self.form_generator,
+            "Agent 2 — LevelAnalyzer":         self.level_analyzer,
+            "Agent 3 — SatisfactionAnalyzer":  self.satisfaction_analyzer,
+            "Agent 4 — PresenceAnalyzer":      self.presence_analyzer,
+            "Agent 5 — AttestationGenerator":  self.attestation_generator,
+            "Agent 6 — ReportGenerator":       self.report_generator,
+            "Agent 7 — KnowledgeBase (RAG)":   self.knowledge_base,
+        })
 
     # ========================================================
     # AGENT 1 — GÉNÉRATION DES FORMULAIRES

@@ -1,9 +1,8 @@
-import os
-import time
 import logging
-from datetime import datetime,timedelta
+from datetime import datetime, timedelta
 from typing import Dict, Any, Optional, List
 
+from app.orchestrator.base_orchestrator import BaseOrchestrator, _vlog as vlog
 from app.services.preparation import (
     BudgetCalculatorService,
     EDTGeneratorService,
@@ -13,19 +12,12 @@ from app.services.backend_sync import preparation_sync, review_sync
 
 logger = logging.getLogger(__name__)
 
-VERBOSE = os.getenv("VERBOSE_LOGS", "true").lower() == "true"
-
-
-def vlog(msg: str, level: str = "info") -> None:
-    if VERBOSE:
-        getattr(logger, level)(msg)
-
 
 # =============================================================================
 # ORCHESTRATEUR
 # =============================================================================
 
-class PreparationOrchestrator:
+class PreparationOrchestrator(BaseOrchestrator):
     """
     Orchestrateur de la Préparation de Formation.
 
@@ -34,6 +26,8 @@ class PreparationOrchestrator:
         - EDTGeneratorService (LLM)
         - HITL (validation humaine)
     """
+
+    _name = "PreparationOrchestrator"
 
     def __init__(self):
         vlog("=" * 70)
@@ -49,37 +43,10 @@ class PreparationOrchestrator:
             "EDTGeneratorService (LLM)",
         )
 
-        self._log_startup_summary()
-
-    # =========================================================================
-    # HELPERS INTERNES
-    # =========================================================================
-
-    def _safe_init(self, cls, label: str):
-        try:
-            instance = cls()
-            vlog(f"   ✅ {label} prêt")
-            return instance
-        except Exception as e:
-            logger.error(f"   ❌ {label} indisponible : {type(e).__name__} — {e}")
-            return None
-
-    def _log_startup_summary(self) -> None:
-        services_status = {
-            "BudgetCalculatorService": self.budget_calculator is not None,
-            "EDTGeneratorService":     self.edt_generator is not None,
-        }
-        active = [k for k, v in services_status.items() if v]
-        inactive = [k for k, v in services_status.items() if not v]
-
-        vlog("=" * 70)
-        vlog(f"📊 Bilan démarrage Préparation : {len(active)}/2 services actifs")
-        for name in active:
-            vlog(f"   ✅ {name}")
-        for name in inactive:
-            vlog(f"   ⏳ {name} (en attente)")
-        vlog("=" * 70)
-        vlog("✅ PreparationOrchestrator initialisé avec succès.")
+        self._log_startup_summary({
+            "BudgetCalculatorService": self.budget_calculator,
+            "EDTGeneratorService":     self.edt_generator,
+        })
 
     def _check_services(self) -> None:
         missing = []
@@ -91,30 +58,6 @@ class PreparationOrchestrator:
             raise RuntimeError(
                 f"❌ Services Préparation manquants : {', '.join(missing)}"
             )
-
-    def _log_start(self, method: str, **kwargs) -> float:
-        vlog("=" * 70)
-        vlog(f"🎬 [PreparationOrchestrator] → {method}()")
-        for k, v in kwargs.items():
-            vlog(f"   {k} : {v}")
-        vlog("=" * 70)
-        return time.perf_counter()
-
-    def _log_end(self, method: str, start: float, **counts) -> float:
-        elapsed = round(time.perf_counter() - start, 2)
-        vlog("=" * 70)
-        vlog(f"✅ [PreparationOrchestrator] {method}() terminé en {elapsed}s")
-        for k, v in counts.items():
-            vlog(f"   {k} : {v}")
-        vlog("=" * 70)
-        return elapsed
-
-    def _log_error(self, method: str, start: float, e: Exception) -> None:
-        elapsed = round(time.perf_counter() - start, 2)
-        logger.error("=" * 70)
-        logger.error(f"❌ [PreparationOrchestrator] {method}() ÉCHEC ({elapsed}s)")
-        logger.error(f"   💥 Erreur : {type(e).__name__} — {e}")
-        logger.error("=" * 70)
 
     # =========================================================================
     # CALCUL BUDGET UNIQUEMENT

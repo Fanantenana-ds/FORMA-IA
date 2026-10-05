@@ -1,8 +1,9 @@
 # GUIDE D'INTÉGRATION FRONTEND — FORMA-IA
 
 > **Pour qui ?** Le binôme frontend qui branche le React sur le Backend FastAPI.  
-> **Backend :** 90% terminé, 169 routes, 891 tests verts. Rien à changer côté backend.  
-> **URL locale :** `http://127.0.0.1:8000`
+> **Backend :** 100% terminé, 169 routes, 717 tests verts.  
+> **URL locale :** `http://127.0.0.1:8000`  
+> **Dernière mise à jour :** 2026-10-06
 
 ---
 
@@ -16,7 +17,60 @@ Chaque route du backend appartient à l'une de ces 3 catégories. Tu vas voir ce
 | 🔵 **BLEU** | **Jamais le frontend** — réservé aux orchestrateurs IA internes | — |
 | 🟡 **JAUNE** | Le frontend appelle, mais dans un ordre précis | Cycle HITL uniquement (voir Section 4) |
 
-**Règle simple :** si c'est sous `/api/v1/ia/*/generer-*` ou `/ia/*/analyser-*` → c'est 🔵 BLEU, ne jamais l'appeler depuis le frontend.
+**Règle simple :** si c'est sous `/ia/*/generer-*` ou `/ia/*/analyser-*` → c'est 🔵 BLEU, ne jamais l'appeler depuis le frontend sans passer par le cycle HITL.
+
+---
+
+## ÉTAPE 0 — Comprendre la liaison Backend ↔ IA
+
+> **C'est la partie la plus importante à lire avant de coder quoi que ce soit.**
+
+Le projet FORMA-IA a **deux couches** : le **Backend** (données métier) et le module **IA** (génération de contenu). Elles ne sont pas indépendantes — les agents IA lisent et écrivent dans le Backend.
+
+### Schéma général
+
+```
+FRONTEND
+   │
+   ├── 🟢 CRUD direct → Backend (routes /api/v1/sessions, /opportunites, etc.)
+   │         ↓
+   │    Données stockées en base (PostgreSQL)
+   │
+   └── 🟡 Déclenchement IA → Module IA (routes /api/v1/ia/...)
+             ↓
+        Agent IA génère un contenu
+             ↓
+        Review HITL créée (en attente de validation humaine)
+             ↓
+        Utilisateur approuve via HitlReviewView
+             ↓
+        🟡 Synchronisation → contenu IA écrit dans le Backend
+```
+
+### La règle d'or : un `id` Backend → un agent IA
+
+Quand tu déclenches un agent IA, tu **passes toujours un `id` Backend** pour que l'agent sache sur quoi travailler.
+
+| Tu veux générer… | Tu passes à l'agent… | Qui vient de… |
+|---|---|---|
+| Un TDR | `opportunite_id` | `GET /opportunites` → `data[n].id` |
+| Une offre complète | `tdr_data` + `session_info` | `GET /documents` + `GET /sessions` |
+| Une préparation (EDT+budget) | `offre_data` + `projet_info` + `ressources` | `GET /offres` + `GET /projets` |
+| Des formulaires M5 | `session_id` ou les infos session | `GET /sessions` → `data[n]` |
+| Une relance facture | `facture_id` | `GET /factures` → `data[n].id` |
+| Une présélection CV | `cv_texte` + `criteres_poste` | Saisi par l'utilisateur |
+
+**Exemple concret — M2 TDR :**
+
+```
+1. Frontend charge la liste des opportunités : GET /api/v1/opportunites
+2. Utilisateur sélectionne l'opportunité id="opp-42"
+3. Frontend appelle : POST /api/v1/ia/tdr/generer  Body: { opportunite_id: "opp-42", ... }
+4. IA génère le TDR → retourne { review_id: "HITL-A2T-0003" }
+5. Utilisateur approuve dans HitlReviewView
+6. Frontend appelle : POST /api/v1/ia/tdr/synchroniser  Body: { review_id: "HITL-A2T-0003", opportunite_id: "opp-42" }
+7. Le TDR est maintenant dans GET /api/v1/documents
+```
 
 ---
 
@@ -92,7 +146,7 @@ private async request(url: string, options: RequestInit = {}) {
 const handleLogin = async () => {
   try {
     await apiService.login(email, password)
-    navigate('/dashboard')  // ou rediriger vers la page principale
+    navigate('/dashboard')
   } catch {
     setError('Email ou mot de passe incorrect')
   }
@@ -240,7 +294,6 @@ async getParticipants(sessionId: string) {
 // Dans SessionsGroupesView.tsx — remplacer setPresencesList par :
 const handleAjouterParticipant = async (participantId: string) => {
   await apiService.inscrireParticipant(session.id, participantId)
-  // Recharger la liste depuis le Backend
   const updated = await apiService.getParticipants(session.id)
   setParticipants(updated)
 }
@@ -288,7 +341,6 @@ async corrigerPresence(presenceId: string, data: { present?: boolean, motif_abse
 // Dans SuiviPresencesView.tsx — remplacer le state local
 const handleMarquerPresence = async (participantId: string, present: boolean) => {
   await apiService.enregistrerPresence(seanceId, { participant_id: participantId, present })
-  // Recharger depuis le Backend pour avoir l'état réel
   const updated = await apiService.getPresences(seanceId)
   setPresences(updated)
 }
@@ -353,7 +405,6 @@ async enregistrerPaiement(factureId: string, data: { montant: number, date_paiem
   })
 }
 async exportComptable(format: 'csv' | 'xlsx' | 'pdf' = 'csv') {
-  // Retourne un fichier — utiliser window.open ou créer un lien de téléchargement
   window.open(`http://127.0.0.1:8000/api/v1/exports?format=${format}`, '_blank')
 }
 ```
@@ -697,10 +748,22 @@ Body: { review_id: "abc123", formateur_id: "form_id" }
 
 ---
 
-#### M5 — Formulaires d'évaluation
+#### M5 — Formulaires d'évaluation Google Forms
+
+> **Ce module a un cycle plus long que les autres** car il implique Google Forms et les réponses des participants.
+
+```
+Étape 1 : Générer le contenu des 4 formulaires (IA) → HITL
+Étape 2 : Créer les formulaires réels sur Google Forms
+Étape 3 : Les participants remplissent les formulaires (sur Google)
+Étape 4 : Récupérer les réponses depuis Google
+Étape 5 : Analyser les réponses (agents 2, 3, 4)
+```
+
+**Étape A — Générer le contenu IA (HITL)**
 
 ```ts
-// Étape 2
+// 1. Appeler l'agent 1 → génère le contenu des 4 formulaires
 POST /api/v1/ia/formations/generate-forms
 Body: {
   titre: "Python Avancé",
@@ -712,8 +775,117 @@ Body: {
   formateur: "Jean Dupont",
   max_participants: 12,
 }
-→ { review_id: "abc123" }
-// Pas de route /synchroniser pour les formulaires — ils sont directement utilisés
+→ { review_id: "HITL-A1F-0001", requires_human_action: true }
+
+// 2. L'utilisateur approuve dans HitlReviewView
+POST /api/v1/ia/formations/reviews/HITL-A1F-0001/approve
+```
+
+**Étape B — Créer les formulaires sur Google Forms**
+
+```ts
+// 3. Après approbation → créer les 4 formulaires Google réels
+//    ⚠️ Nécessite GOOGLE_CREDENTIALS_PATH configuré côté serveur
+POST /api/v1/ia/formations/creer-formulaires
+Body: {
+  review_id: "HITL-A1F-0001",
+  session_title: "Python Avancé — Nov 2026",  // préfixe dans les noms de formulaires
+}
+→ {
+    success: true,
+    data: {
+      forms: {
+        inscription:  { form_id: "1abc...", responder_uri: "https://docs.google.com/forms/..." },
+        test_avant:   { form_id: "1def...", responder_uri: "https://docs.google.com/forms/..." },
+        test_apres:   { form_id: "1ghi...", responder_uri: "https://docs.google.com/forms/..." },
+        satisfaction: { form_id: "1jkl...", responder_uri: "https://docs.google.com/forms/..." },
+      },
+      total_created: 4,
+    }
+  }
+
+// ✅ Les form_id sont automatiquement stockés dans la review côté backend
+//    Tu n'as PAS besoin de les sauvegarder toi-même
+```
+
+> **Ce que le frontend doit afficher :** les 4 liens `responder_uri` à distribuer aux participants (par email, QR code, etc.).
+
+**Étape C — Récupérer les réponses des participants**
+
+```ts
+// 4. Une fois que les participants ont rempli les formulaires
+//    → récupérer toutes les réponses en une seule route
+POST /api/v1/ia/formations/sync-responses
+Body: {
+  review_id: "HITL-A1F-0001",
+  // sections optionnel — si absent, récupère toutes les sections
+  // sections: ["satisfaction", "test_avant"]
+}
+→ {
+    success: true,
+    data: {
+      review_id: "HITL-A1F-0001",
+      total_responses: 15,
+      sections: {
+        inscription: {
+          form_id: "1abc...",
+          count: 12,
+          responses: [
+            { response_id: "...", submitted_at: "2026-11-01T09:15:00Z", answers: { "q_id_1": "Jean Dupont", ... } },
+            ...
+          ]
+        },
+        test_avant:   { form_id: "1def...", count: 12, responses: [...] },
+        test_apres:   { form_id: "1ghi...", count: 10, responses: [...] },
+        satisfaction: { form_id: "1jkl...", count: 11, responses: [...] },
+      }
+    }
+  }
+```
+
+**Étape D — Analyser les réponses (passer aux agents IA)**
+
+```ts
+// 5. Passer les réponses test_avant à l'agent 2 (niveaux)
+POST /api/v1/ia/formations/analyze-levels
+Body: {
+  session_info: { titre: "Python Avancé", niveau_cible: "Intermédiaire" },
+  responses: data.sections.test_avant.responses,  // ← extrait de sync-responses
+}
+→ { review_id: "HITL-A2L-0001", requires_human_action: true }
+
+// 6. Passer les réponses satisfaction à l'agent 3
+POST /api/v1/ia/formations/analyze-satisfaction
+Body: {
+  session_info: { titre: "Python Avancé" },
+  responses: data.sections.satisfaction.responses,  // ← extrait de sync-responses
+}
+→ { review_id: "HITL-A3S-0001", requires_human_action: true }
+
+// 7. Passer les réponses inscription à l'agent 4 (présences)
+POST /api/v1/ia/formations/analyze-presences
+Body: {
+  session_info: { titre: "Python Avancé" },
+  participants: data.sections.inscription.responses,  // ← extrait de sync-responses
+}
+→ { review_id: "HITL-A4P-0001", requires_human_action: true }
+```
+
+**Résumé du flux M5 complet :**
+
+```
+generate-forms → [HITL approve] → creer-formulaires
+                                        ↓
+                               Partager les liens Google aux participants
+                                        ↓
+                               [Participants remplissent]
+                                        ↓
+                               sync-responses (récupère tout)
+                                        ↓
+                    ┌──────────────────┼──────────────────┐
+                    ↓                  ↓                  ↓
+             analyze-levels   analyze-satisfaction  analyze-presences
+             [HITL approve]    [HITL approve]        [HITL approve]
 ```
 
 ---
@@ -858,9 +1030,12 @@ GET /api/v1/ia/rag/health
 | 🟢 `/sessions/{id}/inscrire` | POST | Inscrire un participant |
 | 🟢 `/sessions/{id}/inscrire/{pid}` | DELETE | Désinscrire |
 | 🟢 `/sessions/{id}/participants` | GET | Lister les participants |
-| 🔵 `/ia/formations/generate-forms` | POST | Générer formulaires → review_id |
+| 🔵 `/ia/formations/generate-forms` | POST | Générer contenu 4 formulaires → review_id |
+| 🟡 `/ia/formations/creer-formulaires` | POST | Créer les formulaires Google réels (après approbation) |
+| 🟡 `/ia/formations/sync-responses` | POST | Récupérer les réponses des participants depuis Google |
 | 🔵 `/ia/formations/analyze-levels` | POST | Analyser niveaux → review_id |
 | 🔵 `/ia/formations/analyze-satisfaction` | POST | Analyser satisfaction → review_id |
+| 🔵 `/ia/formations/analyze-presences` | POST | Analyser présences → review_id |
 | 🔵 `/ia/formations/generate-attestations` | POST | Générer attestations → review_id |
 
 ---
@@ -943,7 +1118,8 @@ GET /api/v1/ia/rag/health
 | Factures (lecture + création) | `FacturationDevisView.tsx` | ✅ GET + POST branchés | Paiements, relance, export |
 | Documents | — | ❌ Vue inexistante | Créer `DocumentsView.tsx` |
 | Préparation | — | ❌ Vue inexistante | Créer `PreparationView.tsx` |
-| Validation HITL | — | ❌ Vue inexistante | Créer `HitlReviewView.tsx` |
+| Validation HITL | — | ❌ Vue inexistante | Créer `HitlReviewView.tsx` (priorité max) |
+| Formulaires M5 | — | ❌ Non branché | Cycle complet Section 4 M5 |
 | Agents IA (boutons) | Toutes les vues | ❌ Absent partout | Étape 4 |
 
 ---
@@ -959,3 +1135,4 @@ GET /api/v1/ia/rag/health
 | J5-J6 | Créer `HitlReviewView.tsx` | Validation IA possible |
 | J7-J8 | Créer `DocumentsView.tsx` + `PreparationView.tsx` | M2/PREP fonctionnels |
 | J9-J10 | Brancher les boutons agents IA (M1, M2, M3, M7, M4) | Étape 4 complète |
+| J11-J12 | Brancher le cycle M5 complet (Google Forms + sync-responses) | M5 entier fonctionnel |

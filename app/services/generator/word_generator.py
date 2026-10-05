@@ -2,14 +2,15 @@
 # GÉNÉRATEUR WORD — TDR (AVEC FORMATAGE PROFESSIONNEL)
 # ============================================================
 
+import logging
 import os
 from datetime import datetime
-from typing import Dict, Any
+from typing import Any
+
 from docx import Document
-from docx.shared import Pt, Inches, RGBColor
-from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.enum.table import WD_TABLE_ALIGNMENT
-import logging
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.shared import Inches, Pt, RGBColor
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +29,7 @@ class WordGenerator:
         os.makedirs(output_dir, exist_ok=True)
         logger.info(f"📁 Stockage Word: {self.output_dir}")
 
-    def generate(self, tdr_data: Dict[str, Any], brief: Dict[str, Any]) -> str:
+    def generate(self, tdr_data: dict[str, Any], brief: dict[str, Any]) -> str:
         """
         Génère un document Word professionnel à partir des données du TDR
 
@@ -122,7 +123,7 @@ class WordGenerator:
 
         doc.add_paragraph()
 
-    def _add_info_block(self, doc, brief: Dict[str, Any]):
+    def _add_info_block(self, doc, brief: dict[str, Any]):
         """Ajoute le bloc d'informations"""
         # Tableau d'informations
         table = doc.add_table(rows=4, cols=2)

@@ -1,9 +1,9 @@
-import os
 import json
 import logging
-from pathlib import Path
+import os
 from datetime import datetime
-from typing import Dict, Any, Optional, List
+from pathlib import Path
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -15,7 +15,7 @@ def vlog(msg: str, level: str = "info") -> None:
         getattr(logger, level)(msg)
 
 
-GRILLE_DEFAUT: Dict[str, Any] = {
+GRILLE_DEFAUT: dict[str, Any] = {
     "devise": "MGA",
     "tva_taux": 20.0,
     "administration_pourcentage": 12.0,
@@ -64,7 +64,7 @@ class GrilleTarifaireService:
         - get_grille()          → Grille brute
     """
 
-    def __init__(self, grille_path: Optional[str] = None):
+    def __init__(self, grille_path: str | None = None):
         """
         Args:
             grille_path: Chemin vers un fichier JSON de grille tarifaire.
@@ -80,7 +80,7 @@ class GrilleTarifaireService:
 
 
 
-    def _load_grille(self, path: Optional[str]) -> Dict[str, Any]:
+    def _load_grille(self, path: str | None) -> dict[str, Any]:
         """Charge la grille depuis un fichier ou utilise la défaut."""
         if path and Path(path).exists():
             try:
@@ -88,7 +88,7 @@ class GrilleTarifaireService:
                     grille = json.load(f)
                 vlog(f"✅ [GrilleTarifaire] Grille chargée depuis : {path}")
                 return grille
-            except (json.JSONDecodeError, IOError) as e:
+            except (OSError, json.JSONDecodeError) as e:
                 logger.warning(f"⚠️  [GrilleTarifaire] Erreur chargement : {e}")
                 logger.info("   → Utilisation de la grille par défaut")
         return GRILLE_DEFAUT.copy()
@@ -103,7 +103,7 @@ class GrilleTarifaireService:
         inclure_logistique: bool = True,
         inclure_administration: bool = True,
         tva_applicable: bool = True,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Calcule les coûts totaux à partir des paramètres.
 
@@ -176,7 +176,7 @@ class GrilleTarifaireService:
         total_ttc = sous_total_ht + tva_montant
 
         # ── Remise quantitative ──
-        remises: List[Dict[str, Any]] = []
+        remises: list[dict[str, Any]] = []
         seuil = self.grille["remises"]["seuil_participants"]
         if nb_participants >= seuil:
             pct_remise = self.grille["remises"]["pourcentage_defaut"]
@@ -199,7 +199,7 @@ class GrilleTarifaireService:
         vlog(f"   💵 Supports  : {cout_supports:,} MGA")
         vlog(f"   💵 Logistique: {cout_logistique:,} MGA")
         vlog(f"   💵 Admin     : {cout_admin:,} MGA")
-        vlog(f"   ─────────────────────────────")
+        vlog("   ─────────────────────────────")
         vlog(f"   💰 Sous-total HT : {sous_total_ht:,} MGA")
         vlog(f"   💰 TVA ({tva_taux}%)  : {tva_montant:,} MGA")
         vlog(f"   💰 Total TTC    : {total_ttc:,} MGA")
@@ -251,7 +251,7 @@ class GrilleTarifaireService:
     # ÉCHÉANCIER
     # =========================================================================
 
-    def calculer_echeancier(self, net_a_payer: int) -> List[Dict[str, Any]]:
+    def calculer_echeancier(self, net_a_payer: int) -> list[dict[str, Any]]:
         """
         Génère un échéancier standard (30/40/30).
 
@@ -291,7 +291,7 @@ class GrilleTarifaireService:
     # UTILITAIRES
     # =========================================================================
 
-    def get_grille(self) -> Dict[str, Any]:
+    def get_grille(self) -> dict[str, Any]:
         """Retourne la grille tarifaire brute."""
         return self.grille.copy()
 

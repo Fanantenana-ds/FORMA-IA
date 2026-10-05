@@ -10,19 +10,14 @@ from __future__ import annotations
 
 import io
 import logging
-from typing import List, Optional
-
-from fastapi import Depends, Query
-from app.utils.security import verify_api_key
-from app.services.benchmark.benchmark_runner import BenchmarkRunner
 
 import PyPDF2
-
 from fastapi import (
     APIRouter,
     File,
     Form,
     HTTPException,
+    Query,
     UploadFile,
 )
 from pydantic import (
@@ -33,8 +28,8 @@ from pydantic import (
 from app.orchestrator.veille_orchestrator import (
     VeilleOrchestrator,
 )
+from app.services.benchmark.benchmark_runner import BenchmarkRunner
 from app.services.veille import auto_detection_service as auto_detection
-
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +56,7 @@ class SearchRequest(BaseModel):
         max_length=500,
     )
 
-    domains: Optional[List[str]] = None
+    domains: list[str] | None = None
 
     # ✅ Seuil ABAISSÉ pour ne pas filtrer les opportunités valides
     min_score: int = Field(
@@ -85,14 +80,14 @@ class AnalyseTexteRequest(BaseModel):
         max_length=10000,
     )
 
-    source: Optional[str] = "manuel"
+    source: str | None = "manuel"
 
 
 class DetectionAutoRequest(BaseModel):
     """Corps OPTIONNEL : sans corps, la configuration VEILLE_AUTO_* s'applique."""
 
-    min_score: Optional[int] = Field(default=None, ge=0, le=100)
-    limit: Optional[int] = Field(default=None, ge=1, le=50)
+    min_score: int | None = Field(default=None, ge=0, le=100)
+    limit: int | None = Field(default=None, ge=1, le=50)
     # False = aperçu : rien n'est envoyé au Backend
     sync_backend: bool = True
 
@@ -101,8 +96,8 @@ class SearchResponse(BaseModel):
 
     success: bool
     data: dict
-    error: Optional[str] = None
-    file: Optional[dict] = None
+    error: str | None = None
+    file: dict | None = None
 
 
 # ============================================================
@@ -253,7 +248,7 @@ async def rechercher_opportunites(
     summary="Mode 2 — Détection automatique (sans requête)",
 )
 async def detecter_opportunites(
-    request: Optional[DetectionAutoRequest] = None,
+    request: DetectionAutoRequest | None = None,
 ):
     """
     Lance les requêtes du profil ALTIORA (VEILLE_AUTO_QUERIES ou défaut),

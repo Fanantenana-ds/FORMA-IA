@@ -13,26 +13,25 @@ __author__ = "Équipe IA — ALTIORA Prest"
 # =============================================================================
 # IMPORTS — INTERFACE + EXCEPTIONS
 # =============================================================================
-from .llm_provider import (
-    LLMProvider,
-    LLMError,
-    LLMTimeoutError,
-    LLMRateLimitError,
-    LLMInvalidResponseError,
-    LLMNotAvailableError,
-)
+from .claude_provider import ClaudeProvider
 
 # =============================================================================
 # IMPORTS — IMPLÉMENTATIONS
 # =============================================================================
 from .groq_provider import GroqProvider
-from .claude_provider import ClaudeProvider
 
 # =============================================================================
 # IMPORTS — FACTORY
 # =============================================================================
 from .llm_factory import get_llm_provider, get_provider_info, reset_providers_cache
-
+from .llm_provider import (
+    LLMError,
+    LLMInvalidResponseError,
+    LLMNotAvailableError,
+    LLMProvider,
+    LLMRateLimitError,
+    LLMTimeoutError,
+)
 
 # =============================================================================
 # EXPORTS

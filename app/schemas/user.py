@@ -1,6 +1,9 @@
 from uuid import UUID
+
 from pydantic import BaseModel, EmailStr
+
 from app.models.user import RoleEnum
+
 
 class UserCreate(BaseModel):
     nom: str

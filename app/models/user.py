@@ -1,12 +1,12 @@
+from enum import Enum
 from uuid import uuid4
 
-from enum import Enum
-
 from sqlalchemy import Boolean, Column, String
-from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy import Enum as SQlEnum
+from sqlalchemy.dialects.postgresql import UUID
 
 from app.database import Base
+
 
 class RoleEnum(str, Enum):
     DIRECTION = "DIRECTION"

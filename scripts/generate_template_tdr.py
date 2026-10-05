@@ -15,10 +15,9 @@
 # ============================================================
 
 from pathlib import Path
-from docx import Document
-from docx.shared import Pt, Cm, RGBColor
-from docx.enum.text import WD_ALIGN_PARAGRAPH
 
+from docx import Document
+from docx.shared import Cm, Pt, RGBColor
 
 NAVY = RGBColor(0x1B, 0x2A, 0x4A)
 GOLD = RGBColor(0xB8, 0x91, 0x2F)

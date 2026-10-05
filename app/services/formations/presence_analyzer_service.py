@@ -1,8 +1,9 @@
 import logging
-from pathlib import Path
-from datetime import datetime, time as dtime
-from typing import Dict, Any, List, Optional
 from collections import defaultdict
+from datetime import datetime
+from datetime import time as dtime
+from typing import Any
+
 from app.services.hitl import create_review
 
 logger = logging.getLogger(__name__)
@@ -37,10 +38,10 @@ class PresenceAnalyzerService:
     # --------------------------------------------------------
     def analyze(
         self,
-        session_info: Dict[str, Any],
-        participants: List[Dict[str, Any]],
-        presences: List[Dict[str, Any]],
-    ) -> Dict[str, Any]:
+        session_info: dict[str, Any],
+        participants: list[dict[str, Any]],
+        presences: list[dict[str, Any]],
+    ) -> dict[str, Any]:
         """
         Analyse complète des présences.
 
@@ -144,9 +145,9 @@ class PresenceAnalyzerService:
     # --------------------------------------------------------
     def _compute_participant_stats(
         self,
-        participants: List[Dict[str, Any]],
-        presences: List[Dict[str, Any]],
-    ) -> List[Dict[str, Any]]:
+        participants: list[dict[str, Any]],
+        presences: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
         """Calcule le taux de présence par participant."""
         # Dates uniques de séances (toutes les dates où au moins 1 présence)
         dates_seances = sorted({
@@ -155,7 +156,7 @@ class PresenceAnalyzerService:
         nb_seances = len(dates_seances)
 
         # Regrouper les présences par participant
-        pres_by_participant: Dict[int, List[Dict[str, Any]]] = defaultdict(list)
+        pres_by_participant: dict[int, list[dict[str, Any]]] = defaultdict(list)
         for p in presences:
             pid = p.get("participant_id")
             if pid is not None:
@@ -191,10 +192,10 @@ class PresenceAnalyzerService:
     # --------------------------------------------------------
     def _compute_global_stats(
         self,
-        participants: List[Dict[str, Any]],
-        presences: List[Dict[str, Any]],
-        stats_par_participant: List[Dict[str, Any]],
-    ) -> Dict[str, Any]:
+        participants: list[dict[str, Any]],
+        presences: list[dict[str, Any]],
+        stats_par_participant: list[dict[str, Any]],
+    ) -> dict[str, Any]:
         """Calcule les statistiques globales."""
         nb_participants = len(participants)
         dates_seances = sorted({
@@ -233,9 +234,9 @@ class PresenceAnalyzerService:
     # --------------------------------------------------------
     def _detect_anomalies(
         self,
-        participants: List[Dict[str, Any]],
-        presences: List[Dict[str, Any]],
-    ) -> List[Dict[str, Any]]:
+        participants: list[dict[str, Any]],
+        presences: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
         """Détecte les anomalies dans les présences."""
         anomalies = []
         participant_ids = {p.get("id") for p in participants}
@@ -304,7 +305,7 @@ class PresenceAnalyzerService:
                 })
 
         # ── 4. Absences incohérentes (marqué présent=False pour TOUTES les séances) ──
-        pres_by_participant: Dict[int, List[Dict[str, Any]]] = defaultdict(list)
+        pres_by_participant: dict[int, list[dict[str, Any]]] = defaultdict(list)
         for p in presences:
             pid = p.get("participant_id")
             if pid is not None:
@@ -333,10 +334,10 @@ class PresenceAnalyzerService:
     # --------------------------------------------------------
     def _generate_recommandations(
         self,
-        stats: Dict[str, Any],
-        anomalies: List[Dict[str, Any]],
+        stats: dict[str, Any],
+        anomalies: list[dict[str, Any]],
         nb_non_eligibles: int,
-    ) -> List[str]:
+    ) -> list[str]:
         """Génère des recommandations (Python pur, basées sur des règles)."""
         recos = []
         taux = float(stats["taux_presence_global"].rstrip("%"))
@@ -389,7 +390,7 @@ class PresenceAnalyzerService:
     # --------------------------------------------------------
     def _build_resume(
         self,
-        stats: Dict[str, Any],
+        stats: dict[str, Any],
         nb_anomalies: int,
         nb_eligibles: int,
     ) -> str:

@@ -1,13 +1,16 @@
 from uuid import UUID
-from typing import List
+
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from app.database import get_db
 from app.core.dependencies import get_current_user, require_role
+from app.database import get_db
 from app.models.user import User
 from app.schemas.facture import (
-    FactureCreate, FactureResponse, PaiementCreate, PaiementResponse, RelanceResponse
+    FactureCreate,
+    FactureResponse,
+    PaiementCreate,
+    RelanceResponse,
 )
 from app.services.facture_service import FactureService
 
@@ -27,7 +30,7 @@ def emettre_facture(
     return service.emettre_facture(data)
 
 
-@router.get("", response_model=List[FactureResponse])
+@router.get("", response_model=list[FactureResponse])
 def lister_factures(
     service: FactureService = Depends(get_facture_service),
     current_user: User = Depends(get_current_user)

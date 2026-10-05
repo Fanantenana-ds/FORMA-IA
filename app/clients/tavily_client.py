@@ -122,9 +122,8 @@
 # FORMA-IA — TAVILY CLIENT (ASYNC + FILTERING)
 # ============================================================
 
-import os
 import logging
-from typing import List, Dict, Optional
+import os
 
 import httpx
 from dotenv import load_dotenv
@@ -173,7 +172,7 @@ EXCLUDED_KEYWORDS = [
 class TavilyClient:
     """Client Tavily async avec filtrage de domaine et fallback."""
 
-    def __init__(self, api_key: Optional[str] = None):
+    def __init__(self, api_key: str | None = None):
         self.api_key = api_key or os.getenv("TAVILY_API_KEY")
         if not self.api_key:
             raise ValueError("⚠️ TAVILY_API_KEY absente — le client ne peut pas fonctionner")
@@ -182,7 +181,7 @@ class TavilyClient:
         self.max_results = int(os.getenv("TAVILY_MAX_RESULTS", "15"))
         self.timeout = float(os.getenv("TAVILY_TIMEOUT", "10"))
 
-    async def search(self, query: str, max_results: Optional[int] = None) -> List[Dict]:
+    async def search(self, query: str, max_results: int | None = None) -> list[dict]:
         """
         Fikarohana Tavily miaraka amin'ny filtrage.
         Retourne TOUJOURS une liste (jamais None), même vide.
@@ -241,7 +240,7 @@ class TavilyClient:
             logger.error(f"❌ Tavily: {e}")
             return []
 
-    def _filter_and_normalize(self, results: List[Dict]) -> List[Dict]:
+    def _filter_and_normalize(self, results: list[dict]) -> list[dict]:
         """Manadio sy mandamina ny valiny Tavily."""
         normalized = []
 

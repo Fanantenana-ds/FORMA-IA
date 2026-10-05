@@ -1,7 +1,7 @@
-import os
 import logging
+import os
 from datetime import datetime
-from typing import Dict, Any, Optional, List
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -52,16 +52,16 @@ class BudgetCalculatorService:
 
     def calculer(
         self,
-        formateur_info: Dict[str, Any],
-        salle_info: Dict[str, Any],
+        formateur_info: dict[str, Any],
+        salle_info: dict[str, Any],
         nb_jours: int,
         nb_participants: int,
         inclure_logistique: bool = True,
         inclure_administration: bool = True,
-        forfait_support: Optional[int] = None,
-        forfait_logistique: Optional[int] = None,
-        pourcentage_administration: Optional[float] = None,
-    ) -> Dict[str, Any]:
+        forfait_support: int | None = None,
+        forfait_logistique: int | None = None,
+        pourcentage_administration: float | None = None,
+    ) -> dict[str, Any]:
         """
         Calcule le budget prévisionnel d'une formation.
 

@@ -35,7 +35,7 @@ import logging
 import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +47,7 @@ ATTENTE_MAX_ENTRE_VERIFICATIONS_S = 3600.0
 
 # Profil ALTIORA Prest : formation / conseil en IA, data, DevOps, développement.
 # "Madagascar" est ajouté automatiquement par le pipeline M1.
-REQUETES_PAR_DEFAUT: List[str] = [
+REQUETES_PAR_DEFAUT: list[str] = [
     "appel d'offres formation intelligence artificielle IA",
     "appel d'offres formation data science analyse de données",
     "appel d'offres formation DevOps cloud",
@@ -62,7 +62,7 @@ class DetectionAutoEnCours(Exception):
 
 _en_cours = False
 _tache: Optional["asyncio.Task"] = None
-_demarre_a: Optional[datetime] = None
+_demarre_a: datetime | None = None
 
 
 # ============================================================
@@ -94,7 +94,7 @@ def limite() -> int:
     return _env_int("VEILLE_AUTO_LIMIT", 20, minimum=1)
 
 
-def get_queries() -> List[str]:
+def get_queries() -> list[str]:
     """Requêtes du passage : VEILLE_AUTO_QUERIES ou profil par défaut, bornées."""
     brut = os.getenv("VEILLE_AUTO_QUERIES", "")
     requetes = [q.strip() for q in brut.split(";") if q.strip()] or list(
@@ -103,7 +103,7 @@ def get_queries() -> List[str]:
     return requetes[: _env_int("VEILLE_AUTO_MAX_QUERIES", 5, minimum=1)]
 
 
-def get_config() -> Dict[str, Any]:
+def get_config() -> dict[str, Any]:
     return {
         "planification_activee": planification_activee(),
         "intervalle_heures": intervalle_heures(),
@@ -117,7 +117,7 @@ def get_config() -> Dict[str, Any]:
 # ÉTAT DE LA DERNIÈRE EXÉCUTION
 # ============================================================
 
-def lire_etat() -> Dict[str, Any]:
+def lire_etat() -> dict[str, Any]:
     try:
         with open(STATE_PATH, "r", encoding="utf-8") as f:
             data = json.load(f)
@@ -126,7 +126,7 @@ def lire_etat() -> Dict[str, Any]:
         return {}
 
 
-def _ecrire_etat(etat: Dict[str, Any]) -> None:
+def _ecrire_etat(etat: dict[str, Any]) -> None:
     try:
         STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
         tmp = STATE_PATH.with_suffix(".tmp")
@@ -147,10 +147,10 @@ def est_en_cours() -> bool:
 async def executer_detection(
     orchestrator,
     declenchement: str = "manuel",
-    min_score: Optional[int] = None,
-    limit: Optional[int] = None,
+    min_score: int | None = None,
+    limit: int | None = None,
     sync_backend: bool = True,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Lance un passage de détection automatique.
 
@@ -165,7 +165,7 @@ async def executer_detection(
 
     _en_cours = True
     debut = datetime.now(timezone.utc)
-    etat: Dict[str, Any] = {
+    etat: dict[str, Any] = {
         "derniere_execution": debut.isoformat(),
         "declenchement": declenchement,
         "statut": "error",
@@ -200,7 +200,7 @@ async def executer_detection(
 # PLANIFICATION (optionnelle)
 # ============================================================
 
-def secondes_avant_prochaine_execution(maintenant: Optional[datetime] = None) -> float:
+def secondes_avant_prochaine_execution(maintenant: datetime | None = None) -> float:
     """0 = passage dû maintenant. Tient compte des passages manuels et des redémarrages."""
     maintenant = maintenant or datetime.now(timezone.utc)
     derniere = lire_etat().get("derniere_execution")

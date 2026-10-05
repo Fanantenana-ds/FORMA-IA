@@ -10,7 +10,7 @@ import logging
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 import yaml
 
@@ -20,7 +20,7 @@ BASE_DIR = Path(__file__).resolve().parents[3]
 SCORING_YAML_PATH = BASE_DIR / "app" / "prompts" / "m1" / "scoring.yaml"
 
 
-def _load_yaml_reference(path: Path) -> Dict[str, Any]:
+def _load_yaml_reference(path: Path) -> dict[str, Any]:
     if not path.exists():
         logger.warning("⚠️ Prompt de référence absent : %s", path)
         return {}
@@ -124,7 +124,7 @@ def _score_organizer(organizer: Any) -> int:
     return 2
 
 
-def _score_deadline(deadline_str: Optional[str], current_date: datetime) -> int:
+def _score_deadline(deadline_str: str | None, current_date: datetime) -> int:
     if not deadline_str:
         return 0
 
@@ -199,7 +199,7 @@ def _score_bonus(title: str, summary: str, url: str) -> int:
     return min(bonus, 10)
 
 
-def _score_penalties(title: str, summary: str, budget: Any, deadline: Optional[str]) -> int:
+def _score_penalties(title: str, summary: str, budget: Any, deadline: str | None) -> int:
     missing = 0
     if not budget:
         missing += 1
@@ -218,7 +218,7 @@ class ScoringService:
         self.scoring_reference = _load_yaml_reference(SCORING_YAML_PATH)
         logger.info("✅ scoring.yaml chargé (référence)")
 
-    def score(self, opportunity: Dict[str, Any]) -> Dict[str, Any]:
+    def score(self, opportunity: dict[str, Any]) -> dict[str, Any]:
         title = str(opportunity.get("title", ""))
         summary = str(opportunity.get("summary", "") or "")
         url = str(opportunity.get("url", ""))

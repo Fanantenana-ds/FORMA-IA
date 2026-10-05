@@ -1,12 +1,14 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Column, String, DateTime, Float, Text, ForeignKey, Enum as SqlEnum
+from sqlalchemy import Column, DateTime, Float, ForeignKey, String, Text
+from sqlalchemy import Enum as SqlEnum
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
 from app.database import Base
 from app.models.opportunite import Domaine
+
 
 class HistoriqueAnalyse(Base):
     __tablename__ = "historique_analyses"

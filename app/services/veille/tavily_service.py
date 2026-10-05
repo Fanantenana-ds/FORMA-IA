@@ -175,7 +175,7 @@ import logging
 import os
 import re
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import httpx
 
@@ -285,7 +285,7 @@ class TavilyService:
     """Recherche web via Tavily avec filtrage robuste + cache simple."""
 
     # Cache en mémoire pour éviter conflits (TTL 5 min)
-    _cache: Dict[str, tuple] = {}
+    _cache: dict[str, tuple] = {}
     _cache_ttl = 300  # 5 minutes
 
     def __init__(self):
@@ -298,7 +298,7 @@ class TavilyService:
         """Génère une clé de cache pour une query."""
         return hashlib.md5(query.lower().strip().encode()).hexdigest()
 
-    def _get_from_cache(self, query: str) -> Optional[List[Dict[str, Any]]]:
+    def _get_from_cache(self, query: str) -> list[dict[str, Any]] | None:
         """Récupère depuis le cache si non expiré."""
         key = self._cache_key(query)
         if key in self._cache:
@@ -310,12 +310,12 @@ class TavilyService:
                 del self._cache[key]
         return None
 
-    def _set_cache(self, query: str, results: List[Dict[str, Any]]) -> None:
+    def _set_cache(self, query: str, results: list[dict[str, Any]]) -> None:
         """Stocke dans le cache."""
         key = self._cache_key(query)
         self._cache[key] = (results, time.time())
 
-    async def _do_request(self, payload: Dict[str, Any]) -> httpx.Response:
+    async def _do_request(self, payload: dict[str, Any]) -> httpx.Response:
         """Un seul essai HTTP — rejouable par retry_with_backoff."""
         async with httpx.AsyncClient(timeout=TAVILY_TIMEOUT) as client:
             response = await client.post(
@@ -326,7 +326,7 @@ class TavilyService:
                 response.raise_for_status()
             return response
 
-    async def search(self, query: str) -> List[Dict[str, Any]]:
+    async def search(self, query: str) -> list[dict[str, Any]]:
         """
         Recherche Tavily avec filtrage multi-niveaux :
         1. Vérifie le cache
@@ -480,8 +480,8 @@ class TavilyService:
             return []
 
     def _filter_results(
-        self, raw_results: List[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
+        self, raw_results: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
         """
         Filtrage STRICT :
         - URL doit venir d'un domaine autorisé
@@ -525,8 +525,8 @@ class TavilyService:
         return filtered
 
     def _filter_minimal(
-        self, raw_results: List[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
+        self, raw_results: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
         """
         Filtrage MINIMAL (utilisé en dernier recours) :
         - Rejette uniquement non-latin + bruit

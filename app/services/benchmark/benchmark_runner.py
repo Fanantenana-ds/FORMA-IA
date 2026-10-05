@@ -19,7 +19,7 @@ import logging
 import os
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from app.orchestrator.veille_orchestrator import VeilleOrchestrator
 
@@ -37,7 +37,7 @@ class BenchmarkRunner:
     par le CDC.
     """
 
-    def __init__(self, corpus_path: Optional[Path] = None):
+    def __init__(self, corpus_path: Path | None = None):
         self.corpus_path = Path(corpus_path) if corpus_path else CORPUS_PATH
         self.orchestrator = VeilleOrchestrator()
 
@@ -45,14 +45,14 @@ class BenchmarkRunner:
     # CHARGEMENT DU CORPUS
     # --------------------------------------------------------
 
-    def _load_corpus(self, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+    def _load_corpus(self, limit: int | None = None) -> list[dict[str, Any]]:
         if not self.corpus_path.exists():
             raise FileNotFoundError(
                 f"Corpus introuvable : {self.corpus_path}. "
                 "Vérifie data/corpus_veille/corpus_v1.jsonl."
             )
 
-        entries: List[Dict[str, Any]] = []
+        entries: list[dict[str, Any]] = []
         with open(self.corpus_path, "r", encoding="utf-8") as file:
             for line_number, raw_line in enumerate(file, start=1):
                 line = raw_line.strip()
@@ -78,7 +78,7 @@ class BenchmarkRunner:
     # EXÉCUTION DU BENCHMARK
     # --------------------------------------------------------
 
-    async def run(self, limit: int = 20) -> Dict[str, Any]:
+    async def run(self, limit: int = 20) -> dict[str, Any]:
         entries = self._load_corpus(limit=limit)
         total = len(entries)
 
@@ -96,8 +96,8 @@ class BenchmarkRunner:
         deadline_correct = 0
         extraction_total = 0
 
-        latencies: List[float] = []
-        details: List[Dict[str, Any]] = []
+        latencies: list[float] = []
+        details: list[dict[str, Any]] = []
 
         for entry in entries:
             gold = entry.get("gold", {}) or {}

@@ -2,16 +2,17 @@
 # GÉNÉRATEUR PDF — TDR (AVEC FORMATAGE PROFESSIONNEL)
 # ============================================================
 
+import logging
 import os
 from datetime import datetime
-from typing import Dict, Any
-from reportlab.lib.pagesizes import A4
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.units import inch, cm
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
-from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
+from typing import Any
+
 from reportlab.lib import colors
-import logging
+from reportlab.lib.enums import TA_CENTER, TA_LEFT
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.lib.units import inch
+from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +31,7 @@ class PDFGenerator:
         os.makedirs(output_dir, exist_ok=True)
         logger.info(f"📁 Stockage PDF: {self.output_dir}")
 
-    def generate(self, tdr_data: Dict[str, Any], brief: Dict[str, Any]) -> str:
+    def generate(self, tdr_data: dict[str, Any], brief: dict[str, Any]) -> str:
         """
         Génère un document PDF professionnel à partir des données du TDR
 

@@ -1,5 +1,0 @@
-﻿fastapi
-uvicorn
-ruff
-pytest
-coverage

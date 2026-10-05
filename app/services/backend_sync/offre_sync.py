@@ -17,7 +17,7 @@
 # ============================================================
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from app.services.backend_sync import base_sync
 
@@ -91,10 +91,10 @@ def _libelle(key: Any) -> str:
     return _LIBELLES.get(name) or name.replace("_", " ").capitalize()
 
 
-def _render(value: Any, indent: int = 0) -> List[str]:
+def _render(value: Any, indent: int = 0) -> list[str]:
     """Rend un dict/une liste en lignes de texte indentées (générique)."""
     pad = "  " * indent
-    lines: List[str] = []
+    lines: list[str] = []
 
     if isinstance(value, dict):
         for key, val in value.items():
@@ -123,13 +123,13 @@ def _render(value: Any, indent: int = 0) -> List[str]:
     return lines
 
 
-def build_contenu(offre_result: Dict[str, Any]) -> str:
+def build_contenu(offre_result: dict[str, Any]) -> str:
     """
     Texte lisible de l'offre à partir du résultat de
     OffreOrchestrator.generate_complete() (offre_technique + offre_financiere)
     ou d'une offre seule (generate_technique / generate_financiere).
     """
-    parts: List[str] = []
+    parts: list[str] = []
     for titre, cle in (
         ("OFFRE TECHNIQUE", "offre_technique"),
         ("OFFRE FINANCIÈRE", "offre_financiere"),
@@ -144,7 +144,7 @@ def build_contenu(offre_result: Dict[str, Any]) -> str:
     return "\n".join(parts).strip()
 
 
-def extract_montant(offre_result: Dict[str, Any]) -> Optional[float]:
+def extract_montant(offre_result: dict[str, Any]) -> float | None:
     """
     Extrait le montant proposé au client depuis le résultat de
     OffreOrchestrator.generate_complete() :
@@ -164,10 +164,10 @@ def extract_montant(offre_result: Dict[str, Any]) -> Optional[float]:
 
 
 async def sync_offre_to_backend(
-    opportunite_id: Optional[str],
-    montant: Optional[float] = None,
-    contenu: Optional[str] = None,
-) -> Dict[str, Any]:
+    opportunite_id: str | None,
+    montant: float | None = None,
+    contenu: str | None = None,
+) -> dict[str, Any]:
     """
     Enregistre l'offre côté Backend (POST /documents/offre).
 
@@ -194,7 +194,7 @@ async def sync_offre_to_backend(
         result["error"] = "montant doit être >= 0"
         return result
 
-    payload: Dict[str, Any] = {"opportunite_id": str(opportunite_id)}
+    payload: dict[str, Any] = {"opportunite_id": str(opportunite_id)}
     if montant is not None:
         payload["montant"] = montant
     if contenu and contenu.strip():

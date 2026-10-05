@@ -1,9 +1,9 @@
 from abc import ABC, abstractmethod
-from typing import Optional
 from uuid import UUID
 
 from app.models.opportunite import Opportunite
 from app.schemas.opportunite import OpportuniteUpdate
+
 
 class IOpportuniteRepository(ABC):
     @abstractmethod
@@ -11,7 +11,7 @@ class IOpportuniteRepository(ABC):
         pass
 
     @abstractmethod
-    def find_by_id(self, opportunite_id: UUID) -> Optional[Opportunite]:
+    def find_by_id(self, opportunite_id: UUID) -> Opportunite | None:
         pass
 
     @abstractmethod
@@ -23,5 +23,5 @@ class IOpportuniteRepository(ABC):
         pass
 
     @abstractmethod
-    def update(self, opportunite_id: UUID, data: OpportuniteUpdate) -> Optional[Opportunite]:
+    def update(self, opportunite_id: UUID, data: OpportuniteUpdate) -> Opportunite | None:
         pass

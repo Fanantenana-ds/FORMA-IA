@@ -1,9 +1,9 @@
-import os
 import json
 import logging
-from pathlib import Path
+import os
 from datetime import datetime
-from typing import Dict, Any, Optional, List
+from pathlib import Path
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +19,7 @@ STORAGE_PATH = Path(__file__).resolve().parents[3] / "data" / "hitl_reviews.json
 STORAGE_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 
-def _load_store() -> Dict[str, Any]:
+def _load_store() -> dict[str, Any]:
     """Charge le store depuis le fichier JSON."""
     if not STORAGE_PATH.exists():
         vlog(f"ℹ️  [HITL] Store inexistant → création : {STORAGE_PATH.name}")
@@ -34,12 +34,12 @@ def _load_store() -> Dict[str, Any]:
                 f"counter={store.get('counter', 0)}"
             )
             return store
-    except (json.JSONDecodeError, IOError) as e:
+    except (OSError, json.JSONDecodeError) as e:
         logger.error(f"❌ [HITL] Erreur lecture store : {e}")
         return {"reviews": {}, "counter": 0}
 
 
-def _save_store(store: Dict[str, Any]) -> None:
+def _save_store(store: dict[str, Any]) -> None:
     """Sauvegarde le store dans le fichier JSON."""
     try:
         with open(STORAGE_PATH, "w", encoding="utf-8") as f:
@@ -48,10 +48,10 @@ def _save_store(store: Dict[str, Any]) -> None:
             f"💾 [HITL] Store sauvegardé : "
             f"{len(store.get('reviews', {}))} reviews"
         )
-    except IOError as e:
+    except OSError as e:
         logger.error(f"❌ [HITL] Erreur écriture store : {e}")
 
-AGENT_CRITICITY: Dict[str, str] = {
+AGENT_CRITICITY: dict[str, str] = {
     # ── M5 — Formations ──
     "agent_1_forms":         "critical",
     "agent_2_levels":        "medium",
@@ -74,9 +74,9 @@ AGENT_CRITICITY: Dict[str, str] = {
 
 def create_review(
     agent_id: str,
-    data: Dict[str, Any],
+    data: dict[str, Any],
     summary: str,
-    criticity: Optional[str] = None,
+    criticity: str | None = None,
 ) -> str:
     """
     Crée un review pour une génération IA.
@@ -133,9 +133,9 @@ def create_review(
 
 
 def list_pending(
-    agent_id: Optional[str] = None,
-    criticity: Optional[str] = None,
-) -> List[Dict[str, Any]]:
+    agent_id: str | None = None,
+    criticity: str | None = None,
+) -> list[dict[str, Any]]:
     """
     Liste les reviews en attente (status='pending_review').
 
@@ -180,7 +180,7 @@ def list_pending(
     return results
 
 
-def get_review(review_id: str) -> Optional[Dict[str, Any]]:
+def get_review(review_id: str) -> dict[str, Any] | None:
     """
     Récupère un review complet (avec data).
 
@@ -208,8 +208,8 @@ def get_review(review_id: str) -> Optional[Dict[str, Any]]:
 
 def approve_review(
     review_id: str,
-    reviewer_note: Optional[str] = None,
-) -> Optional[Dict[str, Any]]:
+    reviewer_note: str | None = None,
+) -> dict[str, Any] | None:
     """
     Approuve un review.
 
@@ -245,7 +245,7 @@ def approve_review(
 def reject_review(
     review_id: str,
     reason: str,
-) -> Optional[Dict[str, Any]]:
+) -> dict[str, Any] | None:
     """
     Rejette un review (nécessite une régénération).
 
@@ -277,7 +277,7 @@ def reject_review(
     vlog("=" * 70)
     return review
 
-def get_stats() -> Dict[str, Any]:
+def get_stats() -> dict[str, Any]:
     """
     Statistiques globales des reviews.
 

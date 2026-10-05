@@ -1,27 +1,28 @@
 from datetime import datetime
-from typing import Optional
 from uuid import UUID
 
 from pydantic import BaseModel, Field, HttpUrl, model_validator
-from app.models.opportunite import (SourceOpportunite, Domaine, StatutOpportunite)
+
+from app.models.opportunite import Domaine, SourceOpportunite, StatutOpportunite
+
 
 class OpportuniteCreate(BaseModel):
     source: SourceOpportunite
     contenu: str = Field(..., min_length=1)
-    objet: Optional[str] = None
-    budget: Optional[float] = Field(default=None, ge=0)
-    echeance: Optional[datetime] = None
-    domaine: Optional[Domaine] = None
+    objet: str | None = None
+    budget: float | None = Field(default=None, ge=0)
+    echeance: datetime | None = None
+    domaine: Domaine | None = None
 
 class OpportuniteResponse(BaseModel):
     id: UUID
     source: SourceOpportunite
     contenu: str
 
-    objet: Optional[str] = None
-    budget: Optional[float] = None
-    echeance: Optional[datetime] = None
-    domaine: Optional[Domaine] = None
+    objet: str | None = None
+    budget: float | None = None
+    echeance: datetime | None = None
+    domaine: Domaine | None = None
 
     score_pertinence: float
     statut: StatutOpportunite
@@ -44,8 +45,8 @@ class OpportuniteUpdate(BaseModel):
     domaine: str
 
 class OpportuniteAnalyseRequest(BaseModel):
-    contenu: Optional[str] = None
-    url: Optional[HttpUrl] = None
+    contenu: str | None = None
+    url: HttpUrl | None = None
 
     @model_validator(mode="after")
     def valide_source(self):
@@ -57,10 +58,10 @@ class OpportuniteAnalyseRequest(BaseModel):
         return self
 
 class OpportuniteAnalyseResult(BaseModel):
-    objet: Optional[str] = None
-    budget: Optional[float] = Field(default=None, ge=0)
-    echeance: Optional[datetime] = None
-    domaine: Optional[Domaine] = None
+    objet: str | None = None
+    budget: float | None = Field(default=None, ge=0)
+    echeance: datetime | None = None
+    domaine: Domaine | None = None
     score_pertinence: float = Field(
         ...,
         ge=0,

@@ -1,14 +1,16 @@
+import json
+import logging
 import os
 import re
-import json
-import yaml
-import logging
-from pathlib import Path
 from datetime import datetime
-from typing import Dict, Any, Optional
+from pathlib import Path
+from typing import Any
 
-from app.services.llm import get_llm_provider, LLMError
+import yaml
+
 from app.services.hitl import create_review
+from app.services.llm import LLMError, get_llm_provider
+
 from .grille_tarifaire_service import GrilleTarifaireService
 
 logger = logging.getLogger(__name__)
@@ -52,7 +54,7 @@ class OffreFinanciereGeneratorService:
     # PROMPT
     # =========================================================================
 
-    def _load_prompt(self) -> Dict[str, Any]:
+    def _load_prompt(self) -> dict[str, Any]:
         if not PROMPT_PATH.exists():
             raise FileNotFoundError(f"❌ Prompt introuvable : {PROMPT_PATH}")
 
@@ -87,9 +89,9 @@ class OffreFinanciereGeneratorService:
 
     def _build_user_prompt(
         self,
-        offre_technique: Dict[str, Any],
-        options: Dict[str, Any],
-        calculs: Dict[str, Any],
+        offre_technique: dict[str, Any],
+        options: dict[str, Any],
+        calculs: dict[str, Any],
     ) -> str:
         """Construit le user prompt avec l'offre technique + calculs."""
         d = calculs["details_couts"]
@@ -144,11 +146,11 @@ class OffreFinanciereGeneratorService:
 
     async def generate(
         self,
-        offre_technique: Dict[str, Any],
-        options: Optional[Dict[str, Any]] = None,
+        offre_technique: dict[str, Any],
+        options: dict[str, Any] | None = None,
         temperature: float = 0.3,
         max_tokens: int = 6000,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Génère la trame financière d'une offre.
 
@@ -310,7 +312,7 @@ class OffreFinanciereGeneratorService:
             raw = raw[:end + 1]
         return raw
 
-    def _normalize_output(self, data: Any) -> Dict[str, Any]:
+    def _normalize_output(self, data: Any) -> dict[str, Any]:
         if isinstance(data, list):
             dict_items = [item for item in data if isinstance(item, dict)]
             if not dict_items:
@@ -328,11 +330,11 @@ class OffreFinanciereGeneratorService:
 
     def _generate_with_template(
         self,
-        offre_technique: Dict[str, Any],
-        options: Dict[str, Any],
-        calculs: Dict[str, Any],
+        offre_technique: dict[str, Any],
+        options: dict[str, Any],
+        calculs: dict[str, Any],
         echeancier: list,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Template Python (fallback) — trame financière standard."""
         year = datetime.now().year
         titre = offre_technique.get("titre_offre", "Formation professionnelle")

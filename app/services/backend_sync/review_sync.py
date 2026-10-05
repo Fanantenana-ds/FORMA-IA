@@ -21,9 +21,10 @@
 import json
 import logging
 import os
+from collections.abc import Awaitable, Callable, Iterable
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Dict, Iterable, Optional, Tuple
+from typing import Any
 
 from app.services.hitl import get_review
 
@@ -38,7 +39,7 @@ REGISTRY_PATH = (
 # REGISTRE (fichier JSON)
 # ============================================================
 
-def _load_registry() -> Dict[str, Any]:
+def _load_registry() -> dict[str, Any]:
     if not REGISTRY_PATH.exists():
         return {}
     try:
@@ -50,7 +51,7 @@ def _load_registry() -> Dict[str, Any]:
         return {}
 
 
-def _save_registry(registry: Dict[str, Any]) -> None:
+def _save_registry(registry: dict[str, Any]) -> None:
     REGISTRY_PATH.parent.mkdir(parents=True, exist_ok=True)
     tmp = REGISTRY_PATH.with_suffix(".tmp")
     with open(tmp, "w", encoding="utf-8") as f:
@@ -58,12 +59,12 @@ def _save_registry(registry: Dict[str, Any]) -> None:
     os.replace(tmp, REGISTRY_PATH)  # écriture atomique
 
 
-def get_synced(review_id: str) -> Optional[Dict[str, Any]]:
+def get_synced(review_id: str) -> dict[str, Any] | None:
     """Entrée du registre pour ce review, ou None s'il n'a jamais été envoyé."""
     return _load_registry().get(review_id)
 
 
-def mark_synced(review_id: str, resume: Dict[str, Any]) -> None:
+def mark_synced(review_id: str, resume: dict[str, Any]) -> None:
     registry = _load_registry()
     registry[review_id] = {
         "synced_at": datetime.now().isoformat(),
@@ -79,7 +80,7 @@ def mark_synced(review_id: str, resume: Dict[str, Any]) -> None:
 def load_approved_review(
     review_id: str,
     agent_ids: Iterable[str],
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Retourne le review complet, à condition qu'il soit APPROUVÉ et produit
     par l'un des agents attendus.
@@ -113,7 +114,7 @@ def load_approved_review(
 # EXÉCUTION UNIQUE
 # ============================================================
 
-def describe_sync(result: Dict[str, Any]) -> Tuple[bool, str]:
+def describe_sync(result: dict[str, Any]) -> tuple[bool, str]:
     """(succès, message) lisible à partir du retour de sync_once()."""
     sync = result.get("backend_sync") or {}
 
@@ -129,16 +130,16 @@ def describe_sync(result: Dict[str, Any]) -> Tuple[bool, str]:
     return False, f"Échec de la synchronisation : {sync.get('error')}"
 
 
-def resume_result(result: Dict[str, Any]) -> Dict[str, Any]:
+def resume_result(result: dict[str, Any]) -> dict[str, Any]:
     """Résultat de sync sans le corps de la réponse Backend (volumineux)."""
     return {k: v for k, v in result.items() if k != "data"}
 
 
 async def sync_once(
     review_id: str,
-    sync_call: Callable[[], Awaitable[Dict[str, Any]]],
+    sync_call: Callable[[], Awaitable[dict[str, Any]]],
     force: bool = False,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Exécute `sync_call()` une seule fois par review.
 

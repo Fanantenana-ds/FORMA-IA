@@ -29,11 +29,11 @@ __author__ = "Équipe IA — ALTIORA Prest"
 
 
 __all__ = [
-    "__version__",
-    "__module_code__",
-    "__module_name__",
     "BudgetCalculatorService",
     "EDTGeneratorService",
+    "__module_code__",
+    "__module_name__",
+    "__version__",
     "get_package_status",
 ]
 

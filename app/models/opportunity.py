@@ -6,10 +6,12 @@
 # les opportunités commerciales détectées par M1.
 # ============================================================
 
-from sqlalchemy import Column, Integer, String, Float, DateTime, Text, Enum as SQLEnum, ARRAY
+import enum
+
+from sqlalchemy import ARRAY, Column, DateTime, Float, Integer, String, Text
+from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.sql import func
-import enum
 
 Base = declarative_base()
 

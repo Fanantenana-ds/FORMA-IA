@@ -1,19 +1,19 @@
-import os
 import logging
+import os
 import time
-from typing import Dict, Any, Optional, List
+from typing import Any
 
-from fastapi import APIRouter, HTTPException, Depends, status, Query
-from app.services.hitl import get_review as _get
-from app.services.hitl import get_stats ,list_pending
-from app.services.hitl import approve_review as _approve
-from app.services.hitl import reject_review as _reject
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from app.orchestrator.formation_orchestrator import (
     FormationOrchestrator,
     get_formation_orchestrator,
 )
+from app.services.hitl import approve_review as _approve
+from app.services.hitl import get_review as _get
+from app.services.hitl import get_stats, list_pending
+from app.services.hitl import reject_review as _reject
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +63,7 @@ def _handle_exception(e: Exception, context: str) -> None:
     )
 
 
-def _build_response(result: Dict[str, Any], msg_ok: str, elapsed: float) -> "RouteResponse":
+def _build_response(result: dict[str, Any], msg_ok: str, elapsed: float) -> "RouteResponse":
     """Construit une réponse uniforme avec info HITL."""
     review_id = result.get("_review_id") if isinstance(result, dict) else None
     status = result.get("_review_status") if isinstance(result, dict) else None
@@ -97,44 +97,44 @@ class GenerateFormsRequest(BaseModel):
     lieu: str
     formateur: str
     max_participants: int = Field(..., ge=1, le=500)
-    public_cible: Optional[str] = None
-    supports_resume: Optional[str] = Field(None, max_length=5000)
+    public_cible: str | None = None
+    supports_resume: str | None = Field(None, max_length=5000)
 
 
 class RegenerateFormsRequest(BaseModel):
-    session_info: Dict[str, Any]
-    previous_generation: Dict[str, Any]
+    session_info: dict[str, Any]
+    previous_generation: dict[str, Any]
     feedback: str = Field(..., min_length=10)
 
 
 class AnalyzeLevelsRequest(BaseModel):
-    session_info: Dict[str, Any]
-    participants: List[Dict[str, Any]]
-    corrige: Dict[str, str]
+    session_info: dict[str, Any]
+    participants: list[dict[str, Any]]
+    corrige: dict[str, str]
 
 
 class AnalyzeSatisfactionRequest(BaseModel):
-    session_info: Dict[str, Any]
-    responses: List[Dict[str, Any]]
+    session_info: dict[str, Any]
+    responses: list[dict[str, Any]]
 
 
 class AnalyzePresencesRequest(BaseModel):
-    session_info: Dict[str, Any]
-    participants: List[Dict[str, Any]]
-    presences: List[Dict[str, Any]]
+    session_info: dict[str, Any]
+    participants: list[dict[str, Any]]
+    presences: list[dict[str, Any]]
 
 
 class GenerateAttestationsRequest(BaseModel):
-    session_data: Dict[str, Any]
-    eligible_participants: List[Dict[str, Any]]
+    session_data: dict[str, Any]
+    eligible_participants: list[dict[str, Any]]
 
 
 class GenerateReportRequest(BaseModel):
-    session_data: Dict[str, Any]
+    session_data: dict[str, Any]
 
 
 class ApproveReviewRequest(BaseModel):
-    reviewer_note: Optional[str] = Field(None, max_length=1000)
+    reviewer_note: str | None = Field(None, max_length=1000)
 
 
 class RejectReviewRequest(BaseModel):
@@ -148,17 +148,17 @@ class RejectReviewRequest(BaseModel):
 class RouteResponse(BaseModel):
     success: bool
     message: str
-    duration_seconds: Optional[float] = None
-    review_id: Optional[str] = None
-    review_status: Optional[str] = None
+    duration_seconds: float | None = None
+    review_id: str | None = None
+    review_status: str | None = None
     requires_human_action: bool = False
-    data: Optional[Dict[str, Any]] = None
+    data: dict[str, Any] | None = None
 
 
 class ReviewResponse(BaseModel):
     success: bool
     message: str
-    review: Optional[Dict[str, Any]] = None
+    review: dict[str, Any] | None = None
 
 
 # =============================================================================
@@ -166,7 +166,7 @@ class ReviewResponse(BaseModel):
 # =============================================================================
 
 @router.get("/health", summary="[M5] État des agents IA")
-async def health_check() -> Dict[str, Any]:
+async def health_check() -> dict[str, Any]:
     _log_request("GET", "/ia/formations/health")
     try:
         from app.services.formations import get_package_status
@@ -329,7 +329,7 @@ async def generate_report(
 @router.get("/agents", summary="[M5] Liste des agents IA")
 async def list_agents(
     orchestrator: FormationOrchestrator = Depends(get_formation_orchestrator),
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     _log_request("GET", "/ia/formations/agents")
     agents = {
         "Agent 1 — FormGenerator":        orchestrator.form_generator is not None,
@@ -353,9 +353,9 @@ async def list_agents(
 @router.get("/pending-reviews",
             summary="[HITL] Liste des contenus en attente de validation")
 async def list_pending_reviews(
-    agent_id: Optional[str] = Query(None),
-    criticity: Optional[str] = Query(None),
-) -> Dict[str, Any]:
+    agent_id: str | None = Query(None),
+    criticity: str | None = Query(None),
+) -> dict[str, Any]:
     _log_request("GET", "/ia/formations/pending-reviews",
                  Agent=agent_id or "tous", Criticité=criticity or "toutes")
     try:
@@ -376,7 +376,7 @@ async def list_pending_reviews(
 
 @router.get("/reviews/stats",
             summary="[HITL] Statistiques des validations")
-async def get_reviews_stats() -> Dict[str, Any]:
+async def get_reviews_stats() -> dict[str, Any]:
     _log_request("GET", "/ia/formations/reviews/stats")
     try:
        
@@ -394,7 +394,7 @@ async def get_reviews_stats() -> Dict[str, Any]:
 
 @router.get("/reviews/{review_id}",
             summary="[HITL] Détails d'un contenu en attente")
-async def get_review(review_id: str) -> Dict[str, Any]:
+async def get_review(review_id: str) -> dict[str, Any]:
     _log_request("GET", f"/ia/formations/reviews/{review_id}")
     try:
        
@@ -461,3 +461,93 @@ async def reject_review(
     except Exception as e:
         _handle_exception(e, "reject_review")
         return ReviewResponse(success=False, message="")
+
+
+# =============================================================================
+# PUBLICATION GOOGLE FORMS (après approbation HITL)
+# =============================================================================
+
+class PublishFormsRequest(BaseModel):
+    session_titre: str = Field(default="Formation", description="Titre de la session")
+
+
+class PublishFormsResponse(BaseModel):
+    success: bool
+    message: str
+    forms_urls: dict[str, str] = {}
+    forms_count: int = 0
+
+
+@router.post(
+    "/reviews/{review_id}/publish-forms",
+    response_model=PublishFormsResponse,
+    summary="[Google Forms] Publier les formulaires approuvés sur Google Forms",
+    description=(
+        "Après approbation HITL d'un review `agent_1_forms`, "
+        "crée les 4 formulaires sur Google Forms et retourne leurs URLs."
+    ),
+)
+async def publish_forms(
+    review_id: str,
+    payload: PublishFormsRequest,
+) -> PublishFormsResponse:
+    _log_request("POST", f"/ia/formations/reviews/{review_id}/publish-forms",
+                 session_titre=payload.session_titre)
+    try:
+        from app.services.formations.google_forms_publisher_service import (
+            GoogleFormsPublisherService,
+        )
+
+        # 1. Vérifier que la review existe et est approuvée
+        review = _get(review_id)
+        if not review:
+            raise HTTPException(404, detail=f"Review '{review_id}' non trouvée")
+        if review.get("status") != "approved":
+            raise HTTPException(
+                422,
+                detail=(
+                    f"Review '{review_id}' non approuvée "
+                    f"(statut actuel : {review.get('status')}). "
+                    "Approuve d'abord via POST /reviews/{id}/approve."
+                ),
+            )
+        if review.get("agent_id") != "agent_1_forms":
+            raise HTTPException(
+                422,
+                detail=(
+                    f"Cette route ne concerne que agent_1_forms. "
+                    f"Agent reçu : {review.get('agent_id')}"
+                ),
+            )
+
+        # 2. Vérifier que le service est disponible
+        if not GoogleFormsPublisherService.is_available():
+            raise HTTPException(
+                503,
+                detail=(
+                    "GOOGLE_REFRESH_TOKEN absent. "
+                    "Lance scripts/setup_google_oauth.py pour configurer."
+                ),
+            )
+
+        # 3. Publier les formulaires
+        publisher = GoogleFormsPublisherService()
+        forms_data = review.get("data", {})
+        forms_urls = await publisher.publish_all(
+            forms_data=forms_data,
+            session_titre=payload.session_titre,
+        )
+
+        vlog(f"✅ [GoogleForms] {len(forms_urls)} formulaires publiés pour {review_id}")
+        return PublishFormsResponse(
+            success=True,
+            message=f"{len(forms_urls)} formulaire(s) créé(s) sur Google Forms.",
+            forms_urls=forms_urls,
+            forms_count=len(forms_urls),
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        _handle_exception(e, "publish_forms")
+        return PublishFormsResponse(success=False, message=str(e))

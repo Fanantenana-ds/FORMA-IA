@@ -1,5 +1,6 @@
 from pydantic import BaseModel
 
+
 class StatistiquesResponse(BaseModel):
     session_realisees: int
     participant: int

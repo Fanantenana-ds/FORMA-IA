@@ -18,7 +18,7 @@
 
 import json
 import logging
-from typing import Any, Dict, Optional
+from typing import Any
 
 from app.services.backend_sync import base_sync
 
@@ -30,11 +30,11 @@ logger = logging.getLogger(__name__)
 # ============================================================
 
 def _build_tdr_payload(
-    tdr_content: Dict[str, Any],
-    docx_filename: Optional[str],
-    pdf_filename: Optional[str],
-    opportunite_id: Optional[str] = None,
-) -> Dict[str, Any]:
+    tdr_content: dict[str, Any],
+    docx_filename: str | None,
+    pdf_filename: str | None,
+    opportunite_id: str | None = None,
+) -> dict[str, Any]:
     """Construit le payload pour POST /documents/tdr."""
     return {
         "type": "TDR",
@@ -57,11 +57,11 @@ def _build_tdr_payload(
 # ============================================================
 
 async def sync_tdr_to_backend(
-    tdr_content: Dict[str, Any],
-    docx_filename: Optional[str] = None,
-    pdf_filename: Optional[str] = None,
-    opportunite_id: Optional[str] = None,
-) -> Dict[str, Any]:
+    tdr_content: dict[str, Any],
+    docx_filename: str | None = None,
+    pdf_filename: str | None = None,
+    opportunite_id: str | None = None,
+) -> dict[str, Any]:
     """
     Envoie le TDR vers le Backend.
 
@@ -76,7 +76,7 @@ async def sync_tdr_to_backend(
         "error": str | None
       }
     """
-    def _legacy(result: Dict[str, Any]) -> Dict[str, Any]:
+    def _legacy(result: dict[str, Any]) -> dict[str, Any]:
         return {
             "enabled": result["enabled"],
             "success": result["sent"],

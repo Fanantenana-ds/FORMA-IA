@@ -2,9 +2,9 @@
 # FORMA-IA — LOGGING
 # ============================================================
 
-import os
-import logging
 import json
+import logging
+import os
 from datetime import datetime
 
 # Configuration du logging

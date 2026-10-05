@@ -1,9 +1,9 @@
+import logging
 import os
 import time
-import logging
-from typing import Dict, Any, Optional, List
+from typing import Any
 
-from fastapi import APIRouter, HTTPException, Depends, status
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from app.orchestrator.preparation_orchestrator import (
@@ -58,7 +58,7 @@ def _handle_exception(e: Exception, context: str) -> None:
     )
 
 
-def _build_response(result: Dict[str, Any], msg_ok: str, elapsed: float) -> "RouteResponse":
+def _build_response(result: dict[str, Any], msg_ok: str, elapsed: float) -> "RouteResponse":
     """Construit la réponse uniforme avec info HITL."""
     review_id = result.get("_review_id") if isinstance(result, dict) else None
     status_val = result.get("_review_status") if isinstance(result, dict) else None
@@ -84,11 +84,11 @@ def _build_response(result: Dict[str, Any], msg_ok: str, elapsed: float) -> "Rou
 # =============================================================================
 
 class CalculateBudgetRequest(BaseModel):
-    formateur_info: Dict[str, Any] = Field(..., description="Infos formateur")
-    salle_info: Dict[str, Any] = Field(..., description="Infos salle")
+    formateur_info: dict[str, Any] = Field(..., description="Infos formateur")
+    salle_info: dict[str, Any] = Field(..., description="Infos salle")
     nb_jours: int = Field(..., ge=1, le=30)
     nb_participants: int = Field(..., ge=1, le=500)
-    options: Dict[str, Any] = Field(default_factory=dict)
+    options: dict[str, Any] = Field(default_factory=dict)
 
     class Config:
         json_schema_extra = {
@@ -103,10 +103,10 @@ class CalculateBudgetRequest(BaseModel):
 
 class GenerateEDTRequest(BaseModel):
     titre_formation: str = Field(..., min_length=3)
-    modules: List[Dict[str, Any]] = Field(..., min_length=1)
-    dates: List[str] = Field(..., min_length=1)
-    formateur: Optional[Dict[str, Any]] = None
-    salle: Optional[Dict[str, Any]] = None
+    modules: list[dict[str, Any]] = Field(..., min_length=1)
+    dates: list[str] = Field(..., min_length=1)
+    formateur: dict[str, Any] | None = None
+    salle: dict[str, Any] | None = None
 
     class Config:
         json_schema_extra = {
@@ -124,10 +124,10 @@ class GenerateEDTRequest(BaseModel):
 
 
 class GenerateCompleteRequest(BaseModel):
-    offre_data: Dict[str, Any] = Field(..., description="Données offre (M3)")
-    projet_info: Dict[str, Any] = Field(..., description="Infos projet")
-    ressources: Dict[str, Any] = Field(..., description="{formateur, salle}")
-    options: Dict[str, Any] = Field(default_factory=dict)
+    offre_data: dict[str, Any] = Field(..., description="Données offre (M3)")
+    projet_info: dict[str, Any] = Field(..., description="Infos projet")
+    ressources: dict[str, Any] = Field(..., description="{formateur, salle}")
+    options: dict[str, Any] = Field(default_factory=dict)
 
     class Config:
         json_schema_extra = {
@@ -168,7 +168,7 @@ class SynchroniserRequest(BaseModel):
     review_id: str = Field(
         ..., description="ID du review APPROUVÉ de la préparation (agent_preparation)"
     )
-    formateur_id: Optional[str] = Field(
+    formateur_id: str | None = Field(
         default=None, description="UUID d'un utilisateur Backend (facultatif)"
     )
     force: bool = Field(
@@ -184,11 +184,11 @@ class SynchroniserRequest(BaseModel):
 class RouteResponse(BaseModel):
     success: bool
     message: str
-    duration_seconds: Optional[float] = None
-    review_id: Optional[str] = None
-    review_status: Optional[str] = None
+    duration_seconds: float | None = None
+    review_id: str | None = None
+    review_status: str | None = None
     requires_human_action: bool = False
-    data: Optional[Dict[str, Any]] = None
+    data: dict[str, Any] | None = None
 
 
 # =============================================================================
@@ -196,7 +196,7 @@ class RouteResponse(BaseModel):
 # =============================================================================
 
 @router.get("/health", summary="[PREP] État du module Préparation")
-async def health_check() -> Dict[str, Any]:
+async def health_check() -> dict[str, Any]:
     _log_request("GET", "/ia/preparation/health")
     try:
         from app.services.preparation import get_package_status

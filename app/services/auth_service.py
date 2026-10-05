@@ -1,15 +1,19 @@
-from fastapi import HTTPException, status
 from datetime import datetime, timezone
+
+from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
+
 from app.core.security import (
-    create_access_token, decode_access_token, hash_password, verify_password
+    create_access_token,
+    decode_access_token,
+    hash_password,
+    verify_password,
 )
 from app.models.user import User
+from app.repositories.revoked_token_repository import RevokedTokenRepository
 from app.repositories.user_repository import UserRepository
-from app.repositories.revoked_token_repository import (
-    RevokedTokenRepository
-    )
 from app.schemas.user import UserCreate
+
 
 class AuthService:
     def __init__(self, db: Session):

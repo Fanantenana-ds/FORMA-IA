@@ -15,7 +15,7 @@
 
 import logging
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from app.services.backend_sync import base_sync
 
@@ -119,7 +119,7 @@ def _parse_budget(budget_str: Any) -> float:
 # PARSING DEADLINE (String → ISO Date)
 # ============================================================
 
-def _parse_deadline(deadline_str: Any) -> Optional[str]:
+def _parse_deadline(deadline_str: Any) -> str | None:
     """
     Convertit une deadline en format ISO (YYYY-MM-DD).
 
@@ -162,7 +162,7 @@ def _parse_deadline(deadline_str: Any) -> Optional[str]:
 # CONSTRUCTION DU PAYLOAD BACKEND
 # ============================================================
 
-def _build_backend_payload(opportunity: Dict[str, Any]) -> Dict[str, Any]:
+def _build_backend_payload(opportunity: dict[str, Any]) -> dict[str, Any]:
     """
     Construit le payload pour l'API Backend (POST /opportunites).
 
@@ -214,8 +214,8 @@ def _build_backend_payload(opportunity: Dict[str, Any]) -> Dict[str, Any]:
 # ============================================================
 
 async def sync_opportunities_to_backend(
-    opportunities: List[Dict[str, Any]]
-) -> Dict[str, Any]:
+    opportunities: list[dict[str, Any]]
+) -> dict[str, Any]:
     """
     Envoie les opportunités vers le Backend (POST /opportunites).
 
@@ -316,7 +316,7 @@ def _cle_titre(titre: Any) -> str:
     return re.sub(r"\s+", " ", str(titre or "").strip().lower())[:255]
 
 
-def _liste_backend(data: Any) -> List[Dict[str, Any]]:
+def _liste_backend(data: Any) -> list[dict[str, Any]]:
     if isinstance(data, list):
         return [o for o in data if isinstance(o, dict)]
     if isinstance(data, dict):
@@ -326,8 +326,8 @@ def _liste_backend(data: Any) -> List[Dict[str, Any]]:
 
 
 async def sync_new_opportunities_to_backend(
-    opportunities: List[Dict[str, Any]]
-) -> Dict[str, Any]:
+    opportunities: list[dict[str, Any]]
+) -> dict[str, Any]:
     """
     Comme sync_opportunities_to_backend, mais n'envoie QUE les opportunités
     absentes du Backend (même URL déjà présente dans un contenu, ou même
@@ -339,7 +339,7 @@ async def sync_new_opportunities_to_backend(
 
     Retourne {enabled, sent, failed, already_present[, error]}.
     """
-    result: Dict[str, Any] = {
+    result: dict[str, Any] = {
         "enabled": base_sync.is_sync_enabled(),
         "sent": 0,
         "failed": 0,
@@ -362,7 +362,7 @@ async def sync_new_opportunities_to_backend(
     titres_connus.discard("")
     contenus = [str(o.get("contenu") or "").lower() for o in existantes]
 
-    nouvelles: List[Dict[str, Any]] = []
+    nouvelles: list[dict[str, Any]] = []
     for opp in opportunities:
         url = str(opp.get("url") or "").strip().lower()
         deja = _cle_titre(opp.get("title")) in titres_connus or (
@@ -389,7 +389,7 @@ async def sync_new_opportunities_to_backend(
 # FONCTION UTILITAIRE — TEST MANUEL
 # ============================================================
 
-async def test_sync_single_opportunity(opportunity: Dict[str, Any]) -> bool:
+async def test_sync_single_opportunity(opportunity: dict[str, Any]) -> bool:
     """
     Teste l'envoi d'UNE SEULE opportunité (pour debug).
     Retourne True si succès, False sinon.

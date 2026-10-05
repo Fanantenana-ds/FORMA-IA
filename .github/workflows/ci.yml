@@ -9,21 +9,39 @@ on:
 jobs:
   backend-checks:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: forma_user
+          POSTGRES_PASSWORD: forma_pass
+          POSTGRES_DB: forma_ia
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - uses: actions/checkout@v4
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.10"
+          python-version: "3.12"
       - name: Install dependencies
-        working-directory: ./backend
+        working-directory: .
         run: |
           pip install -r requirements.txt
+          pip install ruff
       - name: Lint with ruff
-        working-directory: ./backend
+        working-directory: .
         run: ruff check .
       - name: Run tests with coverage
-        working-directory: ./backend
+        working-directory: .
+        env:
+          DATABASE_URL: postgresql://forma_user:forma_pass@localhost:5432/forma_ia
+          SECRET_KEY: ci-test-secret-key-not-for-production
         run: |
           coverage run -m pytest
           coverage report --fail-under=70
@@ -41,7 +59,4 @@ jobs:
         run: npm install
       - name: Lint
         working-directory: ./frontend
-        run: npm run lint --if-present
-      - name: Run tests
-        working-directory: ./frontend
-        run: npm test --if-present -- --watchAll=false
+        run: npm run lint

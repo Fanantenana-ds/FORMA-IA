@@ -18,10 +18,10 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-import app.models.document  # noqa: F401  (enregistre les tables)
-import app.models.formation  # noqa: F401
-import app.models.historique_analyse  # noqa: F401
-import app.models.user  # noqa: F401
+import app.models.document
+import app.models.formation
+import app.models.historique_analyse
+import app.models.user
 from app.api.v1.endpoints import document as document_endpoints
 from app.core.dependencies import get_current_user
 from app.database import Base, get_db

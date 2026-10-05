@@ -16,14 +16,13 @@
 
 import json
 import logging
-import os
 from datetime import date, datetime
 from pathlib import Path
-from typing import Any, Dict, Optional, Union
+from typing import Any
 
 import yaml
 
-from app.services.llm import LLMError, LLMNotAvailableError, get_llm_provider
+from app.services.llm import LLMNotAvailableError, get_llm_provider
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +71,7 @@ class RelanceGeneratorService:
     # --------------------------------------------------------
     # PROMPT
     # --------------------------------------------------------
-    def _load_prompt(self) -> Dict[str, Any]:
+    def _load_prompt(self) -> dict[str, Any]:
         if not PROMPT_PATH.exists():
             raise FileNotFoundError(f"❌ Prompt introuvable : {PROMPT_PATH}")
         with open(PROMPT_PATH, "r", encoding="utf-8") as f:
@@ -94,7 +93,7 @@ class RelanceGeneratorService:
             else "\n".join(f"- {r}" for r in cfg.get("security", [])),
         ])
 
-    def _build_user_prompt(self, facts: Dict[str, Any]) -> str:
+    def _build_user_prompt(self, facts: dict[str, Any]) -> str:
         return "\n".join([
             "Rédige la relance pour les faits suivants (déjà calculés).",
             "",
@@ -114,8 +113,8 @@ class RelanceGeneratorService:
     # --------------------------------------------------------
     @staticmethod
     def calculer_jours_retard(
-        date_echeance: Optional[Union[str, date]],
-        aujourdhui: Optional[date] = None,
+        date_echeance: str | date | None,
+        aujourdhui: date | None = None,
     ) -> int:
         """0 si pas d'échéance ou échéance non dépassée."""
         if not date_echeance:
@@ -129,7 +128,7 @@ class RelanceGeneratorService:
         return max(0, (aujourdhui - date_echeance).days)
 
     @staticmethod
-    def calculer_niveau(jours_retard: int) -> Optional[int]:
+    def calculer_niveau(jours_retard: int) -> int | None:
         """None = pas de retard, aucune relance à générer."""
         if jours_retard <= 0:
             return None
@@ -142,7 +141,7 @@ class RelanceGeneratorService:
     # --------------------------------------------------------
     # GÉNÉRATION
     # --------------------------------------------------------
-    async def generate(self, facts: Dict[str, Any]) -> Dict[str, Any]:
+    async def generate(self, facts: dict[str, Any]) -> dict[str, Any]:
         """
         Args:
             facts: {numero, client, montant_restant_du, devise,
@@ -185,7 +184,7 @@ class RelanceGeneratorService:
     # --------------------------------------------------------
     # LLM
     # --------------------------------------------------------
-    async def _generate_with_llm(self, facts: Dict[str, Any]) -> Dict[str, Any]:
+    async def _generate_with_llm(self, facts: dict[str, Any]) -> dict[str, Any]:
         response = await self.llm.generate(
             system_prompt=self._build_system_prompt(),
             user_prompt=self._build_user_prompt(facts),
@@ -214,10 +213,10 @@ class RelanceGeneratorService:
     # FALLBACK GABARIT
     # --------------------------------------------------------
     @staticmethod
-    def _objet_defaut(facts: Dict[str, Any]) -> str:
+    def _objet_defaut(facts: dict[str, Any]) -> str:
         return f"Relance facture {facts['numero']} — {TONS[facts['niveau']]}"
 
-    def _generate_with_template(self, facts: Dict[str, Any]) -> Dict[str, Any]:
+    def _generate_with_template(self, facts: dict[str, Any]) -> dict[str, Any]:
         niveau = facts["niveau"]
         objet = self._objet_defaut(facts)
 

@@ -155,10 +155,9 @@
 # ============================================================
 
 import logging
-import os
 import re
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 import yaml
 
@@ -211,7 +210,7 @@ DOMAIN_KEYWORDS = {
 # déclenche des faux positifs : "materiaux" contient "ia", "stabilité" contient
 # "bi". La frontière de mot (\b) exige que le mot-clé soit un mot entier
 # (ou une phrase entière pour les mots-clés à plusieurs mots), pas un fragment.
-_KEYWORD_PATTERNS: Dict[str, Dict[str, "re.Pattern[str]"]] = {
+_KEYWORD_PATTERNS: dict[str, dict[str, "re.Pattern[str]"]] = {
     domain: {
         keyword: re.compile(r"\b" + re.escape(keyword) + r"\b")
         for keyword in keywords
@@ -220,7 +219,7 @@ _KEYWORD_PATTERNS: Dict[str, Dict[str, "re.Pattern[str]"]] = {
 }
 
 
-def _load_yaml_reference(path: Path) -> Dict[str, Any]:
+def _load_yaml_reference(path: Path) -> dict[str, Any]:
     if not path.exists():
         logger.warning("⚠️ Prompt de référence absent : %s", path)
         return {}
@@ -244,7 +243,7 @@ class ClassificationService:
         )
         logger.info("✅ classification.yaml chargé (référence)")
 
-    def classify(self, opportunity: Dict[str, Any]) -> Dict[str, Any]:
+    def classify(self, opportunity: dict[str, Any]) -> dict[str, Any]:
         title = str(opportunity.get("title", "")).lower()
         summary = str(opportunity.get("summary", "") or "").lower()
         text = f"{title} {summary}"
@@ -277,7 +276,7 @@ class ClassificationService:
         }
 
     @staticmethod
-    def detect_country(opportunity: Dict[str, Any]) -> str:
+    def detect_country(opportunity: dict[str, Any]) -> str:
         text = (
             f"{opportunity.get('title', '')} "
             f"{opportunity.get('summary', '') or ''} "

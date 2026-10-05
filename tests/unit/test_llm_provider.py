@@ -19,15 +19,14 @@ from types import SimpleNamespace
 
 import pytest
 
+from app.services.llm import llm_factory
 from app.services.llm.groq_provider import GroqProvider
 from app.services.llm.llm_provider import (
     LLMError,
-    LLMInvalidResponseError,
     LLMNotAvailableError,
     LLMRateLimitError,
     LLMTimeoutError,
 )
-from app.services.llm import llm_factory
 
 
 def run(coro):

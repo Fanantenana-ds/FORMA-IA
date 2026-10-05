@@ -31,7 +31,7 @@
 import logging
 import os
 import uuid
-from typing import Any, Dict, Optional
+from typing import Any
 
 import httpx
 
@@ -40,7 +40,7 @@ logger = logging.getLogger(__name__)
 _LOGIN_TIMEOUT = 10.0
 
 # Token JWT obtenu par login automatique (mémoire du processus uniquement)
-_token_cache: Optional[str] = None
+_token_cache: str | None = None
 
 
 # ============================================================
@@ -48,7 +48,7 @@ _token_cache: Optional[str] = None
 # chargement du .env)
 # ============================================================
 
-def _cfg() -> Dict[str, Any]:
+def _cfg() -> dict[str, Any]:
     return {
         "enabled": os.getenv("BACKEND_SYNC_ENABLED", "false").lower() == "true",
         "api_url": os.getenv(
@@ -77,9 +77,9 @@ def reset_token_cache() -> None:
 # ============================================================
 
 async def _login(
-    cfg: Dict[str, Any],
-    transport: Optional[httpx.AsyncBaseTransport] = None,
-) -> Optional[str]:
+    cfg: dict[str, Any],
+    transport: httpx.AsyncBaseTransport | None = None,
+) -> str | None:
     """Login automatique avec le compte de service (POST /auth/login)."""
     if not cfg["email"] or not cfg["password"]:
         logger.warning(
@@ -116,8 +116,8 @@ async def _login(
 
 async def get_token(
     force_refresh: bool = False,
-    transport: Optional[httpx.AsyncBaseTransport] = None,
-) -> Optional[str]:
+    transport: httpx.AsyncBaseTransport | None = None,
+) -> str | None:
     """
     Retourne un JWT pour appeler le Backend.
 
@@ -148,10 +148,10 @@ async def backend_request(
     path: str,
     *,
     json: Any = None,
-    params: Optional[Dict[str, Any]] = None,
-    timeout: Optional[float] = None,
-    transport: Optional[httpx.AsyncBaseTransport] = None,
-) -> Dict[str, Any]:
+    params: dict[str, Any] | None = None,
+    timeout: float | None = None,
+    transport: httpx.AsyncBaseTransport | None = None,
+) -> dict[str, Any]:
     """
     Appelle le Backend avec authentification et re-login sur 401.
 
@@ -165,7 +165,7 @@ async def backend_request(
       }
     """
     cfg = _cfg()
-    result: Dict[str, Any] = {
+    result: dict[str, Any] = {
         "ok": False,
         "status_code": None,
         "data": None,
@@ -175,7 +175,7 @@ async def backend_request(
     url = f"{cfg['api_url']}/{path.lstrip('/')}"
     token = await get_token(transport=transport)
 
-    response: Optional[httpx.Response] = None
+    response: httpx.Response | None = None
     for attempt in (1, 2):
         headers = {"Content-Type": "application/json"}
         if token:
@@ -222,9 +222,9 @@ async def backend_request(
 # RÉSULTAT STANDARD + POST AVEC VÉRIFICATION
 # ============================================================
 
-def new_result(**extra: Any) -> Dict[str, Any]:
+def new_result(**extra: Any) -> dict[str, Any]:
     """Résultat de sync standard (même forme pour tous les services)."""
-    result: Dict[str, Any] = {
+    result: dict[str, Any] = {
         "enabled": is_sync_enabled(),
         "sent": False,        # créé côté Backend (HTTP 2xx)
         "skipped": False,     # endpoint absent (404/405) ou sync désactivée
@@ -240,13 +240,13 @@ def new_result(**extra: Any) -> Dict[str, Any]:
 
 async def post_and_verify(
     path: str,
-    payload: Dict[str, Any],
+    payload: dict[str, Any],
     *,
     verify: bool = True,
-    verify_path: Optional[str] = None,
+    verify_path: str | None = None,
     label: str = "ressource",
-    transport: Optional[httpx.AsyncBaseTransport] = None,
-) -> Dict[str, Any]:
+    transport: httpx.AsyncBaseTransport | None = None,
+) -> dict[str, Any]:
     """
     POST vers le Backend, puis GET de contrôle (couche 2).
 

@@ -1,3 +1,4 @@
+from app.utils.json_repair import repair_json
 import os
 import re
 import json
@@ -162,17 +163,7 @@ class EvaluationFormateurService:
         return result
 
     def _repair_json(self, raw: str) -> str:
-        raw = re.sub(r"^```(?:json)?\s*", "", raw.strip())
-        raw = re.sub(r"\s*```\s*$", "", raw)
-        raw = raw.replace("\\'", "'").replace("\\/", "/")
-        start = raw.find("{")
-        if start > 0:
-            raw = raw[start:]
-        end = raw.rfind("}")
-        if end > 0:
-            raw = raw[:end + 1]
-        return raw
-
+        return repair_json(raw)
     def _validate_minimal(self, data: Dict[str, Any]) -> None:
         for k in ("formateur", "score_global", "recommandation"):
             if k not in data:

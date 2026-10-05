@@ -18,6 +18,7 @@ from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from app.schemas.common import RouteResponse
 
 from app.orchestrator.facturation_orchestrator import (
     FacturationOrchestrator,
@@ -71,17 +72,6 @@ def _handle_exception(e: Exception, context: str) -> None:
         status_code=500,
         detail=f"Erreur interne : {type(e).__name__} — {e}",
     )
-
-
-class RouteResponse(BaseModel):
-    """Réponse standardisée pour les routes M7."""
-    success: bool
-    message: str
-    duration_seconds: Optional[float] = None
-    review_id: Optional[str] = None
-    review_status: Optional[str] = None
-    requires_human_action: bool = False
-    data: Optional[Dict[str, Any]] = None
 
 
 def _build_response(result: Dict[str, Any], msg_ok: str, elapsed: float) -> RouteResponse:

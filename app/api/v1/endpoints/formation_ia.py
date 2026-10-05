@@ -10,6 +10,7 @@ from app.services.hitl import approve_review as _approve
 from app.services.hitl import reject_review as _reject
 from pydantic import BaseModel, Field
 from app.schemas.common import RouteResponse
+from app.api.v1.endpoints._helpers import log_request as _log_req, handle_exception as _handle_exc, build_response as _build_resp
 
 from app.orchestrator.formation_orchestrator import (
     FormationOrchestrator,
@@ -42,49 +43,15 @@ router = APIRouter(
 # =============================================================================
 
 def _log_request(method: str, path: str, **kwargs) -> None:
-    vlog("=" * 70)
-    vlog(f"🌐 [Route IA] {method} {path}")
-    for k, val in kwargs.items():
-        vlog(f"   {k} : {val}")
-    vlog("=" * 70)
+    _log_req(logger, "Route IA", method, path, **kwargs)
 
 
 def _handle_exception(e: Exception, context: str) -> None:
-    if isinstance(e, NotImplementedError):
-        logger.warning(f"⚠️  [Route IA] {context} : {e}")
-        raise HTTPException(status_code=501, detail=str(e))
-    if isinstance(e, ValueError):
-        logger.error(f"❌ [Route IA] {context} — validation : {e}")
-        raise HTTPException(status_code=422, detail=f"Réponse IA invalide : {e}")
-    if isinstance(e, RuntimeError):
-        logger.error(f"❌ [Route IA] {context} — service : {e}")
-        raise HTTPException(status_code=503, detail=str(e))
-    logger.exception(f"💥 [Route IA] {context} : {e}")
-    raise HTTPException(
-        status_code=500,
-        detail=f"Erreur interne : {type(e).__name__} — {e}",
-    )
+    _handle_exc(e, context, "Route IA", logger)
 
 
-def _build_response(result: Dict[str, Any], msg_ok: str, elapsed: float) -> "RouteResponse":
-    """Construit une réponse uniforme avec info HITL."""
-    review_id = result.get("_review_id") if isinstance(result, dict) else None
-    status = result.get("_review_status") if isinstance(result, dict) else None
-
-    requires_action = status == "pending_review"
-    message = msg_ok
-    if requires_action:
-        message += f" ⚠️ En attente validation (review={review_id})."
-
-    return RouteResponse(
-        success=True,
-        message=message,
-        duration_seconds=elapsed,
-        review_id=review_id,
-        review_status=status,
-        requires_human_action=requires_action,
-        data=result,
-    )
+def _build_response(result: Dict[str, Any], msg_ok: str, elapsed: float) -> RouteResponse:
+    return _build_resp(result, msg_ok, elapsed)
 
 
 # =============================================================================

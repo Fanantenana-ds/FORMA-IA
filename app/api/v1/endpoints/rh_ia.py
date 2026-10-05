@@ -22,6 +22,7 @@ from typing import Any, Dict, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from app.schemas.common import RouteResponse
+from app.api.v1.endpoints._helpers import handle_exception as _handle_exc, build_response as _build_resp
 
 from app.orchestrator.rh_orchestrator import RhOrchestrator, get_rh_orchestrator
 from app.schemas.rh_ia import (
@@ -54,31 +55,11 @@ router = APIRouter(
 # =============================================================================
 
 def _handle_exception(e: Exception, context: str) -> None:
-    if isinstance(e, ValueError):
-        raise HTTPException(status_code=422, detail=f"Données invalides : {e}")
-    if isinstance(e, RuntimeError):
-        logger.error(f"❌ [Route M4] {context} — service : {e}")
-        raise HTTPException(status_code=503, detail=str(e))
-    logger.exception(f"💥 [Route M4] {context} : {e}")
-    raise HTTPException(status_code=500, detail=f"Erreur interne : {type(e).__name__} — {e}")
+    _handle_exc(e, context, "Route M4", logger)
 
 
 def _build_hitl_response(result: Dict[str, Any], msg_ok: str, elapsed: float) -> RouteResponse:
-    review_id = result.get("_review_id")
-    status = result.get("_review_status", "pending_review")
-    requires = status == "pending_review"
-    message = msg_ok
-    if requires:
-        message += f" ⚠️ En attente validation (review={review_id})."
-    return RouteResponse(
-        success=True,
-        message=message,
-        duration_seconds=elapsed,
-        review_id=review_id,
-        review_status=status,
-        requires_human_action=requires,
-        data=result,
-    )
+    return _build_resp(result, msg_ok, elapsed)
 
 
 # =============================================================================

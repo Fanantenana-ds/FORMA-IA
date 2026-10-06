@@ -40,7 +40,9 @@ def _charger_prompt(nom_fichier: str) -> str:
     return "\n\n".join(s for s in sections if s)
 
 
-async def _appeler_llm_json(nom_prompt: str, contenu: str) -> Optional[Dict[str, Any]]:
+async def _appeler_llm_json(
+    nom_prompt: str, contenu: str, temperature: float = 0.3
+) -> Optional[Dict[str, Any]]:
     import json
     try:
         llm = get_llm_provider()
@@ -50,7 +52,7 @@ async def _appeler_llm_json(nom_prompt: str, contenu: str) -> Optional[Dict[str,
         reponse = await llm.generate_with_retry(
             system_prompt=_charger_prompt(nom_prompt),
             user_prompt=contenu,
-            temperature=0.3, max_tokens=2000, json_mode=True, max_retries=2,
+            temperature=temperature, max_tokens=2000, json_mode=True, max_retries=2,
             # Modèle de raisonnement Groq : voir resume_service.py pour le détail.
             reasoning_effort="low",
         )
@@ -273,7 +275,7 @@ class ChatOrchestrator:
             return _reponse_mode_strict(), [], provider.modele_requete, cache_avant
 
         contexte = "\n\n".join(f"Formation : {r.formation_titre}\nRésumé : {r.contenu}" for r in resultats)
-        resultat = await _appeler_llm_json("reponse_synthese_thematique.yaml", contexte)
+        resultat = await _appeler_llm_json("reponse_synthese_thematique.yaml", contexte, temperature=0.5)
 
         texte = resultat["reponse"] if resultat and resultat.get("reponse") else _reponse_mode_strict()
         sources = [{"fichier": None, "formation": r.formation_titre, "page": None, "score": r.score} for r in resultats]
@@ -326,7 +328,11 @@ class ChatOrchestrator:
         contexte = "\n\n".join(
             f"[{r.fichier}, p. {r.page_debut}]\n{r.contenu}" for r in resultats
         )
-        resultat = await _appeler_llm_json("reponse_question_fond.yaml", f"QUESTION : {message}\n\nEXTRAITS :\n{contexte}")
+        resultat = await _appeler_llm_json(
+            "reponse_question_fond.yaml",
+            f"QUESTION : {message}\n\nEXTRAITS :\n{contexte}",
+            temperature=0.5,
+        )
 
         texte = resultat["reponse"] if resultat and resultat.get("reponse") else _reponse_mode_strict()
         sources = [
@@ -339,32 +345,63 @@ class ChatOrchestrator:
         cache_avant = await self._cache_utilise_pour(message)
         provider = get_embedding_provider()
 
-        # Seuil abaissé à 0.35 pour les questions d'aide plateforme : les
-        # formulations naturelles (sans "FORMA-IA" dans la phrase) donnent
-        # des scores entre 0.35 et 0.50 sur nos documents actuels.
+        # Seuil abaissé à 0.35 : les formulations naturelles sans "FORMA-IA"
+        # dans la phrase donnent des scores entre 0.35 et 0.50 sur nos guides.
         resultats = await recherche.rechercher(
             message, collection="aide_plateforme", top_k=5, seuil_min=0.35,
             attente_max_s=ATTENTE_MAX_CHAT_S, repository=self.repository,
         )
 
         if not resultats:
-            # Réponse de repli professionnelle quand Voyage ne trouve rien
-            texte = (
-                "La plateforme **FORMA-IA** est organisée en plusieurs modules :\n\n"
-                "- **Veille marché** (M1) : détecte des opportunités de formation sur Internet\n"
-                "- **Termes de référence** (M2) : génère les documents d'appel d'offre\n"
-                "- **Offres commerciales** (M3) : prépare les propositions de formation\n"
-                "- **Préparation** (M4) : organise les ressources et la logistique\n"
-                "- **Gestion des formations** (M5) : pilote le déroulement et l'évaluation\n"
-                "- **Base de connaissances** (RAG) : répond aux questions sur les supports\n\n"
-                "Posez-moi une question précise sur l'un de ces modules et je vous guiderai."
+            # Pas de résultat RAG → le LLM répond à partir de sa connaissance
+            # de la plateforme (modules, workflow) sans inventer de procédure.
+            prompt_fallback = (
+                "Tu es FORMA-IA, l'assistant de la plateforme ALTIORA. "
+                "Réponds à la question sur l'utilisation de la plateforme en décrivant "
+                "les modules concernés (Veille marché, Termes de référence, Offres M3, "
+                "Préparation, Gestion des formations M5, Base de connaissances RAG). "
+                "Utilise un langage naturel adapté à un directeur ou formateur. "
+                "Zéro route HTTP, zéro code technique. "
+                'Retourne UNIQUEMENT {"reponse": "..."}.'
             )
+            import json as _json
+            try:
+                llm = get_llm_provider()
+                rep = await llm.generate_with_retry(
+                    system_prompt=prompt_fallback,
+                    user_prompt=f"Question : {message}",
+                    temperature=0.5, max_tokens=600, json_mode=True, max_retries=1,
+                    reasoning_effort="low",
+                )
+                data = _json.loads(rep["content"])
+                texte = data.get("reponse", "")
+            except Exception:
+                texte = ""
+            if not texte:
+                texte = (
+                    "La plateforme **FORMA-IA** comporte plusieurs modules : "
+                    "Veille marché, Termes de référence, Offres commerciales, "
+                    "Préparation, Gestion des formations et Base de connaissances. "
+                    "Posez-moi une question précise sur l'un de ces modules et je vous guiderai."
+                )
             return texte, [], provider.modele_requete, cache_avant
 
+        # RAG + LLM : on synthétise les extraits avec une température plus haute
+        # pour une prose plus fluide et naturelle.
         contexte = "\n\n".join(f"[{r.fichier}]\n{r.contenu}" for r in resultats)
-        resultat = await _appeler_llm_json("reponse_aide_plateforme.yaml", f"QUESTION : {message}\n\nEXTRAITS :\n{contexte}")
+        resultat = await _appeler_llm_json(
+            "reponse_aide_plateforme.yaml",
+            f"QUESTION : {message}\n\nEXTRAITS DU GUIDE :\n{contexte}",
+            temperature=0.5,
+        )
 
-        texte = resultat["reponse"] if resultat and resultat.get("reponse") else _reponse_mode_strict()
+        if resultat and resultat.get("reponse"):
+            texte = resultat["reponse"]
+        else:
+            # Fallback lisible si le LLM échoue : résumé des extraits trouvés
+            lignes = [f"**{r.fichier}** : {r.contenu[:200]}…" for r in resultats[:3]]
+            texte = "Voici ce que j'ai trouvé dans le guide :\n\n" + "\n\n".join(lignes)
+
         sources = [{"fichier": r.fichier, "formation": None, "page": r.page_debut, "score": r.score} for r in resultats]
         return texte, sources, provider.modele_requete, cache_avant
 

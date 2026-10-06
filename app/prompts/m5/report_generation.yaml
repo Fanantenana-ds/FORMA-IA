@@ -96,3 +96,7 @@ regles: |
   8. Date d'émission : date de fin de session + 3 jours
   9. Langue : FRANÇAIS professionnel
   10. Maximum 200 caractères par recommandation
+  11. Si des extraits de supports sont fournis (section CONTENU DE LA FORMATION),
+      les recommandations DOIVENT mentionner des thèmes ou compétences spécifiques
+      de la formation (ex. "approfondir le module X", "pratiquer la technique Y").
+      Recommandations génériques interdites quand le contenu est disponible.

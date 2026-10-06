@@ -108,7 +108,7 @@ class ChatOrchestrator:
             elif type_detecte == "aide_plateforme":
                 texte, sources, modele_requete, cache_utilise = await self._repondre_aide_plateforme(message)
             elif type_detecte == "conversationnel":
-                texte, sources = self._repondre_conversationnel()
+                texte, sources = self._repondre_conversationnel(message)
             else:  # hors_sujet
                 texte, sources = _reponse_mode_strict(), []
         except DelaiDepasseError as exc:
@@ -164,16 +164,42 @@ class ChatOrchestrator:
         lignes = [f"- {e.fichier} ({e.formation_code or 'sans formation'}) — {e.nb_chunks} chunk(s)" for e in indexees]
         return f"{len(indexees)} document(s) indexé(s) :\n\n" + "\n".join(lignes), []
 
-    def _repondre_conversationnel(self):
-        # Python d'abord (mission) : gabarit fixe, pas d'appel LLM pour un
-        # simple message d'accueil/remerciement.
-        texte = (
-            "Bonjour ! Je suis l'assistant documentaire de FORMA-IA. "
-            "Je peux vous renseigner sur les formations ALTIORA (contenu, "
-            "supports, où un sujet est expliqué), vous donner le catalogue "
-            "ou l'inventaire des documents indexés, ou vous aider sur "
-            "l'utilisation de la plateforme. Que puis-je faire pour vous ?"
-        )
+    def _repondre_conversationnel(self, message: str = ""):
+        msg = message.lower()
+        # Questions d'identité → réponse spécifique FORMA-IA / ALTIORA
+        if any(mot in msg for mot in ("créé", "cree", "crée", "créateur", "qui es-tu", "qui es tu",
+                                      "qui t'a", "qui ta", "who are you", "c'est quoi", "c'est qui",
+                                      "développé", "developpé", "développe", "construit", "fait par")):
+            texte = (
+                "Je suis **FORMA-IA**, l'assistant documentaire intelligent de la plateforme ALTIORA. "
+                "J'ai été conçu et développé par l'équipe ALTIORA pour aider les directeurs, "
+                "formateurs et assistants à accéder rapidement aux contenus de formation, "
+                "aux supports indexés et aux informations de la plateforme. "
+                "Comment puis-je vous aider aujourd'hui ?"
+            )
+        # Questions sur les capacités / ce que l'assistant peut faire
+        elif any(mot in msg for mot in ("peux-tu", "peuxtu", "peux tu", "capable", "fonctionnalité",
+                                        "fonctionnalite", "que sais-tu", "que fais-tu", "comment tu",
+                                        "à quoi", "a quoi")):
+            texte = (
+                "Je peux vous aider sur plusieurs sujets :\n\n"
+                "- **Catalogue des formations** : lister toutes les formations ALTIORA disponibles\n"
+                "- **Contenu d'une formation** : décrire les supports et modules d'une formation précise\n"
+                "- **Localisation d'un sujet** : trouver dans quel support et à quelle page un sujet est traité\n"
+                "- **Synthèse thématique** : comparer plusieurs formations sur un même thème\n"
+                "- **Questions de fond** : répondre à une question précise à partir des documents indexés\n"
+                "- **Aide sur la plateforme** : expliquer comment utiliser les modules de FORMA-IA\n\n"
+                "Que souhaitez-vous savoir ?"
+            )
+        else:
+            # Accueil générique pour salutations, remerciements, etc.
+            texte = (
+                "Bonjour ! Je suis l'assistant documentaire de FORMA-IA. "
+                "Je peux vous renseigner sur les formations ALTIORA (contenu, "
+                "supports, où un sujet est expliqué), vous donner le catalogue "
+                "ou l'inventaire des documents indexés, ou vous aider sur "
+                "l'utilisation de la plateforme. Que puis-je faire pour vous ?"
+            )
         return texte, []
 
     # ========================================================

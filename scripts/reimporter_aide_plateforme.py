@@ -71,10 +71,11 @@ async def main():
         del registre_data[h]
     # Sauvegarder le registre nettoyé
     import json
+    from dataclasses import asdict
     chemin_registre = RACINE / "data" / "rag" / "index_registry.json"
     with open(chemin_registre, "w", encoding="utf-8") as f:
         json.dump(
-            {h: e.model_dump() for h, e in registre_data.items()},
+            {h: asdict(e) for h, e in registre_data.items()},
             f, ensure_ascii=False, indent=2,
         )
     logger.info(f"   → {len(anciens_hashs)} entrée(s) supprimée(s) du registre")

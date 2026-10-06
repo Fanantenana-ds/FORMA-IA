@@ -1,950 +1,463 @@
 # INTERFACES MANQUANTES — FORMA-IA
+## Diagnostic réel : Backend vs Frontend
 
-> **Pour qui ?** Le développeur frontend chargé de compléter le projet.  
-> **Objectif :** Liste exhaustive de tout ce qui n'existe pas encore côté frontend, avec le code exact à écrire.  
-> **Backend :** 100% prêt sur tous les points listés ici.  
+> **Pour qui ?** Le développeur frontend, pour savoir exactement ce qu'il reste à faire.  
+> **Méthode :** Lecture directe du code backend (19 fichiers endpoints) et du code frontend (34 fichiers .tsx + api.ts).  
 > **Dernière mise à jour :** 2026-10-06
 
 ---
 
-## RÉSUMÉ RAPIDE
+## ÉTAT RÉEL DU FRONTEND AUJOURD'HUI
 
-| Priorité | Quoi | Fichier | Bloque quoi |
-|---|---|---|---|
-| 🔴 **CRITIQUE** | Auth réelle (token JWT) | `api.ts` + `AuthPage.tsx` | TOUT — sans ça, 0 donnée réelle |
-| 🔴 **CRITIQUE** | `HitlReviewView.tsx` | À créer | Aucun contenu IA ne peut être validé |
-| 🟠 **Haute** | Brancher 5 vues existantes sur le Backend | Voir ci-dessous | Données toujours mockées |
-| 🟠 **Haute** | `SupportsFormationView.tsx` | À créer | Upload RAG inaccessible |
-| 🟡 **Moyenne** | `PreparationView.tsx` | À créer | Projets/salles/EDT inaccessibles |
-| 🟡 **Moyenne** | `BilanFormationsView.tsx` | À créer | Bilan Direction inaccessible |
-| 🟢 **Faible** | Boutons agents IA dans les vues | Toutes les vues | Génération IA inaccessible |
+Le frontend a **8 vues dans le menu**, **1 fichier `api.ts`** avec 12 méthodes, et **aucune authentification réelle**.
 
----
+### Ce qui existe vraiment dans `api.ts`
+| Méthode | Ce qu'elle fait réellement |
+|---|---|
+| `checkHealth()` | Ping `/health` — la seule vraie vérification |
+| `getSessions()` | Appel réel `GET /sessions` (avec fallback mock si échec) |
+| `createSession()` | Crée une session locale en dur, puis tente POST — le corps envoyé est construit localement, pas depuis un formulaire réel |
+| `getOpportunites()` | Appel réel `GET /opportunites` (avec fallback mock) |
+| `createOpportunite()` | Même problème : corps construit localement |
+| `getFormateurs()` | Appel réel `GET /rh/formateurs` (avec fallback mock) |
+| `getFactures()` | Appel réel `GET /factures` (avec fallback mock) |
+| `createFacture()` | Corps construit localement, tente POST |
+| `getKPIs()` | Appel dashboard — données réelles si connecté |
+| `getPresences()` | **Retourne directement les mocks** — aucun appel API |
+| `getVeilles()` | **Retourne directement les mocks** — aucun appel API |
+| `getRecentActivities()` | **Retourne directement les mocks** — aucun appel API |
 
-## PARTIE 1 — CE QUI EST CASSÉ DANS LES FICHIERS EXISTANTS
-
-### 1.1 — `AuthPage.tsx` — L'authentification est un mock
-
-**État actuel :** La fonction `quickDemoLogin()` simule une connexion sans jamais appeler le Backend. Aucun token JWT n'est généré. Toutes les routes protégées retournent HTTP 401.
-
-**Ce qu'il faut faire :**
-
-```ts
-// Dans api.ts — ajouter la méthode login()
-async login(email: string, password: string): Promise<string> {
-  const res = await fetch('http://127.0.0.1:8000/api/v1/auth/login', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password }),
-  })
-  if (!res.ok) throw new Error('Identifiants invalides')
-  const data = await res.json()
-  // data = { access_token: "eyJ...", token_type: "bearer" }
-  localStorage.setItem('token', data.access_token)
-  return data.access_token
-}
-```
-
-```ts
-// Dans api.ts — ajouter le token sur TOUS les appels
-private async request(url: string, options: RequestInit = {}) {
-  const token = localStorage.getItem('token')
-  const headers: HeadersInit = {
-    'Content-Type': 'application/json',
-    ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-    ...options.headers,
-  }
-  const res = await fetch(`http://127.0.0.1:8000/api/v1${url}`, { ...options, headers })
-  if (res.status === 401) {
-    localStorage.removeItem('token')
-    window.location.href = '/login'
-    return
-  }
-  return res.json()
-}
-```
-
-```tsx
-// Dans AuthPage.tsx — remplacer quickDemoLogin() par :
-const handleLogin = async (email: string, password: string) => {
-  try {
-    await apiService.login(email, password)
-    // naviguer vers le dashboard
-  } catch {
-    setError('Email ou mot de passe incorrect')
-  }
-}
-```
-
-**Tester :**
-```
-POST http://127.0.0.1:8000/api/v1/auth/login
-Body: { "email": "votre_email", "password": "votre_mdp" }
-Réponse attendue: { "access_token": "eyJ...", "token_type": "bearer" }
-```
+### Problème transversal sur TOUS les appels
+Le `request()` dans `api.ts` **n'envoie jamais le token JWT**. Résultat : toutes les routes protégées retournent HTTP 401 et l'API bascule automatiquement sur le mode mock. Même quand le backend est démarré, le frontend affiche des données fictives.
 
 ---
 
-### 1.2 — `VeilleMarcheView.tsx` — Données mockées, 0 appel API
+## PARTIE 1 — CE QUI EST CASSÉ DANS L'EXISTANT
 
-**État actuel :** State local uniquement. Aucun appel à `/opportunites`.
+### 1.1 — Authentification (`AuthPage.tsx` + `api.ts`)
 
-**Ce qu'il faut ajouter dans `api.ts` :**
+**Problème :** Il n'existe pas de méthode `login()` dans `api.ts`. `AuthPage.tsx` utilise une fonction `quickDemoLogin()` qui simule une connexion sans jamais contacter le backend. Aucun token JWT n'est jamais obtenu ni stocké.
 
-```ts
-async getOpportunites() {
-  return this.request('/opportunites')
-}
-async updateOpportunite(id: string, data: Partial<Opportunite>) {
-  return this.request(`/opportunites/${id}`, { method: 'PUT', body: JSON.stringify(data) })
-}
-// Pour la recherche IA (déclenche un agent → retourne un review_id à valider dans HitlReviewView)
-async rechercherVeille(query: string) {
-  return this.request('/ia/veille/rechercher', {
-    method: 'POST',
-    body: JSON.stringify({ query }),
-  })
-}
-```
+**Ce qui est prêt côté backend :**
+- `POST /auth/login` → reçoit email + mot de passe, retourne un token JWT
+- `POST /auth/register` → créer un compte
+- `POST /auth/logout` → invalider la session
+- `GET /auth/me` → lire son propre profil
+- `GET /auth/users` → lister tous les comptes (admin)
+- `PATCH /auth/users/{id}` → modifier un compte
+- `DELETE /auth/users/{id}` → supprimer un compte
 
-```tsx
-// Dans VeilleMarcheView.tsx — remplacer le state local par :
-useEffect(() => {
-  apiService.getOpportunites().then(setOpportunites)
-}, [])
-```
+**Ce qui manque dans le frontend :**
+- La méthode `login(email, password)` dans `api.ts`, qui appelle `POST /auth/login` et stocke le token reçu
+- L'ajout du header `Authorization: Bearer {token}` sur toutes les requêtes dans `request()`
+- La gestion de l'expiration du token (redirection vers login si HTTP 401)
+- Le branchement de `AuthPage.tsx` sur cette vraie méthode au lieu de `quickDemoLogin()`
+- Un écran de profil utilisateur qui appelle `GET /auth/me`
+- Une page de gestion des comptes (admin) qui appelle les routes `/auth/users`
 
 ---
 
-### 1.3 — `OpportunitesCrmView.tsx` — `DEFAULT_ACCEPTED_MARKETS` codé en dur
+### 1.2 — `VeilleMarcheView.tsx`
 
-**État actuel :** La liste des marchés est une constante hardcodée. Aucun appel à `/opportunites`.
+**Problème :** `getVeilles()` dans `api.ts` retourne directement des données mockées (pas d'appel réseau du tout). Même si le backend est connecté, on voit toujours les données fictives.
 
-**Ce qu'il faut ajouter dans `api.ts` :**
+**Ce qui est prêt côté backend :**
+- `GET /opportunites` → lister toutes les opportunités détectées
+- `PUT /opportunites/{id}` → modifier le statut d'une opportunité
+- `DELETE /opportunites/{id}` → supprimer
+- `POST /ia/veille/rechercher` → déclencher une recherche IA (retourne un `review_id` à valider)
+- `POST /ia/veille/detecter` → détection automatique de marchés (retourne un `review_id`)
+- `POST /ia/veille/synchroniser-backend` → après validation, crée l'opportunité en base
 
-```ts
-async getOpportunites() {
-  return this.request('/opportunites')
-}
-async createOpportunite(data: {
-  entreprise: string
-  contact: string
-  domaine: string
-  statut: 'PROSPECT' | 'QUALIFICATION' | 'PROPOSITION' | 'NEGOCIE' | 'GAGNE' | 'PERDU'
-  email?: string
-  telephone?: string
-  budget_estime?: number
-}) {
-  return this.request('/opportunites', { method: 'POST', body: JSON.stringify(data) })
-}
-async deleteOpportunite(id: string) {
-  return this.request(`/opportunites/${id}`, { method: 'DELETE' })
-}
-```
-
-```tsx
-// Dans OpportunitesCrmView.tsx
-useEffect(() => {
-  apiService.getOpportunites().then(data => setOpportunites(data.data ?? []))
-}, [])
-```
+**Ce qui manque dans le frontend :**
+- Remplacer `getVeilles()` par un vrai appel `GET /opportunites`
+- Le bouton "Rechercher avec l'IA" qui déclenche `POST /ia/veille/rechercher` et redirige vers la vue de validation HITL
+- L'affichage de l'analyse d'une opportunité : `POST /{opportunite_id}/analyse` (analyse IA ponctuelle sans HITL)
 
 ---
 
-### 1.4 — `SessionsGroupesView.tsx` — Participants sauvegardés en local uniquement
+### 1.3 — `OpportunitesCrmView.tsx` (vue TDR et OT)
 
-**État actuel :** `setPresencesList` met à jour un tableau React local. Rien n'est envoyé au Backend.
+**Problème :** La liste des marchés est une constante `DEFAULT_ACCEPTED_MARKETS` codée en dur dans le fichier. `getOpportunites()` retourne ces données fictives même quand le backend répond.
 
-**Ce qu'il faut ajouter dans `api.ts` :**
+**Ce qui est prêt côté backend :**
+- `GET /opportunites` → liste réelle depuis la base
+- `POST /opportunites` → créer une opportunité manuellement
+- `PUT /opportunites/{id}` → remplacer
+- `DELETE /opportunites/{id}` → supprimer
+- `GET /ia/tdr/from-opportunite/{id}` → pré-remplir le formulaire TDR depuis une opportunité existante
+- `POST /ia/tdr/generer` → générer un TDR complet (retourne `review_id`)
+- `POST /ia/tdr/synchroniser` → après validation, sauvegarde le TDR
+- `GET /ia/tdr/download/{filename}` → télécharger le fichier DOCX du TDR généré
+- `POST /offres` → créer une offre manuellement
+- `GET /offres` → lister les offres
+- `POST /ia/offres/generer-complet` → générer une offre complète technique + financière (retourne `review_id`)
+- `POST /ia/offres/regenerer` → régénérer avec feedback après rejet
+- `POST /ia/offres/synchroniser` → après validation, sauvegarde l'offre
 
-```ts
-async getParticipants(sessionId: string) {
-  return this.request(`/sessions/${sessionId}/participants`)
-}
-async inscrireParticipant(sessionId: string, participantId: string) {
-  return this.request(`/sessions/${sessionId}/inscrire`, {
-    method: 'POST',
-    body: JSON.stringify({ participant_id: participantId }),
-  })
-}
-async retirerParticipant(sessionId: string, participantId: string) {
-  return this.request(`/sessions/${sessionId}/inscrire/${participantId}`, { method: 'DELETE' })
-}
-async updateSession(id: string, data: Partial<Session>) {
-  return this.request(`/sessions/${id}`, { method: 'PATCH', body: JSON.stringify(data) })
-}
-async deleteSession(id: string) {
-  return this.request(`/sessions/${id}`, { method: 'DELETE' })
-}
-```
-
-```tsx
-// Dans SessionsGroupesView.tsx
-const handleAjouterParticipant = async (participantId: string) => {
-  await apiService.inscrireParticipant(session.id, participantId)
-  const updated = await apiService.getParticipants(session.id)
-  setParticipants(updated)
-}
-```
+**Ce qui manque dans le frontend :**
+- Charger les opportunités réelles depuis le backend au lieu de la constante
+- Le composant `TdrFormEditor.tsx` existe (formulaire de saisie TDR) mais n'est relié à aucun appel API
+- Le bouton "Générer le TDR" qui appelle `POST /ia/tdr/generer` et redirige vers la validation
+- Le bouton "Générer l'offre" (technique + financière) qui appelle `POST /ia/offres/generer-complet`
+- Le téléchargement du DOCX après validation
+- L'affichage de la liste des offres générées
 
 ---
 
-### 1.5 — `SuiviPresencesView.tsx` — Présences non persistées
+### 1.4 — `FormateursStaffView.tsx`
 
-**État actuel :** Marquer présent/absent modifie un état React local. Rien n'est sauvegardé en base.
+**Problème :** Le bouton "Ajouter un formateur" appelle `onAddFormateur(created)` — un callback qui met à jour l'état local de `App.tsx`. Aucun appel POST n'est envoyé au backend. La modification et la suppression n'existent pas du tout.
 
-**Ce qu'il faut ajouter dans `api.ts` :**
+**Ce qui est prêt côté backend :**
+- `POST /rh/formateurs` → créer un formateur
+- `PATCH /rh/formateurs/{id}` → modifier
+- `DELETE /rh/formateurs/{id}` → supprimer
+- `POST /rh/candidats` → créer un dossier candidat
+- `GET /rh/candidats` → lister les candidats
+- `PATCH /rh/candidats/{id}` → modifier un candidat
+- `DELETE /rh/candidats/{id}` → supprimer
+- `POST /rh/candidats/{id}/entretiens` → créer un entretien
+- `GET /rh/candidats/{id}/entretiens` → lister les entretiens d'un candidat
+- `PATCH /rh/entretiens/{id}` → modifier un entretien
+- `DELETE /rh/entretiens/{id}` → supprimer
+- `POST /ia/rh/preselection` → analyser un CV (retourne `review_id`)
+- `POST /ia/rh/entretien/compte-rendu` → rédiger un compte-rendu d'entretien (retourne `review_id`)
+- `POST /ia/rh/rediger-email` → rédiger un email RH (retourne `review_id`)
+- `POST /ia/rh/generer-contrat` → générer un contrat formateur (retourne `review_id`)
+- `POST /ia/rh/evaluer-formateur` → évaluer un formateur post-session (retourne `review_id`)
+- `POST /ia/rh/synchroniser/candidat` → après validation, crée le candidat en base
+- `POST /ia/rh/synchroniser/entretien-cr` → après validation, sauvegarde le compte-rendu
+- `POST /ia/rh/synchroniser/evaluation` → après validation, met à jour le profil formateur
 
-```ts
-async getPresences(seanceId: string) {
-  return this.request(`/seances/${seanceId}/presences`)
-}
-async enregistrerPresence(seanceId: string, data: {
-  participant_id: string
-  present: boolean
-  motif_absence?: string
-}) {
-  return this.request(`/seances/${seanceId}/presences`, {
-    method: 'POST',
-    body: JSON.stringify(data),
-  })
-}
-async corrigerPresence(presenceId: string, data: { present?: boolean; motif_absence?: string }) {
-  return this.request(`/seances/presences/${presenceId}`, {
-    method: 'PATCH',
-    body: JSON.stringify(data),
-  })
-}
-```
-
-```tsx
-// Dans SuiviPresencesView.tsx
-const handleMarquerPresence = async (participantId: string, present: boolean) => {
-  await apiService.enregistrerPresence(seanceId, { participant_id: participantId, present })
-  const updated = await apiService.getPresences(seanceId)
-  setPresences(updated)
-}
-```
+**Ce qui manque dans le frontend :**
+- Les appels POST/PATCH/DELETE pour créer, modifier, supprimer un formateur
+- Toute la gestion des candidats (dossiers, entretiens) — il n'existe aucun écran pour ça
+- Le bouton "Analyser un CV" pour présélectionner un profil formateur
+- Le bouton "Rédiger le compte-rendu" d'entretien
+- Le bouton "Générer le contrat" formateur
+- L'évaluation post-session d'un formateur (actuellement `EvaluationCompetencesView.tsx` n'appelle rien)
 
 ---
 
-### 1.6 — `FormateursStaffView.tsx` — Création/modification non persistée
+### 1.5 — `EvaluationCompetencesView.tsx`
 
-**État actuel :** Le bouton "Ajouter un formateur" appelle `onAddFormateur(created)` (callback parent). Aucun appel POST au Backend.
+**Problème :** La vue affiche des données statiques codées en dur (`competencesData`). Le bouton "Ajouter une évaluation" appelle `onAddEvaluation` (callback local). Rien n'est persisté.
 
-**Ce qu'il faut ajouter dans `api.ts` :**
+**Ce qui est prêt côté backend :**
+- `POST /ia/rh/evaluer-formateur` → évaluation IA d'un formateur post-session
+- `POST /ia/rh/synchroniser/evaluation` → synchroniser l'évaluation approuvée
 
-```ts
-async createFormateur(data: {
-  nom: string
-  email: string
-  specialites: string[]
-  tarif_journalier: number
-}) {
-  return this.request('/rh/formateurs', { method: 'POST', body: JSON.stringify(data) })
-}
-async updateFormateur(id: string, data: Partial<Formateur>) {
-  return this.request(`/rh/formateurs/${id}`, { method: 'PATCH', body: JSON.stringify(data) })
-}
-async deleteFormateur(id: string) {
-  return this.request(`/rh/formateurs/${id}`, { method: 'DELETE' })
-}
-```
-
-```tsx
-// Dans FormateursStaffView.tsx — remplacer le callback
-const handleCreateFormateur = async (data: CreateFormateurDto) => {
-  const created = await apiService.createFormateur(data)
-  setFormateurs(prev => [...prev, created])
-}
-```
+**Ce qui manque dans le frontend :**
+- Charger les évaluations réelles depuis la base (actuellement impossible car il n'existe pas de route GET dédiée — à vérifier avec le backend)
+- Le bouton "Évaluer avec l'IA" qui appelle l'agent d'évaluation post-session
 
 ---
 
-### 1.7 — `FacturationDevisView.tsx` — Paiements, relance et export absents
+### 1.6 — `SessionsGroupesView.tsx`
 
-**État actuel :** La lecture et la création fonctionnent. Il manque : modifier le statut, enregistrer un paiement, générer une relance IA, exporter.
+**Problème :** `getSessions()` fait un vrai appel API mais sans token — il tombe toujours en mode mock. Le bouton "Ajouter un participant" met à jour un tableau React local. Rien n'est envoyé au backend.
 
-**Ce qu'il faut ajouter dans `api.ts` :**
+**Ce qui est prêt côté backend :**
+- `GET /sessions` → lister les sessions
+- `POST /sessions` → créer une session
+- `GET /sessions/{id}` → lire une session
+- `PATCH /sessions/{id}` → modifier
+- `DELETE /sessions/{id}` → supprimer
+- `GET /sessions/{id}/seances` → lister les séances d'une session
+- `POST /sessions/{id}/seances` → ajouter une séance
+- `PATCH /seances/{id}` → modifier une séance
+- `DELETE /seances/{id}` → supprimer une séance
+- `POST /sessions/{id}/inscrire` → inscrire un participant
+- `DELETE /sessions/{id}/inscrire/{pid}` → désinscrire
+- `GET /sessions/{id}/participants` → lister les participants inscrits
+- `POST /ia/formations/generate-forms` → générer les 4 formulaires d'évaluation (inscription, test avant, test après, satisfaction) — retourne `review_id`
+- `POST /ia/formations/creer-formulaires` → après validation, créer les formulaires réels sur Google Forms → retourne les 4 liens Google
+- `POST /ia/formations/sync-responses` → récupérer les réponses des participants depuis Google Forms
+- `POST /ia/formations/analyze-levels` → analyser les niveaux test avant/après — retourne `review_id`
+- `POST /ia/formations/analyze-satisfaction` → analyser la satisfaction — retourne `review_id`
+- `POST /ia/formations/analyze-presences` → analyser les présences/inscriptions — retourne `review_id`
+- `POST /ia/formations/generate-attestations` → générer les attestations de formation — retourne `review_id`
+- `POST /ia/formations/generate-report` → générer le rapport de formation complet — retourne `review_id`
+- `POST /ia/formations/regenerate-forms` → régénérer les formulaires avec feedback après rejet
 
-```ts
-async updateFacture(id: string, data: Partial<Facture>) {
-  return this.request(`/factures/${id}`, { method: 'PATCH', body: JSON.stringify(data) })
-}
-async enregistrerPaiement(factureId: string, data: {
-  montant: number
-  date_paiement: string
-  mode: string
-}) {
-  return this.request(`/factures/${factureId}/paiements`, {
-    method: 'POST',
-    body: JSON.stringify(data),
-  })
-}
-async exportComptable(format: 'csv' | 'xlsx' | 'pdf' = 'csv') {
-  const token = localStorage.getItem('token')
-  window.open(`http://127.0.0.1:8000/api/v1/exports?format=${format}&token=${token}`, '_blank')
-}
-// Relance IA → retourne un review_id à valider dans HitlReviewView
-async genererRelance(factureId: string) {
-  return this.request('/ia/facturation/relances/generer', {
-    method: 'POST',
-    body: JSON.stringify({ facture_id: factureId }),
-  })
-  // → { review_id: "...", necessaire: true, niveau: "FERME" }
-}
-```
-
----
-
-## PARTIE 2 — VUES COMPLÈTES À CRÉER
-
-### 2.1 — `SupportsFormationView.tsx` (priorité haute — formateurs)
-
-> Upload des supports de cours, suivi d'indexation RAG, téléchargement résumé en 1 clic.
-
-**Ajouter dans `api.ts` :**
-
-```ts
-async uploaderSupport(
-  file: File,
-  formationCode: string,
-  module?: string,
-  collection = 'support'
-) {
-  const token = localStorage.getItem('token')
-  const formData = new FormData()
-  formData.append('fichier', file)
-  formData.append('formation_code', formationCode)
-  formData.append('collection', collection)
-  if (module) formData.append('module', module)
-
-  const res = await fetch('http://127.0.0.1:8000/api/v1/documents/upload', {
-    method: 'POST',
-    headers: { 'Authorization': `Bearer ${token}` },
-    body: formData,
-    // Ne pas mettre Content-Type ici — le navigateur le met automatiquement avec le boundary
-  })
-  return res.json()
-  // → { success, hash, fichier, chemin_fichier, formation_code, module,
-  //     statut: "en_attente", deja_present, taille_octets }
-}
-
-async listerSupports(formationCode?: string) {
-  const query = formationCode ? `?formation_code=${formationCode}` : ''
-  return this.request(`/documents/rag/supports${query}`)
-  // → { success, total, data: [{ hash, fichier, formation_code, module, statut,
-  //     nb_chunks, date_debut, date_fin, fichier_disponible }] }
-}
-
-async supprimerSupport(hash: string) {
-  return this.request(`/documents/rag/supports/${hash}`, { method: 'DELETE' })
-  // → { success, nb_chunks_supprimes, fichier_supprime }
-}
-
-async telechargerResumeFormation(formationCode: string) {
-  const token = localStorage.getItem('token')
-  const res = await fetch(
-    `http://127.0.0.1:8000/api/v1/documents/rag/supports/resume-formation?formation_code=${formationCode}`,
-    { headers: { 'Authorization': `Bearer ${token}` } }
-  )
-  const blob = await res.blob()
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `resume_${formationCode}.docx`
-  a.click()
-  URL.revokeObjectURL(url)
-}
-
-async lancerIndexation(cheminFichier: string, formationCode: string) {
-  return this.request('/ia/rag/indexer-document', {
-    method: 'POST',
-    body: JSON.stringify({ chemin_fichier: cheminFichier, formation_code: formationCode }),
-  })
-}
-```
-
-**Structure de la vue :**
-
-```tsx
-// SupportsFormationView.tsx
-import React, { useState, useEffect } from 'react'
-import { apiService } from '../services/api'
-
-interface Support {
-  hash: string
-  fichier: string
-  formation_code: string
-  module?: string
-  statut: 'en_attente' | 'en_cours' | 'indexe' | 'erreur'
-  nb_chunks?: number
-  date_fin?: string
-  fichier_disponible: boolean
-}
-
-export function SupportsFormationView() {
-  const [supports, setSupports] = useState<Support[]>([])
-  const [formationCode, setFormationCode] = useState('')
-  const [module, setModule] = useState('')
-  const [fichier, setFichier] = useState<File | null>(null)
-  const [uploading, setUploading] = useState(false)
-  const [message, setMessage] = useState('')
-
-  // Charger les supports d'une formation
-  const chargerSupports = async () => {
-    if (!formationCode) return
-    const res = await apiService.listerSupports(formationCode)
-    setSupports(res.data ?? [])
-  }
-
-  useEffect(() => { chargerSupports() }, [formationCode])
-
-  // Upload + indexation automatique
-  const handleUpload = async () => {
-    if (!fichier || !formationCode) return
-    setUploading(true)
-    try {
-      const res = await apiService.uploaderSupport(fichier, formationCode, module || undefined)
-      if (res.success) {
-        // Lancer l'indexation automatiquement après l'upload
-        await apiService.lancerIndexation(res.chemin_fichier, formationCode)
-        setMessage(`✅ "${fichier.name}" uploadé et indexation lancée`)
-        chargerSupports()
-      }
-    } catch (e) {
-      setMessage('❌ Erreur lors de l\'upload')
-    } finally {
-      setUploading(false)
-    }
-  }
-
-  // Grouper les supports par module
-  const parModule = supports.reduce<Record<string, Support[]>>((acc, s) => {
-    const key = s.module || 'Supports généraux'
-    if (!acc[key]) acc[key] = []
-    acc[key].push(s)
-    return acc
-  }, {})
-
-  const iconeStatut: Record<string, string> = {
-    indexe: '✅',
-    en_cours: '⏳',
-    en_attente: '🕐',
-    erreur: '❌',
-  }
-
-  return (
-    <div>
-      <h2>Supports de formation</h2>
-
-      {/* Formulaire d'upload */}
-      <section>
-        <h3>Uploader un support</h3>
-        <input
-          type="text"
-          placeholder="Code formation (ex: PYTHON-2026)"
-          value={formationCode}
-          onChange={e => setFormationCode(e.target.value)}
-        />
-        <input
-          type="text"
-          placeholder="Module (ex: Module 1 — Introduction) — optionnel"
-          value={module}
-          onChange={e => setModule(e.target.value)}
-        />
-        <input
-          type="file"
-          accept=".pdf,.docx,.pptx,.xlsx,.txt,.md"
-          onChange={e => setFichier(e.target.files?.[0] ?? null)}
-        />
-        <button onClick={handleUpload} disabled={uploading || !fichier || !formationCode}>
-          {uploading ? 'Upload en cours...' : 'Uploader et indexer'}
-        </button>
-        {message && <p>{message}</p>}
-      </section>
-
-      {/* Résumé DOCX en 1 clic */}
-      {formationCode && (
-        <button onClick={() => apiService.telechargerResumeFormation(formationCode)}>
-          ⬇️ Télécharger le résumé DOCX de {formationCode}
-        </button>
-      )}
-
-      {/* Liste des supports groupés par module */}
-      {Object.entries(parModule).map(([mod, items]) => (
-        <section key={mod}>
-          <h4>{mod} ({items.length} support{items.length > 1 ? 's' : ''})</h4>
-          {items.map(s => (
-            <div key={s.hash}>
-              <span>{iconeStatut[s.statut] ?? '?'}</span>
-              <span>{s.fichier}</span>
-              {s.nb_chunks && <span>— {s.nb_chunks} fragments indexés</span>}
-              <button onClick={async () => {
-                if (confirm(`Supprimer "${s.fichier}" ? Cette action est irréversible.`)) {
-                  await apiService.supprimerSupport(s.hash)
-                  chargerSupports()
-                }
-              }}>
-                Supprimer
-              </button>
-            </div>
-          ))}
-        </section>
-      ))}
-    </div>
-  )
-}
-```
-
-**Ajouter dans `ViewRouter.tsx` :**
-
-```tsx
-import { SupportsFormationView } from './SupportsFormationView'
-
-// Dans le switch/router :
-case 'supports_formation':
-  return <SupportsFormationView />
-```
-
-**Ajouter dans le menu (Sidebar) :**
-
-```tsx
-// Section Formateur — visible pour les rôles Form. et Dir.
-{ id: 'supports_formation', label: 'Supports de cours', roles: ['Form.', 'Dir.', 'Assist.'] }
-```
+**Ce qui manque dans le frontend :**
+- Toute la gestion des séances (créer, modifier, supprimer)
+- La gestion des inscriptions participants avec appels API réels
+- Le bouton "Générer les formulaires" qui lance le cycle M5 complet (le plus complexe)
+- L'affichage des 4 liens Google Forms à distribuer aux participants
+- Le bouton "Récupérer les réponses" après la formation
+- Les boutons d'analyse (niveaux, satisfaction, présences)
+- La génération des attestations
+- La génération du rapport de formation complet
 
 ---
 
-### 2.2 — `BilanFormationsView.tsx` (Direction uniquement)
+### 1.7 — `SuiviPresencesView.tsx`
 
-> Télécharge un bilan DOCX de toutes les formations sur une période choisie.
+**Problème :** `getPresences()` retourne directement des mocks (aucun appel réseau). Marquer présent/absent modifie un état React local. Rien n'est sauvegardé.
 
-**Ajouter dans `api.ts` :**
+**Ce qui est prêt côté backend :**
+- `GET /seances/{id}/presences` → lister les présences d'une séance
+- `POST /seances/{id}/presences` → enregistrer une présence
+- `PATCH /seances/presences/{id}` → corriger (modifier présent/absent, ajouter motif d'absence)
 
-```ts
-async telechargerBilanFormations(dateDebut?: string, dateFin?: string) {
-  const token = localStorage.getItem('token')
-  const params = new URLSearchParams()
-  if (dateDebut) params.append('date_debut', dateDebut)
-  if (dateFin) params.append('date_fin', dateFin)
-
-  const res = await fetch(
-    `http://127.0.0.1:8000/api/v1/documents/rag/supports/bilan-formations?${params}`,
-    { headers: { 'Authorization': `Bearer ${token}` } }
-  )
-  const blob = await res.blob()
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `bilan_formations_${dateDebut ?? 'complet'}.docx`
-  a.click()
-  URL.revokeObjectURL(url)
-}
-```
-
-**Structure de la vue :**
-
-```tsx
-// BilanFormationsView.tsx
-export function BilanFormationsView() {
-  const [dateDebut, setDateDebut] = useState('')
-  const [dateFin, setDateFin] = useState('')
-
-  return (
-    <div>
-      <h2>Bilan des formations</h2>
-      <p>Téléchargez un bilan complet de toutes les formations sur une période donnée.</p>
-
-      <label>Période du :</label>
-      <input type="date" value={dateDebut} onChange={e => setDateDebut(e.target.value)} />
-      <label>au :</label>
-      <input type="date" value={dateFin} onChange={e => setDateFin(e.target.value)} />
-
-      <button onClick={() => apiService.telechargerBilanFormations(dateDebut || undefined, dateFin || undefined)}>
-        ⬇️ Télécharger le bilan DOCX
-      </button>
-
-      <p style={{ color: '#888', fontSize: '0.9em' }}>
-        Le bilan contient : toutes les formations de la période, leurs supports indexés,
-        les modules couverts et les thèmes principaux (mots-clés extraits par l'IA).
-      </p>
-    </div>
-  )
-}
-```
-
-**Rôles autorisés :** `Dir.` et `Assist.` uniquement — masquer dans le menu pour `Form.`.
+**Ce qui manque dans le frontend :**
+- Sélectionner une séance spécifique pour afficher ses présences
+- Charger les présences réelles depuis le backend
+- Enregistrer chaque marquage présent/absent via POST
+- Modifier une présence déjà enregistrée (corriger une erreur)
 
 ---
 
-### 2.3 — `HitlReviewView.tsx` — Validation humaine des contenus IA (CRITIQUE)
+### 1.8 — `FacturationDevisView.tsx`
 
-> **Sans cette vue, aucun contenu généré par l'IA ne peut être sauvegardé.** C'est le verrou central de toute la logique IA.
+**Problème :** `getFactures()` et `createFacture()` font des appels réels mais sans token JWT — ils basculent sur les mocks. La modification du statut, l'enregistrement d'un paiement, la relance et l'export n'existent pas du tout.
 
-**Ajouter dans `api.ts` :**
+**Ce qui est prêt côté backend :**
+- `GET /factures` → lister
+- `POST /factures` → créer
+- `GET /factures/{id}` → lire une facture
+- `PATCH /factures/{id}` → modifier le statut, les montants
+- `DELETE /factures/{id}` → supprimer
+- `POST /factures/{id}/paiements` → enregistrer un paiement
+- `POST /factures/{id}/relance` → créer une relance manuelle
+- `GET /factures/{id}/relances` → historique des relances
+- `POST /ia/facturation/relances/generer` → générer une relance IA (niveau 1/2/3 selon le retard) — retourne `review_id`
+- `POST /ia/facturation/relances/synchroniser` → après validation, enregistre la relance
+- `POST /ia/facturation/calculer-montants` → calculer HT/TVA/TTC/remise automatiquement
+- `GET /exports` → export comptable au format CSV, XLSX ou PDF
 
-```ts
-async getPendingReviews(agentId?: string) {
-  const query = agentId ? `?agent_id=${agentId}` : ''
-  return this.request(`/ia/formations/pending-reviews${query}`)
-}
-
-async getReview(reviewId: string) {
-  return this.request(`/ia/formations/reviews/${reviewId}`)
-  // → { review_id, agent_id, contenu_genere: {...}, statut, created_at }
-}
-
-async approuverReview(reviewId: string, commentaire = '') {
-  return this.request(`/ia/formations/reviews/${reviewId}/approve`, {
-    method: 'POST',
-    body: JSON.stringify({ commentaire }),
-  })
-}
-
-async rejeterReview(reviewId: string, feedback: string) {
-  // feedback doit faire au moins 10 caractères
-  return this.request(`/ia/formations/reviews/${reviewId}/reject`, {
-    method: 'POST',
-    body: JSON.stringify({ feedback }),
-  })
-}
-```
-
-**Structure de la vue :**
-
-```tsx
-// HitlReviewView.tsx
-import React, { useState, useEffect } from 'react'
-import { apiService } from '../services/api'
-
-interface Review {
-  review_id: string
-  agent_id: string
-  statut: string
-  created_at: string
-  contenu_genere?: Record<string, unknown>
-}
-
-const LABELS_AGENT: Record<string, string> = {
-  agent_m1_veille:       'Veille marché',
-  agent_m2_tdr:          'Génération TDR',
-  agent_m3_complete:     'Génération offre',
-  agent_preparation:     'Préparation (EDT + budget)',
-  agent_1_forms:         'Formulaires d\'évaluation',
-  agent_m7_relance:      'Relance facture',
-  agent_m4_preselection: 'Présélection CV',
-}
-
-export function HitlReviewView() {
-  const [reviews, setReviews] = useState<Review[]>([])
-  const [selected, setSelected] = useState<Review | null>(null)
-  const [feedback, setFeedback] = useState('')
-  const [loading, setLoading] = useState(false)
-
-  const chargerReviews = async () => {
-    const res = await apiService.getPendingReviews()
-    setReviews(Array.isArray(res) ? res : (res.data ?? []))
-  }
-
-  useEffect(() => { chargerReviews() }, [])
-
-  const handleApprouver = async (reviewId: string) => {
-    setLoading(true)
-    await apiService.approuverReview(reviewId)
-    setSelected(null)
-    await chargerReviews()
-    setLoading(false)
-    // Note : après approbation, certains modules nécessitent une 2e route /synchroniser
-    // Voir GUIDE_INTEGRATION_FRONTEND.md Section 4 pour savoir laquelle appeler
-  }
-
-  const handleRejeter = async (reviewId: string) => {
-    if (feedback.length < 10) {
-      alert('Le feedback doit faire au moins 10 caractères.')
-      return
-    }
-    setLoading(true)
-    await apiService.rejeterReview(reviewId, feedback)
-    setFeedback('')
-    setSelected(null)
-    await chargerReviews()
-    setLoading(false)
-  }
-
-  const handleVoirDetail = async (review: Review) => {
-    const detail = await apiService.getReview(review.review_id)
-    setSelected(detail)
-  }
-
-  return (
-    <div>
-      <h2>Contenus IA en attente de validation ({reviews.length})</h2>
-
-      {reviews.length === 0 && <p>Aucun contenu en attente. ✅</p>}
-
-      <ul>
-        {reviews.map(r => (
-          <li key={r.review_id}>
-            <strong>{LABELS_AGENT[r.agent_id] ?? r.agent_id}</strong>
-            <span> — {new Date(r.created_at).toLocaleString('fr-FR')}</span>
-            <button onClick={() => handleVoirDetail(r)}>Voir le contenu</button>
-          </li>
-        ))}
-      </ul>
-
-      {/* Panneau de détail */}
-      {selected && (
-        <div>
-          <h3>Contenu généré — {LABELS_AGENT[selected.agent_id] ?? selected.agent_id}</h3>
-          <pre style={{ maxHeight: 400, overflow: 'auto', background: '#f5f5f5', padding: 12 }}>
-            {JSON.stringify(selected.contenu_genere, null, 2)}
-          </pre>
-
-          <div>
-            <button
-              onClick={() => handleApprouver(selected.review_id)}
-              disabled={loading}
-              style={{ background: '#22c55e', color: '#fff', marginRight: 8 }}
-            >
-              ✓ Approuver
-            </button>
-
-            <textarea
-              placeholder="Feedback pour rejet (min 10 caractères)..."
-              value={feedback}
-              onChange={e => setFeedback(e.target.value)}
-              rows={3}
-            />
-            <button
-              onClick={() => handleRejeter(selected.review_id)}
-              disabled={loading || feedback.length < 10}
-              style={{ background: '#ef4444', color: '#fff' }}
-            >
-              ✗ Rejeter
-            </button>
-
-            <button onClick={() => setSelected(null)}>Fermer</button>
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
-```
-
-**Ajouter dans `ViewRouter.tsx` :**
-
-```tsx
-import { HitlReviewView } from './HitlReviewView'
-
-case 'hitl_review':
-  return <HitlReviewView />
-```
-
-**Ajouter dans le menu (Sidebar) — avec badge de compteur :**
-
-```tsx
-// Charger le compteur de reviews en attente
-const [pendingCount, setPendingCount] = useState(0)
-useEffect(() => {
-  apiService.getPendingReviews().then(res => {
-    const arr = Array.isArray(res) ? res : (res.data ?? [])
-    setPendingCount(arr.length)
-  })
-}, [])
-
-// Dans la Sidebar
-{ id: 'hitl_review', label: `Validation IA${pendingCount > 0 ? ` (${pendingCount})` : ''}` }
-```
+**Ce qui manque dans le frontend :**
+- Modifier le statut d'une facture (Envoyée → Payée, etc.)
+- Enregistrer un paiement avec montant, date, mode de paiement
+- Voir l'historique des relances d'une facture
+- Bouton "Générer une relance IA" avec les 3 niveaux de ton (rappel, ferme, contentieux)
+- Calcul automatique des montants (HT → TVA → TTC → remise)
+- Export comptable en 1 clic (CSV / XLSX / PDF)
 
 ---
 
-### 2.4 — `PreparationView.tsx` — Projets, salles, EDT, budget
+## PARTIE 2 — VUES ENTIÈREMENT ABSENTES
 
-**Ajouter dans `api.ts` :**
-
-```ts
-// Projets
-async getProjets() { return this.request('/projets') }
-async createProjet(data: {
-  titre: string; client: string; date_debut: string; date_fin: string
-  statut?: 'BROUILLON' | 'EN_COURS' | 'VALIDE' | 'TERMINE' | 'ANNULE'
-}) {
-  return this.request('/projets', { method: 'POST', body: JSON.stringify(data) })
-}
-async updateProjet(id: string, data: Partial<Projet>) {
-  return this.request(`/projets/${id}`, { method: 'PATCH', body: JSON.stringify(data) })
-}
-async deleteProjet(id: string) {
-  return this.request(`/projets/${id}`, { method: 'DELETE' })
-}
-
-// EDT d'un projet
-async getEdt(projetId: string) { return this.request(`/projets/${projetId}/edt`) }
-async ajouterSeanceEdt(projetId: string, data: {
-  date: string; heure_debut: string; heure_fin: string; titre_module: string
-}) {
-  return this.request(`/projets/${projetId}/edt`, { method: 'POST', body: JSON.stringify(data) })
-}
-async supprimerSeanceEdt(projetId: string, edtId: string) {
-  return this.request(`/projets/${projetId}/edt/${edtId}`, { method: 'DELETE' })
-}
-
-// Budget d'un projet
-async getBudget(projetId: string) { return this.request(`/projets/${projetId}/budget`) }
-async saveBudget(projetId: string, data: object) {
-  return this.request(`/projets/${projetId}/budget`, { method: 'POST', body: JSON.stringify(data) })
-}
-
-// Salles
-async getSalles(disponible?: boolean) {
-  const query = disponible !== undefined ? `?disponible=${disponible}` : ''
-  return this.request(`/salles${query}`)
-}
-async createSalle(data: { nom: string; capacite: number; tarif_journalier?: number }) {
-  return this.request('/salles', { method: 'POST', body: JSON.stringify(data) })
-}
-
-// Génération IA de préparation (HITL → review_id)
-async genererPreparation(data: {
-  offre_data: { titre: string; modules: string[]; duree_jours: number }
-  projet_info: { client: string; date_debut: string; date_fin: string }
-  ressources: { formateur: { nom: string; tarif_journalier: number }; salle?: { nom: string; tarif_journalier: number } }
-  options?: { nb_participants?: number }
-}) {
-  return this.request('/ia/preparation/generer-complet', {
-    method: 'POST',
-    body: JSON.stringify(data),
-  })
-  // → { review_id: "...", requires_human_action: true }
-  // Ensuite : approuver dans HitlReviewView → POST /ia/preparation/synchroniser
-}
-```
-
-**Structure minimale de la vue :**
-
-```tsx
-// PreparationView.tsx — onglets Projets | Salles | Génération IA
-export function PreparationView() {
-  const [onglet, setOnglet] = useState<'projets' | 'salles' | 'ia'>('projets')
-  const [projets, setProjets] = useState([])
-  const [salles, setSalles] = useState([])
-
-  useEffect(() => {
-    apiService.getProjets().then(r => setProjets(r.data ?? []))
-    apiService.getSalles().then(r => setSalles(r.data ?? []))
-  }, [])
-
-  return (
-    <div>
-      <nav>
-        <button onClick={() => setOnglet('projets')}>Projets</button>
-        <button onClick={() => setOnglet('salles')}>Salles</button>
-        <button onClick={() => setOnglet('ia')}>Générer avec l'IA</button>
-      </nav>
-      {onglet === 'projets' && <ProjetsTab projets={projets} onRefresh={() => apiService.getProjets().then(r => setProjets(r.data ?? []))} />}
-      {onglet === 'salles' && <SallesTab salles={salles} />}
-      {onglet === 'ia' && <PreparationIaTab />}
-    </div>
-  )
-}
-```
+Ces fonctionnalités sont complètes côté backend. Il n'existe aucun fichier `.tsx` correspondant.
 
 ---
 
-## PARTIE 3 — BOUTONS AGENTS IA MANQUANTS DANS LES VUES EXISTANTES
+### 2.1 — Gestion des supports de cours (`SupportsFormationView`)
 
-Ces boutons déclenchent des agents IA. Ils retournent tous un `review_id` → l'utilisateur approuve dans `HitlReviewView`.
+Le backend peut recevoir des fichiers PDF, DOCX, PPTX, XLSX — les indexer pour le RAG — et générer des résumés DOCX. Il n'existe aucune interface pour ça.
 
-| Vue | Bouton à ajouter | Route backend | Après approbation |
-|---|---|---|---|
-| `VeilleMarcheView` | "Rechercher avec l'IA" | `POST /ia/veille/rechercher` | `POST /ia/veille/synchroniser-backend` |
-| `OpportunitesCrmView` | "Générer un TDR" | `POST /ia/tdr/generer` | `POST /ia/tdr/synchroniser` |
-| `FacturationDevisView` | "Générer une relance" | `POST /ia/facturation/relances/generer` | `POST /ia/facturation/relances/synchroniser` |
-| `FormateursStaffView` | "Analyser un CV" | `POST /ia/rh/preselection` | `POST /ia/rh/synchroniser/candidat` |
-| `SessionsGroupesView` | "Générer les formulaires" | `POST /ia/formations/generate-forms` | `POST /ia/formations/creer-formulaires` → cycle M5 |
+**Ce qui est prêt côté backend :**
+- `POST /documents/upload` → uploader un support (PDF, DOCX, PPTX, XLSX, TXT, MD — max 100 Mo) avec son code de formation et son module pédagogique
+- `GET /documents/rag/supports` → lister tous les supports avec leur statut d'indexation (en attente / en cours / indexé / erreur)
+- `DELETE /documents/rag/supports/{hash}` → supprimer un support et ses vecteurs RAG
+- `POST /ia/rag/indexer-document` → lancer l'indexation d'un support dans la base vectorielle
+- `GET /ia/rag/statut/{hash}` → vérifier le statut d'indexation d'un document
+- `GET /documents/rag/supports/resume-formation` → télécharger en un clic un DOCX qui résume tous les supports d'une formation, groupés par module pédagogique
+- `GET /documents/rag/supports/bilan-formations` → télécharger un DOCX bilan de toutes les formations sur une période (réservé Direction)
+- `GET /documents` → lister les documents validés
+- `GET /documents/{id}` → lire un document
+- `GET /documents/{id}/export` → télécharger un document
+- `DELETE /documents/{id}` → supprimer
 
-**Pattern commun pour chaque bouton :**
-
-```tsx
-const handleGenererIA = async (inputData: object) => {
-  try {
-    const res = await apiService.request('/ia/[module]/generer', {
-      method: 'POST',
-      body: JSON.stringify(inputData),
-    })
-    // res.review_id → rediriger vers HitlReviewView pour validation
-    setCurrentSection('hitl_review')
-    // ou afficher un toast : "Contenu généré ! Allez valider dans 'Validation IA'."
-  } catch (e) {
-    setError('Erreur lors de la génération IA')
-  }
-}
-```
+**Ce qui manque dans le frontend :**
+- Un formulaire d'upload avec les champs : fichier, code formation, module pédagogique (optionnel), type de collection
+- Une liste des supports uploadés avec leur statut d'indexation en temps réel (icône ✅ indexé / ⏳ en cours / ❌ erreur)
+- Un regroupement visuel par module pédagogique dans l'affichage
+- Un bouton "Télécharger le résumé DOCX" de la formation (1 clic → fichier prêt)
+- Une vue Direction "Bilan des formations" avec sélection de période et téléchargement DOCX
+- La suppression d'un support avec confirmation
 
 ---
 
-## PARTIE 4 — ORDRE D'IMPLÉMENTATION RECOMMANDÉ
+### 2.2 — Chat avec les documents RAG (`RagChatView`)
 
-```
-Semaine 1 :
-  J1  → Auth réelle (api.ts + AuthPage.tsx)              ← débloque TOUT
-  J2  → HitlReviewView.tsx                               ← débloque la validation IA
-  J3  → Brancher VeilleMarcheView + OpportunitesCrmView
-  J4  → Brancher SessionsGroupesView + SuiviPresencesView
-  J5  → Brancher FormateursStaffView + FacturationDevisView
+Le backend a un agent de chat contextuel qui répond aux questions en se basant sur les supports indexés. Il n'existe aucune interface de chat dans le frontend.
 
-Semaine 2 :
-  J6  → Créer SupportsFormationView.tsx                  ← supports RAG
-  J7  → Créer PreparationView.tsx
-  J8  → Créer BilanFormationsView.tsx (Direction)
-  J9  → Ajouter les boutons agents IA dans toutes les vues
-  J10 → Cycle M5 complet (Google Forms + sync-responses + analyze-*)
-```
+**Ce qui est prêt côté backend :**
+- `POST /ia/rag/chat` → poser une question, reçoit une réponse avec les sources (fichier + page)
+- `GET /ia/rag/formations` → lister les formations qui ont des supports indexés
+- `GET /ia/rag/health` → vérifier que le module RAG est opérationnel
+- `POST /ia/rag/rechercher` → recherche vectorielle pure (sans génération de réponse)
+
+**Ce qui manque dans le frontend :**
+- Une interface de chat (type messagerie) où le formateur ou la Direction peut poser des questions sur le contenu des formations
+- L'affichage des sources citées dans la réponse (nom du fichier, numéro de page)
+- Un indicateur de santé du RAG (combien de documents sont indexés, le module est-il prêt)
 
 ---
 
-## RÉFÉRENCE DES ROUTES BACKEND MANQUANTES (résumé)
+### 2.3 — Génération de syllabus (`SyllabusView`)
 
-> Toutes ces routes sont **prêtes et testées** côté backend. Elles attendent juste d'être appelées.
+Le backend peut générer automatiquement un syllabus de formation à partir des supports indexés, avec les durées calculées en Python. Il n'existe aucune interface pour ça.
 
-| Route | Méthode | Utilisée dans |
+**Ce qui est prêt côté backend :**
+- `POST /ia/rag/syllabus` → générer le syllabus (contenu + durées calculées depuis les supports) — retourne `review_id`
+- `POST /ia/rag/syllabus/{review_id}/exporter` → après validation, télécharger le DOCX du syllabus
+- `POST /ia/rag/generer-questions` → générer des questions de révision à partir des supports (usage interne, pas de HITL)
+
+**Ce qui manque dans le frontend :**
+- Un bouton "Générer le syllabus" à partir d'une formation (avec ses supports déjà indexés)
+- L'affichage du syllabus généré pour validation avant export
+- Le téléchargement du DOCX final
+
+---
+
+### 2.4 — Portfolio des formations (`PortfolioView`)
+
+Le backend peut générer un portfolio complet qui agrège toutes les formations réalisées, avec les métriques et les thèmes couverts.
+
+**Ce qui est prêt côté backend :**
+- `POST /ia/rag/portfolio` → générer le portfolio (synthèse de toutes les formations) — retourne `review_id`
+- `POST /ia/rag/portfolio/{review_id}/exporter` → après validation, télécharger le DOCX
+
+**Ce qui manque dans le frontend :**
+- Un bouton "Générer le portfolio" (usage Direction principalement)
+- L'affichage du contenu généré pour validation
+- Le téléchargement du DOCX final
+
+---
+
+### 2.5 — Projets, salles et préparation logistique (`PreparationView`)
+
+Tout ce qui concerne la logistique d'une formation (réserver une salle, créer un emploi du temps, calculer le budget) est absent du frontend.
+
+**Ce qui est prêt côté backend :**
+- `POST /projets` → créer un projet de formation
+- `GET /projets` → lister les projets
+- `PATCH /projets/{id}` → modifier (statut, dates, client)
+- `DELETE /projets/{id}` → supprimer (supprime aussi l'EDT et le budget)
+- `POST /projets/{id}/edt` → ajouter une séance à l'emploi du temps
+- `GET /projets/{id}/edt` → voir l'EDT complet
+- `DELETE /projets/{id}/edt/{edt_id}` → supprimer une séance de l'EDT
+- `POST /projets/{id}/budget` → créer ou remplacer le budget prévisionnel
+- `GET /projets/{id}/budget` → voir le budget
+- `POST /salles` → créer une salle
+- `GET /salles` → lister les salles disponibles
+- `PUT /salles/{id}` / `PATCH /salles/{id}` → modifier
+- `DELETE /salles/{id}` → supprimer
+- `POST /ia/preparation/calculer-budget` → calcul automatique du budget (Python pur, pas de LLM)
+- `POST /ia/preparation/generer-edt` → générer l'emploi du temps avec un LLM
+- `POST /ia/preparation/generer-complet` → budget + EDT en une seule opération — retourne `review_id`
+- `POST /ia/preparation/regenerer` → régénérer après rejet
+- `POST /ia/preparation/synchroniser` → après validation, créer la session et l'EDT en base
+- `POST /preparation/ingest-ia-edt` → ingérer un EDT généré par l'IA dans un projet existant
+
+**Ce qui manque dans le frontend :**
+- La gestion des salles (créer, lister, modifier, supprimer)
+- La gestion des projets (créer, voir l'EDT, voir le budget)
+- Le bouton "Générer la préparation complète" qui calcule budget + EDT en automatique
+- La visualisation de l'EDT sous forme de calendrier ou tableau
+- La visualisation du budget prévisionnel
+
+---
+
+### 2.6 — Validation humaine des contenus IA (`HitlReviewView`)
+
+C'est la vue la plus critique. Tous les agents IA retournent un `review_id` — sans cette vue, aucun contenu généré ne peut être validé, donc rien de ce que fait l'IA n'est sauvegardé.
+
+**Ce qui est prêt côté backend :**
+- `GET /ia/formations/pending-reviews` → lister tous les contenus IA en attente (filtrables par agent)
+- `GET /ia/formations/reviews/{id}` → lire le contenu généré dans son détail
+- `GET /ia/formations/reviews/stats` → statistiques (combien en attente, combien approuvés, etc.)
+- `POST /ia/formations/reviews/{id}/approve` → approuver (avec commentaire optionnel)
+- `POST /ia/formations/reviews/{id}/reject` → rejeter avec un feedback (minimum 10 caractères) — l'agent peut régénérer avec ce feedback
+
+**Ce qui manque dans le frontend :**
+- La liste de tous les contenus en attente avec le nom de l'agent et la date de création
+- L'affichage du contenu généré (TDR, offre, formulaires, relance...) dans un format lisible
+- Les boutons Approuver / Rejeter avec champ feedback
+- Un badge dans le menu indiquant combien de contenus attendent validation
+- Après approbation, l'appel à la route `/synchroniser` du module concerné
+
+---
+
+### 2.7 — Gestion des candidats RH (`CandidatsView`)
+
+Il n'existe aucune vue pour la gestion des dossiers candidats, bien que le backend dispose d'un CRUD complet et de 3 agents IA RH.
+
+**Ce qui est prêt côté backend :**
+- `POST /rh/candidats` → créer un dossier candidat
+- `GET /rh/candidats` → lister
+- `PATCH /rh/candidats/{id}` → modifier
+- `DELETE /rh/candidats/{id}` → supprimer
+- `POST /rh/candidats/{id}/entretiens` → créer un entretien
+- `GET /rh/candidats/{id}/entretiens` → historique des entretiens
+- `PATCH /rh/entretiens/{id}` → modifier
+- `DELETE /rh/entretiens/{id}` → supprimer
+- `POST /ia/rh/preselection` → analyser un CV texte et scorer le profil par rapport aux critères du poste — retourne `review_id`
+- `POST /ia/rh/entretien/compte-rendu` → rédiger automatiquement un compte-rendu d'entretien — retourne `review_id`
+- `POST /ia/rh/rediger-email` → rédiger un email de convocation, refus ou proposition — retourne `review_id`
+- `POST /ia/rh/generer-contrat` → générer un contrat de prestation formateur — retourne `review_id`
+
+**Ce qui manque dans le frontend :**
+- La liste des candidats avec leur statut de recrutement
+- La fiche d'un candidat (informations + historique des entretiens)
+- Le bouton "Analyser le CV" pour présélectionner un profil
+- Le bouton "Rédiger le compte-rendu" après un entretien
+- Le bouton "Générer le contrat" pour un formateur retenu
+- Le bouton "Rédiger l'email" (convocation, refus, proposition)
+
+---
+
+## PARTIE 3 — ÉLÉMENTS TRANSVERSAUX ABSENTS PARTOUT
+
+Ces éléments ne sont liés à aucune vue particulière mais manquent dans toute l'application.
+
+### 3.1 — Gestion des utilisateurs / comptes
+
+Il n'existe aucun écran pour créer, modifier ou supprimer des comptes utilisateurs. Le backend a un CRUD complet sous `/auth/users` (accessible uniquement en tant qu'admin). Le profil de l'utilisateur connecté (`GET /auth/me`) n'est jamais affiché.
+
+### 3.2 — Barre de santé de l'API
+
+Chaque module IA a une route `/health` dédiée. Ces informations ne sont jamais affichées dans le frontend. L'utilisateur ne sait pas si les modules RAG, M5, M3, M7, PREP, M4 sont opérationnels.
+
+| Route health | Module |
+|---|---|
+| `GET /ia/rag/health` | Chat RAG + Syllabus + Portfolio |
+| `GET /ia/formations/health` | Formulaires M5 + attestations |
+| `GET /ia/offres/health` | Génération TDR + offres |
+| `GET /ia/preparation/health` | EDT + budget |
+| `GET /ia/facturation/health` | Relances factures |
+| `GET /ia/rh/health` | Présélection CV + contrats |
+
+### 3.3 — Menu incomplet dans `Sidebar.tsx`
+
+Les sections suivantes existent dans le backend mais n'ont aucun item dans le menu :
+
+| Section | Ce qui manque |
+|---|---|
+| Supports de cours | Entrée de menu (formateurs + direction) |
+| Chat IA / RAG | Entrée de menu (formateurs pour poser des questions) |
+| Syllabus | Entrée de menu (formateurs) |
+| Portfolio | Entrée de menu (direction) |
+| Préparation logistique | Entrée de menu (projets, salles, EDT, budget) |
+| Validation IA (HITL) | Entrée de menu avec badge de compteur (critique) |
+| Candidats RH | Entrée de menu (direction, assistant) |
+| Bilan formations | Entrée de menu direction |
+
+### 3.4 — Types TypeScript manquants
+
+Le fichier `types/index.ts` (ou équivalent) ne contient pas les types pour : `Support`, `Projet`, `Salle`, `Edt`, `Budget`, `Review`, `Candidat`, `Entretien`, `Syllabus`, `Portfolio`. Sans ces types, les vues à créer devront travailler avec `any` ou définir leurs types localement.
+
+---
+
+## RÉSUMÉ DES PRIORITÉS
+
+| Priorité | Quoi | Pourquoi c'est bloquant |
 |---|---|---|
-| `/auth/login` | POST | `AuthPage.tsx` |
-| `/auth/me` | GET | Header/profil utilisateur |
-| `/opportunites` | GET/POST/PUT/DELETE | `VeilleMarcheView`, `OpportunitesCrmView` |
-| `/sessions/{id}/inscrire` | POST/DELETE | `SessionsGroupesView` |
-| `/sessions/{id}/participants` | GET | `SessionsGroupesView` |
-| `/seances/{id}/presences` | GET/POST | `SuiviPresencesView` |
-| `/seances/presences/{id}` | PATCH | `SuiviPresencesView` |
-| `/rh/formateurs` | POST/PATCH/DELETE | `FormateursStaffView` |
-| `/factures/{id}/paiements` | POST | `FacturationDevisView` |
-| `/exports` | GET | `FacturationDevisView` |
-| `/documents/upload` | POST (multipart) | `SupportsFormationView` |
-| `/documents/rag/supports` | GET | `SupportsFormationView` |
-| `/documents/rag/supports/resume-formation` | GET | `SupportsFormationView` |
-| `/documents/rag/supports/bilan-formations` | GET | `BilanFormationsView` |
-| `/documents/rag/supports/{hash}` | DELETE | `SupportsFormationView` |
-| `/projets` | GET/POST/PATCH/DELETE | `PreparationView` |
-| `/projets/{id}/edt` | GET/POST/DELETE | `PreparationView` |
-| `/projets/{id}/budget` | GET/POST | `PreparationView` |
-| `/salles` | GET/POST | `PreparationView` |
-| `/ia/formations/pending-reviews` | GET | `HitlReviewView` |
-| `/ia/formations/reviews/{id}` | GET | `HitlReviewView` |
-| `/ia/formations/reviews/{id}/approve` | POST | `HitlReviewView` |
-| `/ia/formations/reviews/{id}/reject` | POST | `HitlReviewView` |
-| `/ia/veille/rechercher` | POST | `VeilleMarcheView` |
-| `/ia/tdr/generer` | POST | `OpportunitesCrmView` |
-| `/ia/offres/generer-complet` | POST | `PreparationView` |
-| `/ia/preparation/generer-complet` | POST | `PreparationView` |
-| `/ia/formations/generate-forms` | POST | `SessionsGroupesView` |
-| `/ia/formations/creer-formulaires` | POST | `SessionsGroupesView` |
-| `/ia/formations/sync-responses` | POST | `SessionsGroupesView` |
-| `/ia/facturation/relances/generer` | POST | `FacturationDevisView` |
-| `/ia/rh/preselection` | POST | `FormateursStaffView` |
-| `/ia/rag/chat` | POST | À créer (chat contextuel) |
+| 1 | **Auth réelle + token JWT** | Sans ça, 100% des données sont des mocks |
+| 2 | **`HitlReviewView`** | Sans ça, aucun contenu IA ne peut être utilisé |
+| 3 | **Brancher les 8 vues existantes** sur les vraies données | Les données affichées sont fictives |
+| 4 | **`SupportsFormationView`** | Le RAG ne peut pas être alimenté |
+| 5 | **Chat RAG** | La fonctionnalité phare de l'IA n'est pas accessible |
+| 6 | **`SyllabusView`** | Génération de contenu pédagogique bloquée |
+| 7 | **`PreparationView`** | Logistique inaccessible |
+| 8 | **`CandidatsView`** | Gestion RH incomplète |
+| 9 | **`PortfolioView`** | Bilan général inaccessible |
+| 10 | **Menu + types TypeScript** | Ergonomie et cohérence globale |
 
 ---
 
-*Voir `GUIDE_INTEGRATION_FRONTEND.md` pour le détail complet de chaque route (format des corps de requête, réponses, exemples).*
+*Voir `GUIDE_INTEGRATION_FRONTEND.md` pour le détail des formats de requêtes, les corps JSON attendus et les exemples de code pour chaque route.*

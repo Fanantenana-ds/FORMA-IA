@@ -9,7 +9,6 @@
 #   → retourne chemin_fichier → Frontend appelle POST /ia/rag/indexer-document.
 # ============================================================
 
-import hashlib
 import logging
 from pathlib import Path
 from typing import List, Optional
@@ -31,15 +30,9 @@ from app.services.document_service import DocumentService
 from app.services.document_export_service import DocumentExportService
 from app.services.rag import registry_service as registre
 from app.services.rag.registry_service import initialiser_entree
+from app.services.storage import get_storage, calculer_hash, TAILLE_MAX_OCTETS, EXTENSIONS_AUTORISEES
 
 logger = logging.getLogger(__name__)
-
-# Dossier où sont stockés les fichiers originaux (même chemin que rag_ia.py)
-DOSSIER_FICHIERS_RAG = Path(__file__).resolve().parents[4] / "data" / "rag" / "fichiers"
-
-# Extensions acceptées (cohérent avec FORMATS_INDEXABLES du RAG)
-EXTENSIONS_AUTORISEES = {".pdf", ".docx", ".pptx", ".xlsx", ".txt", ".md"}
-TAILLE_MAX_OCTETS = 50 * 1024 * 1024  # 50 Mo
 
 router = APIRouter(prefix="/documents", tags=["Documents"])
 
@@ -200,11 +193,6 @@ def supprimer_document(
 # BLOC J — Supports RAG : upload, liste, suppression
 # ============================================================
 
-def _calculer_hash(contenu: bytes) -> str:
-    """SHA-256 du contenu binaire du fichier."""
-    return hashlib.sha256(contenu).hexdigest()
-
-
 @router.post(
     "/upload",
     status_code=201,
@@ -239,17 +227,17 @@ async def uploader_support(
     if len(contenu) == 0:
         raise HTTPException(status_code=422, detail="Le fichier est vide.")
 
-    doc_hash = _calculer_hash(contenu)
-    chemin_destination = DOSSIER_FICHIERS_RAG / f"{doc_hash}{ext}"
+    doc_hash = calculer_hash(contenu)
 
-    # Idempotence : fichier déjà présent
-    deja_present = chemin_destination.exists()
-    if not deja_present:
-        DOSSIER_FICHIERS_RAG.mkdir(parents=True, exist_ok=True)
-        chemin_destination.write_bytes(contenu)
-        logger.info(f"Support RAG sauvegardé : {chemin_destination}")
+    # Sauvegarde via le backend configuré (local ou GCS selon STORAGE_BACKEND dans .env)
+    try:
+        storage = get_storage()
+        chemin_fichier, deja_present = storage.sauvegarder(contenu, doc_hash, ext)
+    except IOError as e:
+        # Disque plein (local) ou erreur GCS
+        raise HTTPException(status_code=507, detail=str(e))
 
-    # Enregistrement dans le registre (crée ou retourne l'entrée existante)
+    # Enregistrement dans le registre RAG (crée ou retourne l'entrée existante)
     entree = initialiser_entree(
         hash_fichier=doc_hash,
         fichier=nom,
@@ -261,7 +249,7 @@ async def uploader_support(
         "success": True,
         "hash": doc_hash,
         "fichier": nom,
-        "chemin_fichier": str(chemin_destination),
+        "chemin_fichier": chemin_fichier,
         "formation_code": formation_code,
         "collection": collection,
         "statut": entree.statut,

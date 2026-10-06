@@ -93,6 +93,7 @@ class AttestationGeneratorService:
         self,
         session_info: Dict[str, Any],
         participant: Dict[str, Any],
+        contexte_rag: str = "",
     ) -> str:
         lines = [
             "Génère le contenu de l'attestation pour le participant suivant.",
@@ -111,9 +112,19 @@ class AttestationGeneratorService:
             f"- Nom : {participant.get('nom', 'N/A')}",
             f"- Genre : {participant.get('genre', 'N/A')}",
             f"- Entreprise : {participant.get('entreprise', 'N/A')}",
-            "",
-            "Retourne UNIQUEMENT le JSON valide, sans texte autour.",
         ]
+
+        if contexte_rag:
+            lines += [
+                "",
+                "=== CONTENU DE LA FORMATION (extraits des supports indexés) ===",
+                contexte_rag,
+                "",
+                "→ Utilise ces extraits pour rédiger des compétences précises et "
+                "spécifiques aux thèmes, outils et techniques abordés.",
+            ]
+
+        lines += ["", "Retourne UNIQUEMENT le JSON valide, sans texte autour."]
         return "\n".join(lines)
 
     # --------------------------------------------------------
@@ -132,6 +143,21 @@ class AttestationGeneratorService:
 
         vlog(f"🚀 [AttestationAgent] Génération pour {participant.get('nom')} (n° {numero})")
 
+        # ── ÉTAPE 0 : CONTEXTE RAG ──
+        contexte_rag = ""
+        try:
+            from app.services.formations.knowledge_base_service import KnowledgeBaseService
+            kb = KnowledgeBaseService()
+            contexte_rag = await kb.get_formation_context(
+                formation_titre=session_info.get("titre", ""),
+                domaine=session_info.get("domaine", ""),
+                formation_code=session_info.get("formation_code"),
+            )
+            if contexte_rag:
+                vlog("   📚 [AttestationAgent] Contexte RAG injecté")
+        except Exception as exc:
+            logger.warning(f"   ⚠️  [AttestationAgent] RAG non disponible : {exc}")
+
         content = None
         source = "fallback_template"
 
@@ -139,7 +165,8 @@ class AttestationGeneratorService:
         if self.llm:
             try:
                 content = await self._generate_with_llm(
-                    session_info, participant, temperature, max_tokens
+                    session_info, participant, temperature, max_tokens,
+                    contexte_rag=contexte_rag,
                 )
                 source = "llm"
                 vlog("   ✅ Contenu généré par LLM (Groq)")
@@ -298,10 +325,11 @@ class AttestationGeneratorService:
         participant: Dict[str, Any],
         temperature: float,
         max_tokens: int,
+        contexte_rag: str = "",
     ) -> Dict[str, Any]:
         response = await self.llm.generate(
             system_prompt=self._build_system_prompt(),
-            user_prompt=self._build_user_prompt(session_info, participant),
+            user_prompt=self._build_user_prompt(session_info, participant, contexte_rag),
             temperature=temperature,
             max_tokens=max_tokens,
             json_mode=True,

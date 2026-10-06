@@ -22,7 +22,6 @@ from app.services.veille.validation_service import (
     validate_against_schema,
 )
 
-
 # ──────────────────────────────────────────────
 # Helpers
 # ──────────────────────────────────────────────

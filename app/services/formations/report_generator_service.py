@@ -331,7 +331,7 @@ class ReportGeneratorService:
                 f"recommandations ci-dessus permettront d'améliorer les "
                 f"prochaines sessions."
             ),
-            "lieu_emission": "Antananarivo",
+            "lieu_emission": s.get("lieu_emission", "Antananarivo"),
             "date_emission": self._default_emission_date(date_fin),
         }
 

@@ -17,7 +17,7 @@ from typing import Any, Dict, List, Optional
 logger = logging.getLogger(__name__)
 
 DOSSIER_CONVERSATIONS_DEFAUT = Path(__file__).resolve().parents[3] / "data" / "rag" / "conversations"
-NB_ECHANGES_MEMORISES = 6
+NB_ECHANGES_MEMORISES = 25
 
 
 @dataclass

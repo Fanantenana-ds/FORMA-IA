@@ -39,13 +39,15 @@ while ($true) {
     $bodyBytes = [System.Text.Encoding]::UTF8.GetBytes($bodyJson)
 
     try {
-        # Invoke-RestMethod dans PS 5.1 décode la réponse en Latin-1 même quand
-        # le serveur envoie UTF-8. On passe par Invoke-WebRequest + décodage
-        # manuel pour obtenir les accents correctement.
-        $raw = Invoke-WebRequest -Uri $url -Method POST `
-            -Headers @{ "Authorization" = "Bearer $token"; "Content-Type" = "application/json; charset=utf-8" } `
-            -Body $bodyBytes -UseBasicParsing
-        $r = [System.Text.Encoding]::UTF8.GetString($raw.Content) | ConvertFrom-Json
+        # WebClient.UploadData retourne byte[] bruts — on décode en UTF-8.
+        # Invoke-WebRequest/RestMethod (PS 5.1) décodent en Latin-1 malgré
+        # le charset= déclaré dans le header, d'où les Ã© en sortie.
+        $wc = New-Object System.Net.WebClient
+        $wc.Headers["Authorization"] = "Bearer $token"
+        $wc.Headers["Content-Type"]  = "application/json; charset=utf-8"
+        $respBytes = $wc.UploadData($url, "POST", $bodyBytes)
+        $jsonStr   = [System.Text.Encoding]::UTF8.GetString($respBytes)
+        $r = $jsonStr | ConvertFrom-Json
 
         $conv_id = $r.conversation_id
 
@@ -76,7 +78,10 @@ while ($true) {
 
     } catch {
         Write-Host ""
-        Write-Host "Erreur : $($_.Exception.Message)" -ForegroundColor Red
+        $msg = $_.Exception.Message
+        # HttpClient renvoie parfois une AggregateException avec l'erreur réelle en InnerException
+        if ($_.Exception.InnerException) { $msg = $_.Exception.InnerException.Message }
+        Write-Host "Erreur : $msg" -ForegroundColor Red
         Write-Host ""
     }
 }

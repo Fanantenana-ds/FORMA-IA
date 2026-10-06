@@ -34,6 +34,9 @@ from app.services.storage import get_storage, calculer_hash, TAILLE_MAX_OCTETS, 
 
 logger = logging.getLogger(__name__)
 
+# Chemin local des fichiers RAG (utilisé pour vérifier l'existence côté filesystem)
+DOSSIER_FICHIERS_RAG = Path(__file__).resolve().parents[4] / "data" / "rag" / "fichiers"
+
 router = APIRouter(prefix="/documents", tags=["Documents"])
 
 
@@ -209,6 +212,7 @@ async def uploader_support(
     fichier: UploadFile = File(..., description="Fichier à indexer (PDF, DOCX, PPTX, XLSX, TXT, MD)"),
     formation_code: Optional[str] = Form(default=None, description="Code de la formation associée (catalogue RAG)"),
     collection: str = Form(default="support", description="Collection RAG : support | aide_plateforme"),
+    module: Optional[str] = Form(default=None, description="Module pédagogique (ex: 'Module 1 — Introduction'). Optionnel — utilisé pour grouper les supports dans le résumé téléchargeable."),
     current_user: User = Depends(require_role("DIRECTION", "ASSISTANT", "FORMATEUR")),
 ):
     # Vérification extension
@@ -234,7 +238,6 @@ async def uploader_support(
         storage = get_storage()
         chemin_fichier, deja_present = storage.sauvegarder(contenu, doc_hash, ext)
     except IOError as e:
-        # Disque plein (local) ou erreur GCS
         raise HTTPException(status_code=507, detail=str(e))
 
     # Enregistrement dans le registre RAG (crée ou retourne l'entrée existante)
@@ -243,6 +246,7 @@ async def uploader_support(
         fichier=nom,
         formation_code=formation_code,
         collection=collection,
+        module=module,
     )
 
     return {
@@ -251,6 +255,7 @@ async def uploader_support(
         "fichier": nom,
         "chemin_fichier": chemin_fichier,
         "formation_code": formation_code,
+        "module": module,
         "collection": collection,
         "statut": entree.statut,
         "deja_present": deja_present,
@@ -287,6 +292,7 @@ def lister_supports(
             "hash": e.hash,
             "fichier": e.fichier,
             "formation_code": e.formation_code,
+            "module": e.module,
             "collection": e.collection,
             "statut": e.statut,
             "nb_chunks": e.nb_chunks,
@@ -298,6 +304,201 @@ def lister_supports(
         })
 
     return {"success": True, "total": len(data), "data": data}
+
+
+@router.get(
+    "/rag/supports/resume-formation",
+    summary="Télécharger le résumé de tous les supports d'une formation (DOCX)",
+    description=(
+        "Génère et retourne un document DOCX contenant le résumé de tous les supports "
+        "indexés d'une formation, groupés par module pédagogique. "
+        "Chaque support contribue : titre, résumé, mots-clés, plan. "
+        "Supports sans résumé encore généré sont signalés ('indexation en cours'). "
+        "Rôles autorisés : tous les utilisateurs authentifiés."
+    ),
+)
+def telecharger_resume_formation(
+    formation_code: str = Query(..., description="Code de la formation (ex: PYTHON-2026)"),
+    current_user: User = Depends(get_current_user),
+):
+    from docx import Document as DocxDocument
+    from docx.shared import Pt, RGBColor
+    from io import BytesIO
+    from collections import defaultdict
+
+    entrees = registre.charger_registre()
+    supports = [e for e in entrees.values() if e.formation_code == formation_code]
+
+    if not supports:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Aucun support trouvé pour la formation '{formation_code}'.",
+        )
+
+    # Grouper par module (None → "Supports généraux")
+    par_module: dict = defaultdict(list)
+    for e in supports:
+        cle = e.module or "Supports généraux"
+        par_module[cle].append(e)
+
+    # Trier les modules (Module 1 avant Module 2, etc.)
+    modules_tries = sorted(par_module.keys(), key=lambda m: (
+        0 if m == "Supports généraux" else 1,
+        m,
+    ))
+
+    doc = DocxDocument()
+
+    # Page de garde
+    titre = doc.add_heading(f"Résumé de formation", level=0)
+    titre.runs[0].font.color.rgb = RGBColor(0x1F, 0x49, 0x7D)
+    doc.add_paragraph(f"Formation : {formation_code}")
+    doc.add_paragraph(f"Nombre de supports : {len(supports)}")
+    doc.add_paragraph(f"Modules : {len(par_module)}")
+    doc.add_paragraph("")
+
+    total_sans_resume = 0
+
+    for module_nom in modules_tries:
+        doc.add_heading(module_nom, level=1)
+        for e in par_module[module_nom]:
+            doc.add_heading(f"📄 {e.fichier}", level=2)
+
+            if e.resume:
+                doc.add_paragraph(e.resume)
+            else:
+                p = doc.add_paragraph("⏳ Résumé pas encore généré (indexation en attente ou en cours).")
+                p.runs[0].italic = True
+                total_sans_resume += 1
+
+            if e.mots_cles:
+                doc.add_paragraph(f"Mots-clés : {', '.join(e.mots_cles)}")
+
+            if e.plan:
+                doc.add_paragraph("Plan :")
+                for item in e.plan:
+                    titre_item = item.get("titre") or item.get("title") or str(item)
+                    doc.add_paragraph(f"  • {titre_item}", style="List Bullet")
+
+            doc.add_paragraph("")
+
+    if total_sans_resume:
+        doc.add_paragraph(
+            f"ℹ️  {total_sans_resume} support(s) sans résumé. "
+            "Lancez POST /ia/rag/indexer-document pour les supports concernés.",
+        ).italic = True
+
+    # Sérialisation en mémoire
+    buffer = BytesIO()
+    doc.save(buffer)
+    buffer.seek(0)
+
+    nom_fichier = f"resume_{formation_code}.docx".replace(" ", "_")
+    return Response(
+        content=buffer.read(),
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": f'attachment; filename="{nom_fichier}"'},
+    )
+
+
+@router.get(
+    "/rag/supports/bilan-formations",
+    summary="Télécharger le bilan de toutes les formations sur une période (DOCX)",
+    description=(
+        "Génère un document DOCX récapitulatif de toutes les formations ayant des supports "
+        "indexés, avec filtre optionnel par période (date_debut / date_fin au format YYYY-MM-DD). "
+        "Pour chaque formation : code, nombre de supports, modules, thèmes couverts (mots-clés). "
+        "Rôles autorisés : DIRECTION, ASSISTANT."
+    ),
+)
+def telecharger_bilan_formations(
+    date_debut: Optional[str] = Query(default=None, description="Période début YYYY-MM-DD (optionnel)"),
+    date_fin: Optional[str] = Query(default=None, description="Période fin YYYY-MM-DD (optionnel)"),
+    current_user: User = Depends(require_role("DIRECTION", "ASSISTANT")),
+):
+    from docx import Document as DocxDocument
+    from docx.shared import RGBColor
+    from io import BytesIO
+    from collections import defaultdict
+
+    entrees = registre.charger_registre()
+    tous_supports = list(entrees.values())
+
+    # Filtre par période si fourni
+    if date_debut or date_fin:
+        filtres = []
+        for e in tous_supports:
+            d = (e.date_debut or "")[:10]
+            if date_debut and d < date_debut:
+                continue
+            if date_fin and d > date_fin:
+                continue
+            filtres.append(e)
+        tous_supports = filtres
+
+    if not tous_supports:
+        raise HTTPException(
+            status_code=404,
+            detail="Aucun support trouvé pour la période demandée.",
+        )
+
+    # Regrouper par formation_code
+    par_formation: dict = defaultdict(list)
+    for e in tous_supports:
+        par_formation[e.formation_code or "Sans formation"].append(e)
+
+    doc = DocxDocument()
+
+    # En-tête
+    titre = doc.add_heading("Bilan des formations", level=0)
+    titre.runs[0].font.color.rgb = RGBColor(0x1F, 0x49, 0x7D)
+    periode = ""
+    if date_debut and date_fin:
+        periode = f"{date_debut} → {date_fin}"
+    elif date_debut:
+        periode = f"depuis {date_debut}"
+    elif date_fin:
+        periode = f"jusqu'au {date_fin}"
+    if periode:
+        doc.add_paragraph(f"Période : {periode}")
+    doc.add_paragraph(f"Formations : {len(par_formation)}  |  Supports total : {len(tous_supports)}")
+    doc.add_paragraph("")
+
+    for formation_code in sorted(par_formation.keys()):
+        supports_f = par_formation[formation_code]
+        modules = sorted({e.module for e in supports_f if e.module})
+        tous_mots_cles = []
+        for e in supports_f:
+            tous_mots_cles.extend(e.mots_cles or [])
+        mots_cles_uniques = sorted(set(tous_mots_cles))[:20]
+
+        doc.add_heading(formation_code, level=1)
+        doc.add_paragraph(f"Supports : {len(supports_f)}")
+        if modules:
+            doc.add_paragraph(f"Modules : {', '.join(modules)}")
+        if mots_cles_uniques:
+            doc.add_paragraph(f"Thèmes couverts : {', '.join(mots_cles_uniques)}")
+
+        doc.add_paragraph("Supports :")
+        for e in supports_f:
+            statut_label = "✅" if e.statut == "indexe" else "⏳"
+            module_label = f" [{e.module}]" if e.module else ""
+            doc.add_paragraph(
+                f"  {statut_label} {e.fichier}{module_label}",
+                style="List Bullet",
+            )
+        doc.add_paragraph("")
+
+    buffer = BytesIO()
+    doc.save(buffer)
+    buffer.seek(0)
+
+    label = f"bilan_{date_debut or 'tout'}_{date_fin or 'tout'}.docx".replace(" ", "_")
+    return Response(
+        content=buffer.read(),
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": f'attachment; filename="{label}"'},
+    )
 
 
 @router.delete(

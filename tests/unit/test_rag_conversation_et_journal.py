@@ -25,14 +25,14 @@ def test_ajouter_echange_et_sauvegarder(tmp_path):
     assert relue.echanges[0].texte == "Bonjour"
 
 
-def test_seuls_les_6_derniers_echanges_sont_gardes(tmp_path):
+def test_seuls_les_25_derniers_echanges_sont_gardes(tmp_path):
     conv = memoire.charger_conversation("abc", tmp_path)
-    for i in range(10):
+    for i in range(30):
         conv = memoire.ajouter_echange(conv, "utilisateur", f"Message {i}")
 
-    assert len(conv.echanges) == 6
-    assert conv.echanges[-1].texte == "Message 9"
-    assert conv.echanges[0].texte == "Message 4"
+    assert len(conv.echanges) == 25
+    assert conv.echanges[-1].texte == "Message 29"
+    assert conv.echanges[0].texte == "Message 5"
 
 
 def test_derniere_formation_memorisee_pour_les_relances(tmp_path):

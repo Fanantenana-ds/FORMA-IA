@@ -86,7 +86,9 @@ class ReportGeneratorService:
             else "\n".join(f"- {r}" for r in cfg.get("regles", [])),
         ])
 
-    def _build_user_prompt(self, session_data: Dict[str, Any]) -> str:
+    def _build_user_prompt(
+        self, session_data: Dict[str, Any], contexte_rag: str = ""
+    ) -> str:
         s = session_data
         lines = [
             "Génère le rapport final pour la session suivante :",
@@ -122,9 +124,20 @@ class ReportGeneratorService:
             f"- Points forts : {', '.join(s.get('points_forts', [])) or 'N/A'}",
             f"- Axes d'amélioration : {', '.join(s.get('axes_amelioration', [])) or 'N/A'}",
             f"- Taux recommandation : {s.get('taux_recommandation', 'N/A')}",
-            "",
-            "Retourne UNIQUEMENT le JSON valide, sans texte autour.",
         ]
+
+        if contexte_rag:
+            lines += [
+                "",
+                "=== CONTENU DE LA FORMATION (extraits des supports indexés) ===",
+                contexte_rag,
+                "",
+                "→ Utilise ces extraits pour personnaliser les recommandations "
+                "en mentionnant des thèmes, modules ou compétences spécifiques "
+                "abordés pendant la formation.",
+            ]
+
+        lines += ["", "Retourne UNIQUEMENT le JSON valide, sans texte autour."]
         return "\n".join(lines)
 
     # --------------------------------------------------------
@@ -143,13 +156,29 @@ class ReportGeneratorService:
         vlog(f"   👥 Participants : {session_data.get('total_inscrits', 0)}")
         vlog("=" * 70)
 
+        # ── ÉTAPE 0 : CONTEXTE RAG (même pattern qu'Agents 2 et 3) ──
+        contexte_rag = ""
+        try:
+            from app.services.formations.knowledge_base_service import KnowledgeBaseService
+            kb = KnowledgeBaseService()
+            contexte_rag = await kb.get_formation_context(
+                formation_titre=session_data.get("titre", ""),
+                domaine=session_data.get("domaine", ""),
+                formation_code=session_data.get("formation_code"),
+            )
+            if contexte_rag:
+                vlog("   📚 [ReportAgent] Contexte RAG injecté dans le prompt")
+        except Exception as exc:
+            logger.warning(f"   ⚠️  [ReportAgent] RAG non disponible : {exc}")
+
         content = None
         source = "fallback_template"
 
         if self.llm:
             try:
                 content = await self._generate_with_llm(
-                    session_data, temperature, max_tokens
+                    session_data, temperature, max_tokens,
+                    contexte_rag=contexte_rag,
                 )
                 source = "llm"
                 vlog("   ✅ Rapport généré par LLM (Groq)")
@@ -199,10 +228,11 @@ class ReportGeneratorService:
         session_data: Dict[str, Any],
         temperature: float,
         max_tokens: int,
+        contexte_rag: str = "",
     ) -> Dict[str, Any]:
         response = await self.llm.generate(
             system_prompt=self._build_system_prompt(),
-            user_prompt=self._build_user_prompt(session_data),
+            user_prompt=self._build_user_prompt(session_data, contexte_rag=contexte_rag),
             temperature=temperature,
             max_tokens=max_tokens,
             json_mode=True,

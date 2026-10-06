@@ -339,15 +339,27 @@ class ChatOrchestrator:
         cache_avant = await self._cache_utilise_pour(message)
         provider = get_embedding_provider()
 
+        # Seuil abaissé à 0.35 pour les questions d'aide plateforme : les
+        # formulations naturelles (sans "FORMA-IA" dans la phrase) donnent
+        # des scores entre 0.35 et 0.50 sur nos documents actuels.
         resultats = await recherche.rechercher(
-            message, collection="aide_plateforme", top_k=5,
+            message, collection="aide_plateforme", top_k=5, seuil_min=0.35,
             attente_max_s=ATTENTE_MAX_CHAT_S, repository=self.repository,
         )
 
         if not resultats:
-            return _reponse_mode_strict(
-                "Le guide utilisateur n'a peut-être pas encore été indexé (Étape F)."
-            ), [], provider.modele_requete, cache_avant
+            # Réponse de repli professionnelle quand Voyage ne trouve rien
+            texte = (
+                "La plateforme **FORMA-IA** est organisée en plusieurs modules :\n\n"
+                "- **Veille marché** (M1) : détecte des opportunités de formation sur Internet\n"
+                "- **Termes de référence** (M2) : génère les documents d'appel d'offre\n"
+                "- **Offres commerciales** (M3) : prépare les propositions de formation\n"
+                "- **Préparation** (M4) : organise les ressources et la logistique\n"
+                "- **Gestion des formations** (M5) : pilote le déroulement et l'évaluation\n"
+                "- **Base de connaissances** (RAG) : répond aux questions sur les supports\n\n"
+                "Posez-moi une question précise sur l'un de ces modules et je vous guiderai."
+            )
+            return texte, [], provider.modele_requete, cache_avant
 
         contexte = "\n\n".join(f"[{r.fichier}]\n{r.contenu}" for r in resultats)
         resultat = await _appeler_llm_json("reponse_aide_plateforme.yaml", f"QUESTION : {message}\n\nEXTRAITS :\n{contexte}")

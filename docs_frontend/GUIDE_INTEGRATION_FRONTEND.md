@@ -1,7 +1,7 @@
 # GUIDE D'INTÉGRATION FRONTEND — FORMA-IA
 
 > **Pour qui ?** Le binôme frontend qui branche le React sur le Backend FastAPI.  
-> **Backend :** 100% terminé, 169 routes, 717 tests verts.  
+> **Backend :** 90% terminé, 169 routes, 717 tests verts.  
 > **URL locale :** `http://127.0.0.1:8000`  
 > **Dernière mise à jour :** 2026-10-06
 
@@ -429,63 +429,170 @@ async genererRelance(factureId: string) {
 
 ## ÉTAPE 3 — Créer les vues manquantes
 
-### 3.1 — `DocumentsView.tsx` — Gestion des documents
+### 3.1 — `SupportsFormationView.tsx` — Upload et gestion des supports de cours
 
-Cette vue n'existe pas encore. Elle doit permettre d'uploader et de consulter les documents.
+> **Vue à créer.** C'est la vue centrale pour les formateurs — elle gère l'upload des supports, leur suivi d'indexation RAG, et le téléchargement des résumés.
 
-**Endpoints à utiliser :**
+#### 3.1a — Upload d'un support avec module
+
+**Champs du formulaire d'upload :**
+
+| Champ | Type | Obligatoire | Description |
+|---|---|---|---|
+| `fichier` | File | ✅ | PDF, DOCX, PPTX, XLSX, TXT, MD — max 100 Mo |
+| `formation_code` | texte | ✅ | Code de la formation (ex: `PYTHON-2026`) |
+| `module` | texte | ⬜ optionnel | Nom du module pédagogique (ex: `Module 1 — Introduction`) |
+| `collection` | select | ⬜ | `support` (défaut) ou `aide_plateforme` |
 
 ```ts
-// Lister les documents validés
-GET /api/v1/documents
-→ [{ id, titre, type, statut, created_at }]
+// Dans api.ts
+async uploaderSupport(
+  file: File,
+  formationCode: string,
+  module?: string,
+  collection = 'support'
+) {
+  const token = localStorage.getItem('token')
+  const formData = new FormData()
+  formData.append('fichier', file)
+  formData.append('formation_code', formationCode)
+  formData.append('collection', collection)
+  if (module) formData.append('module', module)
 
-// Uploader un support de formation (PDF, DOCX, PPTX)
-POST /api/v1/documents/supports   (multipart/form-data)
-→ { id, titre, statut_indexation }
-
-// Lister les supports + leur statut d'indexation RAG
-GET /api/v1/documents/supports
-→ [{ id, fichier, statut_indexation: "indexé" | "en_cours" | "erreur" }]
-
-// Télécharger un document
-GET /api/v1/documents/{id}/export
-→ Fichier DOCX ou PDF
-
-// Supprimer
-DELETE /api/v1/documents/{id}
-```
-
-**Structure minimale de la vue :**
-
-```tsx
-function DocumentsView() {
-  const [documents, setDocuments] = useState([])
-
-  useEffect(() => {
-    apiService.request('/documents').then(setDocuments)
-  }, [])
-
-  const handleUpload = async (file: File) => {
-    const formData = new FormData()
-    formData.append('file', file)
-    const token = localStorage.getItem('token')
-    await fetch('http://127.0.0.1:8000/api/v1/documents/supports', {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${token}` },
-      body: formData,
-    })
-    // Recharger la liste
-  }
-
-  return (
-    <div>
-      <input type="file" onChange={e => handleUpload(e.target.files[0])} />
-      {documents.map(doc => <div key={doc.id}>{doc.titre}</div>)}
-    </div>
-  )
+  const res = await fetch('http://127.0.0.1:8000/api/v1/documents/upload', {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${token}` },
+    body: formData,
+  })
+  return res.json()
+  // → { success, hash, fichier, chemin_fichier, formation_code, module,
+  //     statut: "en_attente", deja_present, taille_octets }
 }
 ```
+
+> **Après l'upload → lancer l'indexation RAG :**
+> ```ts
+> // Le chemin_fichier retourné par l'upload sert ici
+> POST /api/v1/ia/rag/indexer-document
+> Body: { chemin_fichier: "data/rag/fichiers/abc123.pdf", formation_code: "PYTHON-2026" }
+> ```
+
+#### 3.1b — Lister les supports d'une formation
+
+```ts
+// Lister tous les supports d'une formation avec leur statut d'indexation
+GET /api/v1/documents/rag/supports?formation_code=PYTHON-2026
+→ {
+    success: true,
+    total: 6,
+    data: [
+      {
+        hash: "abc123...",
+        fichier: "slides_module1.pptx",
+        formation_code: "PYTHON-2026",
+        module: "Module 1 — Introduction",     // ← nouveau champ
+        statut: "indexe",                       // en_attente | en_cours | indexe | erreur
+        nb_chunks: 42,
+        date_debut: "2026-10-06T10:00:00",
+        date_fin: "2026-10-06T10:02:30",
+        fichier_disponible: true,
+      },
+      ...
+    ]
+  }
+```
+
+**Affichage recommandé dans la vue :**
+
+```tsx
+// Grouper par module dans l'affichage
+const parModule = supports.reduce((acc, s) => {
+  const key = s.module || 'Supports généraux'
+  if (!acc[key]) acc[key] = []
+  acc[key].push(s)
+  return acc
+}, {})
+
+// Icône selon le statut
+const iconeStatut = {
+  'indexe':     '✅',
+  'en_cours':   '⏳',
+  'en_attente': '🕐',
+  'erreur':     '❌',
+}
+```
+
+#### 3.1c — Télécharger le résumé d'une formation (1 clic)
+
+> **Cas d'usage :** le formateur veut distribuer un résumé de tous ses supports aux participants à la fin de la session.
+
+```ts
+// Un seul appel → télécharge un fichier DOCX
+async telechargerResumeFormation(formationCode: string) {
+  const token = localStorage.getItem('token')
+  const res = await fetch(
+    `http://127.0.0.1:8000/api/v1/documents/rag/supports/resume-formation?formation_code=${formationCode}`,
+    { headers: { 'Authorization': `Bearer ${token}` } }
+  )
+  // Déclencher le téléchargement dans le navigateur
+  const blob = await res.blob()
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `resume_${formationCode}.docx`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+```
+
+**Ce que contient le DOCX :**
+- Page de garde (code formation, nb supports, nb modules)
+- Groupé par module : `Module 1 — Introduction` → `Module 2 — ...`
+- Par support : résumé + mots-clés + plan des chapitres
+- Supports sans résumé encore prêt → signalés ⏳
+
+#### 3.1d — Supprimer un support
+
+```ts
+DELETE /api/v1/documents/rag/supports/{hash}
+→ { success: true, nb_chunks_supprimes: 42, fichier_supprime: true }
+// Irréversible — supprime le fichier + les vecteurs RAG
+```
+
+---
+
+### 3.1e — `BilanFormationsView.tsx` — Bilan global (Direction uniquement)
+
+> **Vue séparée pour la Direction.** Télécharge un bilan de toutes les formations sur une période.
+
+```ts
+// Bilan mensuel — octobre 2026
+async telechargerBilanFormations(dateDebut?: string, dateFin?: string) {
+  const token = localStorage.getItem('token')
+  const params = new URLSearchParams()
+  if (dateDebut) params.append('date_debut', dateDebut)
+  if (dateFin) params.append('date_fin', dateFin)
+
+  const res = await fetch(
+    `http://127.0.0.1:8000/api/v1/documents/rag/supports/bilan-formations?${params}`,
+    { headers: { 'Authorization': `Bearer ${token}` } }
+  )
+  const blob = await res.blob()
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `bilan_formations.docx`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+```
+
+**Ce que contient le DOCX :**
+- En-tête : période, nb formations, nb supports total
+- Par formation : code, nb supports, modules, thèmes couverts (mots-clés)
+- Liste des fichiers avec statut ✅/⏳
+
+**Rôles autorisés :** `DIRECTION`, `ASSISTANT` uniquement.
 
 ---
 
@@ -973,15 +1080,18 @@ GET /api/v1/ia/rag/health
 
 ---
 
-### Documents (M2)
+### Documents & Supports RAG
 
 | Endpoint | Méthode | Rôle |
 |---|---|---|
-| 🟢 `/documents` | GET | Lister les documents |
-| 🟢 `/documents/{id}/export` | GET | Télécharger |
+| 🟢 `/documents` | GET | Lister les documents validés |
+| 🟢 `/documents/{id}/export` | GET | Télécharger un document |
 | 🟢 `/documents/{id}` | DELETE | Supprimer |
-| 🟢 `/documents/supports` | POST | Upload support RAG |
-| 🟢 `/documents/supports` | GET | Lister supports + statut indexation |
+| 🟢 `/documents/upload` | POST | Upload support RAG (multipart — champs : fichier, formation_code, **module**, collection) |
+| 🟢 `/documents/rag/supports` | GET | Lister supports + statut indexation + module |
+| 🟢 `/documents/rag/supports/resume-formation` | GET | ⬇️ DOCX résumé d'une formation groupé par module (1 clic formateur) |
+| 🟢 `/documents/rag/supports/bilan-formations` | GET | ⬇️ DOCX bilan toutes formations sur une période (Direction) |
+| 🟢 `/documents/rag/supports/{hash}` | DELETE | Supprimer support + vecteurs RAG |
 | 🔵 `/ia/tdr/generer` | POST | Générer TDR → review_id |
 | 🟡 `/ia/tdr/from-opportunite/{id}` | GET | Pré-remplir brief TDR |
 | 🟡 `/ia/tdr/synchroniser` | POST | Sync après approbation |
@@ -1116,11 +1226,37 @@ GET /api/v1/ia/rag/health
 | Formateurs (lecture) | `FormateursStaffView.tsx` | ✅ GET branché | — |
 | Formateurs (écriture) | `FormateursStaffView.tsx` | ❌ Callback local | Appels POST/PATCH/DELETE |
 | Factures (lecture + création) | `FacturationDevisView.tsx` | ✅ GET + POST branchés | Paiements, relance, export |
-| Documents | — | ❌ Vue inexistante | Créer `DocumentsView.tsx` |
-| Préparation | — | ❌ Vue inexistante | Créer `PreparationView.tsx` |
-| Validation HITL | — | ❌ Vue inexistante | Créer `HitlReviewView.tsx` (priorité max) |
+| Supports RAG | — | ❌ Vue inexistante | Créer `SupportsFormationView.tsx` (Section 3.1) |
+| Bilan formations | — | ❌ Vue inexistante | Créer `BilanFormationsView.tsx` (Section 3.1e — Direction) |
+| Préparation | — | ❌ Vue inexistante | Créer `PreparationView.tsx` (Section 3.2) |
+| Validation HITL | — | ❌ Vue inexistante | Créer `HitlReviewView.tsx` (Section 3.3 — priorité max) |
 | Formulaires M5 | — | ❌ Non branché | Cycle complet Section 4 M5 |
 | Agents IA (boutons) | Toutes les vues | ❌ Absent partout | Étape 4 |
+
+---
+
+## NOUVELLES INTERFACES AJOUTÉES — Récapitulatif
+
+> Ces interfaces ont été ajoutées après la première version du guide. Elles sont **toutes prêtes côté backend**.
+
+| Interface | Route backend | Qui l'utilise | Priorité |
+|---|---|---|---|
+| Upload support avec champ `module` | `POST /documents/upload` | Formateur | Haute |
+| Liste supports avec statut + module | `GET /documents/rag/supports` | Formateur / Admin | Haute |
+| ⬇️ Résumé DOCX d'une formation | `GET /documents/rag/supports/resume-formation` | Formateur (1 clic) | Haute |
+| ⬇️ Bilan DOCX toutes formations | `GET /documents/rag/supports/bilan-formations` | Direction uniquement | Moyenne |
+| Supprimer un support RAG | `DELETE /documents/rag/supports/{hash}` | Admin | Faible |
+
+**Le champ `module` dans l'upload est clé** — sans lui, les supports seront groupés dans "Supports généraux" dans le résumé DOCX. Encourage les formateurs à le renseigner lors de l'upload.
+
+**Format recommandé pour `module` :**
+```
+Module 1 — Introduction
+Module 2 — Fonctions avancées
+Module 3 — Async et API
+Évaluation finale
+Ressources complémentaires
+```
 
 ---
 
@@ -1132,7 +1268,8 @@ GET /api/v1/ia/rag/health
 | J2 | Corriger `VeilleMarcheView.tsx` + `OpportunitesCrmView.tsx` | M1 fonctionnel |
 | J3 | Corriger `SessionsGroupesView.tsx` + `SuiviPresencesView.tsx` | M5/M6 fonctionnel |
 | J4 | Corriger `FormateursStaffView.tsx` + `FacturationDevisView.tsx` | M4/M7 fonctionnel |
-| J5-J6 | Créer `HitlReviewView.tsx` | Validation IA possible |
-| J7-J8 | Créer `DocumentsView.tsx` + `PreparationView.tsx` | M2/PREP fonctionnels |
+| J5 | Créer `SupportsFormationView.tsx` (upload + module + résumé 1 clic) | Supports RAG opérationnel |
+| J6 | Créer `HitlReviewView.tsx` | Validation IA possible |
+| J7-J8 | Créer `PreparationView.tsx` + `BilanFormationsView.tsx` | PREP + Direction |
 | J9-J10 | Brancher les boutons agents IA (M1, M2, M3, M7, M4) | Étape 4 complète |
 | J11-J12 | Brancher le cycle M5 complet (Google Forms + sync-responses) | M5 entier fonctionnel |

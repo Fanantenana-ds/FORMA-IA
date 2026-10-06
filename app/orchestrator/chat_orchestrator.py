@@ -102,11 +102,11 @@ class ChatOrchestrator:
             elif type_detecte == "contenu_formation":
                 texte, sources, formation_resolue = await self._repondre_contenu_formation(message, formation_code, conv)
             elif type_detecte == "synthese_thematique":
-                texte, sources, modele_requete, cache_utilise = await self._repondre_synthese_thematique(message)
+                texte, sources, modele_requete, cache_utilise = await self._repondre_synthese_thematique(message, conv)
             elif type_detecte == "localisation":
                 texte, sources, modele_requete, cache_utilise = await self._repondre_localisation(message)
             elif type_detecte == "question_fond":
-                texte, sources, modele_requete, cache_utilise = await self._repondre_question_fond(message)
+                texte, sources, modele_requete, cache_utilise = await self._repondre_question_fond(message, conv)
             elif type_detecte == "aide_plateforme":
                 texte, sources, modele_requete, cache_utilise = await self._repondre_aide_plateforme(message)
             elif type_detecte == "conversationnel":
@@ -134,13 +134,15 @@ class ChatOrchestrator:
             cache_utilise=bool(cache_utilise), duree_ms=duree_ms, statut=statut,
         )
 
+        suggestions = await self._suggestions_dynamiques(type_detecte, message, texte)
+
         return {
             "conversation_id": conversation_id,
             "type_reponse": type_detecte,
             "reponse": texte,
             "sources": sources,
             "formation_resolue": formation_resolue or conv.derniere_formation_code,
-            "suggestions": self._suggestions(type_detecte),
+            "suggestions": suggestions,
             "duree_ms": round(duree_ms, 1),
         }
 
@@ -262,7 +264,7 @@ class ChatOrchestrator:
         provider = get_embedding_provider()
         return depuis_cache(texte, provider.modele_requete) is not None
 
-    async def _repondre_synthese_thematique(self, message):
+    async def _repondre_synthese_thematique(self, message, conv=None):
         cache_avant = await self._cache_utilise_pour(message)
         provider = get_embedding_provider()
 
@@ -272,7 +274,37 @@ class ChatOrchestrator:
         )
 
         if not resultats:
-            return _reponse_mode_strict(), [], provider.modele_requete, cache_avant
+            historique = ""
+            if conv and hasattr(conv, "echanges") and conv.echanges:
+                historique = "\n".join(
+                    f"{getattr(e, 'role', '')}: {getattr(e, 'texte', '')}"
+                    for e in conv.echanges[-10:]
+                )
+            import json as _json
+            prompt_sys = (
+                "Tu es FORMA-IA, l'assistant documentaire d'ALTIORA. "
+                "Réponds à la question de synthèse thématique en t'appuyant sur le contexte "
+                "de la conversation et ta connaissance des formations ALTIORA (IA, management, "
+                "gestion de projet, compétences numériques). "
+                "Zéro route HTTP. Retourne UNIQUEMENT {\"reponse\": \"...\"}."
+            )
+            user_msg = (f"Historique :\n{historique}\n\nQuestion : {message}"
+                        if historique else f"Question : {message}")
+            try:
+                llm = get_llm_provider()
+                rep = await llm.generate_with_retry(
+                    system_prompt=prompt_sys,
+                    user_prompt=user_msg,
+                    temperature=0.5, max_tokens=600, json_mode=True, max_retries=1,
+                    reasoning_effort="low",
+                )
+                data = _json.loads(rep["content"])
+                texte = data.get("reponse", "")
+            except Exception:
+                texte = ""
+            if not texte:
+                return _reponse_mode_strict(), [], provider.modele_requete, cache_avant
+            return texte, [], provider.modele_requete, cache_avant
 
         contexte = "\n\n".join(f"Formation : {r.formation_titre}\nRésumé : {r.contenu}" for r in resultats)
         resultat = await _appeler_llm_json("reponse_synthese_thematique.yaml", contexte, temperature=0.5)
@@ -313,7 +345,7 @@ class ChatOrchestrator:
         texte = "Voici où ce sujet est expliqué :\n\n" + "\n".join(lignes)
         return texte, sources, provider.modele_requete, cache_avant
 
-    async def _repondre_question_fond(self, message):
+    async def _repondre_question_fond(self, message, conv=None):
         cache_avant = await self._cache_utilise_pour(message)
         provider = get_embedding_provider()
 
@@ -323,7 +355,42 @@ class ChatOrchestrator:
         )
 
         if not resultats:
-            return _reponse_mode_strict(), [], provider.modele_requete, cache_avant
+            # Aucun résultat RAG → LLM avec contexte de conversation
+            # (gère les références anaphoriques : "cette support", "expliquer ça", etc.)
+            historique = ""
+            if conv and hasattr(conv, "echanges") and conv.echanges:
+                historique = "\n".join(
+                    f"{getattr(e, 'role', '')}: {getattr(e, 'texte', '')}"
+                    for e in conv.echanges[-10:]
+                )
+            import json as _json
+            prompt_sys = (
+                "Tu es FORMA-IA, l'assistant documentaire d'ALTIORA Solutions. "
+                "Réponds à la question en te basant sur le contexte de la conversation fourni. "
+                "Si la question fait référence à des documents ou supports listés juste avant, "
+                "explique leur contenu global (guides de la plateforme : Veille marché, TDR, "
+                "Offres, Préparation, Formations M5, Attestations, Facturation, Validation HITL, "
+                "Base de connaissances). "
+                "Zéro route HTTP, zéro code technique. "
+                'Retourne UNIQUEMENT {"reponse": "..."}.'
+            )
+            user_msg = (f"Historique de la conversation :\n{historique}\n\nQuestion : {message}"
+                        if historique else f"Question : {message}")
+            try:
+                llm = get_llm_provider()
+                rep = await llm.generate_with_retry(
+                    system_prompt=prompt_sys,
+                    user_prompt=user_msg,
+                    temperature=0.5, max_tokens=600, json_mode=True, max_retries=1,
+                    reasoning_effort="low",
+                )
+                data = _json.loads(rep["content"])
+                texte = data.get("reponse", "")
+            except Exception:
+                texte = ""
+            if not texte:
+                return _reponse_mode_strict(), [], provider.modele_requete, cache_avant
+            return texte, [], provider.modele_requete, cache_avant
 
         contexte = "\n\n".join(
             f"[{r.fichier}, p. {r.page_debut}]\n{r.contenu}" for r in resultats
@@ -406,23 +473,59 @@ class ChatOrchestrator:
         return texte, sources, provider.modele_requete, cache_avant
 
     # ========================================================
-    # SUGGESTIONS DE RELANCE (2-3, gabarit par type)
+    # SUGGESTIONS DE RELANCE — dynamiques (LLM) + gabarit statique
     # ========================================================
+
+    _GABARITS_SUGGESTIONS = {
+        "catalogue": ["Voir le contenu d'une formation précise", "Combien de supports sont indexés ?"],
+        "inventaire": ["Voir le catalogue des formations"],
+        "contenu_formation": ["Où est expliqué un sujet précis dans cette formation ?", "Et le module suivant ?"],
+        "synthese_thematique": ["Voir le contenu détaillé d'une de ces formations"],
+        "localisation": ["Poser une question précise sur ce sujet"],
+        "question_fond": ["Où est-ce expliqué exactement ?", "Voir le contenu complet de cette formation"],
+        "aide_plateforme": ["Poser une autre question sur la plateforme"],
+        "conversationnel": ["Voir le catalogue des formations", "Poser une question sur un support"],
+        "hors_sujet": ["Voir le catalogue des formations disponibles"],
+    }
 
     @staticmethod
     def _suggestions(type_detecte: str) -> List[str]:
-        gabarits = {
-            "catalogue": ["Voir le contenu d'une formation précise", "Combien de supports sont indexés ?"],
-            "inventaire": ["Voir le catalogue des formations"],
-            "contenu_formation": ["Où est expliqué un sujet précis dans cette formation ?", "Et le module suivant ?"],
-            "synthese_thematique": ["Voir le contenu détaillé d'une de ces formations"],
-            "localisation": ["Poser une question précise sur ce sujet"],
-            "question_fond": ["Où est-ce expliqué exactement ?", "Voir le contenu complet de cette formation"],
-            "aide_plateforme": ["Poser une autre question sur la plateforme"],
-            "conversationnel": ["Voir le catalogue des formations", "Poser une question sur un support"],
-            "hors_sujet": ["Voir le catalogue des formations disponibles"],
-        }
-        return gabarits.get(type_detecte, [])[:3]
+        return ChatOrchestrator._GABARITS_SUGGESTIONS.get(type_detecte, [])[:3]
+
+    @staticmethod
+    async def _suggestions_dynamiques(
+        type_detecte: str, message: str, reponse: str
+    ) -> List[str]:
+        """Génère 2 suggestions de relance contextuelles via LLM.
+        Retombe sur le gabarit statique si le LLM échoue ou est trop lent."""
+        import json as _json
+        import asyncio
+        if type_detecte in ("hors_sujet", "inventaire", "catalogue", "conversationnel"):
+            return ChatOrchestrator._GABARITS_SUGGESTIONS.get(type_detecte, [])[:2]
+        prompt_sys = (
+            "Tu es FORMA-IA. À partir de la question de l'utilisateur et de ta réponse, "
+            "propose 2 questions de suivi naturelles et utiles (en français, 6 à 10 mots chacune). "
+            'Retourne UNIQUEMENT {"suggestions": ["question 1", "question 2"]}.'
+        )
+        user_msg = f"Question : {message}\nRéponse : {reponse[:300]}"
+        try:
+            llm = get_llm_provider()
+            rep = await asyncio.wait_for(
+                llm.generate_with_retry(
+                    system_prompt=prompt_sys,
+                    user_prompt=user_msg,
+                    temperature=0.4, max_tokens=120, json_mode=True, max_retries=1,
+                    reasoning_effort="low",
+                ),
+                timeout=3.0,
+            )
+            data = _json.loads(rep["content"])
+            sugg = data.get("suggestions", [])
+            if isinstance(sugg, list) and len(sugg) >= 1:
+                return [str(s) for s in sugg[:2]]
+        except Exception:
+            pass
+        return ChatOrchestrator._GABARITS_SUGGESTIONS.get(type_detecte, [])[:2]
 
 
 _orchestrateur_instance: Optional[ChatOrchestrator] = None

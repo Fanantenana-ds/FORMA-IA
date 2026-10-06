@@ -1,3 +1,4 @@
+import asyncio
 import os
 import json
 import yaml
@@ -124,7 +125,7 @@ class AttestationGeneratorService:
         participant: Dict[str, Any],
         index: int = 1,
         temperature: float = 0.4,
-        max_tokens: int = 8000,
+        max_tokens: int = 800,
     ) -> Dict[str, Any]:
         start = datetime.now()
         numero = self._build_unique_number(session_info, index)
@@ -232,16 +233,25 @@ class AttestationGeneratorService:
 
         verifies, rejetes = self._filtrer_eligibles(eligible_participants)
 
+        semaphore = asyncio.Semaphore(5)
+
+        async def _generer(index: int, p: Dict[str, Any]):
+            async with semaphore:
+                return await self.generate_one(session_info, p, index=index)
+
+        resultats = await asyncio.gather(
+            *[_generer(i, p) for i, p in enumerate(verifies, start=1)],
+            return_exceptions=True,
+        )
+
         attestations = []
         failed = []
-
-        for i, p in enumerate(verifies, start=1):
-            try:
-                att = await self.generate_one(session_info, p, index=i)
-                attestations.append(att)
-            except Exception as e:
-                logger.error(f"   ❌ Échec pour {p.get('nom')} : {e}")
-                failed.append({"participant": p, "error": str(e)})
+        for p, res in zip(verifies, resultats):
+            if isinstance(res, Exception):
+                logger.error(f"   ❌ Échec pour {p.get('nom')} : {res}")
+                failed.append({"participant": p, "error": str(res)})
+            else:
+                attestations.append(res)
 
         elapsed = round((datetime.now() - start).total_seconds(), 2)
         vlog("=" * 70)
@@ -252,7 +262,7 @@ class AttestationGeneratorService:
         )
         vlog("=" * 70)
 
-        return {
+        result = {
             "success": True,
             "session_id": session_info.get("id"),
             "total_eligible": len(eligible_participants),
@@ -264,6 +274,20 @@ class AttestationGeneratorService:
             "rejected_ineligible": rejetes,
             "duration_seconds": elapsed,
         }
+
+        review_id = create_review(
+            agent_id="agent_5_attestations",
+            data=result,
+            summary=(
+                f"{len(attestations)} attestation(s) générée(s) — "
+                f"à valider avant envoi aux participants"
+            ),
+            criticity="critical",
+        )
+        result["_review_id"] = review_id
+        result["_review_status"] = "pending_review"
+        vlog(f"⏳ [HITL] Review créé : {review_id}")
+        return result
 
     # --------------------------------------------------------
     # LLM
@@ -540,6 +564,19 @@ class AttestationGeneratorService:
         if pdf_path:
             result["metadata"]["pdf_path"] = pdf_path
 
+        review_id = create_review(
+            agent_id="agent_5_attestations",
+            data=result,
+            summary=(
+                f"Attestation {result['numero_unique']} — "
+                f"{participant.get('nom', 'N/A')} — à valider avant envoi"
+            ),
+            criticity="critical",
+        )
+        result["_review_id"] = review_id
+        result["_review_status"] = "pending_review"
+        vlog(f"⏳ [HITL] Review créé : {review_id}")
+
         return result
 
     async def generate_batch_with_pdf(
@@ -554,14 +591,24 @@ class AttestationGeneratorService:
 
         verifies, rejetes = self._filtrer_eligibles(eligible_participants)
 
+        semaphore = asyncio.Semaphore(5)
+
+        async def _generer_pdf(index: int, p: Dict[str, Any]):
+            async with semaphore:
+                return await self.generate_one_with_pdf(session_info, p, index=index)
+
+        resultats = await asyncio.gather(
+            *[_generer_pdf(i, p) for i, p in enumerate(verifies, start=1)],
+            return_exceptions=True,
+        )
+
         attestations, failed = [], []
-        for i, p in enumerate(verifies, start=1):
-            try:
-                att = await self.generate_one_with_pdf(session_info, p, index=i)
-                attestations.append(att)
-            except Exception as e:
-                logger.error(f"   ❌ Échec {p.get('nom')} : {e}")
-                failed.append({"participant": p, "error": str(e)})
+        for p, res in zip(verifies, resultats):
+            if isinstance(res, Exception):
+                logger.error(f"   ❌ Échec {p.get('nom')} : {res}")
+                failed.append({"participant": p, "error": str(res)})
+            else:
+                attestations.append(res)
 
         elapsed = round((datetime.now() - start).total_seconds(), 2)
         pdf_ok = sum(1 for a in attestations if a.get("pdf_generated"))

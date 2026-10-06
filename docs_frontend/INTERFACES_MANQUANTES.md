@@ -225,7 +225,7 @@ Le `request()` dans `api.ts` **n'envoie jamais le token JWT**. Résultat : toute
 - `GET /factures/{id}/relances` → historique des relances
 - `POST /ia/facturation/relances/generer` → générer une relance IA (niveau 1/2/3 selon le retard) — retourne `review_id`
 - `POST /ia/facturation/relances/synchroniser` → après validation, enregistre la relance
-- `POST /ia/facturation/calculer-montants` → calculer HT/TVA/TTC/remise automatiquement
+- `POST /ia/facturation/calculer-montants` → calculer HT/TVA/TTC/remise automatiquement(Hors Taxe/Taxe sur la Valeur Ajoutée/Toutes Taxes Comprises)
 - `GET /exports` → export comptable au format CSV, XLSX ou PDF
 
 **Ce qui manque dans le frontend :**
@@ -273,18 +273,46 @@ Le backend peut recevoir des fichiers PDF, DOCX, PPTX, XLSX — les indexer pour
 
 ### 2.2 — Chat avec les documents RAG (`RagChatView`)
 
-Le backend a un agent de chat contextuel qui répond aux questions en se basant sur les supports indexés. Il n'existe aucune interface de chat dans le frontend.
+Le backend a un assistant documentaire complet qui comprend automatiquement ce que l'utilisateur cherche et choisit la bonne façon de répondre. **Un seul appel `POST /ia/rag/chat`** suffit — le backend détecte lui-même le type de question et adapte sa réponse. Il n'existe aucune interface de chat dans le frontend.
 
-**Ce qui est prêt côté backend :**
-- `POST /ia/rag/chat` → poser une question, reçoit une réponse avec les sources (fichier + page)
-- `GET /ia/rag/formations` → lister les formations qui ont des supports indexés
-- `GET /ia/rag/health` → vérifier que le module RAG est opérationnel
-- `POST /ia/rag/rechercher` → recherche vectorielle pure (sans génération de réponse)
+**Ce que le chat peut faire côté backend (les 9 types de messages reconnus) :**
+
+| Type de message | Ce que l'utilisateur dit | Ce que le backend fait |
+|---|---|---|
+| **conversationnel** | "Bonjour", "Merci", "Qui es-tu ?" | Répond avec une présentation de l'assistant, sans appel LLM |
+| **catalogue** | "Quelles formations avez-vous ?", "Liste des formations disponibles" | Retourne le catalogue complet avec codes, durées, domaines — sans appel LLM |
+| **inventaire** | "Combien de documents sont indexés ?", "Quels supports avez-vous ?" | Retourne la liste de tous les fichiers indexés avec leur nombre de fragments — sans appel LLM |
+| **contenu_formation** | "Que contient la formation Python ?", "Parle-moi des supports de la formation React" | Récupère les résumés des supports de cette formation et demande au LLM de les synthétiser |
+| **synthese_thematique** | "Quelles formations traitent du machine learning ?", "Formation sur la sécurité IA ?" | Recherche vectorielle dans les résumés, LLM synthétise les résultats avec les formations concernées |
+| **localisation** | "Où est expliqué le fine-tuning ?", "À quelle page se trouve le sujet RAG ?" | Recherche vectorielle dans les supports, retourne le nom du fichier + les numéros de pages exacts |
+| **question_fond** | "Qu'est-ce que le modèle de Kirkpatrick ?", "Comment fonctionne l'évaluation diagnostique ?" | Recherche vectorielle dans les supports, LLM génère une réponse à partir des extraits trouvés |
+| **aide_plateforme** | "Comment valider un contenu IA ?", "Comment fonctionne le HITL ?" | Recherche dans les documents d'aide de la plateforme indexés séparément |
+| **hors_sujet** | "Parle-moi de la cuisine", "Donne-moi la météo" | Refuse et affiche la liste des formations disponibles — mode strict, jamais de connaissances générales |
+
+**Ce que le backend retourne dans chaque réponse :**
+- `conversation_id` — identifiant de la conversation (pour garder la mémoire entre les messages)
+- `reponse` — le texte de la réponse
+- `sources` — liste des documents cités avec nom du fichier, formation d'origine, numéro de page, score de pertinence
+- `type_reponse` — le type détecté (utile pour afficher une icône différente selon le type)
+- `formation_resolue` — si la question portait sur une formation, son code est mémorisé pour les questions suivantes
+- `suggestions` — 2 ou 3 questions de relance proposées automatiquement selon le contexte
+- `duree_ms` — temps de traitement
+
+**Important — comportement de mémoire :** si l'utilisateur dit "Parle-moi de Python" puis "Et le module 2 ?", le backend retrouve automatiquement que la question porte encore sur Python grâce au `conversation_id`. Le frontend doit donc conserver et renvoyer le `conversation_id` à chaque message.
+
+**Routes complémentaires disponibles :**
+- `GET /ia/rag/formations` → lister uniquement les formations qui ont au moins un support indexé (avec leur nombre de supports) — utile pour un filtre dans l'interface
+- `POST /ia/rag/rechercher` → recherche vectorielle brute sans génération de réponse (retourne les extraits bruts avec scores) — utile si le frontend veut afficher des extraits de documents
+- `GET /ia/rag/health` → vérifier que le module RAG est opérationnel et combien de documents sont indexés
+- `GET /ia/rag/documents/{hash}/fichier` → télécharger le fichier original d'un support (PDF, DOCX...) depuis son hash — utile pour le bouton "Voir le document source" dans les citations
 
 **Ce qui manque dans le frontend :**
-- Une interface de chat (type messagerie) où le formateur ou la Direction peut poser des questions sur le contenu des formations
-- L'affichage des sources citées dans la réponse (nom du fichier, numéro de page)
-- Un indicateur de santé du RAG (combien de documents sont indexés, le module est-il prêt)
+- Une interface de chat (type messagerie) avec historique de la conversation
+- Le maintien du `conversation_id` entre les messages pour que la mémoire contextuelle fonctionne
+- L'affichage des sources avec nom du fichier, numéro de page et bouton "Voir le document"
+- L'affichage des suggestions de relance proposées par le backend sous forme de boutons cliquables
+- Un sélecteur de formation optionnel pour focaliser le chat sur une formation précise
+- Un indicateur d'état du RAG (nombre de documents indexés, module prêt ou non)
 
 ---
 

@@ -46,6 +46,9 @@ class EntreeRegistre:
     date_debut: Optional[str] = None
     date_fin: Optional[str] = None
 
+    # Module pédagogique (optionnel) — ex: "Module 1 — Introduction"
+    module: Optional[str] = None
+
     # Résumé (Étape C §9)
     resume: Optional[str] = None
     plan: List[Dict[str, Any]] = field(default_factory=list)
@@ -122,6 +125,7 @@ def initialiser_entree(
     fichier: str,
     formation_code: Optional[str],
     collection: str = "support",
+    module: Optional[str] = None,
     chemin: Optional[Path] = None,
 ) -> EntreeRegistre:
     """Crée (ou retourne) l'entrée pour ce fichier, statut 'en_attente' si
@@ -132,7 +136,7 @@ def initialiser_entree(
 
     entree = EntreeRegistre(
         hash=hash_fichier, fichier=fichier, formation_code=formation_code,
-        collection=collection, statut="en_attente",
+        collection=collection, module=module, statut="en_attente",
         date_debut=datetime.now().isoformat(),
     )
     enregistrer_entree(entree, chemin)

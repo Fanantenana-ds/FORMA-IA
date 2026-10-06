@@ -1213,54 +1213,9 @@ GET /api/v1/ia/rag/health
 
 ---
 
-## RÉCAPITULATIF — Ce qui est fait vs. ce qui reste
-
-| Module | Fichier | État actuel | Ce qui manque |
-|---|---|---|---|
-| Auth | `api.ts` + `AuthPage.tsx` | ❌ Non branché | Étape 1 complète |
-| Veille | `VeilleMarcheView.tsx` | ❌ Mock uniquement | Brancher `/opportunites` |
-| Opportunités | `OpportunitesCrmView.tsx` | ❌ Données codées en dur | CRUD complet Backend |
-| Sessions (liste) | `SessionsGroupesView.tsx` | ✅ Lecture OK via props | — |
-| Sessions (inscriptions) | `SessionsGroupesView.tsx` | ❌ Local uniquement | Appels API inscription |
-| Présences | `SuiviPresencesView.tsx` | ❌ Local uniquement | Appels `/seances/{id}/presences` |
-| Formateurs (lecture) | `FormateursStaffView.tsx` | ✅ GET branché | — |
-| Formateurs (écriture) | `FormateursStaffView.tsx` | ❌ Callback local | Appels POST/PATCH/DELETE |
-| Factures (lecture + création) | `FacturationDevisView.tsx` | ✅ GET + POST branchés | Paiements, relance, export |
-| Supports RAG | — | ❌ Vue inexistante | Créer `SupportsFormationView.tsx` (Section 3.1) |
-| Bilan formations | — | ❌ Vue inexistante | Créer `BilanFormationsView.tsx` (Section 3.1e — Direction) |
-| Préparation | — | ❌ Vue inexistante | Créer `PreparationView.tsx` (Section 3.2) |
-| Validation HITL | — | ❌ Vue inexistante | Créer `HitlReviewView.tsx` (Section 3.3 — priorité max) |
-| Formulaires M5 | — | ❌ Non branché | Cycle complet Section 4 M5 |
-| Agents IA (boutons) | Toutes les vues | ❌ Absent partout | Étape 4 |
-
----
-
-## NOUVELLES INTERFACES AJOUTÉES — Récapitulatif
-
-> Ces interfaces ont été ajoutées après la première version du guide. Elles sont **toutes prêtes côté backend**.
-
-| Interface | Route backend | Qui l'utilise | Priorité |
-|---|---|---|---|
-| Upload support avec champ `module` | `POST /documents/upload` | Formateur | Haute |
-| Liste supports avec statut + module | `GET /documents/rag/supports` | Formateur / Admin | Haute |
-| ⬇️ Résumé DOCX d'une formation | `GET /documents/rag/supports/resume-formation` | Formateur (1 clic) | Haute |
-| ⬇️ Bilan DOCX toutes formations | `GET /documents/rag/supports/bilan-formations` | Direction uniquement | Moyenne |
-| Supprimer un support RAG | `DELETE /documents/rag/supports/{hash}` | Admin | Faible |
-
-**Le champ `module` dans l'upload est clé** — sans lui, les supports seront groupés dans "Supports généraux" dans le résumé DOCX. Encourage les formateurs à le renseigner lors de l'upload.
-
-**Format recommandé pour `module` :**
-```
-Module 1 — Introduction
-Module 2 — Fonctions avancées
-Module 3 — Async et API
-Évaluation finale
-Ressources complémentaires
-```
-
----
-
 ## ORDRE RECOMMANDÉ (planning sur 2 semaines)
+
+> Pour le détail de chaque interface manquante avec le code exact à écrire, voir [`INTERFACES_MANQUANTES.md`](./INTERFACES_MANQUANTES.md).
 
 | Jour | Tâche | Impact |
 |---|---|---|

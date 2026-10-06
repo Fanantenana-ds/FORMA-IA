@@ -39,9 +39,13 @@ while ($true) {
     $bodyBytes = [System.Text.Encoding]::UTF8.GetBytes($bodyJson)
 
     try {
-        $r = Invoke-RestMethod -Uri $url -Method POST `
+        # Invoke-RestMethod dans PS 5.1 décode la réponse en Latin-1 même quand
+        # le serveur envoie UTF-8. On passe par Invoke-WebRequest + décodage
+        # manuel pour obtenir les accents correctement.
+        $raw = Invoke-WebRequest -Uri $url -Method POST `
             -Headers @{ "Authorization" = "Bearer $token"; "Content-Type" = "application/json; charset=utf-8" } `
-            -Body $bodyBytes
+            -Body $bodyBytes -UseBasicParsing
+        $r = [System.Text.Encoding]::UTF8.GetString($raw.Content) | ConvertFrom-Json
 
         $conv_id = $r.conversation_id
 

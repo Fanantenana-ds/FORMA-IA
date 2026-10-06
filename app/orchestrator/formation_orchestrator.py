@@ -26,6 +26,7 @@ from app.services.formations import (
     PresenceAnalyzerService,
     AttestationGeneratorService,
     ReportGeneratorService,
+    KnowledgeBaseService,
 )
 
 logger = logging.getLogger(__name__)
@@ -64,8 +65,10 @@ class FormationOrchestrator(BaseOrchestrator):
             ReportGeneratorService, "Agent 6 — ReportGeneratorService",
         )
 
-        # ---- Agent 7 (V2) ----
-        self.knowledge_base = None
+        # ---- Agent 7 — KnowledgeBaseService ----
+        self.knowledge_base = self._safe_init(
+            KnowledgeBaseService, "Agent 7 — KnowledgeBaseService (RAG)",
+        )
 
         # ---- Bilan de démarrage ----
         self._log_startup_summary({
@@ -92,6 +95,22 @@ class FormationOrchestrator(BaseOrchestrator):
         self._check_agent(self.form_generator, "Agent 1 (FormGeneratorService)")
 
         try:
+            # Agent 7 enrichit session_info["supports_resume"] si disponible
+            # et si le champ n'a pas déjà été fourni par l'appelant.
+            if self.knowledge_base and not session_info.get("supports_resume"):
+                try:
+                    contexte = await self.knowledge_base.get_formation_context(
+                        formation_titre=session_info.get("titre", ""),
+                        domaine=session_info.get("domaine", ""),
+                        formation_code=session_info.get("formation_code"),
+                    )
+                    if contexte:
+                        session_info = dict(session_info)  # copie pour ne pas muter l'original
+                        session_info["supports_resume"] = contexte
+                        vlog("   📚 [FormationOrchestrator] Contexte RAG injecté dans generate_forms")
+                except Exception as exc:
+                    logger.warning(f"⚠️ [FormationOrchestrator] RAG non disponible pour generate_forms : {exc}")
+
             result = await self.form_generator.generate(session_info)
             self._log_end(
                 "generate_forms", start,
@@ -271,12 +290,21 @@ class FormationOrchestrator(BaseOrchestrator):
     # ========================================================
 
     async def index_documents(self, documents: Dict[str, Any]) -> Dict[str, Any]:
-        """Agent 7 — Indexation RAG (à venir — V2)."""
-        logger.warning(
-            "⚠️  [FormationOrchestrator] index_documents() "
-            "non encore implémenté (Agent 7 — V2)."
-        )
-        raise NotImplementedError("Agent 7 (KnowledgeBase/RAG) à venir — V2.")
+        """
+        Agent 7 — Retourne les statistiques de la base RAG.
+
+        L'indexation réelle se fait via les scripts d'ingestion (Étape C),
+        pas via cette API. Cette méthode expose l'état courant de la base
+        pour que le frontend puisse afficher le nombre de supports indexés.
+        """
+        self._check_agent(self.knowledge_base, "Agent 7 (KnowledgeBaseService)")
+        formation_code = documents.get("formation_code") if documents else None
+        stats = await self.knowledge_base.get_stats(formation_code=formation_code)
+        return {
+            "agent": "KnowledgeBaseService",
+            "statut": "disponible" if stats.get("disponible") else "vide",
+            **stats,
+        }
 
     # ========================================================
     # CRÉER LES VRAIS GOOGLE FORMS (après approbation HITL)

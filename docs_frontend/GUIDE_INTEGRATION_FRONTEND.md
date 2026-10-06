@@ -1,7 +1,7 @@
 # GUIDE D'INTÉGRATION FRONTEND — FORMA-IA
 
 > **Pour qui ?** Le binôme frontend qui branche le React sur le Backend FastAPI.
-> **Backend :** 100% terminé, 169 routes, 891 tests verts. Rien à changer côté backend.
+> **Backend :** 90% terminé, 169 routes, 891 tests verts. Rien à changer côté backend.
 > **URL locale :** `http://127.0.0.1:8000`
 
 ---

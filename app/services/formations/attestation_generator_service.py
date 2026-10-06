@@ -147,14 +147,25 @@ class AttestationGeneratorService:
         contexte_rag = ""
         try:
             from app.services.formations.knowledge_base_service import KnowledgeBaseService
+
+            # Résoudre formation_code si absent : chercher dans le registre par titre
+            formation_code = session_info.get("formation_code") or session_info.get("code")
+            if not formation_code:
+                from app.services.rag.registry_service import charger_registre
+                titre = (session_info.get("titre") or "").lower()
+                for entree in charger_registre().values():
+                    if entree.formation_code and titre and titre in (entree.formation_titre or "").lower():
+                        formation_code = entree.formation_code
+                        break
+
             kb = KnowledgeBaseService()
             contexte_rag = await kb.get_formation_context(
                 formation_titre=session_info.get("titre", ""),
                 domaine=session_info.get("domaine", ""),
-                formation_code=session_info.get("formation_code"),
+                formation_code=formation_code,
             )
             if contexte_rag:
-                vlog("   📚 [AttestationAgent] Contexte RAG injecté")
+                vlog(f"   📚 [AttestationAgent] Contexte RAG injecté (formation_code={formation_code})")
         except Exception as exc:
             logger.warning(f"   ⚠️  [AttestationAgent] RAG non disponible : {exc}")
 

@@ -65,6 +65,24 @@ class Settings(BaseSettings):
     RAG_CHUNK_OVERLAP: int = 50
     
     # ========================================================
+    # EMAIL SMTP (accusé de réception candidats)
+    # ========================================================
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM: str = ""
+
+    # ========================================================
+    # EMAIL IMAP (lecture candidatures reçues par email)
+    # ========================================================
+    IMAP_HOST: str = ""
+    IMAP_PORT: int = 993
+    IMAP_USER: str = ""
+    IMAP_PASSWORD: str = ""
+    RH_EMAIL_POSTE_DEFAUT: str = "formateur-ia"
+
+    # ========================================================
     # Pydantic Configuration
     # ========================================================
     class Config:

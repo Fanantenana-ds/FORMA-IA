@@ -9,6 +9,7 @@
 import json
 import logging
 import os
+import time
 import uuid
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -18,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 DOSSIER_CONVERSATIONS_DEFAUT = Path(__file__).resolve().parents[3] / "data" / "rag" / "conversations"
 NB_ECHANGES_MEMORISES = 25
+TTL_CONVERSATIONS_JOURS = 7
 
 
 @dataclass
@@ -67,6 +69,31 @@ def sauvegarder_conversation(conversation: Conversation, dossier: Optional[Path]
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(asdict(conversation), f, ensure_ascii=False)
     os.replace(tmp, chemin)
+
+
+def purger_conversations_expirees(
+    dossier: Optional[Path] = None,
+    ttl_jours: int = TTL_CONVERSATIONS_JOURS,
+) -> int:
+    """Supprime les fichiers de conversation non modifiés depuis ttl_jours.
+    Retourne le nombre de fichiers supprimés."""
+    dossier = dossier or DOSSIER_CONVERSATIONS_DEFAUT
+    if not dossier.exists():
+        return 0
+
+    limite = time.time() - ttl_jours * 86400
+    supprimes = 0
+    for fichier in dossier.glob("*.json"):
+        try:
+            if fichier.stat().st_mtime < limite:
+                fichier.unlink()
+                supprimes += 1
+        except OSError as exc:
+            logger.warning(f"⚠️ Purge conversation échouée ({fichier.name}) : {exc}")
+
+    if supprimes:
+        logger.info(f"🗑️  Purge conversations : {supprimes} fichier(s) > {ttl_jours}j supprimé(s)")
+    return supprimes
 
 
 def ajouter_echange(

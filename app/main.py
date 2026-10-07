@@ -287,6 +287,10 @@ async def startup():
     # M1 mode 2 : détection automatique planifiée (inactive sauf VEILLE_AUTO_ENABLED=true)
     auto_detection_service.demarrer_planification(veille_orchestrator)
 
+    # Purge des conversations RAG expirées (> 7 jours)
+    from app.services.rag.conversation_service import purger_conversations_expirees
+    purger_conversations_expirees()
+
     logger.info("✅ FORMA-IA API prêt à recevoir des requêtes.")
 
 

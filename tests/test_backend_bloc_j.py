@@ -24,7 +24,7 @@ import pytest
 @pytest.fixture
 def rag_env(db_isolee, tmp_path, monkeypatch):
     """
-    Redirige DOSSIER_FICHIERS_RAG vers tmp_path/fichiers
+    Redirige DOSSIER_FICHIERS_RAG et LocalStorageService vers tmp_path/fichiers
     et CHEMIN_REGISTRE_DEFAUT vers tmp_path/registry.json.
     Retourne (client, dossier_fichiers, chemin_registry).
     """
@@ -37,9 +37,20 @@ def rag_env(db_isolee, tmp_path, monkeypatch):
     dossier.mkdir()
     registry_path = tmp_path / "registry.json"
 
-    # Patch du dossier fichiers dans le module endpoint
+    # Patch du dossier fichiers dans le module endpoint (liste + suppression)
     import app.api.v1.endpoints.document as doc_module
     monkeypatch.setattr(doc_module, "DOSSIER_FICHIERS_RAG", dossier)
+
+    # Patch du storage service : get_storage() retourne une instance pointant vers tmp_path
+    from app.services.storage.storage_service import LocalStorageService
+    storage_test = LocalStorageService.__new__(LocalStorageService)
+    storage_test._dossier = dossier
+
+    import app.services.storage as storage_module
+    monkeypatch.setattr(storage_module, "get_storage", lambda: storage_test)
+
+    import app.api.v1.endpoints.document as doc_ep
+    monkeypatch.setattr(doc_ep, "get_storage", lambda: storage_test)
 
     # Patch du chemin registry dans registry_service
     import app.services.rag.registry_service as reg_module

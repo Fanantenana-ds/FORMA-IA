@@ -23,14 +23,12 @@ def vlog(msg: str, level: str = "info") -> None:
 PROMPT_PATH = Path(__file__).resolve().parents[2] / "prompts" / "m4" / "rh_contrat_formateur.yaml"
 AGENT_ID = "agent_m4_contrat"
 
-_CONTRAT_COUNTER = 0
-
-
 def _next_reference() -> str:
-    global _CONTRAT_COUNTER
-    _CONTRAT_COUNTER += 1
-    year = datetime.now().year
-    return f"ALT-CONT-FORM-{year}-{_CONTRAT_COUNTER:04d}"
+    import random
+    now = datetime.now()
+    # timestamp + random suffix → évite les doublons après redémarrage
+    suffix = int(now.timestamp()) % 10000 * 10 + random.randint(0, 9)
+    return f"ALT-CONT-FORM-{now.year}-{suffix:05d}"
 
 
 class ContratFormateurService:
@@ -97,7 +95,7 @@ class ContratFormateurService:
         formateur: Dict[str, Any],
         session: Dict[str, Any],
         temperature: float = 0.2,
-        max_tokens: int = 8000,
+        max_tokens: int = 4000,
     ) -> Dict[str, Any]:
         nom_formateur = formateur.get("nom", "Formateur")
         titre_session = session.get("titre", "Formation")

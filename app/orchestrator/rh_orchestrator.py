@@ -99,6 +99,7 @@ class RhOrchestrator(BaseOrchestrator):
         poste: str,
         interviewers: Optional[List[str]] = None,
         date_entretien: Optional[str] = None,
+        review_id_a1: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Rédige un compte-rendu d'entretien structuré + review HITL.
@@ -109,6 +110,8 @@ class RhOrchestrator(BaseOrchestrator):
             poste: Intitulé du poste / domaine.
             interviewers: Liste des personnes présentes.
             date_entretien: "YYYY-MM-DD".
+            review_id_a1: ID review présélection A1 (optionnel — enrichit le CR
+                          avec score, questions et réserves du CV).
         """
         if not self.entretien:
             raise RuntimeError("Agent M4-2 (entretien) non disponible.")
@@ -119,6 +122,7 @@ class RhOrchestrator(BaseOrchestrator):
             poste=poste,
             interviewers=interviewers,
             date_entretien=date_entretien,
+            review_id_a1=review_id_a1,
         )
         self._end("rediger_cr_entretien", t0)
         return result

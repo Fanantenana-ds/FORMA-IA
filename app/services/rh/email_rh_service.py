@@ -186,6 +186,33 @@ class EmailRhService:
                 "Cordialement,\nL'équipe Ressources Humaines\n"
                 "ALTIORA PREST — Antananarivo, Madagascar"
             ),
+            "DEMANDE_INFO": (
+                f"Madame, Monsieur {destinataire},\n\n"
+                "Dans le cadre de l'examen de votre candidature, nous aurions besoin "
+                "de documents ou d'informations complémentaires afin de compléter votre dossier.\n\n"
+                "Merci de nous faire parvenir les éléments demandés dans les plus brefs délais.\n\n"
+                "Cordialement,\nL'équipe Ressources Humaines\n"
+                "ALTIORA PREST — Antananarivo, Madagascar"
+            ),
+            "CONVOCATION": (
+                f"Madame, Monsieur {destinataire},\n\n"
+                "Nous avons le plaisir de vous inviter à un entretien dans le cadre "
+                "de notre processus de sélection de formateurs.\n\n"
+                "Nous vous communiquerons prochainement les modalités pratiques "
+                "(date, heure et lieu) de cette rencontre.\n\n"
+                "Cordialement,\nL'équipe Ressources Humaines\n"
+                "ALTIORA PREST — Antananarivo, Madagascar"
+            ),
+            "PROPOSITION_MISSION": (
+                f"Madame, Monsieur {destinataire},\n\n"
+                "Nous avons le plaisir de vous proposer une mission de formation "
+                "au sein d'ALTIORA PREST. Cette opportunité correspond à votre profil "
+                "et nous serions ravis de collaborer avec vous.\n\n"
+                "Nous vous communiquerons prochainement les détails de la mission "
+                "(dates, lieu, programme et conditions financières).\n\n"
+                "Cordialement,\nL'équipe Ressources Humaines\n"
+                "ALTIORA PREST — Antananarivo, Madagascar"
+            ),
         }
         return {
             "type_email": type_email,

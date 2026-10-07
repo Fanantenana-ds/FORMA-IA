@@ -64,8 +64,9 @@ class EntretienService:
         poste: str,
         interviewers: List[str],
         date_entretien: Optional[str],
+        contexte_a1: Optional[Dict[str, Any]] = None,
     ) -> str:
-        return "\n".join([
+        lignes = [
             "Rédige le compte-rendu pour cet entretien :",
             "",
             "=== INFORMATIONS GÉNÉRALES ===",
@@ -73,12 +74,42 @@ class EntretienService:
             f"- Poste : {poste}",
             f"- Date : {date_entretien or 'non précisée'}",
             f"- Interviewers : {', '.join(interviewers) if interviewers else 'non précisés'}",
+        ]
+
+        # Injection contexte A1 si disponible
+        if contexte_a1:
+            score = contexte_a1.get("score_global")
+            decision_a1 = contexte_a1.get("decision")
+            questions = contexte_a1.get("questions_entretien") or []
+            points_forts_cv = contexte_a1.get("points_forts") or []
+            reserves_cv = contexte_a1.get("reserves") or []
+
+            lignes += [
+                "",
+                "=== CONTEXTE PRÉSÉLECTION CV (A1) ===",
+                f"- Score CV : {score}/100" if score is not None else "",
+                f"- Décision initiale : {decision_a1}" if decision_a1 else "",
+            ]
+            if points_forts_cv:
+                lignes.append(f"- Points forts CV : {', '.join(points_forts_cv[:3])}")
+            if reserves_cv:
+                lignes.append(f"- Réserves CV : {', '.join(reserves_cv[:3])}")
+            if questions:
+                lignes += [
+                    "",
+                    "Questions d'entretien suggérées par A1 (à utiliser comme fil conducteur) :",
+                ]
+                for i, q in enumerate(questions[:5], 1):
+                    lignes.append(f"  {i}. {q}")
+
+        lignes += [
             "",
             "=== NOTES BRUTES DE L'ENTRETIEN ===",
-            notes_brutes.strip()[:6000],
+            notes_brutes.strip()[:8000],
             "",
             "Retourne UNIQUEMENT le JSON valide, sans texte autour.",
-        ])
+        ]
+        return "\n".join(l for l in lignes if l is not None)
 
     async def generate(
         self,
@@ -87,8 +118,9 @@ class EntretienService:
         poste: str,
         interviewers: Optional[List[str]] = None,
         date_entretien: Optional[str] = None,
+        review_id_a1: Optional[str] = None,
         temperature: float = 0.3,
-        max_tokens: int = 4000,
+        max_tokens: int = 1500,
     ) -> Dict[str, Any]:
         start = datetime.now()
         vlog("=" * 70)
@@ -96,9 +128,22 @@ class EntretienService:
         vlog("=" * 70)
 
         interviewers = interviewers or []
+
+        # Récupération contexte A1 si review_id fourni
+        contexte_a1 = None
+        if review_id_a1:
+            try:
+                from app.services.hitl import get_review
+                review = get_review(review_id_a1)
+                if review:
+                    contexte_a1 = review.get("data", {})
+                    vlog(f"   📋 Contexte A1 injecté (review={review_id_a1})")
+            except Exception as exc:
+                vlog(f"   ⚠️ Contexte A1 non récupéré : {exc}", "warning")
+
         system_prompt = self._build_system_prompt()
         user_prompt = self._build_user_prompt(
-            notes_brutes, candidat, poste, interviewers, date_entretien
+            notes_brutes, candidat, poste, interviewers, date_entretien, contexte_a1
         )
         content = None
         source = "fallback_template"
@@ -150,6 +195,8 @@ class EntretienService:
         )
         result["_review_id"] = review_id
         result["_review_status"] = "pending_review"
+        if review_id_a1:
+            result["_review_id_a1"] = review_id_a1
 
         vlog(f"✅ [EntretienAgent] Terminé en {elapsed}s (source={source})")
         return result
@@ -157,7 +204,7 @@ class EntretienService:
     def _repair_json(self, raw: str) -> str:
         return repair_json(raw)
     def _validate_minimal(self, data: Dict[str, Any]) -> None:
-        for k in ("candidat", "decision", "points_forts", "resume_entretien"):
+        for k in ("candidat", "decision", "points_forts", "resume_entretien", "parcours_candidat"):
             if k not in data:
                 raise ValueError(f"Clé manquante : '{k}'")
 
@@ -175,7 +222,7 @@ class EntretienService:
             "duree_minutes": None,
             "interviewers": interviewers,
             "resume_entretien": "Compte-rendu à rédiger manuellement (analyse LLM indisponible).",
-            "parcours_canditat": "À compléter manuellement.",
+            "parcours_candidat": "À compléter manuellement.",
             "motivations": "Non capturé automatiquement.",
             "competences_evaluees": [],
             "adequation_culturelle": {"score": None, "commentaire": "Non évalué"},

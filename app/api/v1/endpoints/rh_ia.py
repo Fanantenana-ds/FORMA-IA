@@ -2,8 +2,13 @@
 # ============================================================
 # ROUTES IA — M4 (Assistance RH — bonus)
 # ============================================================
-# 9 routes :
+# 14 routes :
 #   GET  /ia/rh/health
+#   POST /ia/rh/cv/extraire-texte              — Extraction texte CV (tous formats)
+#   POST /ia/rh/cv/analyser                    — Upload CV → extraction → présélection A1 (pipeline complet)
+#   POST /ia/rh/cv/postuler                    — Canal 1 : Formulaire web (nom + email + CV + poste_code)
+#   GET  /ia/rh/postes                         — Liste des postes ouverts
+#   GET  /ia/rh/email/traiter-candidatures     — Canal 2 : Traitement emails IMAP non lus
 #   POST /ia/rh/preselection                   — A1 : Présélection CV
 #   POST /ia/rh/entretien/compte-rendu         — A2 : CR Entretien
 #   POST /ia/rh/email/brouillon                — A3 : Email RH
@@ -19,7 +24,7 @@ import time
 import logging
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from pydantic import BaseModel
 from app.schemas.common import RouteResponse
 from app.api.v1.endpoints._helpers import handle_exception as _handle_exc, build_response as _build_resp
@@ -69,6 +74,380 @@ def _build_hitl_response(result: Dict[str, Any], msg_ok: str, elapsed: float) ->
 @router.get("/health", summary="[M4] État du module Assistance RH")
 async def health_check() -> Dict[str, Any]:
     return {"success": True, "module": "M4 — Assistance RH", "agents": 5}
+
+
+# =============================================================================
+# ROUTE 0b — POST /cv/extraire-texte
+# =============================================================================
+
+EXTENSIONS_AUTORISEES = {".pdf", ".docx", ".doc", ".jpg", ".jpeg", ".png",
+                         ".bmp", ".tiff", ".webp", ".txt"}
+TAILLE_MAX_BYTES = 10 * 1024 * 1024  # 10 Mo
+
+
+@router.post(
+    "/cv/extraire-texte",
+    summary="[M4] Extraire le texte d'un CV (PDF, DOCX, image, TXT)",
+    description=(
+        "Reçoit un fichier CV et retourne le texte extrait prêt pour A1.\n\n"
+        "Cascade : pymupdf4llm + pdfplumber → Tesseract OCR → Groq Vision.\n\n"
+        "Formats supportés : PDF, DOCX, DOC, JPG, PNG, BMP, TIFF, WEBP, TXT.\n\n"
+        "Taille max : 10 Mo."
+    ),
+)
+async def extraire_texte_cv(
+    fichier: UploadFile = File(..., description="Fichier CV à analyser"),
+) -> Dict[str, Any]:
+    from app.services.rh.cv_extractor_service import extraire_texte_cv as _extraire
+
+    start = time.perf_counter()
+
+    # Validation extension
+    from pathlib import Path
+    ext = Path(fichier.filename or "").suffix.lower()
+    if ext not in EXTENSIONS_AUTORISEES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Format '{ext}' non supporté. Formats acceptés : {', '.join(sorted(EXTENSIONS_AUTORISEES))}",
+        )
+
+    # Lecture contenu
+    contenu = await fichier.read()
+    if not contenu:
+        raise HTTPException(status_code=422, detail="Fichier vide.")
+    if len(contenu) > TAILLE_MAX_BYTES:
+        raise HTTPException(status_code=422, detail="Fichier trop volumineux (max 10 Mo).")
+
+    texte, methode, lisible = await _extraire(contenu, fichier.filename or "cv")
+    elapsed = round(time.perf_counter() - start, 2)
+
+    if not lisible:
+        return {
+            "success": False,
+            "message": (
+                "Le CV soumis est illisible ou trop peu informatif. "
+                "Veuillez renvoyer le CV en PDF texte, Word (DOCX) ou image nette."
+            ),
+            "methode": methode,
+            "duration_seconds": elapsed,
+            "cv_texte": None,
+        }
+
+    return {
+        "success": True,
+        "message": f"Texte extrait avec succès via {methode}.",
+        "methode": methode,
+        "duration_seconds": elapsed,
+        "cv_texte": texte,
+        "nb_caracteres": len(texte),
+    }
+
+
+# =============================================================================
+# ROUTE 0c — POST /cv/analyser  (pipeline complet : upload → extraction → A1)
+# =============================================================================
+
+@router.post(
+    "/cv/analyser",
+    response_model=RouteResponse,
+    summary="[M4] Analyser un CV fichier → extraction + présélection A1 en une seule étape",
+    description=(
+        "Pipeline complet :\n"
+        "1. Upload du fichier CV (PDF, DOCX, image, TXT)\n"
+        "2. Extraction automatique du texte\n"
+        "3. Présélection IA (A1) avec fiche structurée + review HITL\n\n"
+        "Critères du poste passés en form-data JSON.\n\n"
+        "⚠️ Résultat soumis à validation HITL avant archivage."
+    ),
+)
+async def analyser_cv_fichier(
+    fichier: UploadFile = File(..., description="Fichier CV (PDF, DOCX, image, TXT)"),
+    criteres_poste: str = File(
+        ...,
+        description=(
+            'Critères du poste en JSON. Exemple : '
+            '{"domaine":"IA","competences":["Python"],"niveau":"expert","experience_formation_min":"2 ans"}'
+        ),
+    ),
+    orchestrator: RhOrchestrator = Depends(get_rh_orchestrator),
+) -> RouteResponse:
+    import json
+    from pathlib import Path
+    from app.services.rh.cv_extractor_service import extraire_texte_cv as _extraire
+
+    start = time.perf_counter()
+
+    # Validation extension
+    ext = Path(fichier.filename or "").suffix.lower()
+    if ext not in EXTENSIONS_AUTORISEES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Format '{ext}' non supporté. Formats acceptés : {', '.join(sorted(EXTENSIONS_AUTORISEES))}",
+        )
+
+    # Parsing critères
+    try:
+        criteres = json.loads(criteres_poste)
+    except (json.JSONDecodeError, TypeError):
+        raise HTTPException(status_code=422, detail="criteres_poste doit être un JSON valide.")
+
+    # Lecture fichier
+    contenu = await fichier.read()
+    if not contenu:
+        raise HTTPException(status_code=422, detail="Fichier vide.")
+    if len(contenu) > TAILLE_MAX_BYTES:
+        raise HTTPException(status_code=422, detail="Fichier trop volumineux (max 10 Mo).")
+
+    # Étape 1 — Extraction texte
+    texte, methode_extraction, lisible = await _extraire(contenu, fichier.filename or "cv")
+
+    if not lisible:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"CV illisible après extraction ({methode_extraction}). "
+                "Veuillez soumettre un CV en PDF texte, DOCX ou image nette."
+            ),
+        )
+
+    vlog(f"📄 CV extrait via {methode_extraction} ({len(texte)} chars) → A1 présélection")
+
+    # Étape 2 — Présélection A1
+    try:
+        result = await orchestrator.preselectionner_cv(
+            cv_texte=texte,
+            criteres_poste=criteres,
+        )
+    except Exception as e:
+        _handle_exception(e, "analyser_cv_fichier / preselectionner_cv")
+        return RouteResponse(success=False, message="Erreur lors de la présélection.")
+
+    elapsed = round(time.perf_counter() - start, 2)
+
+    # Enrichir le résultat avec les infos d'extraction
+    result["_extraction"] = {
+        "methode": methode_extraction,
+        "nb_caracteres": len(texte),
+        "fichier": fichier.filename,
+    }
+
+    return _build_hitl_response(
+        result,
+        f"CV analysé ({methode_extraction}, {len(texte)} chars) — fiche de présélection générée.",
+        elapsed,
+    )
+
+
+# =============================================================================
+# ROUTE 0d — GET /postes  (liste des postes ouverts)
+# =============================================================================
+
+@router.get(
+    "/postes",
+    summary="[M4] Lister les postes de formateur ouverts",
+    description="Retourne les postes actifs avec leur code et titre. Utilisé par le formulaire de candidature.",
+)
+async def lister_postes() -> Dict[str, Any]:
+    from app.services.rh.candidature_service import lister_postes_actifs
+    postes = lister_postes_actifs()
+    return {"success": True, "postes": postes, "total": len(postes)}
+
+
+# =============================================================================
+# ROUTE 0e — POST /cv/postuler  (Canal 1 : formulaire web)
+# =============================================================================
+
+@router.post(
+    "/cv/postuler",
+    response_model=RouteResponse,
+    summary="[M4] Canal 1 — Formulaire web : soumettre une candidature formateur",
+    description=(
+        "Pipeline complet pour candidature depuis formulaire web :\n"
+        "1. Reçoit nom + email + code poste + fichier CV\n"
+        "2. Vérifie que le poste existe et est actif\n"
+        "3. Extrait le texte du CV\n"
+        "4. Lance la présélection A1\n"
+        "5. Envoie un accusé de réception par email au candidat\n\n"
+        "⚠️ Résultat soumis à validation HITL."
+    ),
+)
+async def postuler_formulaire(
+    nom: str = File(..., description="Nom complet du candidat"),
+    email: str = File(..., description="Email du candidat"),
+    poste_code: str = File(..., description="Code du poste (ex: formateur-ia)"),
+    fichier: UploadFile = File(..., description="CV (PDF, DOCX, image, TXT)"),
+    orchestrator: RhOrchestrator = Depends(get_rh_orchestrator),
+) -> RouteResponse:
+    import json
+    from pathlib import Path
+    from app.services.rh.cv_extractor_service import extraire_texte_cv as _extraire
+    from app.services.rh.candidature_service import get_poste, envoyer_accuse_reception
+
+    start = time.perf_counter()
+
+    # Vérifier poste
+    poste = get_poste(poste_code)
+    if not poste:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Poste '{poste_code}' introuvable ou inactif. Consultez GET /ia/rh/postes.",
+        )
+
+    # Validation extension
+    ext = Path(fichier.filename or "").suffix.lower()
+    if ext not in EXTENSIONS_AUTORISEES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Format '{ext}' non supporté. Formats acceptés : {', '.join(sorted(EXTENSIONS_AUTORISEES))}",
+        )
+
+    # Lecture fichier
+    contenu = await fichier.read()
+    if not contenu:
+        raise HTTPException(status_code=422, detail="Fichier CV vide.")
+    if len(contenu) > TAILLE_MAX_BYTES:
+        raise HTTPException(status_code=422, detail="CV trop volumineux (max 10 Mo).")
+
+    # Étape 1 — Extraction texte
+    texte, methode_extraction, lisible = await _extraire(contenu, fichier.filename or "cv")
+    if not lisible:
+        raise HTTPException(
+            status_code=422,
+            detail="CV illisible. Veuillez soumettre un CV en PDF texte, DOCX ou image nette.",
+        )
+
+    vlog(f"📄 Candidature '{nom}' / poste '{poste_code}' — CV extrait via {methode_extraction}")
+
+    # Étape 2 — Présélection A1
+    try:
+        result = await orchestrator.preselectionner_cv(
+            cv_texte=texte,
+            criteres_poste=poste["criteres"],
+        )
+    except Exception as e:
+        _handle_exception(e, "postuler_formulaire / preselectionner_cv")
+        return RouteResponse(success=False, message="Erreur lors de la présélection.")
+
+    # Étape 3 — Accusé de réception email (non bloquant)
+    await envoyer_accuse_reception(
+        nom_candidat=nom,
+        email_candidat=email,
+        titre_poste=poste["titre"],
+    )
+
+    elapsed = round(time.perf_counter() - start, 2)
+
+    result["_candidature"] = {
+        "nom": nom,
+        "email": email,
+        "poste_code": poste_code,
+        "titre_poste": poste["titre"],
+        "methode_extraction": methode_extraction,
+        "fichier": fichier.filename,
+    }
+
+    return _build_hitl_response(
+        result,
+        f"Candidature de {nom} pour '{poste['titre']}' analysée — en attente validation RH.",
+        elapsed,
+    )
+
+
+# =============================================================================
+# ROUTE 0f — GET /email/traiter-candidatures  (Canal 2 : IMAP)
+# =============================================================================
+
+@router.get(
+    "/email/traiter-candidatures",
+    summary="[M4] Canal 2 — Traiter les candidatures reçues par email (IMAP)",
+    description=(
+        "Lit les emails non lus de la boîte RH, extrait les CV en pièce jointe\n"
+        "et lance automatiquement la présélection A1 pour chaque candidature.\n\n"
+        "Déclenchement : manuel via cette route, ou planifié toutes les X minutes.\n\n"
+        "Variables .env requises : IMAP_HOST, IMAP_PORT, IMAP_USER, IMAP_PASSWORD"
+    ),
+)
+async def traiter_candidatures_email(
+    orchestrator: RhOrchestrator = Depends(get_rh_orchestrator),
+) -> Dict[str, Any]:
+    import asyncio
+    from app.services.rh.cv_extractor_service import extraire_texte_cv as _extraire
+    from app.services.rh.candidature_service import (
+        lire_candidatures_email, get_poste, envoyer_accuse_reception
+    )
+
+    start = time.perf_counter()
+    vlog("📧 Traitement candidatures email IMAP...")
+
+    candidatures = lire_candidatures_email()
+    if not candidatures:
+        return {
+            "success": True,
+            "message": "Aucune nouvelle candidature par email.",
+            "traites": 0,
+            "resultats": [],
+        }
+
+    resultats = []
+    for c in candidatures:
+        try:
+            poste = get_poste(c["poste_code"])
+            if not poste:
+                resultats.append({
+                    "nom": c["nom"], "email": c["email"],
+                    "statut": "erreur", "detail": f"Poste '{c['poste_code']}' introuvable",
+                })
+                continue
+
+            # Extraction CV
+            texte, methode, lisible = await _extraire(c["fichier_contenu"], c["fichier_nom"])
+            if not lisible:
+                resultats.append({
+                    "nom": c["nom"], "email": c["email"],
+                    "statut": "cv_illisible", "detail": f"Extraction échouée ({methode})",
+                })
+                continue
+
+            # Présélection A1
+            result = await orchestrator.preselectionner_cv(
+                cv_texte=texte,
+                criteres_poste=poste["criteres"],
+            )
+
+            # Accusé de réception
+            await envoyer_accuse_reception(
+                nom_candidat=c["nom"],
+                email_candidat=c["email"],
+                titre_poste=poste["titre"],
+            )
+
+            resultats.append({
+                "nom": c["nom"],
+                "email": c["email"],
+                "poste": poste["titre"],
+                "statut": "analyse",
+                "review_id": result.get("_review_id"),
+                "score": result.get("score_global"),
+                "decision": result.get("decision"),
+            })
+
+        except Exception as exc:
+            logger.error(f"❌ Erreur traitement candidature {c.get('email')} : {exc}")
+            resultats.append({
+                "nom": c["nom"], "email": c["email"],
+                "statut": "erreur", "detail": str(exc),
+            })
+
+    elapsed = round(time.perf_counter() - start, 2)
+    traites = sum(1 for r in resultats if r["statut"] == "analyse")
+
+    return {
+        "success": True,
+        "message": f"{traites}/{len(candidatures)} candidature(s) traitée(s) avec succès.",
+        "traites": traites,
+        "duration_seconds": elapsed,
+        "resultats": resultats,
+    }
 
 
 # =============================================================================

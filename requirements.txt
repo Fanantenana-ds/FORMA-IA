@@ -84,3 +84,7 @@ uritemplate==4.2.0
 urllib3==2.7.0
 uvicorn==0.34.0
 xlsxwriter==3.2.9
+pymupdf4llm>=0.0.17
+pdfplumber>=0.11.0
+pytesseract>=0.3.13
+pdf2image>=1.17.0

@@ -37,6 +37,14 @@ class EntretienCrRequest(BaseModel):
     date_entretien: Optional[str] = Field(
         default=None, description="Date de l'entretien (YYYY-MM-DD)"
     )
+    review_id_a1: Optional[str] = Field(
+        default=None,
+        description=(
+            "ID review présélection A1 (ex: HITL-AM4-0066). "
+            "Si fourni, le CR sera enrichi avec le score CV, les réserves "
+            "et les questions d'entretien générées par A1."
+        )
+    )
 
 
 class EmailRhRequest(BaseModel):

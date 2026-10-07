@@ -507,6 +507,7 @@ async def rediger_cr_entretien(
             poste=payload.poste,
             interviewers=payload.interviewers,
             date_entretien=payload.date_entretien,
+            review_id_a1=payload.review_id_a1,
         )
         elapsed = round(time.perf_counter() - start, 2)
         return _build_hitl_response(result, "Compte-rendu d'entretien rédigé.", elapsed)
@@ -592,7 +593,8 @@ async def generer_contrat_formateur(
         "Agrège les résultats M5 (satisfaction, présences, rapport) pour "
         "produire une fiche d'évaluation interne du formateur.\n\n"
         "Liaison M5 : passer les résultats des agents M5 dans `donnees_session`.\n\n"
-        "Document interne — pas de HITL requis (non diffusé sans décision explicite)."
+        "⚠️ Résultat soumis à validation HITL avant transmission au formateur "
+        "ou mise à jour du profil Backend."
     ),
 )
 async def evaluer_formateur(
@@ -609,12 +611,10 @@ async def evaluer_formateur(
         elapsed = round(time.perf_counter() - start, 2)
         score = result.get("score_global", "N/A")
         recommandation = result.get("recommandation", "N/A")
-        return RouteResponse(
-            success=True,
-            message=f"Évaluation formateur terminée — Score : {score} — {recommandation}.",
-            duration_seconds=elapsed,
-            requires_human_action=False,
-            data=result,
+        return _build_hitl_response(
+            result,
+            f"Évaluation formateur terminée — Score : {score} — {recommandation}.",
+            elapsed,
         )
     except Exception as e:
         _handle_exception(e, "evaluer_formateur")

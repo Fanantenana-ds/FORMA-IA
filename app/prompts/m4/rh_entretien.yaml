@@ -41,7 +41,7 @@ format: |
     "duree_minutes": 45,
     "interviewers": ["string"],
     "resume_entretien": "Paragraphe de 3-5 lignes résumant le déroulé.",
-    "parcours_canditat": "Paragraphe résumant le parcours présenté.",
+    "parcours_candidat": "Paragraphe résumant le parcours présenté.",
     "motivations": "string — motivations exprimées par le candidat",
     "competences_evaluees": [
       {

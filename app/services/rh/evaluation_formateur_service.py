@@ -9,6 +9,7 @@ from datetime import datetime
 from typing import Dict, Any, Optional
 
 from app.services.llm import get_llm_provider, LLMError
+from app.services.hitl import create_review
 
 logger = logging.getLogger(__name__)
 VERBOSE = os.getenv("VERBOSE_LOGS", "true").lower() == "true"
@@ -155,6 +156,19 @@ class EvaluationFormateurService:
                 "agent_id": AGENT_ID,
             },
         }
+
+        review_id = create_review(
+            agent_id=AGENT_ID,
+            data=result,
+            summary=(
+                f"Évaluation formateur — {formateur} — {session} "
+                f"— Score : {result.get('score_global', 'N/A')} "
+                f"— {result.get('recommandation', 'N/A')}"
+            ),
+            criticity="high",
+        )
+        result["_review_id"] = review_id
+        result["_review_status"] = "pending_review"
 
         vlog(
             f"✅ [EvaluationFormateurAgent] Terminé en {elapsed}s "

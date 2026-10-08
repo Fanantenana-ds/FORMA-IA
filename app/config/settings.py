@@ -83,6 +83,12 @@ class Settings(BaseSettings):
     RH_EMAIL_POSTE_DEFAUT: str = "formateur-ia"
 
     # ========================================================
+    # SCHEDULER EMAIL M4 (lecture IMAP automatique)
+    # ========================================================
+    RH_EMAIL_AUTO_ENABLED: bool = False
+    RH_EMAIL_CHECK_INTERVAL_MINUTES: int = 30
+
+    # ========================================================
     # Pydantic Configuration
     # ========================================================
     class Config:

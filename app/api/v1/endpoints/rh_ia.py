@@ -75,7 +75,14 @@ def _build_hitl_response(result: Dict[str, Any], msg_ok: str, elapsed: float) ->
 
 @router.get("/health", summary="[M4] État du module Assistance RH")
 async def health_check() -> Dict[str, Any]:
-    return {"success": True, "module": "M4 — Assistance RH", "agents": 5}
+    from app.services.rh import email_scheduler_service
+    scheduler = email_scheduler_service.statut()
+    return {
+        "success": True,
+        "module": "M4 — Assistance RH",
+        "agents": 5,
+        "email_scheduler": scheduler,
+    }
 
 
 # =============================================================================

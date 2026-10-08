@@ -250,8 +250,8 @@ def test_evaluation_fallback_score_calcule(monkeypatch):
     assert result["success"] is True
     assert result["score_global"] is not None
     assert result["recommandation"] in ("OUI", "CONDITIONNEL", "NON")
-    # Pas de HITL sur l'évaluation (document interne)
-    assert "_review_id" not in result
+    assert "_review_id" in result
+    assert result["_review_status"] == "pending_review"
 
 
 def test_evaluation_recommandation_oui_si_bon_score(monkeypatch):
@@ -372,4 +372,4 @@ def test_route_evaluer_200(api, monkeypatch):
     assert r.status_code == 200
     data = r.json()
     assert data["success"] is True
-    assert data["requires_human_action"] is False  # pas de HITL sur évaluation
+    assert data["requires_human_action"] is True   # HITL sur évaluation

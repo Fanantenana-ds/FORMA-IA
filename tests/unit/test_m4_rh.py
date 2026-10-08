@@ -243,16 +243,20 @@ def test_evaluation_fallback_score_calcule(monkeypatch):
         formateur="M. Rabe Hery",
         session="Formation Python IA",
         donnees_session={
-            "satisfaction": {"score_moyen": 4.5, "points_positifs": ["Clair"], "points_negatifs": []},
+            "satisfaction": {
+                "score_moyen": 4.5,
+                "points_positifs": ["Clair"],
+                "points_negatifs": [],
+            },
             "presences": {"taux_moyen_pct": 92.0, "anomalies": False},
         },
     ))
     assert result["success"] is True
     assert result["score_global"] is not None
     assert result["recommandation"] in ("OUI", "CONDITIONNEL", "NON")
-    # Pas de HITL sur l'évaluation (document interne)
-    assert "_review_id" not in result
-
+    # ✅ L'évaluation crée désormais une review HITL (validation humaine)
+    assert "_review_id" in result
+    assert result["_review_status"] == "pending_review"
 
 def test_evaluation_recommandation_oui_si_bon_score(monkeypatch):
     from app.services.rh.evaluation_formateur_service import EvaluationFormateurService
@@ -365,11 +369,16 @@ def test_route_evaluer_200(api, monkeypatch):
         "formateur": "M. Rabe Hery",
         "session": "Formation Python IA",
         "donnees_session": {
-            "satisfaction": {"score_moyen": 4.2, "points_positifs": ["ok"], "points_negatifs": []},
+            "satisfaction": {
+                "score_moyen": 4.2,
+                "points_positifs": ["ok"],
+                "points_negatifs": [],
+            },
             "presences": {"taux_moyen_pct": 90.0, "anomalies": False},
         },
     })
     assert r.status_code == 200
     data = r.json()
     assert data["success"] is True
-    assert data["requires_human_action"] is False  # pas de HITL sur évaluation
+    # ✅ L'évaluation nécessite maintenant une validation humaine
+    assert data["requires_human_action"] is True

@@ -6,35 +6,38 @@ Plateforme intelligente de gestion de la formation pour ALTIORA PREST.
 =============================================================================
 """
 
-import logging
 import os
 import time
+import logging
 from datetime import datetime
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from app.api.v1.router import api_router
-from app.api.v1.routes_tdr import router as tdr_router
-from app.api.v1.routes_veille import (
-    orchestrator as veille_orchestrator,
-)
-
-# ─────────────────────────────────────────────────────────────
-# ROUTERS
-# ─────────────────────────────────────────────────────────────
-from app.api.v1.routes_veille import (
-    router as veille_router,
-)
 from app.config.settings import settings
 from app.database import Base, engine
 
 # ─────────────────────────────────────────────────────────────
 # MODÈLES
 # ─────────────────────────────────────────────────────────────
-from app.services import ia_health
+from app.models.user import User
+from app.models.revoked_token import RevokedToken
+from app.models.opportunite import Opportunite
+from app.models.historique_analyse import HistoriqueAnalyse
+
+# ─────────────────────────────────────────────────────────────
+# ROUTERS
+# ─────────────────────────────────────────────────────────────
+from app.api.v1.routes_veille import (
+    router as veille_router,
+    orchestrator as veille_orchestrator,
+)
+from app.api.v1.routes_tdr import router as tdr_router
+from app.api.v1.router import api_router
 from app.services.veille import auto_detection_service
+from app.services import ia_health
+
 
 # =============================================================================
 # CONFIG — VERBOSE
@@ -271,8 +274,8 @@ async def startup():
     logger.info(f"   🤖 Provider LLM   : Groq (modèle={settings.GROQ_MODEL})")
     logger.info(f"   🔧 Verbose logs   : {VERBOSE_LOGS}")
     logger.info(f"   🔧 Verbose HTTP   : {VERBOSE_HTTP}")
-    logger.info("   📚 Docs           : /api/docs")
-    logger.info("   ❤️  Health IA      : /health/ia")
+    logger.info(f"   📚 Docs           : /api/docs")
+    logger.info(f"   ❤️  Health IA      : /health/ia")
     logger.info("=" * 70)
 
     # Alerte ERROR si un agent IA requis n'a pas pu être chargé
@@ -284,6 +287,14 @@ async def startup():
     # M1 mode 2 : détection automatique planifiée (inactive sauf VEILLE_AUTO_ENABLED=true)
     auto_detection_service.demarrer_planification(veille_orchestrator)
 
+    # M4 : scheduler lecture candidatures email IMAP (inactive sauf RH_EMAIL_AUTO_ENABLED=true)
+    from app.services.rh import email_scheduler_service
+    email_scheduler_service.demarrer()
+
+    # Purge des conversations RAG expirées (> 7 jours)
+    from app.services.rag.conversation_service import purger_conversations_expirees
+    purger_conversations_expirees()
+
     logger.info("✅ FORMA-IA API prêt à recevoir des requêtes.")
 
 
@@ -292,5 +303,7 @@ async def shutdown():
     logger.info("=" * 70)
     logger.info("🛑 FORMA-IA API — ARRÊT")
     await auto_detection_service.arreter_planification()
+    from app.services.rh import email_scheduler_service
+    await email_scheduler_service.arreter()
     logger.info("✅ Planification arrêtée. Au revoir.")
     logger.info("=" * 70)

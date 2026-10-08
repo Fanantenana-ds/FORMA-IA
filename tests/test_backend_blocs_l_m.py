@@ -307,9 +307,9 @@ class TestProjets:
     def test_patch_projet_ok(self, client_role):
         c = client_role(role="DIRECTION")
         pid = creer_projet(c)
-        r = c.patch(f"/api/v1/projets/{pid}", json={"statut": "VALIDE", "notes": "Validé par direction"})
+        r = c.patch(f"/api/v1/projets/{pid}", json={"statut": "EN_COURS", "notes": "Validé par direction"})
         assert r.status_code == 200
-        assert r.json()["statut"] == "VALIDE"
+        assert r.json()["statut"] == "EN_COURS"
 
     def test_supprimer_projet_ok(self, client_role):
         c = client_role(role="DIRECTION")

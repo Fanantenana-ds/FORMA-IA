@@ -47,6 +47,19 @@ class EntretienCrRequest(BaseModel):
     )
 
 
+class EmailEnvoiRequest(BaseModel):
+    review_id: str = Field(
+        ...,
+        description="ID du review HITL approuvé (ex: HITL-AM4-0071)",
+        examples=["HITL-AM4-0071"],
+    )
+    email_destinataire: str = Field(
+        ...,
+        description="Adresse email du destinataire (ex: rakoto.jean@gmail.com)",
+        examples=["rakoto.jean@gmail.com"],
+    )
+
+
 class EmailRhRequest(BaseModel):
     type_email: str = Field(
         ...,

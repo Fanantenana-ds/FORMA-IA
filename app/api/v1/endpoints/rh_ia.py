@@ -34,6 +34,7 @@ from app.schemas.rh_ia import (
     PreselectionCvRequest,
     EntretienCrRequest,
     EmailRhRequest,
+    EmailEnvoiRequest,
     ContratFormateurRequest,
     EvaluationFormateurRequest,
 )
@@ -546,6 +547,49 @@ async def rediger_email_rh(
     except Exception as e:
         _handle_exception(e, "rediger_email_rh")
         return RouteResponse(success=False, message="")
+
+
+# =============================================================================
+# ROUTE 3b — POST /email/envoyer  (A3 — envoi réel après approbation HITL)
+# =============================================================================
+
+@router.post(
+    "/email/envoyer",
+    summary="[M4-A3] Envoyer l'email RH après approbation HITL",
+    description=(
+        "Envoie réellement l'email brouillon via SMTP, **uniquement si le review est approuvé**.\n\n"
+        "Flux complet :\n"
+        "1. `POST /ia/rh/email/brouillon` → génère brouillon (review=pending)\n"
+        "2. RH valide via `POST /hitl/reviews/{id}/approve`\n"
+        "3. `POST /ia/rh/email/envoyer` → envoie l'email et marque le review comme envoyé\n\n"
+        "Variables `.env` requises : `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`\n\n"
+        "⚠️ Anti-doublon : un review déjà envoyé ne peut pas être renvoyé."
+    ),
+)
+async def envoyer_email_rh(
+    payload: EmailEnvoiRequest,
+    orchestrator: RhOrchestrator = Depends(get_rh_orchestrator),
+) -> Dict[str, Any]:
+    from app.services.rh.email_rh_service import EmailRhService
+    start = time.perf_counter()
+    try:
+        svc = EmailRhService()
+        result = svc.envoyer(
+            review_id=payload.review_id,
+            email_destinataire=payload.email_destinataire,
+        )
+        elapsed = round(time.perf_counter() - start, 2)
+        result["duration_seconds"] = elapsed
+        return result
+    except PermissionError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except Exception as e:
+        _handle_exception(e, "envoyer_email_rh")
+        raise HTTPException(status_code=500, detail="Erreur lors de l'envoi de l'email.")
 
 
 # =============================================================================

@@ -3,13 +3,16 @@ import os
 import re
 import json
 import yaml
+import smtplib
 import logging
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, Any, Optional
 
 from app.services.llm import get_llm_provider, LLMError
-from app.services.hitl import create_review
+from app.services.hitl import create_review, get_review, patch_review
 
 logger = logging.getLogger(__name__)
 VERBOSE = os.getenv("VERBOSE_LOGS", "true").lower() == "true"
@@ -151,6 +154,101 @@ class EmailRhService:
 
         vlog(f"✅ [EmailRhAgent] Terminé en {elapsed}s (source={source})")
         return result
+
+    def envoyer(
+        self,
+        review_id: str,
+        email_destinataire: str,
+    ) -> Dict[str, Any]:
+        """
+        Envoie réellement l'email après approbation HITL.
+
+        Args:
+            review_id: ID du review approuvé (ex: HITL-AM4-0071)
+            email_destinataire: Adresse email du destinataire
+
+        Returns:
+            {"success": True, "message": ..., "review_id": ...}
+        """
+        from app.config.settings import settings
+
+        # 1. Vérifier que le review existe et est approuvé
+        review = get_review(review_id)
+        if not review:
+            raise ValueError(f"Review '{review_id}' introuvable.")
+
+        statut = review.get("status") or review.get("statut", "")
+        if statut != "approved":
+            raise PermissionError(
+                f"Review '{review_id}' non approuvé (statut : {statut}). "
+                "La validation humaine est obligatoire avant l'envoi."
+            )
+
+        agent_id = (review.get("meta") or {}).get("agent_id") or review.get("agent_id", "")
+        if agent_id != AGENT_ID:
+            raise PermissionError(
+                f"Ce review n'appartient pas à l'agent email (agent={agent_id})."
+            )
+
+        # 2. Vérifier non déjà envoyé
+        meta = review.get("meta") or {}
+        if meta.get("email_sent"):
+            raise ValueError(
+                f"Email déjà envoyé pour review '{review_id}' "
+                f"le {meta.get('email_sent_at', '?')}."
+            )
+
+        # 3. Récupérer objet + corps depuis les données du review
+        data = review.get("data") or {}
+        objet = data.get("objet", "Message de ALTIORA PREST")
+        corps = data.get("corps", "")
+        if not corps:
+            raise ValueError("Le brouillon ne contient pas de corps d'email.")
+
+        # 4. Vérifier config SMTP
+        if not settings.SMTP_HOST or not settings.SMTP_USER:
+            raise RuntimeError(
+                "SMTP non configuré. Renseignez SMTP_HOST, SMTP_USER, "
+                "SMTP_PASSWORD dans le fichier .env."
+            )
+
+        # 5. Construire et envoyer l'email
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = objet
+        msg["From"] = settings.SMTP_FROM or settings.SMTP_USER
+        msg["To"] = email_destinataire
+        msg.attach(MIMEText(corps, "plain", "utf-8"))
+
+        try:
+            with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=15) as serveur:
+                serveur.ehlo()
+                serveur.starttls()
+                serveur.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
+                serveur.sendmail(settings.SMTP_USER, email_destinataire, msg.as_string())
+            vlog(f"📧 [EmailRhAgent] Email envoyé → {email_destinataire} (review={review_id})")
+        except smtplib.SMTPAuthenticationError:
+            raise RuntimeError(
+                "Échec authentification SMTP. Vérifiez SMTP_USER et SMTP_PASSWORD dans .env. "
+                "Pour Gmail : utilisez un mot de passe d'application (16 caractères)."
+            )
+        except smtplib.SMTPException as e:
+            raise RuntimeError(f"Erreur SMTP lors de l'envoi : {e}")
+
+        # 6. Marquer comme envoyé dans le review (anti-doublon)
+        patch_review(review_id, {
+            "email_sent": True,
+            "email_sent_at": datetime.now().isoformat(),
+            "email_destinataire": email_destinataire,
+        })
+
+        return {
+            "success": True,
+            "message": f"Email envoyé avec succès à {email_destinataire}.",
+            "review_id": review_id,
+            "objet": objet,
+            "destinataire": email_destinataire,
+            "sent_at": datetime.now().isoformat(),
+        }
 
     def _repair_json(self, raw: str) -> str:
         return repair_json(raw)

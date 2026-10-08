@@ -76,6 +76,9 @@ async def _executer_traitement() -> None:
                 criteres_poste=poste["criteres"],
             )
 
+            # Pause anti-429 Groq entre chaque CV
+            await asyncio.sleep(3)
+
             await envoyer_accuse_reception(
                 nom_candidat=c["nom"],
                 email_candidat=c["email"],

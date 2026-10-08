@@ -220,11 +220,17 @@ class EmailRhService:
         msg.attach(MIMEText(corps, "plain", "utf-8"))
 
         try:
-            with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=15) as serveur:
-                serveur.ehlo()
-                serveur.starttls()
-                serveur.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
-                serveur.sendmail(settings.SMTP_USER, email_destinataire, msg.as_string())
+            # Port 465 → SSL direct ; port 587 → STARTTLS
+            if settings.SMTP_PORT == 465:
+                with smtplib.SMTP_SSL(settings.SMTP_HOST, 465, timeout=20) as serveur:
+                    serveur.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
+                    serveur.sendmail(settings.SMTP_USER, email_destinataire, msg.as_string())
+            else:
+                with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=20) as serveur:
+                    serveur.ehlo()
+                    serveur.starttls()
+                    serveur.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
+                    serveur.sendmail(settings.SMTP_USER, email_destinataire, msg.as_string())
             vlog(f"📧 [EmailRhAgent] Email envoyé → {email_destinataire} (review={review_id})")
         except smtplib.SMTPAuthenticationError:
             raise RuntimeError(

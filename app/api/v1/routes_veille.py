@@ -30,11 +30,12 @@ from app.orchestrator.veille_orchestrator import (
 )
 from app.services.benchmark.benchmark_runner import BenchmarkRunner
 from app.services.veille import auto_detection_service as auto_detection
+from app.services.veille import tavily_quota_service
+from app.services.veille.tavily_quota_service import QuotaTavilyDepasseError
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter()
-# dependencies=[Depends(verify_api_key)]  # ← décommenter pour activer la protection
+router = APIRouter(dependencies=[Depends(verify_api_key)])
 
 
 # ============================================================
@@ -220,6 +221,9 @@ async def rechercher_opportunites(
             "error": None,
         }
 
+    except QuotaTavilyDepasseError as exc:
+        raise HTTPException(status_code=429, detail=str(exc))
+
     except HTTPException:
         raise
 
@@ -301,6 +305,22 @@ async def statut_detection_automatique():
     }
 
 
+@router.get(
+    "/ia/veille/quota",
+    tags=["M1 - Veille Marché"],
+    operation_id="quotaTavily",
+    summary="Quota Tavily — appels HTTP réels du mois, par catégorie",
+)
+async def quota_tavily():
+    """
+    Appels HTTP RÉELS vers Tavily ce mois-ci (pas les "requêtes"
+    utilisateur — jusqu'à 2 appels HTTP par recherche, repli et retries
+    compris), ventilés par catégorie (auto / manuel / collecte), restant,
+    pourcentage utilisé, configuration active, avertissement (80%/95%).
+    """
+    return {"success": True, "data": tavily_quota_service.etat_pour_route(), "error": None}
+
+
 # ============================================================
 # 2. ANALYSE TEXTE
 # ============================================================
@@ -328,6 +348,7 @@ async def analyser_texte(
         result = await orchestrator.analyser_texte(
             texte=texte,
             source=request.source or "manuel",
+            sync_backend=False,
         )
 
         return {
@@ -393,7 +414,7 @@ async def analyser_pdf(
             )
 
         try:
-            reader = PyPDF2.PdfReader(io.BytesIO(contents))
+            reader = pypdf.PdfReader(io.BytesIO(contents))
         except Exception:
             raise HTTPException(
                 status_code=400,
@@ -420,6 +441,7 @@ async def analyser_pdf(
         resultat = await orchestrator.analyser_texte(
             texte=texte_complet,
             source=source,
+            sync_backend=False,
         )
 
         return {
@@ -447,4 +469,46 @@ async def analyser_pdf(
         raise HTTPException(
             status_code=500,
             detail="Erreur interne lors de l'analyse PDF.",
+        )
+
+
+# ============================================================
+# 4. SYNCHRONISATION BACKEND — APRÈS APPROBATION HITL
+# ============================================================
+
+class SynchroniserBackendRequest(BaseModel):
+    review_id: str
+    force: bool = False
+
+
+@router.post(
+    "/ia/veille/synchroniser-backend",
+    response_model=SearchResponse,
+    tags=["M1 - Veille Marché"],
+    operation_id="synchroniserBackendVeille",
+    summary="Sync M1 → Backend après approbation HITL (agent_m1_veille)",
+    description=(
+        "Envoie les opportunités approuvées au Backend.\n\n"
+        "⚠️ Requiert une review HITL approuvée (agent_m1_veille). "
+        "Sans approbation humaine, la requête est rejetée (403)."
+    ),
+)
+async def synchroniser_backend(
+    request: SynchroniserBackendRequest,
+):
+    try:
+        result = await orchestrator.synchroniser_backend(
+            review_id=request.review_id,
+            force=request.force,
+        )
+        return {"success": True, "data": result, "error": None}
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    except Exception as exc:
+        logger.exception("❌ Erreur sync veille Backend : %s", exc)
+        raise HTTPException(
+            status_code=500,
+            detail="Erreur interne lors de la synchronisation Backend.",
         )

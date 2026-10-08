@@ -108,6 +108,17 @@ class LevelAnalyzerService:
             "Retourne UNIQUEMENT le JSON valide (resume + interpretation + recommandations).",
             "⚠️  Ne recalcule PAS les statistiques — utilise celles ci-dessus.",
         ]
+
+        if contexte_rag:
+            lines.extend([
+                "",
+                "=== CONTENU DE LA FORMATION (extraits des supports indexés) ===",
+                contexte_rag,
+                "",
+                "↑ Utilise ces extraits pour personnaliser tes recommandations "
+                "au contenu réel de la formation.",
+            ])
+
         return "\n".join(lines)
 
     # --------------------------------------------------------
@@ -145,6 +156,21 @@ class LevelAnalyzerService:
         logger.info(f"   ✅ Corrigé : {len(corrige)} questions")
         logger.info("=" * 70)
 
+        # ── ÉTAPE 0 : CONTEXTE RAG (optionnel — améliore la qualité des recos) ──
+        contexte_rag = ""
+        try:
+            from app.services.formations.knowledge_base_service import KnowledgeBaseService
+            kb = KnowledgeBaseService()
+            contexte_rag = await kb.get_formation_context(
+                formation_titre=session_info.get("titre", ""),
+                domaine=session_info.get("domaine", ""),
+                formation_code=session_info.get("formation_code"),
+            )
+            if contexte_rag:
+                logger.info("   📚 [LevelAgent] Contexte RAG injecté dans le prompt")
+        except Exception as e:
+            logger.debug(f"   ℹ️  [LevelAgent] RAG non disponible (normal si pas de supports) : {e}")
+
         # ── ÉTAPE 1 : CALCUL DÉTERMINISTE (pandas) ──
         stats = self._compute_statistics(participants, corrige)
         prog = stats['statistiques']['progression_absolue']
@@ -161,7 +187,8 @@ class LevelAnalyzerService:
         if self.llm:
             try:
                 enrichment = await self._generate_with_llm(
-                    session_info, stats, temperature, max_tokens
+                    session_info, stats, temperature, max_tokens,
+                    contexte_rag=contexte_rag,
                 )
                 source = "llm"
                 logger.info("   ✅ Recommandations générées par LLM")
@@ -352,7 +379,7 @@ class LevelAnalyzerService:
         """Appel LLM — génère resume + interpretation + recommandations."""
         response = await self.llm.generate(
             system_prompt=self._build_system_prompt(),
-            user_prompt=self._build_user_prompt(session_info, stats),
+            user_prompt=self._build_user_prompt(session_info, stats, contexte_rag=contexte_rag),
             temperature=temperature,
             max_tokens=max_tokens,
             json_mode=True,
@@ -415,7 +442,7 @@ class LevelAnalyzerService:
 
         resume = (
             f"La formation a permis une progression moyenne de "
-            f"+{s['progression_absolue']} points ({s['progression_relative']}). "
+            f"{s['progression_absolue']:+} points ({s['progression_relative']}). "
             f"Les débutants sont passés de {d_av['debutants']['pourcentage']} "
             f"à {d_ap['debutants']['pourcentage']} après la formation."
         )
@@ -433,7 +460,7 @@ class LevelAnalyzerService:
         if s["progression_absolue"] < 20:
             recos.append("Adapter le rythme pédagogique et proposer des exercices supplémentaires.")
         recos.append("Reconduire la formation en capitalisant sur les acquis du groupe.")
-        if len(d_ap["avances"]["pourcentage"]) > 0:
+        if float(d_ap["avances"]["pourcentage"].rstrip("%")) > 0:
             recos.append("Proposer un module avancé pour les participants ayant atteint le niveau Avancé.")
 
         return {

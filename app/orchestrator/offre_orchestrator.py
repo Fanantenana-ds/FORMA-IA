@@ -14,24 +14,19 @@ from app.services.offres import (
 
 logger = logging.getLogger(__name__)
 
-VERBOSE = os.getenv("VERBOSE_LOGS", "true").lower() == "true"
-
-
-def vlog(msg: str, level: str = "info") -> None:
-    if VERBOSE:
-        getattr(logger, level)(msg)
-
 
 # =============================================================================
 # ORCHESTRATEUR
 # =============================================================================
 
-class OffreOrchestrator:
+class OffreOrchestrator(BaseOrchestrator):
     """
     Orchestrateur du module M3 — Offres techniques et financières.
 
     Coordonne les 2 agents + grille tarifaire.
     """
+
+    _name = "OffreOrchestrator"
 
     def __init__(self):
         vlog("=" * 70)
@@ -57,40 +52,11 @@ class OffreOrchestrator:
         )
 
         # Bilan
-        self._log_startup_summary()
-
-    # =========================================================================
-    # HELPERS INTERNES
-    # =========================================================================
-
-    def _safe_init(self, service_cls, label: str):
-        """Initialise un service avec try/except + log uniforme."""
-        try:
-            instance = service_cls()
-            vlog(f"   ✅ {label} prêt")
-            return instance
-        except Exception as e:
-            logger.error(f"   ❌ {label} indisponible : {type(e).__name__} — {e}")
-            return None
-
-    def _log_startup_summary(self) -> None:
-        """Log un récapitulatif des services actifs."""
-        services_status = {
-            "Agent M3-1 — OffreTechnique":  self.offre_technique is not None,
-            "Agent M3-2 — OffreFinanciere": self.offre_financiere is not None,
-            "GrilleTarifaireService":       self.grille_tarifaire is not None,
-        }
-        active = [k for k, v in services_status.items() if v]
-        inactive = [k for k, v in services_status.items() if not v]
-
-        vlog("=" * 70)
-        vlog(f"📊 Bilan démarrage : {len(active)}/3 services actifs")
-        for name in active:
-            vlog(f"   ✅ {name}")
-        for name in inactive:
-            vlog(f"   ⏳ {name} (en attente)")
-        vlog("=" * 70)
-        vlog("✅ OffreOrchestrator initialisé avec succès.")
+        self._log_startup_summary({
+            "Agent M3-1 — OffreTechnique":  self.offre_technique,
+            "Agent M3-2 — OffreFinanciere": self.offre_financiere,
+            "GrilleTarifaireService":       self.grille_tarifaire,
+        })
 
     def _check_services(self) -> None:
         """Vérifie que tous les services sont disponibles."""
@@ -104,32 +70,6 @@ class OffreOrchestrator:
                 f"❌ Services M3 manquants : {', '.join(missing)}"
             )
 
-    def _log_start(self, method: str, **kwargs) -> float:
-        """Log de début uniforme."""
-        vlog("=" * 70)
-        vlog(f"🎬 [OffreOrchestrator] → {method}()")
-        for k, v in kwargs.items():
-            vlog(f"   {k} : {v}")
-        vlog("=" * 70)
-        return time.perf_counter()
-
-    def _log_end(self, method: str, start: float, **counts) -> float:
-        """Log de fin uniforme."""
-        elapsed = round(time.perf_counter() - start, 2)
-        vlog("=" * 70)
-        vlog(f"✅ [OffreOrchestrator] {method}() terminé en {elapsed}s")
-        for k, v in counts.items():
-            vlog(f"   {k} : {v}")
-        vlog("=" * 70)
-        return elapsed
-
-    def _log_error(self, method: str, start: float, e: Exception) -> None:
-        """Log d'erreur uniforme."""
-        elapsed = round(time.perf_counter() - start, 2)
-        logger.error("=" * 70)
-        logger.error(f"❌ [OffreOrchestrator] {method}() ÉCHEC ({elapsed}s)")
-        logger.error(f"   💥 Erreur : {type(e).__name__} — {e}")
-        logger.error("=" * 70)
 
     # =========================================================================
     # GÉNÉRATION COMPLÈTE (M3-1 + M3-2 + HITL)
@@ -431,7 +371,7 @@ class OffreOrchestrator:
         force: bool = False,
     ) -> dict[str, Any]:
         """
-        Enregistre l'offre APPROUVÉE côté Backend (POST /documents/offre).
+        Enregistre l'offre APPROUVÉE côté Backend (POST /offres).
 
         Garde-fous : review approuvé uniquement (agent_m3_complete), un seul
         envoi par review (sauf force=True : crée alors un nouveau document).
@@ -463,9 +403,12 @@ class OffreOrchestrator:
 
         async def _envoyer() -> dict[str, Any]:
             return await offre_sync.sync_offre_to_backend(
+                titre=offre_sync.extract_titre(data),
+                client=offre_sync.extract_client(data),
                 opportunite_id=opportunite_id,
-                montant=offre_sync.extract_montant(data),
-                contenu=offre_sync.build_contenu(data),
+                trame_technique=offre_sync.build_trame_technique(data),
+                trame_financiere=offre_sync.build_trame_financiere(data),
+                montant_ht=offre_sync.extract_montant(data),
             )
 
         result = await review_sync.sync_once(review_id, _envoyer, force=force)

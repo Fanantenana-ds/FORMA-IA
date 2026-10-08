@@ -5,6 +5,8 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
+from app.schemas.common import RouteResponse
+from app.api.v1.endpoints._helpers import log_request as _log_req, handle_exception as _handle_exc, build_response as _build_resp
 
 from app.orchestrator.formation_orchestrator import (
     FormationOrchestrator,
@@ -31,6 +33,7 @@ def vlog(msg: str, level: str = "info") -> None:
 router = APIRouter(
     prefix="/ia/formations",
     tags=["M5 — IA Formations"],
+    dependencies=[Depends(verify_api_key)],
 )
 
 
@@ -39,28 +42,11 @@ router = APIRouter(
 # =============================================================================
 
 def _log_request(method: str, path: str, **kwargs) -> None:
-    vlog("=" * 70)
-    vlog(f"🌐 [Route IA] {method} {path}")
-    for k, val in kwargs.items():
-        vlog(f"   {k} : {val}")
-    vlog("=" * 70)
+    _log_req(logger, "Route IA", method, path, **kwargs)
 
 
 def _handle_exception(e: Exception, context: str) -> None:
-    if isinstance(e, NotImplementedError):
-        logger.warning(f"⚠️  [Route IA] {context} : {e}")
-        raise HTTPException(status_code=501, detail=str(e))
-    if isinstance(e, ValueError):
-        logger.error(f"❌ [Route IA] {context} — validation : {e}")
-        raise HTTPException(status_code=422, detail=f"Réponse IA invalide : {e}")
-    if isinstance(e, RuntimeError):
-        logger.error(f"❌ [Route IA] {context} — service : {e}")
-        raise HTTPException(status_code=503, detail=str(e))
-    logger.exception(f"💥 [Route IA] {context} : {e}")
-    raise HTTPException(
-        status_code=500,
-        detail=f"Erreur interne : {type(e).__name__} — {e}",
-    )
+    _handle_exc(e, context, "Route IA", logger)
 
 
 def _build_response(result: dict[str, Any], msg_ok: str, elapsed: float) -> "RouteResponse":
@@ -446,7 +432,7 @@ async def reject_review(
     _log_request("POST", f"/ia/formations/reviews/{review_id}/reject",
                  Raison=payload.reason)
     try:
-        
+
         review = _reject(review_id=review_id, reason=payload.reason)
         if not review:
             raise HTTPException(404, detail=f"Review '{review_id}' non trouvée")
@@ -461,3 +447,213 @@ async def reject_review(
     except Exception as e:
         _handle_exception(e, "reject_review")
         return ReviewResponse(success=False, message="")
+
+
+# =============================================================================
+# ROUTE — POST /creer-formulaires  (Google Forms réels après HITL)
+# =============================================================================
+
+class CreerFormulaireRequest(BaseModel):
+    review_id: str = Field(..., description="ID du review APPROUVÉ (agent_1_forms)")
+    session_title: str = Field(default="", description="Titre de la session (préfixe des formulaires)")
+
+
+@router.post(
+    "/creer-formulaires",
+    response_model=RouteResponse,
+    summary="[M5] Créer les 4 Google Forms réels depuis le JSON HITL approuvé",
+    description=(
+        "Appelle l'API Google Forms v1 pour créer les 4 formulaires réels "
+        "(inscription, test_avant, test_apres, satisfaction).\n\n"
+        "⚠️ Refusé si le review n'est pas **approuvé** — aucun formulaire Google "
+        "n'est créé sans validation humaine du contenu IA.\n\n"
+        "Nécessite GOOGLE_CREDENTIALS_PATH défini dans .env et l'API Google Forms "
+        "activée sur le projet GCP."
+    ),
+)
+async def creer_formulaires(
+    payload: CreerFormulaireRequest,
+    orchestrator: FormationOrchestrator = Depends(get_formation_orchestrator),
+) -> RouteResponse:
+    """Crée les 4 Google Forms réels après approbation HITL."""
+    _log_request(
+        "POST", "/ia/formations/creer-formulaires",
+        Review_ID=payload.review_id,
+        Session=payload.session_title or "N/A",
+    )
+    start = time.perf_counter()
+    try:
+        result = await orchestrator.creer_formulaires_google(
+            review_id=payload.review_id,
+            session_title=payload.session_title,
+        )
+        elapsed = round(time.perf_counter() - start, 2)
+        n = result.get("total_created", 0)
+        success = result.get("success", False)
+        message = f"{n} formulaire(s) Google créé(s)." if success else "Création partielle."
+        vlog(f"✅ [Route M5] creer-formulaires terminé en {elapsed}s : {message}")
+        return RouteResponse(
+            success=success,
+            message=message,
+            duration_seconds=elapsed,
+            review_id=payload.review_id,
+            data=result,
+        )
+    except Exception as e:
+        _handle_exception(e, "creer_formulaires")
+        return RouteResponse(success=False, message="")
+
+
+# =============================================================================
+# ROUTE — POST /sync-responses  (Récupération réponses Google Forms)
+# =============================================================================
+
+class SyncResponsesRequest(BaseModel):
+    review_id: str = Field(
+        ...,
+        description="ID de la review agent_1_forms contenant les form_id Google",
+    )
+    sections: Optional[List[str]] = Field(
+        default=None,
+        description=(
+            "Sections à récupérer : inscription, test_avant, test_apres, satisfaction. "
+            "Absent → toutes les sections."
+        ),
+    )
+
+
+@router.post(
+    "/sync-responses",
+    response_model=RouteResponse,
+    summary="[M5] Récupérer les réponses des formulaires Google Forms",
+    description=(
+        "Appelle l'API Google Forms v1 pour récupérer les réponses des participants "
+        "aux 4 formulaires créés lors de `/creer-formulaires`.\n\n"
+        "**Pré-requis :** la route `/creer-formulaires` doit avoir été appelée "
+        "pour cette review (les form_id sont stockés automatiquement).\n\n"
+        "**Réponses retournées :** structurées par section "
+        "(inscription / test_avant / test_apres / satisfaction), prêtes à passer "
+        "directement aux agents 2 (analyze-levels), 3 (analyze-satisfaction) et "
+        "4 (analyze-presences).\n\n"
+        "Nécessite GOOGLE_CREDENTIALS_PATH défini dans .env."
+    ),
+)
+async def sync_responses(
+    payload: SyncResponsesRequest,
+    orchestrator: FormationOrchestrator = Depends(get_formation_orchestrator),
+) -> RouteResponse:
+    """Récupère les réponses Google Forms et les retourne structurées."""
+    _log_request(
+        "POST", "/ia/formations/sync-responses",
+        Review_ID=payload.review_id,
+        Sections=payload.sections or "toutes",
+    )
+    start = time.perf_counter()
+    try:
+        result = await orchestrator.sync_responses(
+            review_id=payload.review_id,
+            sections=payload.sections,
+        )
+        elapsed = round(time.perf_counter() - start, 2)
+        total = result.get("total_responses", 0)
+        vlog(f"✅ [Route M5] sync-responses OK en {elapsed}s — {total} réponse(s)")
+        return RouteResponse(
+            success=True,
+            message=f"{total} réponse(s) récupérée(s) depuis Google Forms.",
+            duration_seconds=elapsed,
+            review_id=payload.review_id,
+            data=result,
+        )
+    except Exception as e:
+        _handle_exception(e, "sync_responses")
+        return RouteResponse(success=False, message="")
+
+
+# =============================================================================
+# SYNC BACKEND — Présences (après approbation HITL A4)
+# =============================================================================
+
+class SyncPresencesRequest(BaseModel):
+    review_id: str = Field(..., description="ID du review APPROUVÉ (agent_4_presences)")
+    seance_id: str = Field(..., description="UUID Backend de la séance")
+    force: bool = False
+
+
+@router.post(
+    "/synchroniser/presences",
+    response_model=RouteResponse,
+    summary="[M5] Sync A4 → Backend POST /sessions/seances/{id}/presences",
+    description=(
+        "Enregistre les présences validées côté Backend.\n\n"
+        "⚠️ Requiert une review HITL approuvée (agent_4_presences)."
+    ),
+)
+async def synchroniser_presences(
+    payload: SyncPresencesRequest,
+    orchestrator: FormationOrchestrator = Depends(get_formation_orchestrator),
+) -> RouteResponse:
+    start = time.perf_counter()
+    try:
+        result = await orchestrator.synchroniser_presences(
+            review_id=payload.review_id,
+            seance_id=payload.seance_id,
+            force=payload.force,
+        )
+        elapsed = round(time.perf_counter() - start, 2)
+        sent = (result.get("backend_sync") or result).get("sent", False)
+        return RouteResponse(
+            success=True,
+            message="Présences enregistrées côté Backend." if sent else "Déjà synchronisé.",
+            duration_seconds=elapsed,
+            review_id=payload.review_id,
+            data=result,
+        )
+    except Exception as e:
+        _handle_exception(e, "synchroniser_presences")
+        return RouteResponse(success=False, message="")
+
+
+# =============================================================================
+# SYNC BACKEND — Attestations (après approbation HITL A5)
+# =============================================================================
+
+class SyncAttestationsRequest(BaseModel):
+    review_id: str = Field(..., description="ID du review APPROUVÉ (agent_5_attestations)")
+    session_id: str = Field(..., description="UUID Backend de la session")
+    force: bool = False
+
+
+@router.post(
+    "/synchroniser/attestations",
+    response_model=RouteResponse,
+    summary="[M5] Sync A5 → Backend POST /documents/attestations/{session_id}",
+    description=(
+        "Demande au Backend de créer les attestations de la session.\n\n"
+        "⚠️ Requiert une review HITL approuvée (agent_5_attestations) — "
+        "attestations jamais créées sans validation humaine."
+    ),
+)
+async def synchroniser_attestations(
+    payload: SyncAttestationsRequest,
+    orchestrator: FormationOrchestrator = Depends(get_formation_orchestrator),
+) -> RouteResponse:
+    start = time.perf_counter()
+    try:
+        result = await orchestrator.synchroniser_attestations(
+            review_id=payload.review_id,
+            session_id=payload.session_id,
+            force=payload.force,
+        )
+        elapsed = round(time.perf_counter() - start, 2)
+        sent = (result.get("backend_sync") or result).get("sent", False)
+        count = (result.get("backend_sync") or result).get("count", 0)
+        return RouteResponse(
+            success=True,
+            message=f"{count} attestation(s) créée(s) côté Backend." if sent else "Déjà synchronisé.",
+            duration_seconds=elapsed,
+            review_id=payload.review_id,
+            data=result,
+        )
+    except Exception as e:
+        _handle_exception(e, "synchroniser_attestations")
+        return RouteResponse(success=False, message="")

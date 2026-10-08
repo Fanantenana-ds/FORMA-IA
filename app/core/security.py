@@ -40,15 +40,19 @@ def create_access_token(data: dict) -> str:
         algorithm=settings.algorithm
     )
 
-def decode_access_token(token: str) -> dict:
+class TokenExpiredError(Exception):
+    pass
+
+def decode_access_token(token: str) -> dict | None:
+    """Retourne le payload, lève TokenExpiredError si expiré, None si invalide."""
     try:
         payload = jwt.decode(
             token,
             settings.secret_key,
             algorithms=[settings.algorithm]
         )
-
         return payload
-
+    except ExpiredSignatureError:
+        raise TokenExpiredError("Token expiré")
     except JWTError:
         return None

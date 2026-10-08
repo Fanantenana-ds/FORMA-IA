@@ -44,7 +44,7 @@ jobs:
           SECRET_KEY: ci-test-secret-key-not-for-production
         run: |
           coverage run -m pytest
-          coverage report --fail-under=55
+          coverage report --fail-under=60
 
   frontend-checks:
     runs-on: ubuntu-latest

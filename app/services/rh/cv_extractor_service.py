@@ -220,7 +220,7 @@ async def _valider_lisibilite(texte: str) -> bool:
             system_prompt="Tu es un assistant RH.",
             user_prompt=prompt,
             temperature=0.0,
-            max_tokens=10,
+            max_tokens=20,
         )
         return "OUI" in reponse.upper()
     except Exception as exc:

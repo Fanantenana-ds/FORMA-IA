@@ -107,10 +107,15 @@ L'équipe RH — ALTIORA PREST
         msg.attach(MIMEText(corps, "plain", "utf-8"))
 
         context = ssl.create_default_context()
-        with smtplib.SMTP(smtp_host, smtp_port) as server:
-            server.starttls(context=context)
-            server.login(smtp_user, smtp_pass)
-            server.sendmail(email_from, email_candidat, msg.as_string())
+        if smtp_port == 465:
+            with smtplib.SMTP_SSL(smtp_host, smtp_port, context=context) as server:
+                server.login(smtp_user, smtp_pass)
+                server.sendmail(email_from, email_candidat, msg.as_string())
+        else:
+            with smtplib.SMTP(smtp_host, smtp_port) as server:
+                server.starttls(context=context)
+                server.login(smtp_user, smtp_pass)
+                server.sendmail(email_from, email_candidat, msg.as_string())
 
         vlog(f"✅ Accusé de réception envoyé à {email_candidat}")
         return True

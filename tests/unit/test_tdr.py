@@ -4,10 +4,21 @@
 import pytest
 
 from app.orchestrator.tdr_orchestrator import TdrOrchestrator
+from app.services.hitl import hitl_helper
+
+
+def run(coro):
+    return asyncio.run(coro)
+
+
+@pytest.fixture(autouse=True)
+def store_hitl_temporaire(monkeypatch, tmp_path):
+    """Aucune review de test dans le vrai store data/hitl_reviews.json."""
+    monkeypatch.setattr(hitl_helper, "STORAGE_PATH", tmp_path / "hitl_reviews.json")
 
 
 class TestTdrOrchestrator:
-    """Tests pour l'orchestrateur TDR"""
+    """Tests pour l'orchestrateur TDR (generate())."""
 
     def setup_method(self):
         self.orchestrator = TdrOrchestrator()
@@ -26,14 +37,15 @@ class TestTdrOrchestrator:
             "public": "Agents de santé",
             "duree": "5 jours",
             "format": "Présentiel",
-            "budget": "150 000 000 Ar"
+            "budget": "150 000 000 Ar",
         }
 
         resultat = await self.orchestrator.generate(brief)
 
         assert resultat["success"] is True
-        assert "tdr" in resultat["data"]
-        assert "documents" in resultat["data"]
+        assert resultat["data"]["titre"] == "TDR Formation IA médicale"
+        assert resultat["files"] == {"docx": "tdr_test.docx", "pdf": "tdr_test.pdf"}
+        assert resultat["error"] is None
 
     @pytest.mark.asyncio
     async def test_generer_tdr_missing_field(self):

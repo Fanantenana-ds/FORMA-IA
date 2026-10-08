@@ -3,14 +3,15 @@
 # SYNC M7 — Facturation IA ↔ Backend
 # ============================================================
 # Routes Backend utilisées (contrat réel, app/api/v1/endpoints/facture.py) :
-#   POST /factures        FactureCreate {client, montant (HT, > 0),
-#                         tva_taux, date_echeance}   rôle DIRECTION/COMPTABLE
-#   GET  /factures/{id}   FactureResponse (paiements inclus)
+#   POST /factures               FactureCreate {client, montant (HT, > 0),
+#                                tva_taux, date_echeance}  rôle DIRECTION/COMPTABLE
+#   GET  /factures/{id}          FactureResponse (paiements inclus)
+#   POST /factures/{id}/relances RelanceIACreate {niveau, objet, texte, review_id}
+#                                rôle DIRECTION/COMPTABLE — retourne RelanceIAResponse
 #
 # Le numéro de facture, le TTC et le statut sont calculés par le Backend.
 #
-# ⚠️ HITL : une facture créée est immédiatement "EMISE" côté Backend.
-#    N'appeler sync_facture_to_backend() qu'APRÈS approbation humaine.
+# ⚠️ HITL : n'appeler sync_*() qu'APRÈS approbation humaine.
 # ============================================================
 
 import logging

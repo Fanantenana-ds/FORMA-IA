@@ -358,4 +358,164 @@ def test_le_router_de_l_application_monte_m7():
         "/ia/facturation/health",
         "/ia/facturation/calculer-montants",
         "/ia/facturation/relances/generer",
+        "/ia/facturation/relances/synchroniser",
     } <= chemins
+
+
+# ============================================================
+# synchroniser_backend — orchestrateur
+# ============================================================
+
+def _generer_review_approuve(monkeypatch, tmp_path, facture_id="f" * 8 + "-0000-0000-0000-000000000000"):
+    """Crée un review HITL approuvé pour agent_m7_relance et retourne son ID."""
+    from app.services.hitl import hitl_helper, create_review, approve_review
+    monkeypatch.setattr(hitl_helper, "STORAGE_PATH", tmp_path / "hitl.json")
+
+    from app.services.backend_sync import review_sync
+    monkeypatch.setattr(review_sync, "REGISTRY_PATH", tmp_path / "registry.json")
+
+    rid = create_review(
+        agent_id="agent_m7_relance",
+        data={
+            "facture_id": facture_id,
+            "niveau": 2,
+            "objet": "Relance ferme",
+            "texte": "Veuillez régulariser votre facture.",
+        },
+        summary="Relance niveau 2",
+        criticity="critical",
+    )
+    approve_review(rid, reviewer_note="ok")
+    return rid
+
+
+def test_synchroniser_backend_envoie_relance(monkeypatch, tmp_path):
+    from app.services.backend_sync import facture_sync as fs
+
+    async def faux_sync(facture_id, niveau, objet, texte, review_id=None):
+        return {"enabled": True, "sent": True, "relance_id": "rid-001",
+                "verified": True, "error": None}
+
+    monkeypatch.setattr(fs, "sync_relance_to_backend", faux_sync)
+    rid = _generer_review_approuve(monkeypatch, tmp_path)
+
+    orch = FacturationOrchestrator()
+    result = run(orch.synchroniser_backend(rid))
+
+    assert result["already_synced"] is False
+    assert result["backend_sync"]["sent"] is True
+    assert result["backend_sync"]["relance_id"] == "rid-001"
+
+
+def test_synchroniser_backend_idempotent(monkeypatch, tmp_path):
+    from app.services.backend_sync import facture_sync as fs
+    appels = []
+
+    async def faux_sync(**kw):
+        appels.append(1)
+        return {"enabled": True, "sent": True, "relance_id": "rid-001",
+                "verified": True, "error": None}
+
+    monkeypatch.setattr(fs, "sync_relance_to_backend", faux_sync)
+    rid = _generer_review_approuve(monkeypatch, tmp_path)
+
+    orch = FacturationOrchestrator()
+    run(orch.synchroniser_backend(rid))
+    result2 = run(orch.synchroniser_backend(rid))
+
+    assert result2["already_synced"] is True
+    assert len(appels) == 1   # un seul envoi réel
+
+
+def test_synchroniser_backend_force_renvoie(monkeypatch, tmp_path):
+    from app.services.backend_sync import facture_sync as fs
+    appels = []
+
+    async def faux_sync(**kw):
+        appels.append(1)
+        return {"enabled": True, "sent": True, "relance_id": "rid-002",
+                "verified": True, "error": None}
+
+    monkeypatch.setattr(fs, "sync_relance_to_backend", faux_sync)
+    rid = _generer_review_approuve(monkeypatch, tmp_path)
+
+    orch = FacturationOrchestrator()
+    run(orch.synchroniser_backend(rid))
+    run(orch.synchroniser_backend(rid, force=True))
+
+    assert len(appels) == 2   # force=True renvoie
+
+
+def test_synchroniser_backend_refuse_review_non_approuve(monkeypatch, tmp_path):
+    from app.services.hitl import hitl_helper, create_review
+    monkeypatch.setattr(hitl_helper, "STORAGE_PATH", tmp_path / "hitl.json")
+    from app.services.backend_sync import review_sync
+    monkeypatch.setattr(review_sync, "REGISTRY_PATH", tmp_path / "registry.json")
+
+    rid = create_review(
+        agent_id="agent_m7_relance",
+        data={"facture_id": "f" * 8 + "-0000-0000-0000-000000000000",
+              "niveau": 1, "objet": "Relance", "texte": "Texte"},
+        summary="test",
+        criticity="critical",
+    )
+    orch = FacturationOrchestrator()
+    with pytest.raises(ValueError, match="approuv"):
+        run(orch.synchroniser_backend(rid))
+
+
+def test_synchroniser_backend_refuse_mauvais_agent(monkeypatch, tmp_path):
+    from app.services.hitl import hitl_helper, create_review, approve_review
+    monkeypatch.setattr(hitl_helper, "STORAGE_PATH", tmp_path / "hitl.json")
+    from app.services.backend_sync import review_sync
+    monkeypatch.setattr(review_sync, "REGISTRY_PATH", tmp_path / "registry.json")
+
+    rid = create_review(
+        agent_id="agent_m3_complete",
+        data={"facture_id": "f" * 8 + "-0000-0000-0000-000000000000"},
+        summary="test",
+        criticity="high",
+    )
+    approve_review(rid)
+    orch = FacturationOrchestrator()
+    with pytest.raises(ValueError, match="agent"):
+        run(orch.synchroniser_backend(rid))
+
+
+# ============================================================
+# Route /relances/synchroniser
+# ============================================================
+
+def test_route_synchroniser_422_si_non_approuve(monkeypatch, tmp_path, api):
+    from app.services.hitl import hitl_helper, create_review
+    monkeypatch.setattr(hitl_helper, "STORAGE_PATH", tmp_path / "hitl_r.json")
+    from app.services.backend_sync import review_sync
+    monkeypatch.setattr(review_sync, "REGISTRY_PATH", tmp_path / "reg_r.json")
+
+    rid = create_review(
+        agent_id="agent_m7_relance",
+        data={"facture_id": "f" * 8 + "-0000-0000-0000-000000000000",
+              "niveau": 1, "objet": "Relance", "texte": "Texte"},
+        summary="test", criticity="critical",
+    )
+    response = api.post("/api/v1/ia/facturation/relances/synchroniser",
+                        json={"review_id": rid})
+    assert response.status_code == 422
+
+
+def test_route_synchroniser_200_si_approuve(monkeypatch, tmp_path, api):
+    from app.services.backend_sync import facture_sync as fs
+
+    async def faux_sync(**kw):
+        return {"enabled": True, "sent": True, "relance_id": "rid-ok",
+                "verified": True, "error": None}
+
+    monkeypatch.setattr(fs, "sync_relance_to_backend", faux_sync)
+    rid = _generer_review_approuve(monkeypatch, tmp_path)
+
+    response = api.post("/api/v1/ia/facturation/relances/synchroniser",
+                        json={"review_id": rid})
+    assert response.status_code == 200
+    data = response.json()
+    assert data["success"] is True
+    assert data["review_status"] == "approved"

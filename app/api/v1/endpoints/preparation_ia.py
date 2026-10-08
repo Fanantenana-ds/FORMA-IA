@@ -5,11 +5,14 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
+from app.schemas.common import RouteResponse
+from app.api.v1.endpoints._helpers import log_request as _log_req, handle_exception as _handle_exc, build_response as _build_resp
 
 from app.orchestrator.preparation_orchestrator import (
     PreparationOrchestrator,
     get_preparation_orchestrator,
 )
+from app.utils.security import verify_api_key
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +30,7 @@ def vlog(msg: str, level: str = "info") -> None:
 router = APIRouter(
     prefix="/ia/preparation",
     tags=["Préparation — IA"],
+    dependencies=[Depends(verify_api_key)],
 )
 
 
@@ -35,27 +39,11 @@ router = APIRouter(
 # =============================================================================
 
 def _log_request(method: str, path: str, **kwargs) -> None:
-    vlog("=" * 70)
-    vlog(f"🌐 [Route PREP] {method} {path}")
-    for k, val in kwargs.items():
-        vlog(f"   {k} : {val}")
-    vlog("=" * 70)
+    _log_req(logger, "Route PREP", method, path, **kwargs)
 
 
 def _handle_exception(e: Exception, context: str) -> None:
-    if isinstance(e, NotImplementedError):
-        raise HTTPException(status_code=501, detail=str(e))
-    if isinstance(e, ValueError):
-        logger.error(f"❌ [Route PREP] {context} — validation : {e}")
-        raise HTTPException(status_code=422, detail=f"Données invalides : {e}")
-    if isinstance(e, RuntimeError):
-        logger.error(f"❌ [Route PREP] {context} — service : {e}")
-        raise HTTPException(status_code=503, detail=str(e))
-    logger.exception(f"💥 [Route PREP] {context} : {e}")
-    raise HTTPException(
-        status_code=500,
-        detail=f"Erreur interne : {type(e).__name__} — {e}",
-    )
+    _handle_exc(e, context, "Route PREP", logger)
 
 
 def _build_response(result: dict[str, Any], msg_ok: str, elapsed: float) -> "RouteResponse":
@@ -287,13 +275,13 @@ async def generer_edt(
 
 
 # =============================================================================
-# ROUTE 3 — POST /generer-complet ⭐
+# ROUTE 3 — POST /generer-complet 
 # =============================================================================
 
 @router.post(
     "/generer-complet",
     response_model=RouteResponse,
-    summary="[PREP] ⭐ Générer la préparation complète (Budget + EDT + HITL)",
+    summary="[PREP]  Générer la préparation complète (Budget + EDT + HITL)",
     description=(
         "Route principale du module Préparation.\n\n"
         "1. Calcule le budget prévisionnel (Python pur)\n"

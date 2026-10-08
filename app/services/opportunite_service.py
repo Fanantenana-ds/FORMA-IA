@@ -26,9 +26,14 @@ class OpportuniteService(IOpportuniteService):
 
         return self.repository.find_by_id(opportunite_id)
 
-    def get_all(self) -> list[Opportunite]:
-
-        return self.repository.find_all()
+    def get_all(
+        self,
+        statut: Optional[StatutOpportunite] = None,
+        domaine: Optional[Domaine] = None,
+        skip: int = 0,
+        limit: int = 100,
+    ) -> List[Opportunite]:
+        return self.repository.find_all(statut=statut, domaine=domaine, skip=skip, limit=limit)
 
     def delete(self, opportunite_id: UUID) -> bool:
         return self.repository.delete(opportunite_id)

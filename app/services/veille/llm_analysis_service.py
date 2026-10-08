@@ -213,7 +213,7 @@ class LLMAnalysisService:
     ) -> str:
         """Conserve le YAML complet, réduit uniquement les sources si besoin."""
 
-        prompt = self._build_prompt(query, results)
+        prompt = self._build_prompt(query, results, date_reference=date_reference)
 
         if len(prompt) <= MAX_PROMPT_CHARS:
             return self._ensure_json_keyword(prompt)
@@ -226,7 +226,7 @@ class LLMAnalysisService:
         reduced_results = list(results)
         while len(prompt) > MAX_PROMPT_CHARS and len(reduced_results) > 1:
             reduced_results.pop()
-            prompt = self._build_prompt(query, reduced_results)
+            prompt = self._build_prompt(query, reduced_results, date_reference=date_reference)
 
         if len(prompt) > MAX_PROMPT_CHARS:
             logger.warning("⚠️ Le YAML seul est proche de la limite de prompt.")
@@ -249,13 +249,16 @@ class LLMAnalysisService:
         """
         Construit le prompt et interroge le LLM. Retourne le JSON
         brut du modèle, ou None en cas d'échec (réseau ou format).
+
+        date_reference : si fournie, remplace datetime.now() dans le
+        prompt LLM ({{DATE_DU_JOUR}}) — reproductibilité benchmark M1.
         """
 
         if self.llm is None:
             logger.warning("⚠️ Aucun provider LLM disponible")
             return None
 
-        prompt = self.build_prompt_with_budget(query, results)
+        prompt = self.build_prompt_with_budget(query, results, date_reference=date_reference)
 
         logger.info("📤 Envoi à GROQ : %d sources", len(results))
         for i, r in enumerate(results, start=1):

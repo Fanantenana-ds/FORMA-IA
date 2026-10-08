@@ -9,6 +9,7 @@ import yaml
 
 from app.services.hitl import create_review
 from app.services.llm import LLMNotAvailableError, get_llm_provider
+from app.services.formations.presence_analyzer_service import SEUIL_ELIGIBILITE_ATTESTATION
 
 logger = logging.getLogger(__name__)
 
@@ -110,9 +111,19 @@ class AttestationGeneratorService:
             f"- Nom : {participant.get('nom', 'N/A')}",
             f"- Genre : {participant.get('genre', 'N/A')}",
             f"- Entreprise : {participant.get('entreprise', 'N/A')}",
-            "",
-            "Retourne UNIQUEMENT le JSON valide, sans texte autour.",
         ]
+
+        if contexte_rag:
+            lines += [
+                "",
+                "=== CONTENU DE LA FORMATION (extraits des supports indexés) ===",
+                contexte_rag,
+                "",
+                "→ Utilise ces extraits pour rédiger des compétences précises et "
+                "spécifiques aux thèmes, outils et techniques abordés.",
+            ]
+
+        lines += ["", "Retourne UNIQUEMENT le JSON valide, sans texte autour."]
         return "\n".join(lines)
 
     # --------------------------------------------------------
@@ -131,6 +142,32 @@ class AttestationGeneratorService:
 
         vlog(f"🚀 [AttestationAgent] Génération pour {participant.get('nom')} (n° {numero})")
 
+        # ── ÉTAPE 0 : CONTEXTE RAG ──
+        contexte_rag = ""
+        try:
+            from app.services.formations.knowledge_base_service import KnowledgeBaseService
+
+            # Résoudre formation_code si absent : chercher dans le registre par titre
+            formation_code = session_info.get("formation_code") or session_info.get("code")
+            if not formation_code:
+                from app.services.rag.registry_service import charger_registre
+                titre = (session_info.get("titre") or "").lower()
+                for entree in charger_registre().values():
+                    if entree.formation_code and titre and titre in (entree.formation_titre or "").lower():
+                        formation_code = entree.formation_code
+                        break
+
+            kb = KnowledgeBaseService()
+            contexte_rag = await kb.get_formation_context(
+                formation_titre=session_info.get("titre", ""),
+                domaine=session_info.get("domaine", ""),
+                formation_code=formation_code,
+            )
+            if contexte_rag:
+                vlog(f"   📚 [AttestationAgent] Contexte RAG injecté (formation_code={formation_code})")
+        except Exception as exc:
+            logger.warning(f"   ⚠️  [AttestationAgent] RAG non disponible : {exc}")
+
         content = None
         source = "fallback_template"
 
@@ -138,7 +175,8 @@ class AttestationGeneratorService:
         if self.llm:
             try:
                 content = await self._generate_with_llm(
-                    session_info, participant, temperature, max_tokens
+                    session_info, participant, temperature, max_tokens,
+                    contexte_rag=contexte_rag,
                 )
                 source = "llm"
                 vlog("   ✅ Contenu généré par LLM (Groq)")
@@ -169,6 +207,55 @@ class AttestationGeneratorService:
         }
 
     # --------------------------------------------------------
+    # RE-VÉRIFICATION DU SEUIL (correction 1a) — Agent 5 ne fait PAS
+    # confiance à la liste fournie par l'appelant : un participant sous
+    # le seuil (ou dont l'éligibilité n'est pas vérifiable) est refusé et
+    # signalé, jamais généré silencieusement (conformité CDC : attestation
+    # à partir de 80% de présence).
+    # --------------------------------------------------------
+    def _verifier_eligibilite(self, participant: Dict[str, Any]) -> "tuple[bool, Optional[str]]":
+        """
+        Retourne (eligible, raison_du_refus). `eligible_attestation`
+        (booléen déjà calculé par l'Agent 4) fait foi s'il est présent —
+        sinon on retombe sur `taux_presence` (chaîne "85.0%" ou nombre).
+        Aucune donnée manquante n'est supposée éligible par défaut.
+        """
+        if "eligible_attestation" in participant:
+            valeur = participant["eligible_attestation"]
+            if isinstance(valeur, bool):
+                if valeur:
+                    return True, None
+                return False, f"Sous le seuil de {SEUIL_ELIGIBILITE_ATTESTATION}% de présence (calcul Agent 4)."
+
+        taux_brut = participant.get("taux_presence")
+        if taux_brut is None:
+            return False, (
+                "Taux de présence non fourni — éligibilité non vérifiable, "
+                "refus par précaution."
+            )
+        try:
+            taux = float(str(taux_brut).rstrip("%").strip())
+        except (TypeError, ValueError):
+            return False, f"Taux de présence illisible ('{taux_brut}') — éligibilité non vérifiable."
+
+        if taux >= SEUIL_ELIGIBILITE_ATTESTATION:
+            return True, None
+        return False, f"Taux de présence {taux}% < seuil de {SEUIL_ELIGIBILITE_ATTESTATION}%."
+
+    def _filtrer_eligibles(
+        self, eligible_participants: List[Dict[str, Any]],
+    ) -> "tuple[List[Dict[str, Any]], List[Dict[str, Any]]]":
+        verifies, rejetes = [], []
+        for p in eligible_participants:
+            ok, raison = self._verifier_eligibilite(p)
+            if ok:
+                verifies.append(p)
+            else:
+                logger.warning(f"   🚫 [AttestationAgent] Refusé (seuil) : {p.get('nom')} — {raison}")
+                rejetes.append({"participant": p, "raison": raison})
+        return verifies, rejetes
+
+    # --------------------------------------------------------
     # GÉNÉRATION — BATCH
     # --------------------------------------------------------
     async def generate_batch(
@@ -181,35 +268,63 @@ class AttestationGeneratorService:
         vlog(f"🚀 [AttestationAgent] BATCH — {len(eligible_participants)} participants")
         vlog("=" * 70)
 
+        verifies, rejetes = self._filtrer_eligibles(eligible_participants)
+
+        semaphore = asyncio.Semaphore(5)
+
+        async def _generer(index: int, p: Dict[str, Any]):
+            async with semaphore:
+                return await self.generate_one(session_info, p, index=index)
+
+        resultats = await asyncio.gather(
+            *[_generer(i, p) for i, p in enumerate(verifies, start=1)],
+            return_exceptions=True,
+        )
+
         attestations = []
         failed = []
-
-        for i, p in enumerate(eligible_participants, start=1):
-            try:
-                att = await self.generate_one(session_info, p, index=i)
-                attestations.append(att)
-            except Exception as e:
-                logger.error(f"   ❌ Échec pour {p.get('nom')} : {e}")
-                failed.append({"participant": p, "error": str(e)})
+        for p, res in zip(verifies, resultats):
+            if isinstance(res, Exception):
+                logger.error(f"   ❌ Échec pour {p.get('nom')} : {res}")
+                failed.append({"participant": p, "error": str(res)})
+            else:
+                attestations.append(res)
 
         elapsed = round((datetime.now() - start).total_seconds(), 2)
         vlog("=" * 70)
         vlog(
             f"✅ [AttestationAgent] BATCH terminé — "
-            f"{len(attestations)}/{len(eligible_participants)} en {elapsed}s"
+            f"{len(attestations)}/{len(eligible_participants)} en {elapsed}s "
+            f"({len(rejetes)} refusé(s) seuil)"
         )
         vlog("=" * 70)
 
-        return {
+        result = {
             "success": True,
             "session_id": session_info.get("id"),
             "total_eligible": len(eligible_participants),
             "total_generated": len(attestations),
             "total_failed": len(failed),
+            "total_rejetes_seuil": len(rejetes),
             "attestations": attestations,
             "failed_participants": failed,
+            "rejected_ineligible": rejetes,
             "duration_seconds": elapsed,
         }
+
+        review_id = create_review(
+            agent_id="agent_5_attestations",
+            data=result,
+            summary=(
+                f"{len(attestations)} attestation(s) générée(s) — "
+                f"à valider avant envoi aux participants"
+            ),
+            criticity="critical",
+        )
+        result["_review_id"] = review_id
+        result["_review_status"] = "pending_review"
+        vlog(f"⏳ [HITL] Review créé : {review_id}")
+        return result
 
     # --------------------------------------------------------
     # LLM
@@ -223,7 +338,7 @@ class AttestationGeneratorService:
     ) -> dict[str, Any]:
         response = await self.llm.generate(
             system_prompt=self._build_system_prompt(),
-            user_prompt=self._build_user_prompt(session_info, participant),
+            user_prompt=self._build_user_prompt(session_info, participant, contexte_rag),
             temperature=temperature,
             max_tokens=max_tokens,
             json_mode=True,
@@ -495,6 +610,19 @@ class AttestationGeneratorService:
         if pdf_path:
             result["metadata"]["pdf_path"] = pdf_path
 
+        review_id = create_review(
+            agent_id="agent_5_attestations",
+            data=result,
+            summary=(
+                f"Attestation {result['numero_unique']} — "
+                f"{participant.get('nom', 'N/A')} — à valider avant envoi"
+            ),
+            criticity="critical",
+        )
+        result["_review_id"] = review_id
+        result["_review_status"] = "pending_review"
+        vlog(f"⏳ [HITL] Review créé : {review_id}")
+
         return result
 
     async def generate_batch_with_pdf(
@@ -507,21 +635,33 @@ class AttestationGeneratorService:
         vlog(f"🚀 [AttestationAgent] BATCH+PDF — {len(eligible_participants)} participants")
         vlog("=" * 70)
 
+        verifies, rejetes = self._filtrer_eligibles(eligible_participants)
+
+        semaphore = asyncio.Semaphore(5)
+
+        async def _generer_pdf(index: int, p: Dict[str, Any]):
+            async with semaphore:
+                return await self.generate_one_with_pdf(session_info, p, index=index)
+
+        resultats = await asyncio.gather(
+            *[_generer_pdf(i, p) for i, p in enumerate(verifies, start=1)],
+            return_exceptions=True,
+        )
+
         attestations, failed = [], []
-        for i, p in enumerate(eligible_participants, start=1):
-            try:
-                att = await self.generate_one_with_pdf(session_info, p, index=i)
-                attestations.append(att)
-            except Exception as e:
-                logger.error(f"   ❌ Échec {p.get('nom')} : {e}")
-                failed.append({"participant": p, "error": str(e)})
+        for p, res in zip(verifies, resultats):
+            if isinstance(res, Exception):
+                logger.error(f"   ❌ Échec {p.get('nom')} : {res}")
+                failed.append({"participant": p, "error": str(res)})
+            else:
+                attestations.append(res)
 
         elapsed = round((datetime.now() - start).total_seconds(), 2)
         pdf_ok = sum(1 for a in attestations if a.get("pdf_generated"))
         vlog("=" * 70)
         vlog(
             f"✅ BATCH+PDF terminé — {len(attestations)}/{len(eligible_participants)} "
-            f"contenus, {pdf_ok} PDF en {elapsed}s"
+            f"contenus, {pdf_ok} PDF en {elapsed}s ({len(rejetes)} refusé(s) seuil)"
         )
         vlog("=" * 70)
 
@@ -532,8 +672,10 @@ class AttestationGeneratorService:
             "total_generated": len(attestations),
             "total_pdf_generated": pdf_ok,
             "total_failed": len(failed),
+            "total_rejetes_seuil": len(rejetes),
             "attestations": attestations,
             "failed_participants": failed,
+            "rejected_ineligible": rejetes,
             "duration_seconds": elapsed,
         }
 

@@ -225,7 +225,7 @@ class ScoringService:
         budget = opportunity.get("budget")
         deadline = opportunity.get("deadline")
         domain = str(opportunity.get("domain", "autre"))
-        current_date = datetime.now()
+        current_date = date_reference or datetime.now()
 
         score = 0
         details = []

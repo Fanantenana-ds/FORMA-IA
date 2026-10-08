@@ -74,8 +74,8 @@ class FormGeneratorService:
             "   5. IDs : ins_XX, av_XX, sat_XX.",
             "   6. correct_answer : UNIQUEMENT la lettre (A, B, C, D).",
             "",
-            "- Titre : " + session_info.get("titre", "N/A"),
-            "- Domaine : " + session_info.get("domaine", "N/A"),
+            "- Titre : " + (titre or "N/A"),
+            "- Domaine : " + (domaine or "N/A"),
             "- Niveau cible : " + session_info.get("niveau_cible", "N/A"),
             "- Date début : " + session_info.get("date_debut", "N/A"),
             "- Date fin : " + session_info.get("date_fin", "N/A"),
@@ -83,22 +83,55 @@ class FormGeneratorService:
             "- Formateur : " + session_info.get("formateur", "N/A"),
             "- Max participants : " + str(session_info.get("max_participants", "N/A")),
             "- Public cible : " + session_info.get("public_cible", "N/A"),
+            "",
         ]
-        supports = session_info.get("supports_resume")
+
+        # ── Priorité 1 : supports uploadés disponibles ──────────────────────
         if supports:
-            lines.append("")
-            lines.append("=== SUPPORTS (résumé) ===")
-            lines.append(str(supports)[:2000])
-        lines.append("")
-        lines.append(
-            "Retourne UNIQUEMENT ce JSON (3 sections) :\n"
-            "{\n"
-            '  "inscription": {"title": "...", "questions": [...]},\n'
-            '  "test_avant": {"title": "...", "duration_minutes": 20, "questions": [...]},\n'
-            '  "satisfaction": {"title": "...", "questions": [...]},\n'
-            '  "metadata": {"domaine": "...", "niveau_cible": "...", "nombre_questions_test": 15, "langue": "fr"}\n'
-            "}"
-        )
+            lines += [
+                "=== BASE DES QUESTIONS (PRIORITÉ 1 — SUPPORTS RÉELS) ===",
+                "⚠️  Tu DOIS baser les questions du test_avant EXCLUSIVEMENT sur",
+                "    le contenu des supports ci-dessous. Ne génère AUCUNE question",
+                "    qui ne soit pas couverte par ces supports.",
+                "",
+                str(supports)[:2000],
+                "",
+                "INSTRUCTION : chaque question doit tester un concept explicitement",
+                "présent dans ces supports (chapitre, notion, exercice, exemple).",
+            ]
+        # ── Priorité 2 : titre précis, pas de supports ───────────────────────
+        elif titre:
+            lines += [
+                "=== BASE DES QUESTIONS (PRIORITÉ 2 — TITRE DE LA FORMATION) ===",
+                f"⚠️  Aucun support n'a été fourni. Base les questions du test_avant",
+                f"    UNIQUEMENT sur le titre exact de la formation : \"{titre}\".",
+                "",
+                "INSTRUCTION : déduis les concepts, notions et compétences attendus",
+                "depuis ce titre. Ne génère PAS de questions hors du périmètre de",
+                f"ce titre. Si le titre contient un niveau (Avancé, Débutant, etc.),",
+                "adapte la difficulté en conséquence.",
+            ]
+        # ── Priorité 3 : ni supports ni titre — domaine générique (cas test) ─
+        else:
+            lines += [
+                "=== BASE DES QUESTIONS (PRIORITÉ 3 — DOMAINE GÉNÉRIQUE) ===",
+                "⚠️  Ni titre ni supports n'ont été fournis.",
+                f"    Génère des questions génériques sur le domaine : \"{domaine or 'formation professionnelle'}\".",
+                "",
+                "INSTRUCTION : utilise les notions fondamentales du domaine.",
+                "Ce cas ne devrait pas arriver en production normale.",
+            ]
+
+        lines += [
+            "",
+            "Retourne UNIQUEMENT ce JSON (3 sections) :",
+            "{",
+            '  "inscription": {"title": "...", "questions": [...]},',
+            '  "test_avant": {"title": "...", "duration_minutes": 20, "questions": [...]},',
+            '  "satisfaction": {"title": "...", "questions": [...]},',
+            '  "metadata": {"domaine": "...", "niveau_cible": "...", "nombre_questions_test": 15, "langue": "fr"}',
+            "}",
+        ]
         return "\n".join(lines)
 
     # --------------------------------------------------------

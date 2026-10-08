@@ -67,6 +67,12 @@ regles: |
   7. Maximum 100 caractères par option
   8. Échelles satisfaction : 1 (Très insatisfait) à 5 (Très satisfait)
   9. Questions en FRANÇAIS professionnel
-  10. Si supports fournis → s'en inspirer
+  10. PRIORITÉ DES QUESTIONS (dans cet ordre strict) :
+      - PRIORITÉ 1 (supports fournis) : baser les questions EXCLUSIVEMENT
+        sur le contenu des supports uploadés — aucune question hors supports
+      - PRIORITÉ 2 (titre fourni, sans supports) : déduire les concepts
+        depuis le titre exact de la formation — rester dans son périmètre
+      - PRIORITÉ 3 (ni titre ni supports) : questions génériques du domaine
+        — cas de test uniquement, ne pas arriver en production
   11. Difficulté progressive : 5 faciles, 5 moyens, 5 au plus difficiles
-  12. Couvrir TOUS les concepts clés du domaine
+  12. Couvrir TOUS les concepts présents dans la base fournie (règle 10)

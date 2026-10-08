@@ -47,6 +47,17 @@ class EntretienCrRequest(BaseModel):
     )
 
 
+class EmailBrouillonPatchRequest(BaseModel):
+    objet: Optional[str] = Field(
+        default=None,
+        description="Nouvel objet de l'email (laisser vide pour ne pas modifier)",
+    )
+    corps: Optional[str] = Field(
+        default=None,
+        description="Nouveau corps de l'email (laisser vide pour ne pas modifier)",
+    )
+
+
 class EmailEnvoiRequest(BaseModel):
     review_id: str = Field(
         ...,

@@ -176,11 +176,18 @@ def test_generate_report_agent_indisponible(orchestrateur):
 
 # ---- Agent 7 — RAG, non implémenté (V2) ----
 
-def test_index_documents_non_implemente(orchestrateur):
-    with pytest.raises(NotImplementedError):
-        run(orchestrateur.index_documents({}))
+def test_index_documents_agent7_fonctionnel(orchestrateur):
+    """
+    L'Agent 7 (KnowledgeBase / RAG) est désormais implémenté.
+    Sur un dossier vide, retourne un rapport structuré (coroutine à attendre).
+    """
+    result = run(orchestrateur.index_documents({}))
 
-
+    assert isinstance(result, dict)
+    assert result["agent"] == "KnowledgeBaseService"
+    assert "statut" in result
+    assert "total_chunks" in result
+    assert "disponible" in result
 # ---- Singleton ----
 
 def test_get_formation_orchestrator_singleton(monkeypatch):

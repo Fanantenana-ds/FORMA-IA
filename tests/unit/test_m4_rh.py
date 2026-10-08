@@ -243,7 +243,11 @@ def test_evaluation_fallback_score_calcule(monkeypatch):
         formateur="M. Rabe Hery",
         session="Formation Python IA",
         donnees_session={
-            "satisfaction": {"score_moyen": 4.5, "points_positifs": ["Clair"], "points_negatifs": []},
+            "satisfaction": {
+                "score_moyen": 4.5,
+                "points_positifs": ["Clair"],
+                "points_negatifs": [],
+            },
             "presences": {"taux_moyen_pct": 92.0, "anomalies": False},
         },
     ))
@@ -365,7 +369,11 @@ def test_route_evaluer_200(api, monkeypatch):
         "formateur": "M. Rabe Hery",
         "session": "Formation Python IA",
         "donnees_session": {
-            "satisfaction": {"score_moyen": 4.2, "points_positifs": ["ok"], "points_negatifs": []},
+            "satisfaction": {
+                "score_moyen": 4.2,
+                "points_positifs": ["ok"],
+                "points_negatifs": [],
+            },
             "presences": {"taux_moyen_pct": 90.0, "anomalies": False},
         },
     })

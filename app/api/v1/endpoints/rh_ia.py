@@ -35,6 +35,7 @@ from app.schemas.rh_ia import (
     EntretienCrRequest,
     EmailRhRequest,
     EmailEnvoiRequest,
+    EmailBrouillonPatchRequest,
     ContratFormateurRequest,
     EvaluationFormateurRequest,
 )
@@ -550,7 +551,88 @@ async def rediger_email_rh(
 
 
 # =============================================================================
-# ROUTE 3b — POST /email/envoyer  (A3 — envoi réel après approbation HITL)
+# ROUTE 3b — PATCH /email/brouillon/{review_id}  (modifier avant approbation)
+# =============================================================================
+
+@router.patch(
+    "/email/brouillon/{review_id}",
+    summary="[M4-A3] Modifier un brouillon d'email avant approbation HITL",
+    description=(
+        "Permet de corriger l'objet et/ou le corps d'un brouillon email **avant** "
+        "de l'approuver et de l'envoyer.\n\n"
+        "⚠️ Impossible de modifier un brouillon déjà approuvé ou déjà envoyé.\n\n"
+        "Laissez `objet` ou `corps` vide pour ne pas modifier ce champ."
+    ),
+)
+async def modifier_brouillon_email(
+    review_id: str,
+    payload: EmailBrouillonPatchRequest,
+) -> Dict[str, Any]:
+    from app.services.hitl import get_review, patch_review
+
+    review = get_review(review_id)
+    if not review:
+        raise HTTPException(status_code=404, detail=f"Review '{review_id}' introuvable.")
+
+    statut = review.get("status") or review.get("statut", "")
+    if statut == "approved":
+        raise HTTPException(
+            status_code=422,
+            detail=f"Review '{review_id}' déjà approuvé — impossible de modifier.",
+        )
+
+    meta = review.get("meta") or {}
+    if meta.get("email_sent"):
+        raise HTTPException(
+            status_code=422,
+            detail=f"Email déjà envoyé pour review '{review_id}' — impossible de modifier.",
+        )
+
+    agent_id = meta.get("agent_id") or review.get("agent_id", "")
+    if agent_id != "agent_m4_email":
+        raise HTTPException(
+            status_code=422,
+            detail=f"Ce review n'est pas un brouillon email (agent={agent_id}).",
+        )
+
+    # Appliquer les modifications sur data
+    data = dict(review.get("data") or {})
+    modifie = []
+    if payload.objet is not None:
+        data["objet"] = payload.objet
+        modifie.append("objet")
+    if payload.corps is not None:
+        data["corps"] = payload.corps
+        modifie.append("corps")
+
+    if not modifie:
+        return {
+            "success": True,
+            "message": "Aucune modification demandée.",
+            "review_id": review_id,
+        }
+
+    # patch_review écrit dans meta — on met à jour data directement via le store
+    from app.services.hitl.hitl_helper import _load_store, _save_store
+    store = _load_store()
+    if review_id in store["reviews"]:
+        store["reviews"][review_id]["data"] = data
+        from datetime import datetime as _dt
+        store["reviews"][review_id]["updated_at"] = _dt.now().isoformat()
+        _save_store(store)
+
+    return {
+        "success": True,
+        "message": f"Brouillon modifié ({', '.join(modifie)}).",
+        "review_id": review_id,
+        "champs_modifies": modifie,
+        "objet": data.get("objet"),
+        "corps_extrait": (data.get("corps") or "")[:200] + "..." if len(data.get("corps", "")) > 200 else data.get("corps"),
+    }
+
+
+# =============================================================================
+# ROUTE 3c — POST /email/envoyer  (A3 — envoi réel après approbation HITL)
 # =============================================================================
 
 @router.post(

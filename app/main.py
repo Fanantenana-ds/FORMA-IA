@@ -287,6 +287,10 @@ async def startup():
     # M1 mode 2 : détection automatique planifiée (inactive sauf VEILLE_AUTO_ENABLED=true)
     auto_detection_service.demarrer_planification(veille_orchestrator)
 
+    # M4 : scheduler lecture candidatures email IMAP (inactive sauf RH_EMAIL_AUTO_ENABLED=true)
+    from app.services.rh import email_scheduler_service
+    email_scheduler_service.demarrer()
+
     # Purge des conversations RAG expirées (> 7 jours)
     from app.services.rag.conversation_service import purger_conversations_expirees
     purger_conversations_expirees()
@@ -299,5 +303,7 @@ async def shutdown():
     logger.info("=" * 70)
     logger.info("🛑 FORMA-IA API — ARRÊT")
     await auto_detection_service.arreter_planification()
+    from app.services.rh import email_scheduler_service
+    await email_scheduler_service.arreter()
     logger.info("✅ Planification arrêtée. Au revoir.")
     logger.info("=" * 70)

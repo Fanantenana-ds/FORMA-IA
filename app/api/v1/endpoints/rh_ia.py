@@ -24,9 +24,6 @@ import os
 import time
 from typing import Any, Dict, Optional
 
-from app.api.v1.endpoints._helpers import build_response as _build_resp
-from app.api.v1.endpoints._helpers import handle_exception as _handle_exc
-from app.schemas.common import RouteResponse
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
 
@@ -51,6 +48,16 @@ def vlog(msg: str, level: str = "info") -> None:
         getattr(logger, level)(msg)
 
 
+class RouteResponse(BaseModel):
+    success: bool
+    message: str
+    duration_seconds: float | None = None
+    review_id: str | None = None
+    review_status: str | None = None
+    requires_human_action: bool = False
+    data: dict[str, Any] | None = None
+
+
 router = APIRouter(
     prefix="/ia/rh",
     tags=["M4 — IA Assistance RH (bonus)"],
@@ -63,11 +70,28 @@ router = APIRouter(
 # =============================================================================
 
 def _handle_exception(e: Exception, context: str) -> None:
-    _handle_exc(e, context, "Route M4", logger)
+    logger.exception("❌ [M4] %s : %s", context, e)
+    if isinstance(e, HTTPException):
+        raise
+    raise HTTPException(status_code=500, detail=f"Erreur interne : {type(e).__name__} — {e}")
 
 
-def _build_hitl_response(result: dict[str, Any], msg_ok: str, elapsed: float) -> RouteResponse:
-    return _build_resp(result, msg_ok, elapsed)
+def _build_hitl_response(result: dict[str, Any], msg_ok: str, elapsed: float) -> "RouteResponse":
+    review_id = result.get("_review_id") if isinstance(result, dict) else None
+    status = result.get("_review_status") if isinstance(result, dict) else None
+    requires_action = status == "pending_review"
+    message = msg_ok
+    if requires_action:
+        message += f" ⚠️ En attente validation (review={review_id})."
+    return RouteResponse(
+        success=True,
+        message=message,
+        duration_seconds=elapsed,
+        review_id=review_id,
+        review_status=status,
+        requires_human_action=requires_action,
+        data=result,
+    )
 
 
 # =============================================================================

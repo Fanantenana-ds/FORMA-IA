@@ -1,9 +1,10 @@
-from uuid import UUID
+﻿from uuid import UUID
 
-from app.models.opportunite import Opportunite
+from app.models.opportunite import Domaine, Opportunite, StatutOpportunite
 from app.repositories.interfaces.iopportunite_repository import IOpportuniteRepository
 from app.schemas.opportunite import OpportuniteCreate, OpportuniteUpdate
 from app.services.interfaces.iopportunite_service import IOpportuniteService
+from typing import List, Optional
 
 
 class OpportuniteService(IOpportuniteService):

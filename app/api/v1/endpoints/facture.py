@@ -20,16 +20,20 @@
 from typing import List, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.core.dependencies import get_current_user, require_role
 from app.database import get_db
+from app.models.facture import StatutFacture
 from app.models.user import User
 from app.schemas.facture import (
     FactureCreate,
     FactureResponse,
+    FactureUpdate,
     PaiementCreate,
+    RelanceIACreate,
+    RelanceIAResponse,
     RelanceResponse,
 )
 from app.services.facture_service import FactureService

@@ -4,6 +4,9 @@ import os
 import time
 from typing import Any
 
+from typing import Any, Dict
+
+from app.orchestrator.base_orchestrator import BaseOrchestrator, _vlog as vlog
 from app.services.backend_sync import base_sync
 from app.services.backend_sync.opportunity_sync import (
     sync_new_opportunities_to_backend,
@@ -19,6 +22,7 @@ from app.services.veille.llm_analysis_service import (
 from app.services.veille.prefilter_service import rank_results
 from app.services.veille.scoring_service import ScoringService
 from app.services.veille.tavily_service import TavilyService
+from app.services.hitl import create_review
 
 logger = logging.getLogger(__name__)
 

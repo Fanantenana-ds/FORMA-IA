@@ -1,21 +1,28 @@
+from datetime import date as date_type
 from typing import List, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session as DbSession
 
 from app.core.dependencies import get_current_user, require_role
 from app.database import get_db
 from app.models.user import User
 from app.schemas.formation import (
+    InscriptionCreate,
+    InscriptionResponse,
     ParticipantCreate,
     ParticipantResponse,
+    ParticipantUpdate,
     PresenceCreate,
     PresenceResponse,
+    PresenceUpdate,
     SeanceCreate,
     SeanceResponse,
+    SeanceUpdate,
     SessionCreate,
     SessionResponse,
+    SessionUpdate,
 )
 from app.services.formation_service import FormationService
 

@@ -1,4 +1,4 @@
-# app/orchestrator/facturation_orchestrator.py
+﻿# app/orchestrator/facturation_orchestrator.py
 # ============================================================
 # ORCHESTRATEUR M7 — Facturation (relances)
 # ============================================================
@@ -21,14 +21,15 @@
 import logging
 import os
 import time
-from typing import Any
+from typing import Any, Dict
 
-from app.services.backend_sync import facture_sync
+from app.services.backend_sync import facture_sync, review_sync
 from app.services.backend_sync.facture_calculator_service import (
     FactureCalculatorService,
 )
 from app.services.facturation import RelanceGeneratorService
 from app.services.hitl import create_review
+from app.orchestrator.base_orchestrator import BaseOrchestrator, _vlog as vlog
 
 logger = logging.getLogger(__name__)
 
@@ -231,3 +232,5 @@ def get_facturation_orchestrator() -> FacturationOrchestrator:
         logger.info("🔧 Création du singleton FacturationOrchestrator...")
         _facturation_orchestrator_instance = FacturationOrchestrator()
     return _facturation_orchestrator_instance
+
+

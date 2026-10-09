@@ -28,7 +28,7 @@ import os
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Dict, List, Optional
 
 from app.orchestrator.veille_orchestrator import VeilleOrchestrator
 from app.services.veille.classification_service import ClassificationService

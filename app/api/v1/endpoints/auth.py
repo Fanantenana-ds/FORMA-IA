@@ -1,7 +1,10 @@
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+﻿from typing import List, Optional
+
+from uuid import UUID
+from fastapi import APIRouter, Depends, Header, HTTPException, status, Query
 from sqlalchemy.orm import Session
 
-from app.core.dependencies import get_current_user
+from app.core.dependencies import get_current_user, require_role
 from app.database import get_db
 from app.models.user import RoleEnum
 from app.schemas.auth import TokenResponse, UserLogin

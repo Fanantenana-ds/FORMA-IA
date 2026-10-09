@@ -5,9 +5,17 @@
 
 import logging
 from pathlib import Path
+from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse
+from pydantic import BaseModel
+
+
+class SynchroniserTDRRequest(BaseModel):
+    review_id: str
+    opportunite_id: Optional[str] = None
+    force: bool = False
 
 from app.orchestrator.tdr_orchestrator import TdrOrchestrator
 from app.schemas.tdr import (

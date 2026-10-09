@@ -1,16 +1,22 @@
-from typing import List, Optional
+﻿from typing import List, Optional
 from uuid import UUID
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session as DbSession
 from datetime import date as date_type
 
-from app.models.formation import Participant, Presence, Seance, Session
+from app.models.formation import Inscription, Participant, Presence, Seance, Session
 from app.schemas.formation import (
+    InscriptionCreate,
+    InscriptionResponse,
     ParticipantCreate,
+    ParticipantUpdate,
     PresenceCreate,
+    PresenceUpdate,
     SeanceCreate,
+    SeanceUpdate,
     SessionCreate,
+    SessionUpdate,
 )
 
 
@@ -101,18 +107,18 @@ class FormationService:
         date_debut_max: Optional[date_type] = None,
         skip: int = 0,
         limit: int = 100,
-    ) -> List[FormationSession]:
-        q = self.db.query(FormationSession)
+    ) -> List[Session]:
+        q = self.db.query(Session)
         if formateur_id is not None:
-            q = q.filter(FormationSession.formateur_id == formateur_id)
+            q = q.filter(Session.formateur_id == formateur_id)
         if client:
-            q = q.filter(FormationSession.client.ilike(f"%{client}%"))
+            q = q.filter(Session.client.ilike(f"%{client}%"))
         if date_debut_min is not None:
-            q = q.filter(FormationSession.date_debut >= date_debut_min)
+            q = q.filter(Session.date_debut >= date_debut_min)
         if date_debut_max is not None:
-            q = q.filter(FormationSession.date_debut <= date_debut_max)
+            q = q.filter(Session.date_debut <= date_debut_max)
         return (
-            q.order_by(FormationSession.date_debut.desc())
+            q.order_by(Session.date_debut.desc())
             .offset(skip)
             .limit(limit)
             .all()

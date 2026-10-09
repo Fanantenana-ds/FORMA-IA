@@ -14,12 +14,12 @@ from pathlib import Path
 from typing import List, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile
 from sqlalchemy.orm import Session
 
 from app.core.dependencies import get_current_user, require_role
 from app.database import get_db
-from app.models.document import Document, FormatExport
+from app.models.document import Document, FormatExport, TypeDocument
 from app.models.user import User
 from app.schemas.document import (
     DocumentResponse,
@@ -37,6 +37,9 @@ router = APIRouter(
 
 def get_document_service(db: Session = Depends(get_db)) -> DocumentService:
     return DocumentService(db)
+
+def get_document_export_service(db: Session = Depends(get_db)) -> DocumentExportService:
+    return DocumentExportService(db)
 
 # Chemin local des fichiers RAG (utilisé pour vérifier l'existence côté filesystem)
 DOSSIER_FICHIERS_RAG = Path(__file__).resolve().parents[4] / "data" / "rag" / "fichiers"

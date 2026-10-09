@@ -1,4 +1,4 @@
-"""
+﻿"""
 FormationOrchestrator — Module M5
 ==================================
 Coordonne les 7 agents IA du module M5 (Gestion des Formations).
@@ -18,7 +18,7 @@ Agents :
 import logging
 import os
 import time
-from typing import Any
+from typing import Any, Dict, List, Optional
 
 from app.orchestrator.base_orchestrator import BaseOrchestrator, _vlog as vlog
 from app.services.formations import (
@@ -29,6 +29,7 @@ from app.services.formations import (
     ReportGeneratorService,
     SatisfactionAnalyzerService,
 )
+from app.services.hitl import get_review
 
 logger = logging.getLogger(__name__)
 

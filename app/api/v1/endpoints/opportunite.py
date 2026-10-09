@@ -1,4 +1,4 @@
-# app/api/v1/endpoints/opportunite.py
+﻿# app/api/v1/endpoints/opportunite.py
 # ============================================================
 # ROUTES BACKEND — Opportunités commerciales
 # ============================================================
@@ -17,7 +17,7 @@
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.core.dependencies import (
@@ -25,6 +25,7 @@ from app.core.dependencies import (
     require_role,
 )
 from app.database import get_db
+from app.models.opportunite import Domaine, StatutOpportunite
 from app.models.user import User
 from app.repositories.opportunite_repository import OpportuniteRepository
 from app.schemas.opportunite import (

@@ -24,7 +24,7 @@
 
 import logging
 import re
-from typing import Any
+from typing import Any, Dict, List, Optional, Tuple
 
 from app.services.backend_sync import base_sync
 

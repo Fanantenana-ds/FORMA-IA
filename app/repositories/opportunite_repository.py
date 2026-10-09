@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.models.opportunite import Opportunite, Domaine, StatutOpportunite
 from app.repositories.interfaces.iopportunite_repository import IOpportuniteRepository
+from typing import List, Optional
 
 
 class OpportuniteRepository(IOpportuniteRepository):

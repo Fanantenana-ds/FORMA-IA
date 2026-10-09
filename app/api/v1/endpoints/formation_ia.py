@@ -1,7 +1,7 @@
 import logging
 import os
 import time
-from typing import Any
+from typing import Any, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -16,6 +16,7 @@ from app.services.hitl import approve_review as _approve
 from app.services.hitl import get_review as _get
 from app.services.hitl import get_stats, list_pending
 from app.services.hitl import reject_review as _reject
+from app.utils.security import verify_api_key
 
 logger = logging.getLogger(__name__)
 

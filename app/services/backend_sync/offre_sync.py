@@ -23,6 +23,7 @@ from app.services.backend_sync import base_sync
 logger = logging.getLogger(__name__)
 
 _TRAME_MAX = 500_000  # trame_technique / trame_financiere (colonnes TEXT)
+_CONTENU_MAX = 500_000  # contenu texte offre (compatibilité ancien contrat)
 
 # Clés internes de l'IA, sans intérêt pour le lecteur de l'offre
 _CLES_IGNOREES = {"success", "metadata", "reviews_individuels"}
@@ -164,6 +165,9 @@ def extract_montant(offre_result: dict[str, Any]) -> float | None:
 
 async def sync_offre_to_backend(
     opportunite_id: str | None,
+    titre: str | None = None,
+    client: str | None = None,
+    montant_ht: float | None = None,
     montant: float | None = None,
     contenu: str | None = None,
 ) -> dict[str, Any]:

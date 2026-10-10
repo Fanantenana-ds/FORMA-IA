@@ -40,7 +40,7 @@ def _est_optionnel(nom: str) -> bool:
 
 
 def _packages() -> dict[str, Any]:
-    from app.services import facturation, formations, offres, preparation
+    from app.services import facturation, formations, offres, preparation, rag
 
     return {
         "M5": formations,

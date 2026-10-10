@@ -170,7 +170,7 @@ class TavilyService:
                 response.raise_for_status()
             return response
 
-    async def search(self, query: str) -> list[dict[str, Any]]:
+    async def search(self, query: str, categorie: str = "manuel") -> list[dict[str, Any]]:
         """
         Recherche Tavily avec filtrage multi-niveaux :
         1. Vérifie le cache

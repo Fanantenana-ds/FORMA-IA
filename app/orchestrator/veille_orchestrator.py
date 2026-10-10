@@ -2,9 +2,9 @@ import io
 import logging
 import os
 import time
-from typing import Any
-
 from typing import Any, Dict
+
+import pypdf
 
 from app.orchestrator.base_orchestrator import BaseOrchestrator, _vlog as vlog
 from app.services.backend_sync import base_sync
@@ -96,7 +96,7 @@ class VeilleOrchestrator(BaseOrchestrator):
     # ========================================================
 
     async def analyser_opportunites(
-        self, query: str, sync_backend: bool = True
+        self, query: str, sync_backend: bool = True, categorie: str = "manuel"
     ) -> dict[str, Any]:
         """
         Pipeline complet : recherche web → analyse → opportunités.
@@ -285,7 +285,7 @@ class VeilleOrchestrator(BaseOrchestrator):
         for query in queries:
             try:
                 resultat = await self.analyser_opportunites(
-                    query, sync_backend=False, categorie="auto"
+                    query, sync_backend=False
                 )
             except Exception as exc:
                 logger.exception("❌ Détection auto — requête en échec : %s", query)
@@ -368,7 +368,7 @@ class VeilleOrchestrator(BaseOrchestrator):
     # ========================================================
 
     async def analyser_texte(
-        self, texte: str, source: str = "manuel"
+        self, texte: str, source: str = "manuel", date_reference: Any = None
     ) -> dict[str, Any]:
         """Pipeline : texte collé → analyse directe (sans recherche web)."""
 
@@ -543,6 +543,7 @@ class VeilleOrchestrator(BaseOrchestrator):
         start_total: float,
         extra_statistics: dict[str, Any] | None = None,
         sync_backend: bool = True,
+        date_reference: Any = None,
     ) -> dict[str, Any]:
         """Post-traitement : normalisation, qualité, classification, scoring,
         déduplication, validation, sync backend (si sync_backend)."""

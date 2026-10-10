@@ -61,6 +61,9 @@ class FormGeneratorService:
         ])
 
     def _build_user_prompt(self, session_info: dict[str, Any]) -> str:
+        titre = session_info.get("titre") or ""
+        domaine = session_info.get("domaine") or ""
+        supports = session_info.get("supports_resume") or session_info.get("supports") or None
         lines = [
             "Génère UNIQUEMENT 3 sections : inscription, test_avant, satisfaction.",
             "",

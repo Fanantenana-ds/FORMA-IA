@@ -209,7 +209,7 @@ class LLMAnalysisService:
         return prompt
 
     def build_prompt_with_budget(
-        self, query: str, results: list[dict[str, Any]]
+        self, query: str, results: list[dict[str, Any]], date_reference: Any = None
     ) -> str:
         """Conserve le YAML complet, réduit uniquement les sources si besoin."""
 
@@ -244,7 +244,7 @@ class LLMAnalysisService:
     # --------------------------------------------------------
 
     async def analyze(
-        self, query: str, results: list[dict[str, Any]]
+        self, query: str, results: list[dict[str, Any]], date_reference: Any = None
     ) -> dict[str, Any] | None:
         """
         Construit le prompt et interroge le LLM. Retourne le JSON

@@ -1,0 +1,60 @@
+# app/config/postes_rh.yaml
+# ============================================================
+# CONFIGURATION DES POSTES OUVERTS — Module M4 RH
+# ============================================================
+# Chaque poste a un code unique utilisé dans l'URL :
+#   altiora.mg/postuler?poste=<code>
+#
+# Ajouter / modifier un poste ici suffit — pas besoin de
+# toucher au code backend.
+# ============================================================
+
+formateur-ia:
+  titre: "Formateur Intelligence Artificielle"
+  description: "Formation en IA, Machine Learning et Deep Learning pour professionnels"
+  actif: true
+  criteres:
+    domaine: "Intelligence Artificielle"
+    competences: ["Python", "Machine Learning", "Deep Learning", "Pédagogie"]
+    niveau: "expert"
+    experience_formation_min: "1 an"
+
+formateur-data:
+  titre: "Formateur Data Science & Analyse"
+  description: "Formation en analyse de données, visualisation et statistiques"
+  actif: true
+  criteres:
+    domaine: "Data Science"
+    competences: ["Python", "SQL", "Pandas", "Power BI", "Pédagogie"]
+    niveau: "avancé"
+    experience_formation_min: "1 an"
+
+formateur-dev:
+  titre: "Formateur Développement Logiciel"
+  description: "Formation en développement web, API et bonnes pratiques"
+  actif: true
+  criteres:
+    domaine: "Développement Logiciel"
+    competences: ["Python", "JavaScript", "FastAPI", "React", "Pédagogie"]
+    niveau: "avancé"
+    experience_formation_min: "2 ans"
+
+formateur-management:
+  titre: "Formateur Management & Soft Skills"
+  description: "Formation en leadership, communication et gestion de projet"
+  actif: true
+  criteres:
+    domaine: "Management"
+    competences: ["Leadership", "Communication", "Gestion de projet", "Pédagogie"]
+    niveau: "expert"
+    experience_formation_min: "3 ans"
+
+formateur-numerique:
+  titre: "Formateur Transformation Numérique"
+  description: "Formation en outils numériques et digitalisation"
+  actif: true
+  criteres:
+    domaine: "Numérique"
+    competences: ["Outils collaboratifs", "Cybersécurité", "Cloud", "Pédagogie"]
+    niveau: "intermédiaire"
+    experience_formation_min: "1 an"

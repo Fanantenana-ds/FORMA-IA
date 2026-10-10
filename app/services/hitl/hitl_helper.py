@@ -3,7 +3,7 @@ import logging
 import os
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +34,7 @@ def _load_store() -> dict[str, Any]:
                 f"counter={store.get('counter', 0)}"
             )
             return store
-    except (OSError, json.JSONDecodeError) as e:
+    except (json.JSONDecodeError, IOError) as e:
         logger.error(f"❌ [HITL] Erreur lecture store : {e}")
         return {"reviews": {}, "counter": 0}
 
@@ -48,7 +48,7 @@ def _save_store(store: dict[str, Any]) -> None:
             f"💾 [HITL] Store sauvegardé : "
             f"{len(store.get('reviews', {}))} reviews"
         )
-    except OSError as e:
+    except IOError as e:
         logger.error(f"❌ [HITL] Erreur écriture store : {e}")
 
 AGENT_CRITICITY: dict[str, str] = {
@@ -76,7 +76,7 @@ def create_review(
     agent_id: str,
     data: dict[str, Any],
     summary: str,
-    criticity: str | None = None,
+    criticity: Optional[str] = None,
 ) -> str:
     """
     Crée un review pour une génération IA.
@@ -133,8 +133,8 @@ def create_review(
 
 
 def list_pending(
-    agent_id: str | None = None,
-    criticity: str | None = None,
+    agent_id: Optional[str] = None,
+    criticity: Optional[str] = None,
 ) -> list[dict[str, Any]]:
     """
     Liste les reviews en attente (status='pending_review').
@@ -180,7 +180,7 @@ def list_pending(
     return results
 
 
-def get_review(review_id: str) -> dict[str, Any] | None:
+def get_review(review_id: str) -> Optional[dict[str, Any]]:
     """
     Récupère un review complet (avec data).
 
@@ -208,8 +208,8 @@ def get_review(review_id: str) -> dict[str, Any] | None:
 
 def approve_review(
     review_id: str,
-    reviewer_note: str | None = None,
-) -> dict[str, Any] | None:
+    reviewer_note: Optional[str] = None,
+) -> Optional[dict[str, Any]]:
     """
     Approuve un review.
 
@@ -245,7 +245,7 @@ def approve_review(
 def reject_review(
     review_id: str,
     reason: str,
-) -> dict[str, Any] | None:
+) -> Optional[dict[str, Any]]:
     """
     Rejette un review (nécessite une régénération).
 
@@ -276,6 +276,33 @@ def reject_review(
     vlog(f"✅ [HITL] Review rejeté : {review_id}")
     vlog("=" * 70)
     return review
+
+def patch_review(review_id: str, extra: dict[str, Any]) -> Optional[dict[str, Any]]:
+    """
+    Ajoute / met à jour des champs dans la section `meta` d'une review existante.
+    Utilisé pour stocker les form_id Google après création des formulaires.
+
+    Args:
+        review_id: ID du review à patcher.
+        extra: dict de champs à fusionner dans review["meta"].
+
+    Returns:
+        Le review mis à jour ou None si non trouvé.
+    """
+    store = _load_store()
+    if review_id not in store["reviews"]:
+        logger.warning(f"⚠️  [HITL] patch_review : Review non trouvé : {review_id}")
+        return None
+
+    review = store["reviews"][review_id]
+    if "meta" not in review:
+        review["meta"] = {}
+    review["meta"].update(extra)
+    review["updated_at"] = datetime.now().isoformat()
+    _save_store(store)
+    vlog(f"✅ [HITL] patch_review : {review_id} mis à jour avec {list(extra.keys())}")
+    return review
+
 
 def get_stats() -> dict[str, Any]:
     """

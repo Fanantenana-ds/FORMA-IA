@@ -2,47 +2,59 @@
 # ============================================================
 # SYNC PRÉPARATION — Emploi du temps IA → Backend
 # ============================================================
-# Les routes du CDC pour la Préparation (/projets, /formateurs,
-# /salles, /projets/{id}/edt, /projets/{id}/budget) N'EXISTENT PAS
-# encore côté Backend (aucune table correspondante).
+# Routes Backend utilisées (contrat réel, app/api/v1/endpoints/projet.py) :
+#   POST /projets                ProjetCreate {titre, client, date_debut,
+#                                date_fin, statut, notes, opportunite_id}
+#   POST /projets/{id}/edt       EdtSessionCreate {date, heure_debut,
+#                                heure_fin, module, formateur_id}
+#   GET  /projets/{id}           contrôle après création du projet
 #
-# En attendant, l'EDT est enregistré avec les routes réelles :
-#   POST /sessions                    SessionCreate {titre, client,
-#                                     date_debut, date_fin, formateur_id}
-#   POST /sessions/{id}/seances       SeanceCreate {date, duree, theme}
-# → 1 Session = la formation, 1 Séance = 1 jour de l'EDT.
-#
-# Le BUDGET n'est PAS persisté : aucune route Backend ne le reçoit.
-# → Dépendance Backend : POST /api/v1/projets/{id}/budget (CDC Étape 3).
+# Le BUDGET est envoyé via POST /projets/{id}/budget après création
+# du projet quand le dict budget est fourni (BudgetCreate :
+# cout_formateur, cout_salle, cout_supports, valide).
 #
 # Notes de contrat Backend :
-#   - Session.date_fin est NOT NULL en base (optionnelle dans le schéma)
-#     → toujours envoyée ici ;
-#   - titre / client limités à 50 caractères, theme à 100, duree à 25 ;
-#   - formateur_id référence users.id (UUID) : ignoré s'il n'est pas un UUID.
+#   - titre limité à 100 car., client à 100 car. ;
+#   - module limité à 200 car. (EdtSessionCreate) ;
+#   - formateur_id référence users.id (UUID) : ignoré sinon.
 #
 # ⚠️ HITL : à n'appeler qu'APRÈS approbation humaine de la préparation
-#    (chaque appel crée une NOUVELLE session côté Backend).
+#    (chaque appel crée un NOUVEAU projet côté Backend).
 # ============================================================
 
 import logging
 import re
-from typing import Any
+from typing import Any, Dict, List, Optional, Tuple
 
 from app.services.backend_sync import base_sync
 
 logger = logging.getLogger(__name__)
 
-_TITRE_MAX = 50
-_CLIENT_MAX = 50
-_THEME_MAX = 100
-_DUREE_MAX = 25
+_TITRE_MAX = 100
+_CLIENT_MAX = 100
+_MODULE_MAX = 200
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}")
+_TIME_RE = re.compile(r"^\d{2}:\d{2}")
 
-_BUDGET_REASON = (
-    "Aucune route Backend pour le budget "
-    "(POST /projets/{id}/budget du CDC absent) — budget non persisté"
-)
+_BUDGET_FIELDS = ("cout_formateur", "cout_salle", "cout_supports")
+
+
+def _budget_payload(budget: dict[str, Any]) -> Optional[dict[str, Any]]:
+    """Convertit le résultat de BudgetCalculatorService → BudgetCreate."""
+    try:
+        cout_formateur = float(budget.get("cout_formateur") or 0)
+        cout_salle = float(budget.get("cout_salle") or 0)
+        cout_supports = float(budget.get("cout_supports") or 0)
+    except (TypeError, ValueError):
+        return None
+    if cout_formateur == 0 and cout_salle == 0 and cout_supports == 0:
+        return None
+    return {
+        "cout_formateur": cout_formateur,
+        "cout_salle": cout_salle,
+        "cout_supports": cout_supports,
+        "valide": False,
+    }
 
 
 def _iso_date(value: Any) -> str | None:
@@ -50,14 +62,20 @@ def _iso_date(value: Any) -> str | None:
     return text[:10] if _DATE_RE.match(text) else None
 
 
-def _minutes(session: Any) -> int:
+def _iso_time(value: Any) -> Optional[str]:
+    text = str(value or "").strip()
+    return text[:5] if _TIME_RE.match(text) else None
+
+
+def _minutes(session: dict[str, Any]) -> int:
+    """Durée d'une session en minutes (champ duree_min)."""
     try:
-        return int(session.get("duree_minutes") or 0)
-    except (AttributeError, TypeError, ValueError):
+        return int(session.get("duree_min") or session.get("duree_minutes") or 0)
+    except (TypeError, ValueError):
         return 0
 
 
-def _seance_payload(jour: dict[str, Any], date_iso: str) -> dict[str, Any]:
+def _seance_payload(jour: dict[str, Any], date_iso: str, formateur_id: str | None = None) -> dict[str, Any]:
     """Un jour d'EDT → SeanceCreate (duree et theme jamais vides : NOT NULL en base)."""
     sessions = [s for s in (jour.get("sessions") or []) if isinstance(s, dict)]
 
@@ -70,11 +88,23 @@ def _seance_payload(jour: dict[str, Any], date_iso: str) -> dict[str, Any]:
         if module and module not in modules:
             modules.append(module)
 
-    return {
-        "date": date_iso,
-        "duree": base_sync.truncate(duree, _DUREE_MAX),
-        "theme": base_sync.truncate(", ".join(modules), _THEME_MAX) or "Formation",
-    }
+    payload: dict[str, Any] = {"date": date_iso}
+
+    heure_debut = _iso_time(jour.get("heure_debut"))
+    heure_fin = _iso_time(jour.get("heure_fin"))
+    if heure_debut:
+        payload["heure_debut"] = heure_debut
+    if heure_fin:
+        payload["heure_fin"] = heure_fin
+
+    module_str = base_sync.truncate(", ".join(modules), _MODULE_MAX)
+    if module_str:
+        payload["module"] = module_str
+
+    if base_sync.is_valid_uuid(formateur_id):
+        payload["formateur_id"] = str(formateur_id)
+
+    return payload
 
 
 async def sync_preparation_to_backend(
@@ -82,31 +112,38 @@ async def sync_preparation_to_backend(
     projet_info: dict[str, Any] | None = None,
     budget: dict[str, Any] | None = None,
     formateur_id: str | None = None,
+    opportunite_id: str | None = None,
+    offre_id: str | None = None,
 ) -> dict[str, Any]:
     """
-    Enregistre la préparation côté Backend (session + séances).
+    Enregistre la préparation côté Backend (projet + EDT).
 
     Args:
         edt: résultat de EDTGeneratorService.generate()
             ({titre_formation, jours: [{date, sessions: [...]}]}).
         projet_info: {"client": ...} (facultatif).
-        budget: résultat du BudgetCalculatorService (signalé comme non
-            persisté, voir en-tête).
+        budget: résultat du BudgetCalculatorService (non persisté,
+            voir en-tête du fichier).
         formateur_id: UUID d'un utilisateur Backend (facultatif).
+        opportunite_id: UUID de l'opportunité liée (facultatif).
+        offre_id: UUID de l'offre liée (facultatif).
 
     Returns:
-        Résultat standard (base_sync.new_result) pour la SESSION, plus :
-          "seances": {"sent": int, "failed": int}
-          "budget":  None ou {"sent": False, "skipped": True, "reason": str}
+        Résultat standard (base_sync.new_result) pour le PROJET, plus :
+          "edt":    {"sent": int, "failed": int}
+          "budget": None ou {"sent": False, "skipped": True, "reason": str}
     """
-    result = base_sync.new_result(seances={"sent": 0, "failed": 0}, budget=None)
+    result = base_sync.new_result(edt={"sent": 0, "failed": 0}, budget=None)
     if not result["enabled"]:
         logger.info("ℹ️ Backend sync DÉSACTIVÉ — préparation non envoyée")
         return result
 
     jours = [j for j in (edt or {}).get("jours", []) if isinstance(j, dict)]
-    dated = [(j, _iso_date(j.get("date"))) for j in jours]
-    dated = [(j, d) for j, d in dated if d]
+    dated: list[tuple[dict[str, Any], str]] = [
+        (j, d)
+        for j in jours
+        if (d := _iso_date(j.get("date"))) is not None
+    ]
     if not dated:
         result["error"] = "EDT sans jour daté (YYYY-MM-DD) — rien à envoyer"
         return result
@@ -118,35 +155,52 @@ async def sync_preparation_to_backend(
         or "Formation",
         "date_debut": dates[0],
         "date_fin": dates[-1],
+        "statut": "brouillon",
     }
     if client:
         session_payload["client"] = client
-    if base_sync.is_valid_uuid(formateur_id):
-        session_payload["formateur_id"] = str(formateur_id)
+    if base_sync.is_valid_uuid(opportunite_id):
+        session_payload["opportunite_id"] = str(opportunite_id)
+    if base_sync.is_valid_uuid(offre_id):
+        session_payload["offre_id"] = str(offre_id)
 
-    session = await base_sync.post_and_verify(
-        "/sessions", session_payload, label="session (EDT)"
+    projet = await base_sync.post_and_verify(
+        "/projets", session_payload, label="projet (préparation)"
     )
     for key in ("sent", "skipped", "verified", "resource_id",
                 "status_code", "data", "error"):
-        result[key] = session[key]
+        result[key] = projet[key]
 
-    if budget:
-        result["budget"] = {"sent": False, "skipped": True,
-                            "reason": _BUDGET_REASON}
-
-    if not session["sent"] or not session["resource_id"]:
+    if not projet["sent"] or not projet["resource_id"]:
         return result
 
-    # Une séance par jour de l'EDT (pas de GET de contrôle : le Backend
-    # n'expose pas GET /sessions/seances/{id})
     for jour, date_iso in dated:
-        seance = await base_sync.post_and_verify(
-            f"/sessions/{session['resource_id']}/seances",
-            _seance_payload(jour, date_iso),
+        edt_entry = await base_sync.post_and_verify(
+            f"/projets/{projet['resource_id']}/edt",
+            _seance_payload(jour, date_iso, formateur_id),
             verify=False,
-            label="séance",
+            label="edt",
         )
-        result["seances"]["sent" if seance["sent"] else "failed"] += 1
+        result["edt"]["sent" if edt_entry["sent"] else "failed"] += 1
+
+    if budget and isinstance(budget, dict):
+        budget_payload = _budget_payload(budget)
+        if budget_payload:
+            budget_result = await base_sync.post_and_verify(
+                f"/projets/{projet['resource_id']}/budget",
+                budget_payload,
+                verify=False,
+                label="budget",
+            )
+            result["budget"] = {
+                "sent": budget_result["sent"],
+                "error": budget_result.get("error"),
+            }
+        else:
+            result["budget"] = {
+                "sent": False,
+                "skipped": True,
+                "reason": "Budget sans cout_formateur/cout_salle/cout_supports",
+            }
 
     return result

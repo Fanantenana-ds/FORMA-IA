@@ -19,11 +19,16 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from app.api.v1.endpoints._helpers import build_response as _build_resp
+from app.api.v1.endpoints._helpers import handle_exception as _handle_exc
+from app.api.v1.endpoints._helpers import log_request as _log_req
 from app.orchestrator.facturation_orchestrator import (
     FacturationOrchestrator,
     get_facturation_orchestrator,
 )
-from app.schemas.facture_ia import CalculerMontantsRequest, GenererRelanceRequest
+from app.schemas.common import RouteResponse
+from app.schemas.facture_ia import CalculerMontantsRequest, GenererRelanceRequest, SynchroniserRelanceRequest
+from app.utils.security import verify_api_key
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +46,7 @@ def vlog(msg: str, level: str = "info") -> None:
 router = APIRouter(
     prefix="/ia/facturation",
     tags=["M7 — IA Facturation"],
+    dependencies=[Depends(verify_api_key)],
 )
 
 
@@ -49,11 +55,7 @@ router = APIRouter(
 # =============================================================================
 
 def _log_request(method: str, path: str, **kwargs) -> None:
-    vlog("=" * 70)
-    vlog(f"🌐 [Route M7] {method} {path}")
-    for k, val in kwargs.items():
-        vlog(f"   {k} : {val}")
-    vlog("=" * 70)
+    _log_req(logger, "Route M7", method, path, **kwargs)
 
 
 def _handle_exception(e: Exception, context: str) -> None:
@@ -88,21 +90,12 @@ def _build_response(result: dict[str, Any], msg_ok: str, elapsed: float) -> Rout
     requires_action = status_val == "pending_review"
 
     if isinstance(result, dict) and result.get("necessaire") is False:
-        message = result.get("raison", "Aucune relance nécessaire.")
-    else:
-        message = msg_ok
-        if requires_action:
-            message += f" ⚠️ En attente validation (review={review_id})."
-
-    return RouteResponse(
-        success=True,
-        message=message,
-        duration_seconds=elapsed,
-        review_id=review_id,
-        review_status=status_val,
-        requires_human_action=requires_action,
-        data=result,
-    )
+        return RouteResponse(
+            success=True,
+            message=result.get("raison", "Aucune relance nécessaire."),
+            data=result,
+        )
+    return _build_resp(result, msg_ok, elapsed)
 
 
 # =============================================================================
@@ -155,6 +148,51 @@ async def calculer_montants(payload: CalculerMontantsRequest) -> dict[str, Any]:
 # =============================================================================
 # ROUTE 2 — POST /relances/generer  (Agent M7 + HITL)
 # =============================================================================
+
+@router.post(
+    "/relances/synchroniser",
+    response_model=RouteResponse,
+    summary="[M7] Enregistrer une relance APPROUVÉE dans le Backend",
+    description=(
+        "Enregistre la relance approuvée (HITL) côté Backend "
+        "(POST /factures/{id}/relances).\n\n"
+        "⚠️ Refusé (422) tant que le review n'est pas **approuvé**.\n\n"
+        "Un seul envoi par review (sauf `force`). Nécessite BACKEND_SYNC_ENABLED=true."
+    ),
+)
+async def synchroniser_relance(
+    payload: SynchroniserRelanceRequest,
+    orchestrator: FacturationOrchestrator = Depends(get_facturation_orchestrator),
+) -> RouteResponse:
+    from app.services.backend_sync.review_sync import describe_sync
+
+    _log_request(
+        "POST", "/ia/facturation/relances/synchroniser",
+        Review=payload.review_id,
+        Force=payload.force,
+    )
+    start = time.perf_counter()
+    try:
+        result = await orchestrator.synchroniser_backend(
+            review_id=payload.review_id,
+            force=payload.force,
+        )
+        elapsed = round(time.perf_counter() - start, 2)
+        success, message = describe_sync(result)
+        vlog(f"✅ [Route M7] synchroniser terminé en {elapsed}s : {message}")
+        return RouteResponse(
+            success=success,
+            message=message,
+            duration_seconds=elapsed,
+            review_id=payload.review_id,
+            review_status="approved",
+            requires_human_action=False,
+            data=result,
+        )
+    except Exception as e:
+        _handle_exception(e, "synchroniser_relance")
+        return RouteResponse(success=False, message="")
+
 
 @router.post(
     "/relances/generer",

@@ -1,13 +1,19 @@
+import io
 import logging
 import os
 import time
-from typing import Any
+from typing import Any, Dict
 
+import pypdf
+
+from app.orchestrator.base_orchestrator import BaseOrchestrator
+from app.orchestrator.base_orchestrator import _vlog as vlog
 from app.services.backend_sync import base_sync
 from app.services.backend_sync.opportunity_sync import (
     sync_new_opportunities_to_backend,
     sync_opportunities_to_backend,
 )
+from app.services.hitl import create_review
 from app.services.veille import validation_service
 from app.services.veille.classification_service import ClassificationService
 from app.services.veille.llm_analysis_service import (
@@ -20,15 +26,6 @@ from app.services.veille.scoring_service import ScoringService
 from app.services.veille.tavily_service import TavilyService
 
 logger = logging.getLogger(__name__)
-
-VERBOSE = os.getenv("VERBOSE_LOGS", "true").lower() == "true"
-
-
-def vlog(msg: str, level: str = "info") -> None:
-    """Log verbeux — contrôlé par VERBOSE_LOGS."""
-    if VERBOSE:
-        getattr(logger, level)(msg)
-
 
 # ============================================================
 # SEUILS — PERMISSIFS
@@ -44,8 +41,10 @@ MAX_FALLBACK_BATCHES = int(os.getenv("MAX_FALLBACK_BATCHES", "2"))
 # ORCHESTRATEUR
 # =============================================================================
 
-class VeilleOrchestrator:
+class VeilleOrchestrator(BaseOrchestrator):
     """Coordonne le pipeline M1 sans porter lui-même de logique métier."""
+
+    _name = "VeilleOrchestrator"
 
     def __init__(self):
         vlog("=" * 70)
@@ -98,13 +97,17 @@ class VeilleOrchestrator:
     # ========================================================
 
     async def analyser_opportunites(
-        self, query: str, sync_backend: bool = True
+        self, query: str, sync_backend: bool = True, categorie: str = "manuel"
     ) -> dict[str, Any]:
         """
         Pipeline complet : recherche web → analyse → opportunités.
 
         sync_backend=False : n'envoie rien au Backend (utilisé par la
         détection automatique, qui synchronise une seule fois à la fin).
+
+        categorie : "auto" | "manuel" | "collecte" — ventile le comptage
+        de quota Tavily (Étape B, tavily_quota_service). "manuel" par
+        défaut, pour ne rien changer au comportement existant.
         """
 
         query = str(query or "").strip()
@@ -125,7 +128,7 @@ class VeilleOrchestrator:
 
         # ── 1. TAVILY (recherche web) ──
         vlog("🌐 [1] Recherche Tavily...")
-        raw_results = await self.tavily_service.search(query)
+        raw_results = await self.tavily_service.search(query, categorie=categorie)
 
         if not raw_results:
             return self._empty_response(
@@ -366,7 +369,7 @@ class VeilleOrchestrator:
     # ========================================================
 
     async def analyser_texte(
-        self, texte: str, source: str = "manuel"
+        self, texte: str, source: str = "manuel", date_reference: Any = None
     ) -> dict[str, Any]:
         """Pipeline : texte collé → analyse directe (sans recherche web)."""
 
@@ -392,6 +395,7 @@ class VeilleOrchestrator:
         groq_response = await self.llm_service.analyze(
             query=instruction,
             results=pseudo_sources,
+            date_reference=date_reference,
         )
 
         if groq_response is None:
@@ -414,6 +418,8 @@ class VeilleOrchestrator:
                 "text_chunks": len(pseudo_sources),
                 "text_length_chars": len(texte),
             },
+            sync_backend=sync_backend,
+            date_reference=date_reference,
         )
 
     @staticmethod
@@ -455,6 +461,18 @@ class VeilleOrchestrator:
     # ENTRÉE 3 — ANALYSE PDF
     # ========================================================
 
+    @staticmethod
+    def _extract_pdf_text(pdf_bytes: bytes) -> str:
+        """Extrait le texte d'un PDF (PyPDF2, même logique que la route
+        /ia/veille/analyser-pdf qui fait sa propre extraction en pratique)."""
+        reader = pypdf.PdfReader(io.BytesIO(pdf_bytes))
+        pages = []
+        for page in reader.pages:
+            text = (page.extract_text() or "").strip()
+            if text:
+                pages.append(text)
+        return "\n\n".join(pages)
+
     async def analyser_pdf(
         self, pdf_bytes: bytes, filename: str = "document.pdf"
     ) -> dict[str, Any]:
@@ -479,17 +497,9 @@ class VeilleOrchestrator:
         vlog("=" * 70)
 
         # ── ÉTAPE 1 : EXTRACTION TEXTE ──
-        if not self.pdf_extraction_service:
-            logger.error("❌ PDFExtractionService indisponible")
-            return self._empty_response(
-                status="error",
-                notes="Service d'extraction PDF indisponible.",
-                elapsed=time.perf_counter() - start_total,
-            )
-
         try:
             vlog("📄 [1/2] Extraction du texte...")
-            texte = self.pdf_extraction_service.extract_text(pdf_bytes)
+            texte = self._extract_pdf_text(pdf_bytes)
 
             if not texte or not texte.strip():
                 return self._empty_response(
@@ -534,6 +544,7 @@ class VeilleOrchestrator:
         start_total: float,
         extra_statistics: dict[str, Any] | None = None,
         sync_backend: bool = True,
+        date_reference: Any = None,
     ) -> dict[str, Any]:
         """Post-traitement : normalisation, qualité, classification, scoring,
         déduplication, validation, sync backend (si sync_backend)."""
@@ -593,7 +604,7 @@ class VeilleOrchestrator:
             cleaned["country_scope"] = country_scope
 
             # ── ÉTAPE D : SCORING ──
-            cleaned.update(self.scoring_service.score(cleaned))
+            cleaned.update(self.scoring_service.score(cleaned, date_reference=date_reference))
 
             try:
                 final_score = int(cleaned.get("score", 0))
@@ -669,20 +680,25 @@ class VeilleOrchestrator:
         vlog(f"📊 Après validation schéma : {len(schema_valid)}/{len(normalized)}")
 
         # ────────────────────────────────────────────────────
-        # 8 — SYNC BACKEND
+        # 8 — HITL (validation humaine avant sync Backend)
         # ────────────────────────────────────────────────────
+        review_id = None
         if sync_backend:
-            vlog("🔄 Sync Backend...")
-            sync_result = await sync_opportunities_to_backend(schema_valid)
-            vlog(f"   ✅ Sync : {sync_result}")
-        else:
-            sync_result = {
-                "enabled": base_sync.is_sync_enabled(),
-                "sent": 0,
-                "failed": 0,
-                "deferred": True,
-            }
-            vlog("⏭️ Sync Backend différée (détection automatique)")
+            vlog("⏳ Création review HITL (CDC : validation avant Backend)...")
+            top_title = schema_valid[0].get("title", "N/A")[:60] if schema_valid else "N/A"
+            review_id = create_review(
+                agent_id="agent_m1_veille",
+                data={"opportunities": schema_valid},
+                summary=f"Veille M1 — {len(schema_valid)} opportunité(s) — {top_title}",
+                criticity="medium",
+            )
+            vlog(f"   ✅ Review HITL créée : {review_id}")
+        sync_result = {
+            "enabled": base_sync.is_sync_enabled(),
+            "sent": 0,
+            "deferred": True,
+            "review_id": review_id,
+        }
 
         # ────────────────────────────────────────────────────
         # 9 — STATISTIQUES + RÉPONSE
@@ -716,7 +732,7 @@ class VeilleOrchestrator:
         if extra_statistics:
             statistics.update(extra_statistics)
 
-        return {
+        result = {
             "opportunities": schema_valid[:20],
             "market_signals": groq_response.get("market_signals", []),
             "total": len(schema_valid),
@@ -727,6 +743,10 @@ class VeilleOrchestrator:
                 "notes", "Analyse M1 effectuée avec veille.yaml."
             ),
         }
+        if review_id:
+            result["_review_id"] = review_id
+            result["_review_status"] = "pending_review"
+        return result
 
     # ========================================================
     # HELPER — réponse vide
@@ -755,6 +775,38 @@ class VeilleOrchestrator:
             },
             "notes": notes,
         }
+
+    # ========================================================
+    # SYNCHRONISATION BACKEND — APRÈS APPROBATION HITL
+    # ========================================================
+
+    async def synchroniser_backend(
+        self,
+        review_id: str,
+        force: bool = False,
+    ) -> dict[str, Any]:
+        """
+        Envoie les opportunités approuvées au Backend.
+        Appelé après validation HITL de l'analyse M1.
+
+        Args:
+            review_id: ID de la review HITL (agent_m1_veille).
+            force: relance même si déjà envoyé.
+        """
+        from app.services.backend_sync import review_sync
+
+        vlog(f"🔄 [M1] synchroniser_backend — review={review_id}")
+        review = review_sync.load_approved_review(
+            review_id, agent_ids=("agent_m1_veille",)
+        )
+        opportunities = (review.get("data") or {}).get("opportunities", [])
+
+        async def _envoyer() -> dict[str, Any]:
+            return await sync_opportunities_to_backend(opportunities)
+
+        result = await review_sync.sync_once(review_id, _envoyer, force=force)
+        vlog(f"   ✅ [M1] synchroniser_backend terminé : {result}")
+        return result
 
     # ========================================================
     # ALIAS

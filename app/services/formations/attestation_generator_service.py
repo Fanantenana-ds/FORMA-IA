@@ -214,7 +214,7 @@ class AttestationGeneratorService:
     # signalé, jamais généré silencieusement (conformité CDC : attestation
     # à partir de 80% de présence).
     # --------------------------------------------------------
-    def _verifier_eligibilite(self, participant: dict[str, Any]) -> "tuple[bool, Optional[str]]":
+    def _verifier_eligibilite(self, participant: dict[str, Any]) -> "tuple[bool, str | None]":
         """
         Retourne (eligible, raison_du_refus). `eligible_attestation`
         (booléen déjà calculé par l'Agent 4) fait foi s'il est présent —

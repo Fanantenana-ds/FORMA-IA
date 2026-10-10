@@ -91,10 +91,10 @@ def generer_attestations(
 # ─────────────────────────────────────────────────────────────
 @router.get("", response_model=list[DocumentResponse])
 def lister_documents(
-    type: Optional[TypeDocument] = Query(
+    type: TypeDocument | None = Query(
         None, description="Filtrer par type : TDR, OFFRE, ATTESTATION"
     ),
-    statut_validation: Optional[str] = Query(
+    statut_validation: str | None = Query(
         None, description="Filtrer par statut : EN_ATTENTE, VALIDE, REJETE"
     ),
     skip: int = Query(0, ge=0, description="Pagination — offset"),
@@ -134,15 +134,6 @@ def get_document(
     if not document:
         raise HTTPException(status_code=404, detail="Document introuvable")
     return document
-
-
-@router.post("/attestations/{session_id}", response_model=list[DocumentResponse], status_code=201)
-def generer_attestations(
-    session_id: UUID,
-    service: DocumentService = Depends(get_document_service),
-    current_user: User = Depends(require_role("DIRECTION")),
-):
-    return service.valider(document_id, current_user.id, data.approuve)
 
 
 # ─────────────────────────────────────────────────────────────
@@ -202,9 +193,9 @@ def supprimer_document(
 )
 async def uploader_support(
     fichier: UploadFile = File(..., description="Fichier à indexer (PDF, DOCX, PPTX, XLSX, TXT, MD)"),
-    formation_code: Optional[str] = Form(default=None, description="Code de la formation associée (catalogue RAG)"),
+    formation_code: str | None = Form(default=None, description="Code de la formation associée (catalogue RAG)"),
     collection: str = Form(default="support", description="Collection RAG : support | aide_plateforme"),
-    module: Optional[str] = Form(default=None, description="Module pédagogique (ex: 'Module 1 — Introduction'). Optionnel — utilisé pour grouper les supports dans le résumé téléchargeable."),
+    module: str | None = Form(default=None, description="Module pédagogique (ex: 'Module 1 — Introduction'). Optionnel — utilisé pour grouper les supports dans le résumé téléchargeable."),
     current_user: User = Depends(require_role("DIRECTION", "ASSISTANT", "FORMATEUR")),
 ):
     # Vérification extension
@@ -229,7 +220,7 @@ async def uploader_support(
     try:
         storage = get_storage()
         chemin_fichier, deja_present = storage.sauvegarder(contenu, doc_hash, ext)
-    except IOError as e:
+    except OSError as e:
         raise HTTPException(status_code=507, detail=str(e))
 
     # Enregistrement dans le registre RAG (crée ou retourne l'entrée existante)
@@ -265,8 +256,8 @@ async def uploader_support(
     ),
 )
 def lister_supports(
-    formation_code: Optional[str] = Query(default=None, description="Filtrer par code de formation"),
-    statut: Optional[str] = Query(default=None, description="en_attente | en_cours | indexe | erreur"),
+    formation_code: str | None = Query(default=None, description="Filtrer par code de formation"),
+    statut: str | None = Query(default=None, description="en_attente | en_cours | indexe | erreur"),
     current_user: User = Depends(get_current_user),
 ):
     registre_complet = registre.charger_registre()
@@ -343,7 +334,7 @@ def telecharger_resume_formation(
     doc = DocxDocument()
 
     # Page de garde
-    titre = doc.add_heading(f"Résumé de formation", level=0)
+    titre = doc.add_heading("Résumé de formation", level=0)
     titre.runs[0].font.color.rgb = RGBColor(0x1F, 0x49, 0x7D)
     doc.add_paragraph(f"Formation : {formation_code}")
     doc.add_paragraph(f"Nombre de supports : {len(supports)}")
@@ -405,8 +396,8 @@ def telecharger_resume_formation(
     ),
 )
 def telecharger_bilan_formations(
-    date_debut: Optional[str] = Query(default=None, description="Période début YYYY-MM-DD (optionnel)"),
-    date_fin: Optional[str] = Query(default=None, description="Période fin YYYY-MM-DD (optionnel)"),
+    date_debut: str | None = Query(default=None, description="Période début YYYY-MM-DD (optionnel)"),
+    date_fin: str | None = Query(default=None, description="Période fin YYYY-MM-DD (optionnel)"),
     current_user: User = Depends(require_role("DIRECTION", "ASSISTANT")),
 ):
     from collections import defaultdict

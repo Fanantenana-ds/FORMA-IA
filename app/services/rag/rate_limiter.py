@@ -83,9 +83,9 @@ class LimiteurDebit:
         self,
         tokens_a_envoyer: int,
         *,
-        attente_max_s: Optional[float] = None,
+        attente_max_s: float | None = None,
         dormir: Callable[[float], "asyncio.Future"] = asyncio.sleep,
-        sur_attente: Optional[Callable[[float], None]] = None,
+        sur_attente: Callable[[float], None] | None = None,
     ) -> None:
         """
         Attend le temps nécessaire puis enregistre l'appel.

@@ -32,19 +32,19 @@ class Echange:
 class Conversation:
     conversation_id: str
     echanges: list[Echange] = field(default_factory=list)
-    derniere_formation_code: Optional[str] = None
+    derniere_formation_code: str | None = None
 
 
 def nouveau_id() -> str:
     return str(uuid.uuid4())
 
 
-def _chemin(conversation_id: str, dossier: Optional[Path] = None) -> Path:
+def _chemin(conversation_id: str, dossier: Path | None = None) -> Path:
     dossier = dossier or DOSSIER_CONVERSATIONS_DEFAUT
     return dossier / f"{conversation_id}.json"
 
 
-def charger_conversation(conversation_id: str, dossier: Optional[Path] = None) -> Conversation:
+def charger_conversation(conversation_id: str, dossier: Path | None = None) -> Conversation:
     chemin = _chemin(conversation_id, dossier)
     if not chemin.exists():
         return Conversation(conversation_id=conversation_id)
@@ -62,7 +62,7 @@ def charger_conversation(conversation_id: str, dossier: Optional[Path] = None) -
         return Conversation(conversation_id=conversation_id)
 
 
-def sauvegarder_conversation(conversation: Conversation, dossier: Optional[Path] = None) -> None:
+def sauvegarder_conversation(conversation: Conversation, dossier: Path | None = None) -> None:
     chemin = _chemin(conversation.conversation_id, dossier)
     chemin.parent.mkdir(parents=True, exist_ok=True)
     tmp = chemin.with_suffix(".tmp")
@@ -72,7 +72,7 @@ def sauvegarder_conversation(conversation: Conversation, dossier: Optional[Path]
 
 
 def purger_conversations_expirees(
-    dossier: Optional[Path] = None,
+    dossier: Path | None = None,
     ttl_jours: int = TTL_CONVERSATIONS_JOURS,
 ) -> int:
     """Supprime les fichiers de conversation non modifiés depuis ttl_jours.
@@ -98,7 +98,7 @@ def purger_conversations_expirees(
 
 def ajouter_echange(
     conversation: Conversation, role: str, texte: str,
-    formation_code: Optional[str] = None,
+    formation_code: str | None = None,
 ) -> Conversation:
     """Ajoute un échange, ne garde que les NB_ECHANGES_MEMORISES derniers,
     met à jour la dernière formation résolue SI une nouvelle est fournie

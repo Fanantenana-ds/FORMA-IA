@@ -275,8 +275,8 @@ async def startup():
     logger.info(f"   🤖 Provider LLM   : Groq (modèle={settings.GROQ_MODEL})")
     logger.info(f"   🔧 Verbose logs   : {VERBOSE_LOGS}")
     logger.info(f"   🔧 Verbose HTTP   : {VERBOSE_HTTP}")
-    logger.info(f"   📚 Docs           : /api/docs")
-    logger.info(f"   ❤️  Health IA      : /health/ia")
+    logger.info("   📚 Docs           : /api/docs")
+    logger.info("   ❤️  Health IA      : /health/ia")
     logger.info("=" * 70)
 
     # Alerte ERROR si un agent IA requis n'a pas pu être chargé

@@ -46,9 +46,9 @@ class FactureResponse(BaseModel):
 
 class FactureUpdate(BaseModel):
     """Mise à jour partielle d'une facture (tous les champs sont optionnels)."""
-    client: Optional[str] = Field(default=None, min_length=1)
-    date_echeance: Optional[date] = None
-    statut: Optional[StatutFacture] = None
+    client: str | None = Field(default=None, min_length=1)
+    date_echeance: date | None = None
+    statut: StatutFacture | None = None
 
 
 class RelanceResponse(BaseModel):
@@ -59,7 +59,7 @@ class RelanceIACreate(BaseModel):
     niveau: str = Field(..., pattern="^[123]$")
     objet: str = Field(..., min_length=1, max_length=200)
     texte: str = Field(..., min_length=10, max_length=10000)
-    review_id: Optional[str] = Field(default=None, max_length=100)
+    review_id: str | None = Field(default=None, max_length=100)
 
 
 class RelanceIAResponse(BaseModel):
@@ -68,7 +68,7 @@ class RelanceIAResponse(BaseModel):
     niveau: str
     objet: str
     texte: str
-    review_id: Optional[str] = None
+    review_id: str | None = None
     date_creation: datetime
 
     model_config = {"from_attributes": True}

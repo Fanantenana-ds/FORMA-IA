@@ -34,7 +34,7 @@ def _load_store() -> dict[str, Any]:
                 f"counter={store.get('counter', 0)}"
             )
             return store
-    except (json.JSONDecodeError, IOError) as e:
+    except (OSError, json.JSONDecodeError) as e:
         logger.error(f"❌ [HITL] Erreur lecture store : {e}")
         return {"reviews": {}, "counter": 0}
 
@@ -48,7 +48,7 @@ def _save_store(store: dict[str, Any]) -> None:
             f"💾 [HITL] Store sauvegardé : "
             f"{len(store.get('reviews', {}))} reviews"
         )
-    except IOError as e:
+    except OSError as e:
         logger.error(f"❌ [HITL] Erreur écriture store : {e}")
 
 AGENT_CRITICITY: dict[str, str] = {
@@ -76,7 +76,7 @@ def create_review(
     agent_id: str,
     data: dict[str, Any],
     summary: str,
-    criticity: Optional[str] = None,
+    criticity: str | None = None,
 ) -> str:
     """
     Crée un review pour une génération IA.
@@ -133,8 +133,8 @@ def create_review(
 
 
 def list_pending(
-    agent_id: Optional[str] = None,
-    criticity: Optional[str] = None,
+    agent_id: str | None = None,
+    criticity: str | None = None,
 ) -> list[dict[str, Any]]:
     """
     Liste les reviews en attente (status='pending_review').
@@ -180,7 +180,7 @@ def list_pending(
     return results
 
 
-def get_review(review_id: str) -> Optional[dict[str, Any]]:
+def get_review(review_id: str) -> dict[str, Any] | None:
     """
     Récupère un review complet (avec data).
 
@@ -208,8 +208,8 @@ def get_review(review_id: str) -> Optional[dict[str, Any]]:
 
 def approve_review(
     review_id: str,
-    reviewer_note: Optional[str] = None,
-) -> Optional[dict[str, Any]]:
+    reviewer_note: str | None = None,
+) -> dict[str, Any] | None:
     """
     Approuve un review.
 
@@ -245,7 +245,7 @@ def approve_review(
 def reject_review(
     review_id: str,
     reason: str,
-) -> Optional[dict[str, Any]]:
+) -> dict[str, Any] | None:
     """
     Rejette un review (nécessite une régénération).
 
@@ -277,7 +277,7 @@ def reject_review(
     vlog("=" * 70)
     return review
 
-def patch_review(review_id: str, extra: dict[str, Any]) -> Optional[dict[str, Any]]:
+def patch_review(review_id: str, extra: dict[str, Any]) -> dict[str, Any] | None:
     """
     Ajoute / met à jour des champs dans la section `meta` d'une review existante.
     Utilisé pour stocker les form_id Google après création des formulaires.

@@ -23,10 +23,10 @@ logger = logging.getLogger(__name__)
 
 async def sync_evaluation_formateur(
     formateur_id: str,
-    score_moyen: Optional[float],
-    nb_sessions: Optional[str],
-    recommandation: Optional[str],
-    notes_internes: Optional[str] = None,
+    score_moyen: float | None,
+    nb_sessions: str | None,
+    recommandation: str | None,
+    notes_internes: str | None = None,
 ) -> dict[str, Any]:
     """
     Met à jour le profil d'un formateur avec les résultats de l'évaluation A5
@@ -70,9 +70,9 @@ async def sync_evaluation_formateur(
 async def sync_candidat_to_backend(
     nom: str,
     poste_vise: str,
-    score_preselection: Optional[float] = None,
-    decision_preselection: Optional[str] = None,
-    review_id_preselection: Optional[str] = None,
+    score_preselection: float | None = None,
+    decision_preselection: str | None = None,
+    review_id_preselection: str | None = None,
 ) -> dict[str, Any]:
     """
     Crée un dossier candidat côté Backend (POST /rh/candidats).
@@ -105,10 +105,10 @@ async def sync_candidat_to_backend(
 async def sync_entretien_cr_to_backend(
     candidat_id: str,
     compte_rendu: str,
-    decision: Optional[str] = None,
-    interviewers: Optional[str] = None,
-    date_entretien: Optional[str] = None,
-    review_id_entretien: Optional[str] = None,
+    decision: str | None = None,
+    interviewers: str | None = None,
+    date_entretien: str | None = None,
+    review_id_entretien: str | None = None,
 ) -> dict[str, Any]:
     """
     Crée un entretien avec son CR approuvé (POST /rh/candidats/{id}/entretiens).

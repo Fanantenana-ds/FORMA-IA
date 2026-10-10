@@ -11,7 +11,7 @@ class PreparationRepository:
     def __init__(self, db: Session):
         self.db = db
 
-    def get_projet_by_id(self, projet_id: uuid.UUID) -> Optional[Projet]:
+    def get_projet_by_id(self, projet_id: uuid.UUID) -> Projet | None:
         return self.db.query(Projet).filter(Projet.id == projet_id).first()
 
     def update_projet_metadata_edt(
@@ -35,7 +35,7 @@ class PreparationRepository:
 
             self.db.flush()
 
-    def get_or_create_formateur(self, nom: str, specialite: Optional[str] = None) -> Formateur:
+    def get_or_create_formateur(self, nom: str, specialite: str | None = None) -> Formateur:
         formateur = self.db.query(Formateur).filter(Formateur.nom.ilike(nom.strip())).first()
         if not formateur:
             formateur = Formateur(nom=nom.strip(), specialite=specialite)
@@ -44,7 +44,7 @@ class PreparationRepository:
             self.db.flush()
         return formateur
 
-    def get_or_create_salle(self, nom: str, adresse: Optional[str] = None) -> Salle:
+    def get_or_create_salle(self, nom: str, adresse: str | None = None) -> Salle:
         salle = self.db.query(Salle).filter(Salle.nom.ilike(nom.strip())).first()
         if not salle:
             salle = Salle(nom.strip(), adresse=adresse)

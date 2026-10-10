@@ -362,7 +362,7 @@ class FormationOrchestrator(BaseOrchestrator):
     async def sync_responses(
         self,
         review_id: str,
-        sections: Optional[list[str]] = None,
+        sections: list[str] | None = None,
     ) -> dict[str, Any]:
         """
         Récupère les réponses des formulaires Google liés à une review.

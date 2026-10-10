@@ -27,8 +27,8 @@ class OpportuniteRepository(IOpportuniteRepository):
 
     def find_all(
         self,
-        statut: Optional[StatutOpportunite] = None,
-        domaine: Optional[Domaine] = None,
+        statut: StatutOpportunite | None = None,
+        domaine: Domaine | None = None,
         skip: int = 0,
         limit: int = 100,
     ) -> list[Opportunite]:

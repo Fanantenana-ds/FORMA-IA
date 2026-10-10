@@ -101,10 +101,10 @@ class FormationService:
 
     def lister_sessions(
         self,
-        formateur_id: Optional[UUID] = None,
-        client: Optional[str] = None,
-        date_debut_min: Optional[date_type] = None,
-        date_debut_max: Optional[date_type] = None,
+        formateur_id: UUID | None = None,
+        client: str | None = None,
+        date_debut_min: date_type | None = None,
+        date_debut_max: date_type | None = None,
         skip: int = 0,
         limit: int = 100,
     ) -> list[Session]:
@@ -148,7 +148,7 @@ class FormationService:
 
     def lister_participants(
     self,
-    nom: Optional[str] = None,
+    nom: str | None = None,
     skip: int = 0,
     limit: int = 100,
     ) -> list[Participant]:

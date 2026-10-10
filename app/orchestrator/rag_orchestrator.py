@@ -66,7 +66,7 @@ DUREE_AVERTISSEMENT_MINUTES = 15
 class RagOrchestrator:
     """Coordonne le pipeline d'ingestion RAG (C3)."""
 
-    def __init__(self, repository: Optional[KnowledgeRepository] = None):
+    def __init__(self, repository: KnowledgeRepository | None = None):
         self.embedding_provider = get_embedding_provider()
         self.repository = repository or KnowledgeRepository()
 
@@ -100,9 +100,9 @@ class RagOrchestrator:
     async def ingerer_fichier(
         self,
         chemin_fichier: str,
-        formation_code: Optional[str],
+        formation_code: str | None,
         collection: str = "support",
-        nom_original: Optional[str] = None,
+        nom_original: str | None = None,
     ) -> dict[str, Any]:
         """
         Ingestion complète d'UN fichier déjà sur disque (pas une archive).
@@ -309,7 +309,7 @@ class RagOrchestrator:
     # ========================================================
 
     def preparer_indexation(
-        self, chemin_fichier: str, formation_code: Optional[str], collection: str = "support",
+        self, chemin_fichier: str, formation_code: str | None, collection: str = "support",
     ) -> dict[str, Any]:
         """
         Calcule le hash (rapide, synchrone) et vérifie l'idempotence.
@@ -360,7 +360,7 @@ class RagOrchestrator:
     # RÉSUMÉ PAR FORMATION (§10)
     # ========================================================
 
-    async def regenerer_resume_formation(self, formation_code: str) -> Optional[str]:
+    async def regenerer_resume_formation(self, formation_code: str) -> str | None:
         """Régénère le résumé thématique d'une formation à partir des
         résumés de TOUS ses supports indexés, et l'upsert dans
         knowledge_base (collection='resume_formation')."""
@@ -402,8 +402,8 @@ class RagOrchestrator:
     # ========================================================
 
     async def ingerer_zip(
-        self, chemin_zip: str, formation_code: Optional[str], collection: str = "support",
-        dossier_temporaire: Optional[Path] = None,
+        self, chemin_zip: str, formation_code: str | None, collection: str = "support",
+        dossier_temporaire: Path | None = None,
     ) -> dict[str, Any]:
         """Vérifie la sécurité du ZIP, extrait chaque membre, ingère
         chacun individuellement. Un fichier en échec n'arrête pas les
@@ -449,7 +449,7 @@ class RagOrchestrator:
     # ========================================================
 
     async def generer_portfolio(
-        self, domaine: Optional[str] = None, reference_ao: Optional[str] = None,
+        self, domaine: str | None = None, reference_ao: str | None = None,
     ) -> dict[str, Any]:
         """
         Génère le portfolio : totaux Python (catalogue), descriptions RAG
@@ -516,7 +516,7 @@ class RagOrchestrator:
         self,
         formation_code: str,
         modules: list[dict[str, Any]],
-        options: Optional[dict[str, Any]] = None,
+        options: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """
         Génère le syllabus : somme des durées vérifiée en Python, contenu
@@ -596,7 +596,7 @@ class RagOrchestrator:
         return {"success": True, "formation_code": formation_code, **resultat}
 
 
-_orchestrateur_instance: Optional[RagOrchestrator] = None
+_orchestrateur_instance: RagOrchestrator | None = None
 
 
 def get_rag_orchestrator() -> RagOrchestrator:

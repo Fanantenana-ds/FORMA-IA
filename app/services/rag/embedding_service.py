@@ -26,7 +26,7 @@ async def embed_texts(texts: list[str]) -> list[list[float]]:
 
 
 async def embed_query(
-    text: str, *, attente_max_s: Optional[float] = 5.0
+    text: str, *, attente_max_s: float | None = 5.0
 ) -> list[float]:
     """
     Vectorise une requête en mode QUERY (recherche/chat).

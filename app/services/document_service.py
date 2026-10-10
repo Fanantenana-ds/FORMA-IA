@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from uuid import UUID
 
 from fastapi import HTTPException
@@ -57,7 +57,7 @@ class DocumentService:
 
         document.statut_validation = StatutValidation.VALIDE if approuve else StatutValidation.REJETE
         document.valide_par = user_id
-        document.date_validation = datetime.now(timezone.utc)
+        document.date_validation = datetime.now(UTC)
         self.db.commit()
         self.db.refresh(document)
         return document

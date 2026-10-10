@@ -5,8 +5,8 @@
 # ============================================================
 
 import uuid
+from datetime import UTC, datetime, time, timezone
 from datetime import date as date_type
-from datetime import datetime, time, timezone
 from enum import Enum
 
 from sqlalchemy import (
@@ -50,7 +50,7 @@ class Salle(Base):
     tarif_journalier = Column(Float, nullable=True)
     equipements = Column(Text, nullable=True)   # texte libre : "vidéoprojecteur, climatisation…"
     disponible = Column(Boolean, nullable=False, default=True)
-    date_creation = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+    date_creation = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False)
 
 
 # ── Projet ──────────────────────────────────────────────────
@@ -70,7 +70,7 @@ class Projet(Base):
     date_fin = Column(Date, nullable=True)
     statut = Column(SqlEnum(StatutProjet), nullable=False, default=StatutProjet.BROUILLON)
     notes = Column(Text, nullable=True)
-    date_creation = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+    date_creation = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False)
 
     # Relations
     edt_sessions = relationship("EdtSession", back_populates="projet", cascade="all, delete-orphan")
@@ -108,6 +108,6 @@ class BudgetFormation(Base):
     cout_total = Column(Float, nullable=False, default=0.0)
     valide = Column(Boolean, nullable=False, default=False)
     valide_par = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
-    date_creation = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+    date_creation = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False)
 
     projet = relationship("Projet", back_populates="budget")

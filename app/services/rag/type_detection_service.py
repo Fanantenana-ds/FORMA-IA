@@ -62,7 +62,7 @@ def _charger_prompt() -> str:
     return "\n\n".join(s for s in sections if s)
 
 
-async def _detecter_via_llm(message: str) -> Optional[str]:
+async def _detecter_via_llm(message: str) -> str | None:
     try:
         llm = get_llm_provider()
     except LLMNotAvailableError:

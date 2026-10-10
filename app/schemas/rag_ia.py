@@ -10,16 +10,16 @@ from pydantic import BaseModel, Field
 
 class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=2000)
-    conversation_id: Optional[str] = None
-    formation_code: Optional[str] = None
+    conversation_id: str | None = None
+    formation_code: str | None = None
 
 
 class ChatSource(BaseModel):
-    fichier: Optional[str] = None
-    formation: Optional[str] = None
-    page: Optional[int] = None
-    score: Optional[float] = None
-    url: Optional[str] = None
+    fichier: str | None = None
+    formation: str | None = None
+    page: int | None = None
+    score: float | None = None
+    url: str | None = None
 
 
 class ChatResponse(BaseModel):
@@ -27,7 +27,7 @@ class ChatResponse(BaseModel):
     type_reponse: str
     reponse: str
     sources: list[dict[str, Any]] = []
-    formation_resolue: Optional[str] = None
+    formation_resolue: str | None = None
     suggestions: list[str] = []
     duree_ms: float
 
@@ -35,7 +35,7 @@ class ChatResponse(BaseModel):
 class FormationResume(BaseModel):
     code: str
     titre: str
-    domaine: Optional[str] = None
+    domaine: str | None = None
     nb_supports_indexes: int = 0
 
 
@@ -44,16 +44,16 @@ class FormationResume(BaseModel):
 # ============================================================
 
 class GenererPortfolioRequest(BaseModel):
-    domaine: Optional[str] = Field(None, description="Filtre optionnel par domaine")
-    reference_ao: Optional[str] = Field(None, description="Référence de l'appel d'offres visé")
+    domaine: str | None = Field(None, description="Filtre optionnel par domaine")
+    reference_ao: str | None = Field(None, description="Référence de l'appel d'offres visé")
 
 
 class ModuleSyllabus(BaseModel):
     titre: str
     duree: str = Field(..., description="Ex: '3h' ou '1 jour'")
-    contenus: Optional[str] = None
-    methodes: Optional[str] = None
-    objectif_lie: Optional[str] = None
+    contenus: str | None = None
+    methodes: str | None = None
+    objectif_lie: str | None = None
 
 
 class GenererSyllabusRequest(BaseModel):
@@ -78,16 +78,16 @@ class IndexerDocumentRequest(BaseModel):
     chemin_fichier: str = Field(
         ..., description="Chemin local du fichier déjà présent sur le disque du service IA (pas d'upload multipart)."
     )
-    formation_code: Optional[str] = None
+    formation_code: str | None = None
     collection: str = "support"
 
 
 class RechercherRequest(BaseModel):
     requete: str = Field(..., min_length=1)
-    top_k: Optional[int] = Field(None, ge=1, le=50)
+    top_k: int | None = Field(None, ge=1, le=50)
     collection: str = "support"
-    formation_code: Optional[str] = None
-    domaine: Optional[str] = None
-    annee: Optional[int] = None
-    type_support: Optional[str] = None
-    seuil_min: Optional[float] = Field(None, ge=0.0, le=1.0)
+    formation_code: str | None = None
+    domaine: str | None = None
+    annee: int | None = None
+    type_support: str | None = None
+    seuil_min: float | None = Field(None, ge=0.0, le=1.0)

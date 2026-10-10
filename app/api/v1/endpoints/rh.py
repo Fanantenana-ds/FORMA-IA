@@ -97,8 +97,8 @@ def creer_formateur(
     ),
 )
 def lister_formateurs(
-    specialite: Optional[str] = Query(default=None, description="Filtrer par spécialité (partiel)"),
-    statut: Optional[str] = Query(default=None, description="Filtrer par statut (DISPONIBLE|OCCUPE|INACTIF)"),
+    specialite: str | None = Query(default=None, description="Filtrer par spécialité (partiel)"),
+    statut: str | None = Query(default=None, description="Filtrer par statut (DISPONIBLE|OCCUPE|INACTIF)"),
     service: RhService = Depends(get_rh_service),
     current_user: User = Depends(get_current_user),
 ):
@@ -209,8 +209,8 @@ def creer_candidat(
     ),
 )
 def lister_candidats(
-    poste_vise: Optional[str] = Query(default=None, description="Filtrer par poste visé (partiel)"),
-    decision: Optional[str] = Query(default=None, description="Filtrer par décision de présélection"),
+    poste_vise: str | None = Query(default=None, description="Filtrer par poste visé (partiel)"),
+    decision: str | None = Query(default=None, description="Filtrer par décision de présélection"),
     service: RhService = Depends(get_rh_service),
     current_user: User = Depends(get_current_user),
 ):

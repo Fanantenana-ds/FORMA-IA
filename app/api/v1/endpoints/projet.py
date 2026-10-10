@@ -87,7 +87,7 @@ def creer_salle(
     description="Filtre optionnel : `disponible=true|false`.",
 )
 def lister_salles(
-    disponible: Optional[bool] = Query(default=None),
+    disponible: bool | None = Query(default=None),
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=500),
     service: SalleService = Depends(get_salle_service),
@@ -183,7 +183,7 @@ def creer_projet(
     description="Filtre optionnel : `statut` (BROUILLON|EN_COURS|VALIDE|TERMINE|ANNULE).",
 )
 def lister_projets(
-    statut: Optional[StatutProjet] = Query(default=None),
+    statut: StatutProjet | None = Query(default=None),
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=500),
     service: ProjetService = Depends(get_projet_service),

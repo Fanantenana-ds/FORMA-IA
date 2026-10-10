@@ -106,12 +106,12 @@ class FormGeneratorService:
         elif titre:
             lines += [
                 "=== BASE DES QUESTIONS (PRIORITÉ 2 — TITRE DE LA FORMATION) ===",
-                f"⚠️  Aucun support n'a été fourni. Base les questions du test_avant",
+                "⚠️  Aucun support n'a été fourni. Base les questions du test_avant",
                 f"    UNIQUEMENT sur le titre exact de la formation : \"{titre}\".",
                 "",
                 "INSTRUCTION : déduis les concepts, notions et compétences attendus",
                 "depuis ce titre. Ne génère PAS de questions hors du périmètre de",
-                f"ce titre. Si le titre contient un niveau (Avancé, Débutant, etc.),",
+                "ce titre. Si le titre contient un niveau (Avancé, Débutant, etc.),",
                 "adapte la difficulté en conséquence.",
             ]
         # ── Priorité 3 : ni supports ni titre — domaine générique (cas test) ─

@@ -35,17 +35,17 @@ class IncompatibiliteModeleError(Exception):
 class ResultatRecherche:
     contenu: str
     score: float
-    fichier: Optional[str]
-    formation_code: Optional[str]
-    formation_titre: Optional[str]
+    fichier: str | None
+    formation_code: str | None
+    formation_titre: str | None
     collection: str
-    page_debut: Optional[int]
-    page_fin: Optional[int]
-    type_support: Optional[str]
+    page_debut: int | None
+    page_fin: int | None
+    type_support: str | None
 
 
 def verifier_compatibilite_avec_base(
-    modele: str, collection: Optional[str] = None, repository: Optional[KnowledgeRepository] = None,
+    modele: str, collection: str | None = None, repository: KnowledgeRepository | None = None,
 ) -> None:
     """
     Lève IncompatibiliteModeleError (français) si `modele` n'est compatible
@@ -76,13 +76,13 @@ async def rechercher(
     requete: str,
     top_k: int = RAG_TOP_K_DEFAUT,
     collection: str = "support",
-    formation_code: Optional[str] = None,
-    domaine: Optional[str] = None,
-    annee: Optional[int] = None,
-    type_support: Optional[str] = None,
-    seuil_min: Optional[float] = None,
-    attente_max_s: Optional[float] = 5.0,
-    repository: Optional[KnowledgeRepository] = None,
+    formation_code: str | None = None,
+    domaine: str | None = None,
+    annee: int | None = None,
+    type_support: str | None = None,
+    seuil_min: float | None = None,
+    attente_max_s: float | None = 5.0,
+    repository: KnowledgeRepository | None = None,
 ) -> list[ResultatRecherche]:
     """
     Recherche par similarité cosinus dans knowledge_base.

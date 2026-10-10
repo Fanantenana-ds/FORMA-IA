@@ -25,13 +25,13 @@ CHEMIN_CATALOGUE_DEFAUT = (
 
 @dataclass
 class Realisation:
-    client: Optional[str] = None
+    client: str | None = None
     client_confidentiel: bool = False
-    secteur_public: Optional[str] = None
-    annee: Optional[int] = None
-    lieu: Optional[str] = None
-    participants: Optional[int] = None
-    session_id: Optional[int] = None
+    secteur_public: str | None = None
+    annee: int | None = None
+    lieu: str | None = None
+    participants: int | None = None
+    session_id: int | None = None
     attestation_bonne_execution: bool = False
 
     def affichage_client(self) -> str:
@@ -45,14 +45,14 @@ class Realisation:
 class Formation:
     code: str
     titre: str
-    domaine: Optional[str] = None
-    niveau: Optional[str] = None
-    duree_jours: Optional[int] = None
+    domaine: str | None = None
+    niveau: str | None = None
+    duree_jours: int | None = None
     confidentiel: bool = False
     synonymes: list[str] = field(default_factory=list)
     realisations: list[Realisation] = field(default_factory=list)
 
-    def annee_la_plus_recente(self) -> Optional[int]:
+    def annee_la_plus_recente(self) -> int | None:
         annees = [r.annee for r in self.realisations if r.annee]
         return max(annees) if annees else None
 
@@ -61,7 +61,7 @@ class CatalogueFormationsError(Exception):
     """Erreur de lecture du catalogue, message déjà en français."""
 
 
-def charger_catalogue(chemin: Optional[Path] = None) -> list[Formation]:
+def charger_catalogue(chemin: Path | None = None) -> list[Formation]:
     """Charge et valide data/rag/catalogue_formations.yaml."""
     chemin = chemin or CHEMIN_CATALOGUE_DEFAUT
 
@@ -104,7 +104,7 @@ def charger_catalogue(chemin: Optional[Path] = None) -> list[Formation]:
     return formations
 
 
-def obtenir_formation(code: str, chemin: Optional[Path] = None) -> Optional[Formation]:
+def obtenir_formation(code: str, chemin: Path | None = None) -> Formation | None:
     """Retrouve une formation par son code exact (insensible à la casse)."""
     for formation in charger_catalogue(chemin):
         if formation.code.lower() == code.lower():

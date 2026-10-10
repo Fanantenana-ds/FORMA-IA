@@ -28,9 +28,9 @@ class OffreService:
 
     def lister(
         self,
-        statut: Optional[StatutOffre] = None,
-        client: Optional[str] = None,
-        opportunite_id: Optional[UUID] = None,
+        statut: StatutOffre | None = None,
+        client: str | None = None,
+        opportunite_id: UUID | None = None,
         skip: int = 0,
         limit: int = 100,
     ) -> list[Offre]:

@@ -82,8 +82,8 @@ def create_opportunite(
     ),
 )
 def get_opportunites(
-    statut: Optional[StatutOpportunite] = Query(default=None, description="Filtrer par statut"),
-    domaine: Optional[Domaine] = Query(default=None, description="Filtrer par domaine"),
+    statut: StatutOpportunite | None = Query(default=None, description="Filtrer par statut"),
+    domaine: Domaine | None = Query(default=None, description="Filtrer par domaine"),
     skip: int = Query(default=0, ge=0, description="Nombre d'éléments à ignorer"),
     limit: int = Query(default=100, ge=1, le=500, description="Nombre max d'éléments"),
     service: OpportuniteService = Depends(get_opportunite_service),

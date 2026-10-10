@@ -189,7 +189,7 @@ class TdrOrchestrator(BaseOrchestrator):
     async def synchroniser_backend(
         self,
         review_id: str,
-        opportunite_id: Optional[str] = None,
+        opportunite_id: str | None = None,
         force: bool = False,
     ) -> dict[str, Any]:
         """

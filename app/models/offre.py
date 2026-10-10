@@ -4,7 +4,7 @@
 # ============================================================
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from enum import Enum
 
 from sqlalchemy import Column, DateTime, Float, ForeignKey, String, Text
@@ -53,8 +53,8 @@ class Offre(Base):
 
     # Workflow
     statut = Column(SqlEnum(StatutOffre), nullable=False, default=StatutOffre.BROUILLON)
-    date_creation = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
-    date_modification = Column(DateTime(timezone=True), onupdate=lambda: datetime.now(timezone.utc), nullable=True)
+    date_creation = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False)
+    date_modification = Column(DateTime(timezone=True), onupdate=lambda: datetime.now(UTC), nullable=True)
 
     # Relations
     opportunite = relationship("Opportunite")

@@ -37,7 +37,7 @@ FAMILLES_MODELES = {
 MODELES_CONNUS = {m for famille in FAMILLES_MODELES.values() for m in famille}
 
 
-def famille_de(modele: str) -> Optional[str]:
+def famille_de(modele: str) -> str | None:
     """Nom de la famille d'un modèle, ou None si le modèle est inconnu."""
     for nom_famille, modeles in FAMILLES_MODELES.items():
         if modele in modeles:
@@ -93,7 +93,7 @@ class EmbeddingProviderError(Exception):
     """Erreur du fournisseur d'embeddings, message déjà en français."""
 
 
-def traduire_erreur_voyage(status_code: Optional[int], detail: str = "") -> str:
+def traduire_erreur_voyage(status_code: int | None, detail: str = "") -> str:
     if status_code == 401:
         return "Clé Voyage invalide. Vérifier VOYAGE_API_KEY dans .env."
     if status_code == 402:
@@ -116,7 +116,7 @@ class EmbeddingProvider(ABC):
 
     @abstractmethod
     async def embed_query(
-        self, texte: str, *, attente_max_s: Optional[float] = 5.0
+        self, texte: str, *, attente_max_s: float | None = 5.0
     ) -> list[float]:
         """Vectorise une requête en mode QUERY (recherche/chat)."""
 
@@ -182,10 +182,10 @@ class ConfigurationVoyage:
 # LIMITEUR PARTAGÉ — une seule instance pour tout le module
 # ============================================================
 
-_limiteur_partage: Optional[LimiteurDebit] = None
+_limiteur_partage: LimiteurDebit | None = None
 
 
-def get_limiteur_partage(rpm: Optional[int] = None, tpm: Optional[int] = None) -> LimiteurDebit:
+def get_limiteur_partage(rpm: int | None = None, tpm: int | None = None) -> LimiteurDebit:
     """Retourne le limiteur unique partagé par tout le module RAG."""
     global _limiteur_partage
     if _limiteur_partage is None:
@@ -267,10 +267,10 @@ STATUTS_RETRYABLES = {429, 500, 502, 503, 504}
 class VoyageEmbeddingProvider(EmbeddingProvider):
     def __init__(
         self,
-        config: Optional[ConfigurationVoyage] = None,
-        limiteur: Optional[LimiteurDebit] = None,
-        client: Optional[httpx.AsyncClient] = None,
-        dormir: "Optional[callable]" = None,
+        config: ConfigurationVoyage | None = None,
+        limiteur: LimiteurDebit | None = None,
+        client: httpx.AsyncClient | None = None,
+        dormir: "callable | None" = None,
     ):
         self.config = config or ConfigurationVoyage.depuis_env()
         self.limiteur = limiteur or get_limiteur_partage(self.config.rpm, self.config.tpm)
@@ -299,7 +299,7 @@ class VoyageEmbeddingProvider(EmbeddingProvider):
             "output_dimension": self.config.dimension,
         }
 
-        derniere_erreur: Optional[str] = None
+        derniere_erreur: str | None = None
 
         for tentative in range(1, MAX_TENTATIVES + 1):
             client_local = self._client or httpx.AsyncClient(timeout=self.config.timeout_s)
@@ -353,7 +353,7 @@ class VoyageEmbeddingProvider(EmbeddingProvider):
         return resultats
 
     async def embed_query(
-        self, texte: str, *, attente_max_s: Optional[float] = 5.0
+        self, texte: str, *, attente_max_s: float | None = 5.0
     ) -> list[float]:
         tokens = estimer_tokens(texte)
         await self.limiteur.attendre_puis_consommer(tokens, attente_max_s=attente_max_s)

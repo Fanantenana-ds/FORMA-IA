@@ -9,16 +9,16 @@ class UserRepository:
     def __init__(self, db: Session):
         self.db = db
 
-    def find_by_email(self, email: str) -> Optional[User]:
+    def find_by_email(self, email: str) -> User | None:
         return self.db.query(User).filter(User.email == email).first()
 
-    def find_by_id(self, user_id) -> Optional[User]:
+    def find_by_id(self, user_id) -> User | None:
         return self.db.query(User).filter(User.id == user_id).first()
 
     def find_all(
         self,
-        role: Optional[RoleEnum] = None,
-        actif: Optional[bool] = None,
+        role: RoleEnum | None = None,
+        actif: bool | None = None,
     ) -> list[User]:
         q = self.db.query(User)
         if role is not None:

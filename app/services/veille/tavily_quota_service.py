@@ -27,7 +27,7 @@
 import json
 import logging
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
@@ -109,7 +109,7 @@ def _nettoyer_runs_par_jour(runs_par_jour: dict[str, int], maintenant: datetime)
     propre = {}
     for cle, valeur in runs_par_jour.items():
         try:
-            date_cle = datetime.strptime(cle, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            date_cle = datetime.strptime(cle, "%Y-%m-%d").replace(tzinfo=UTC)
         except ValueError:
             continue  # clé corrompue : abandonnée
         if date_cle >= limite:
@@ -117,11 +117,11 @@ def _nettoyer_runs_par_jour(runs_par_jour: dict[str, int], maintenant: datetime)
     return propre
 
 
-def _etat(maintenant: Optional[datetime] = None) -> dict[str, Any]:
+def _etat(maintenant: datetime | None = None) -> dict[str, Any]:
     """Charge l'état ; réinitialise les compteurs d'APPELS si la période a
     changé (les runs/jour sont indépendants — nettoyés par ancienneté,
     pas par bascule de mois)."""
-    maintenant = maintenant or datetime.now(timezone.utc)
+    maintenant = maintenant or datetime.now(UTC)
     cfg = config()
     periode_actuelle = _periode(maintenant, cfg["jour_reset"])
 
@@ -142,12 +142,12 @@ def _etat(maintenant: Optional[datetime] = None) -> dict[str, Any]:
 # ENREGISTREMENT (appelé depuis TavilyService._do_request)
 # ============================================================
 
-def enregistrer_appel(categorie: str, maintenant: Optional[datetime] = None) -> None:
+def enregistrer_appel(categorie: str, maintenant: datetime | None = None) -> None:
     """Incrémente le compteur d'UN appel HTTP réel (échec/retry compris).
     Ne jamais appeler depuis un cache hit."""
     if categorie not in CATEGORIES:
         categorie = "manuel"
-    maintenant = maintenant or datetime.now(timezone.utc)
+    maintenant = maintenant or datetime.now(UTC)
     cfg = config()
 
     data = _etat(maintenant)
@@ -168,10 +168,10 @@ def enregistrer_appel(categorie: str, maintenant: Optional[datetime] = None) -> 
         )
 
 
-def enregistrer_run_auto(maintenant: Optional[datetime] = None) -> None:
+def enregistrer_run_auto(maintenant: datetime | None = None) -> None:
     """Incrémente le compteur de passages auto RÉELLEMENT lancés (pas les
     tentatives bloquées par le quota ou le verrou)."""
-    maintenant = maintenant or datetime.now(timezone.utc)
+    maintenant = maintenant or datetime.now(UTC)
     data = _etat(maintenant)
     cle = maintenant.strftime("%Y-%m-%d")
     data["runs_par_jour"][cle] = data["runs_par_jour"].get(cle, 0) + 1
@@ -182,20 +182,20 @@ def enregistrer_run_auto(maintenant: Optional[datetime] = None) -> None:
 # LECTURE
 # ============================================================
 
-def consommation(categorie: Optional[str] = None, maintenant: Optional[datetime] = None) -> int:
+def consommation(categorie: str | None = None, maintenant: datetime | None = None) -> int:
     data = _etat(maintenant)
     if categorie:
         return data["appels"].get(categorie, 0)
     return sum(data["appels"].values())
 
 
-def runs_aujourd_hui(maintenant: Optional[datetime] = None) -> int:
-    maintenant = maintenant or datetime.now(timezone.utc)
+def runs_aujourd_hui(maintenant: datetime | None = None) -> int:
+    maintenant = maintenant or datetime.now(UTC)
     data = _etat(maintenant)
     return data["runs_par_jour"].get(maintenant.strftime("%Y-%m-%d"), 0)
 
 
-def plafond_dur_atteint(maintenant: Optional[datetime] = None) -> bool:
+def plafond_dur_atteint(maintenant: datetime | None = None) -> bool:
     cfg = config()
     return consommation(None, maintenant) >= cfg["plafond_dur"]
 
@@ -204,11 +204,11 @@ def plafond_dur_atteint(maintenant: Optional[datetime] = None) -> bool:
 # VÉRIFICATIONS PRÉALABLES
 # ============================================================
 
-def verifier_quota_auto(maintenant: Optional[datetime] = None) -> tuple[bool, Optional[str]]:
+def verifier_quota_auto(maintenant: datetime | None = None) -> tuple[bool, str | None]:
     """Vérification UNIQUE avant de lancer un passage auto (pas par appel
     HTTP individuel) — appelée depuis executer_detection, après le verrou
     anti-chevauchement. Retourne (autorise, raison_si_refuse)."""
-    maintenant = maintenant or datetime.now(timezone.utc)
+    maintenant = maintenant or datetime.now(UTC)
     cfg = config()
 
     runs = runs_aujourd_hui(maintenant)
@@ -239,8 +239,8 @@ def verifier_quota_auto(maintenant: Optional[datetime] = None) -> tuple[bool, Op
 # ROUTE — GET /ia/veille/quota
 # ============================================================
 
-def etat_pour_route(maintenant: Optional[datetime] = None) -> dict[str, Any]:
-    maintenant = maintenant or datetime.now(timezone.utc)
+def etat_pour_route(maintenant: datetime | None = None) -> dict[str, Any]:
+    maintenant = maintenant or datetime.now(UTC)
     cfg = config()
     data = _etat(maintenant)
     total = sum(data["appels"].values())

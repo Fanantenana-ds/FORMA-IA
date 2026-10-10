@@ -103,7 +103,7 @@ class BaseOrchestrator:
     # Vérification d'agent
     # ------------------------------------------------------------------
 
-    def _check_agent(self, agent: Optional[Any], name: str) -> None:
+    def _check_agent(self, agent: Any | None, name: str) -> None:
         """Lève RuntimeError si l'agent est None."""
         if agent is None:
             raise RuntimeError(f"❌ {name} non disponible.")

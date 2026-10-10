@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from enum import Enum
 
 from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, String, Text
@@ -65,7 +65,7 @@ class Formateur(Base):
 
     date_creation = Column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
         nullable=False,
     )
 
@@ -102,7 +102,7 @@ class Candidat(Base):
 
     date_creation = Column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
         nullable=False,
     )
 
@@ -135,7 +135,7 @@ class Entretien(Base):
 
     date_creation = Column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
         nullable=False,
     )
 

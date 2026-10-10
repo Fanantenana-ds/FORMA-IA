@@ -16,8 +16,8 @@ from docx import Document as DocxDocument
 
 import app.orchestrator.rag_orchestrator as rag_orch_module
 from app.orchestrator.rag_orchestrator import RagOrchestrator
-from app.services.rag import registry_service as registre
 from app.services.rag import catalogue_service as catalogue
+from app.services.rag import registry_service as registre
 from app.services.rag import resume_service
 
 

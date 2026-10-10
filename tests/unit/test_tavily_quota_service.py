@@ -7,7 +7,7 @@
 # ============================================================
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
 
@@ -25,7 +25,7 @@ def isole(monkeypatch, tmp_path):
 
 
 def dt(annee, mois, jour, heure=12):
-    return datetime(annee, mois, jour, heure, 0, 0, tzinfo=timezone.utc)
+    return datetime(annee, mois, jour, heure, 0, 0, tzinfo=UTC)
 
 
 # ============================================================

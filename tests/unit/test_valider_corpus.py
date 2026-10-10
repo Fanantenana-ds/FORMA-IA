@@ -42,8 +42,7 @@ vc = _charger_module()
 def _ecrire_corpus(tmp_path: Path, entrees: list) -> Path:
     chemin = tmp_path / "corpus.jsonl"
     with open(chemin, "w", encoding="utf-8") as f:
-        for e in entrees:
-            f.write(json.dumps(e, ensure_ascii=False) + "\n")
+        f.writelines(json.dumps(e, ensure_ascii=False) + "\n" for e in entrees)
     return chemin
 
 

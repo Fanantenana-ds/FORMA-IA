@@ -11,10 +11,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from app.services.rh.cv_extractor_service import (
-    MethodeExtraction,
     SEUIL_TEXTE_MIN,
-    _texte_brut,
+    MethodeExtraction,
     _docx,
+    _texte_brut,
     extraire_texte_cv,
 )
 
@@ -40,7 +40,7 @@ def _mock_llm_lisible(lisible: bool):
 
 class TestTextebrut:
     def test_utf8(self):
-        contenu = "Jean Dupont développeur".encode("utf-8")
+        contenu = "Jean Dupont développeur".encode()
         assert "Jean Dupont" in _texte_brut(contenu)
 
     def test_latin1(self):

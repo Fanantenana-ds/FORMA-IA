@@ -26,9 +26,9 @@ from app.services.benchmark import benchmark_runner as br_module
 from app.services.benchmark.benchmark_runner import (
     BenchmarkRunner,
     _f1,
-    _percentile,
     _f1_macro_domaine,
     _parser_date_collectee,
+    _percentile,
     fusionner_rapports,
 )
 

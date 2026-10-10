@@ -16,7 +16,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-
 # =============================================================================
 # FIXTURE — isolation disque + registre
 # =============================================================================
@@ -29,8 +28,9 @@ def rag_env(db_isolee, tmp_path, monkeypatch):
     Retourne (client, dossier_fichiers, chemin_registry).
     """
     from fastapi.testclient import TestClient
-    from app.main import app
+
     from app.core.dependencies import get_current_user
+    from app.main import app
     from tests.conftest import FakeUser
 
     dossier = tmp_path / "fichiers"
@@ -142,8 +142,9 @@ class TestUploadSupport:
     def test_upload_sans_auth_refuse(self, db_isolee, tmp_path, monkeypatch):
         """Sans authentification, la route doit retourner 401 ou 403."""
         from fastapi.testclient import TestClient
-        from app.main import app
+
         import app.api.v1.endpoints.document as doc_module
+        from app.main import app
         monkeypatch.setattr(doc_module, "DOSSIER_FICHIERS_RAG", tmp_path / "f")
         client = TestClient(app, raise_server_exceptions=False)
         r = client.post(
@@ -273,11 +274,12 @@ class TestSupprimerSupport:
     def test_suppression_comptable_refuse(self, db_isolee, tmp_path, monkeypatch):
         """Le rôle COMPTABLE ne peut pas supprimer un support RAG."""
         from fastapi.testclient import TestClient
-        from app.main import app
-        from app.core.dependencies import get_current_user
-        from tests.conftest import FakeUser
+
         import app.api.v1.endpoints.document as doc_module
         import app.services.rag.registry_service as reg_module
+        from app.core.dependencies import get_current_user
+        from app.main import app
+        from tests.conftest import FakeUser
 
         dossier = tmp_path / "f2"
         dossier.mkdir()

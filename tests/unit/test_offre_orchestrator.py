@@ -17,8 +17,8 @@ from app.orchestrator.offre_orchestrator import (
     OffreOrchestrator,
     get_offre_orchestrator,
 )
-from app.services.hitl import hitl_helper
 from app.services.backend_sync import review_sync
+from app.services.hitl import hitl_helper
 
 
 def run(coro):

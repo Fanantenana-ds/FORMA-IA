@@ -11,6 +11,7 @@ Exécution :
 """
 
 import asyncio
+
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -79,8 +80,8 @@ def test_le_router_monte_m4():
 # ============================================================
 
 def test_preselection_fallback_sans_llm(monkeypatch):
-    from app.services.rh.cv_preselecteur_service import CvPreselecteurService
     import app.services.rh.cv_preselecteur_service as mod
+    from app.services.rh.cv_preselecteur_service import CvPreselecteurService
     monkeypatch.setattr(mod, "get_llm_provider", lambda: (_ for _ in ()).throw(Exception("hors ligne")))
 
     svc = CvPreselecteurService()
@@ -95,9 +96,10 @@ def test_preselection_fallback_sans_llm(monkeypatch):
 
 
 def test_preselection_avec_llm(monkeypatch):
-    from app.services.rh.cv_preselecteur_service import CvPreselecteurService
-    import app.services.rh.cv_preselecteur_service as mod
     import json
+
+    import app.services.rh.cv_preselecteur_service as mod
+    from app.services.rh.cv_preselecteur_service import CvPreselecteurService
 
     contenu = {
         "nom_candidat": "Rakoto Jean",
@@ -130,8 +132,8 @@ def test_preselection_avec_llm(monkeypatch):
 # ============================================================
 
 def test_entretien_fallback_sans_llm(monkeypatch):
-    from app.services.rh.entretien_service import EntretienService
     import app.services.rh.entretien_service as mod
+    from app.services.rh.entretien_service import EntretienService
     monkeypatch.setattr(mod, "get_llm_provider", lambda: (_ for _ in ()).throw(Exception("hors ligne")))
 
     svc = EntretienService()
@@ -157,8 +159,8 @@ def test_email_type_invalide():
 
 
 def test_email_fallback_acceptation(monkeypatch):
-    from app.services.rh.email_rh_service import EmailRhService
     import app.services.rh.email_rh_service as mod
+    from app.services.rh.email_rh_service import EmailRhService
     monkeypatch.setattr(mod, "get_llm_provider", lambda: (_ for _ in ()).throw(Exception("hors ligne")))
 
     svc = EmailRhService()
@@ -171,8 +173,8 @@ def test_email_fallback_acceptation(monkeypatch):
 
 
 def test_email_fallback_refus(monkeypatch):
-    from app.services.rh.email_rh_service import EmailRhService
     import app.services.rh.email_rh_service as mod
+    from app.services.rh.email_rh_service import EmailRhService
     monkeypatch.setattr(mod, "get_llm_provider", lambda: (_ for _ in ()).throw(Exception("hors ligne")))
 
     svc = EmailRhService()
@@ -203,8 +205,8 @@ SESSION_TEST = {
 
 
 def test_contrat_formateur_fallback(monkeypatch):
-    from app.services.rh.contrat_formateur_service import ContratFormateurService
     import app.services.rh.contrat_formateur_service as mod
+    from app.services.rh.contrat_formateur_service import ContratFormateurService
     monkeypatch.setattr(mod, "get_llm_provider", lambda: (_ for _ in ()).throw(Exception("hors ligne")))
 
     svc = ContratFormateurService()
@@ -218,8 +220,8 @@ def test_contrat_formateur_fallback(monkeypatch):
 
 
 def test_contrat_formateur_total_calcule(monkeypatch):
-    from app.services.rh.contrat_formateur_service import ContratFormateurService
     import app.services.rh.contrat_formateur_service as mod
+    from app.services.rh.contrat_formateur_service import ContratFormateurService
     monkeypatch.setattr(mod, "get_llm_provider", lambda: (_ for _ in ()).throw(Exception("hors ligne")))
 
     svc = ContratFormateurService()
@@ -234,8 +236,8 @@ def test_contrat_formateur_total_calcule(monkeypatch):
 # ============================================================
 
 def test_evaluation_fallback_score_calcule(monkeypatch):
-    from app.services.rh.evaluation_formateur_service import EvaluationFormateurService
     import app.services.rh.evaluation_formateur_service as mod
+    from app.services.rh.evaluation_formateur_service import EvaluationFormateurService
     monkeypatch.setattr(mod, "get_llm_provider", lambda: (_ for _ in ()).throw(Exception("hors ligne")))
 
     svc = EvaluationFormateurService()
@@ -259,8 +261,8 @@ def test_evaluation_fallback_score_calcule(monkeypatch):
 
 
 def test_evaluation_recommandation_oui_si_bon_score(monkeypatch):
-    from app.services.rh.evaluation_formateur_service import EvaluationFormateurService
     import app.services.rh.evaluation_formateur_service as mod
+    from app.services.rh.evaluation_formateur_service import EvaluationFormateurService
     monkeypatch.setattr(mod, "get_llm_provider", lambda: (_ for _ in ()).throw(Exception("hors ligne")))
 
     svc = EvaluationFormateurService()

@@ -368,7 +368,7 @@ def test_le_router_de_l_application_monte_m7():
 
 def _generer_review_approuve(monkeypatch, tmp_path, facture_id="f" * 8 + "-0000-0000-0000-000000000000"):
     """Crée un review HITL approuvé pour agent_m7_relance et retourne son ID."""
-    from app.services.hitl import hitl_helper, create_review, approve_review
+    from app.services.hitl import approve_review, create_review, hitl_helper
     monkeypatch.setattr(hitl_helper, "STORAGE_PATH", tmp_path / "hitl.json")
 
     from app.services.backend_sync import review_sync
@@ -447,7 +447,7 @@ def test_synchroniser_backend_force_renvoie(monkeypatch, tmp_path):
 
 
 def test_synchroniser_backend_refuse_review_non_approuve(monkeypatch, tmp_path):
-    from app.services.hitl import hitl_helper, create_review
+    from app.services.hitl import create_review, hitl_helper
     monkeypatch.setattr(hitl_helper, "STORAGE_PATH", tmp_path / "hitl.json")
     from app.services.backend_sync import review_sync
     monkeypatch.setattr(review_sync, "REGISTRY_PATH", tmp_path / "registry.json")
@@ -465,7 +465,7 @@ def test_synchroniser_backend_refuse_review_non_approuve(monkeypatch, tmp_path):
 
 
 def test_synchroniser_backend_refuse_mauvais_agent(monkeypatch, tmp_path):
-    from app.services.hitl import hitl_helper, create_review, approve_review
+    from app.services.hitl import approve_review, create_review, hitl_helper
     monkeypatch.setattr(hitl_helper, "STORAGE_PATH", tmp_path / "hitl.json")
     from app.services.backend_sync import review_sync
     monkeypatch.setattr(review_sync, "REGISTRY_PATH", tmp_path / "registry.json")
@@ -487,7 +487,7 @@ def test_synchroniser_backend_refuse_mauvais_agent(monkeypatch, tmp_path):
 # ============================================================
 
 def test_route_synchroniser_422_si_non_approuve(monkeypatch, tmp_path, api):
-    from app.services.hitl import hitl_helper, create_review
+    from app.services.hitl import create_review, hitl_helper
     monkeypatch.setattr(hitl_helper, "STORAGE_PATH", tmp_path / "hitl_r.json")
     from app.services.backend_sync import review_sync
     monkeypatch.setattr(review_sync, "REGISTRY_PATH", tmp_path / "reg_r.json")

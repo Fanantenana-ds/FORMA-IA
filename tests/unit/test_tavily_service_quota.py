@@ -20,10 +20,10 @@ import asyncio
 import httpx
 import pytest
 
-from app.services.veille import tavily_service as tavily_module
 from app.services.veille import tavily_quota_service as quota
-from app.services.veille.tavily_service import TavilyService
+from app.services.veille import tavily_service as tavily_module
 from app.services.veille.tavily_quota_service import QuotaTavilyDepasseError
+from app.services.veille.tavily_service import TavilyService
 
 
 @pytest.fixture(autouse=True)

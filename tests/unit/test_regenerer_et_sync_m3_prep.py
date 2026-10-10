@@ -273,7 +273,7 @@ def test_m3_sync_review_individuel_refuse(backend):
         run(orch.synchroniser_backend(technique, opportunite_id=new_id()))
 
 
-def test_m3_sync_approuve_envoie_contenu_montant_et_une_seule_fois(backend):
+def test_m3_sync_approuve_envoie_trame_et_une_seule_fois(backend):
     orch, r1 = offre_generee()
     hitl_helper.approve_review(r1["_review_id"])
     opp_id = new_id()
@@ -284,13 +284,16 @@ def test_m3_sync_approuve_envoie_contenu_montant_et_une_seule_fois(backend):
     assert premier["backend_sync"]["sent"] and premier["backend_sync"]["verified"]
     assert "data" not in premier["backend_sync"]              # corps Backend non stocké
     post = backend.posts()[0]
-    assert post[1] == "/documents/offre"
+    # Fix #1 : route /offres (plus /documents/offre)
+    assert post[1] == "/offres"
     assert post[2]["opportunite_id"] == opp_id
-    assert post[2]["montant"] == r1["resume_financier"]["net_a_payer"]
-    assert "OFFRE TECHNIQUE" in post[2]["contenu"]
-    assert "OFFRE FINANCIÈRE" in post[2]["contenu"]
-    assert "Net à payer" in post[2]["contenu"]
-    assert "HITL" not in post[2]["contenu"]                   # clés internes exclues
+    assert post[2]["montant_ht"] == r1["resume_financier"]["net_a_payer"]
+    assert post[2]["titre"]                                    # titre extrait des inputs
+    assert post[2]["client"]                                   # client extrait de session_info
+    assert "OFFRE TECHNIQUE" in post[2]["trame_technique"]
+    assert "OFFRE FINANCIÈRE" in post[2]["trame_financiere"]
+    assert "Net à payer" in post[2]["trame_financiere"]
+    assert "HITL" not in post[2]["trame_technique"]           # clés internes exclues
 
     # 2e appel : aucun nouvel envoi
     deuxieme = run(orch.synchroniser_backend(r1["_review_id"], opportunite_id=opp_id))
@@ -310,17 +313,34 @@ def test_m3_sync_lit_opportunite_id_dans_les_entrees(backend):
     hitl_helper.approve_review(r1["_review_id"])
 
     run(orch.synchroniser_backend(r1["_review_id"]))
-    assert backend.posts()[0][2]["opportunite_id"] == opp_id
+    post = backend.posts()[0]
+    assert post[1] == "/offres"
+    assert post[2]["opportunite_id"] == opp_id
 
 
-def test_m3_sync_sans_opportunite_id_n_envoie_rien_et_n_est_pas_memorise(backend):
+def test_m3_sync_sans_opportunite_id_envoie_quand_meme(backend):
+    # Fix #1 : opportunite_id est désormais optionnel dans POST /offres
     orch, r1 = offre_generee()
     hitl_helper.approve_review(r1["_review_id"])
 
     result = run(orch.synchroniser_backend(r1["_review_id"]))
 
+    assert result["backend_sync"]["sent"] is True              # envoi réussi sans opp_id
+    post = backend.posts()[0]
+    assert post[1] == "/offres"
+    assert "opportunite_id" not in post[2]                     # absent du payload
+
+
+def test_m3_sync_sans_titre_n_envoie_rien_et_n_est_pas_memorise(backend, monkeypatch):
+    # Vérification que titre vide bloque l'envoi
+    from app.services.backend_sync import offre_sync as os_mod
+    orch, r1 = offre_generee()
+    hitl_helper.approve_review(r1["_review_id"])
+    monkeypatch.setattr(os_mod, "extract_titre", lambda d: "")
+
+    result = run(orch.synchroniser_backend(r1["_review_id"]))
     assert result["backend_sync"]["sent"] is False
-    assert "opportunite_id" in result["backend_sync"]["error"]
+    assert "titre" in result["backend_sync"]["error"]
     assert backend.calls == []
     assert review_sync.get_synced(r1["_review_id"]) is None    # pourra être renvoyé
 
@@ -338,7 +358,7 @@ def test_sync_desactivee_n_envoie_rien_et_n_est_pas_memorisee(backend, monkeypat
     assert "désactivée" in review_sync.describe_sync(result)[1]
 
 
-def test_prep_sync_approuve_cree_session_seances_et_signale_le_budget(backend):
+def test_prep_sync_approuve_cree_projet_edt_et_budget(backend):
     orch, r1 = prep_generee()
 
     with pytest.raises(ValueError, match="non approuvé"):
@@ -350,18 +370,28 @@ def test_prep_sync_approuve_cree_session_seances_et_signale_le_budget(backend):
 
     sync = result["backend_sync"]
     assert sync["sent"] and sync["verified"]
-    assert sync["seances"] == {"sent": 2, "failed": 0}
-    assert sync["budget"]["skipped"] is True                   # pas de route Backend
+    # Fix #2 : clé "edt" (plus "seances")
+    assert sync["edt"] == {"sent": 2, "failed": 0}
+    # Fix #3 Budget liaison : budget désormais envoyé
+    assert sync["budget"]["sent"] is True
 
-    session = backend.posts()[0]
-    assert session[1] == "/sessions"
-    assert session[2]["titre"] == "Introduction à l'IA"
-    assert session[2]["client"] == "Ministère de l'Éducation"
-    assert (session[2]["date_debut"], session[2]["date_fin"]) == ("2026-10-15", "2026-10-16")
-    assert len(backend.posts()) == 3                           # 1 session + 2 séances
+    projet = backend.posts()[0]
+    # Fix #2 : route /projets (plus /sessions)
+    assert projet[1] == "/projets"
+    assert projet[2]["titre"] == "Introduction à l'IA"
+    assert projet[2]["client"] == "Ministère de l'Éducation"
+    assert (projet[2]["date_debut"], projet[2]["date_fin"]) == ("2026-10-15", "2026-10-16")
+    # 1 projet + 2 jours EDT + 1 budget = 4 POSTs
+    assert len(backend.posts()) == 4
+
+    # Les 2 jours EDT vont vers /projets/{id}/edt
+    edt_calls = [c for c in backend.posts() if "/edt" in c[1]]
+    assert len(edt_calls) == 2
+    for call in edt_calls:
+        assert call[2]["date"]   # date présente
 
     again = run(orch.synchroniser_backend(r1["_review_id"]))
-    assert again["already_synced"] is True and len(backend.posts()) == 3
+    assert again["already_synced"] is True and len(backend.posts()) == 4
 
 
 # ============================================================
@@ -392,8 +422,10 @@ def test_route_offres_synchroniser(api, backend):
                      json={"review_id": r1["_review_id"], "opportunite_id": new_id()})
     body = ok.json()
     assert ok.status_code == 200 and body["success"] is True
-    assert body["message"].startswith("Synchronisé avec le Backend")
-    assert body["data"]["backend_sync"]["resource_id"]
+    sync = body["data"]["backend_sync"]
+    assert sync["resource_id"]
+    # Fix #1 : route /offres
+    assert sync["sent"] is True
 
     encore = client.post("/api/v1/ia/offres/synchroniser",
                          json={"review_id": r1["_review_id"], "opportunite_id": new_id()})
@@ -411,7 +443,7 @@ def test_route_preparation_synchroniser(api, backend):
                      json={"review_id": r1["_review_id"]})
     body = ok.json()
     assert ok.status_code == 200 and body["success"] is True
-    assert body["data"]["backend_sync"]["seances"]["sent"] == 2
+    assert body["data"]["backend_sync"]["edt"]["sent"] == 2
 
     inconnu = client.post("/api/v1/ia/preparation/synchroniser",
                           json={"review_id": "HITL-XXX-9999"})

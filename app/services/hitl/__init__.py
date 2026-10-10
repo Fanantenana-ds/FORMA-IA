@@ -20,14 +20,15 @@ __version__ = "2.0.0"
 __author__ = "Équipe IA — ALTIORA Prest"
 
 __all__ = [
-    "AGENT_CRITICITY",
     "__version__",
-    "approve_review",
     "create_review",
-    "get_review",
-    "get_stats",
     "list_pending",
+    "get_review",
+    "approve_review",
     "reject_review",
+    "get_stats",
+    "patch_review",
+    "AGENT_CRITICITY",
 ]
 
 
@@ -38,6 +39,7 @@ from .hitl_helper import (
     get_review,
     get_stats,
     list_pending,
+    patch_review,
     reject_review,
 )
 

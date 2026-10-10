@@ -21,19 +21,19 @@ def analyse(self, contenu: str) -> OpportuniteAnalyseResult:
 
 ### Entrée
 
-| Paramètre | Type | Détail |
-|---|---|---|
+| Paramètre  | Type    | Détail                                                                                             |
+| ----------- | ------- | --------------------------------------------------------------------------------------------------- |
 | `contenu` | `str` | Texte brut de l'opportunité (TDR, email, etc.) ou URL convertie en string en amont par le endpoint |
 
 ### Sortie attendue — `OpportuniteAnalyseResult`
 
-| Champ | Type | Contraintes |
-|---|---|---|
-| `objet` | `Optional[str]` | — |
-| `budget` | `Optional[float]` | `>= 0` |
-| `echeance` | `Optional[datetime]` | — |
-| `domaine` | `Optional[Domaine]` | Enum : `DEVOPS`, `DEVELOPPEMENT`, `IA`, `DATA`, `BUREAUTIQUE`, `AUTRE` |
-| `score_pertinente` | `float` | **Obligatoire**, `0.0 <= x <= 1.0` |
+| Champ                | Type                   | Contraintes                                                                       |
+| -------------------- | ---------------------- | --------------------------------------------------------------------------------- |
+| `objet`            | `Optional[str]`      | —                                                                                |
+| `budget`           | `Optional[float]`    | `>= 0`                                                                          |
+| `echeance`         | `Optional[datetime]` | —                                                                                |
+| `domaine`          | `Optional[Domaine]`  | Enum :`DEVOPS`, `DEVELOPPEMENT`, `IA`, `DATA`, `BUREAUTIQUE`, `AUTRE` |
+| `score_pertinente` | `float`              | **Obligatoire**, `0.0 <= x <= 1.0`                                        |
 
 Actuellement, cette méthode retourne un résultat statique (`"Analyse temporaire"`, `score_pertinente=0.0`) — c'est le stub à remplacer.
 
@@ -62,13 +62,13 @@ resultat_ia = {
 
 Un `dict` (ou un objet convertible en dict) avec les clés suivantes, à substituer au bloc statique ci-dessus dans l'endpoint :
 
-| Clé | Type | Contraintes |
-|---|---|---|
-| `objet` | `str` | Résumé structuré de l'opportunité |
-| `budget` | `float \| None` | — |
-| `echeance` | `datetime \| None` | — |
-| `domaine` | `Domaine` (valeur de l'enum) | Une des 6 valeurs listées ci-dessus |
-| `score_pertinente` | `float` | `0.0 <= x <= 1.0` |
+| Clé                 | Type                           | Contraintes                           |
+| -------------------- | ------------------------------ | ------------------------------------- |
+| `objet`            | `str`                        | Résumé structuré de l'opportunité |
+| `budget`           | `float \| None`               | —                                    |
+| `echeance`         | `datetime \| None`            | —                                    |
+| `domaine`          | `Domaine` (valeur de l'enum) | Une des 6 valeurs listées ci-dessus  |
+| `score_pertinente` | `float`                      | `0.0 <= x <= 1.0`                   |
 
 ### Ce que le backend garantit pour ce point B
 

@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session as DbSession
 
 from app.core.dependencies import get_current_user
+from app.utils.security import verify_api_key
 from app.database import engine, get_db
 from app.main import app
 from app.models.user import RoleEnum, User
@@ -57,14 +58,15 @@ def db_isolee():
     app.dependency_overrides[get_db] = override_get_db
 
     with DbSession(bind=connection, join_transaction_mode="create_savepoint") as db:
-        db.add(User(
+        user = User(
             id=uuid.UUID(FAKE_USER_ID),
             nom="Utilisateur de test",
             email="utilisateur-de-test@example.invalid",
             password="!",
             role=RoleEnum.DIRECTION,
             actif=True,
-        ))
+        )
+        db.merge(user)
         db.commit()
 
     yield
@@ -86,6 +88,17 @@ def client_authenticated(db_isolee):
 @pytest.fixture
 def client(db_isolee):
     return TestClient(app)
+
+@pytest.fixture
+def client_ia(db_isolee):
+    """Client pour les routes /ia/* — bypass verify_api_key en tests."""
+    async def _no_api_key_check():
+        return None
+
+    app.dependency_overrides[verify_api_key] = _no_api_key_check
+    yield TestClient(app)
+    app.dependency_overrides.pop(verify_api_key, None)
+
 
 @pytest.fixture
 def client_role(db_isolee):

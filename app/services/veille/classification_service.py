@@ -212,7 +212,7 @@ DOMAIN_KEYWORDS = {
 # (ou une phrase entière pour les mots-clés à plusieurs mots), pas un fragment.
 _KEYWORD_PATTERNS: dict[str, dict[str, "re.Pattern[str]"]] = {
     domain: {
-        keyword: re.compile(r"\b" + re.escape(keyword) + r"\b")
+        keyword: re.compile(r"\b" + re.escape(keyword) + r"s?\b")
         for keyword in keywords
     }
     for domain, keywords in DOMAIN_KEYWORDS.items()

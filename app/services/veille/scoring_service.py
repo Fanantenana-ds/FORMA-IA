@@ -218,14 +218,14 @@ class ScoringService:
         self.scoring_reference = _load_yaml_reference(SCORING_YAML_PATH)
         logger.info("✅ scoring.yaml chargé (référence)")
 
-    def score(self, opportunity: dict[str, Any]) -> dict[str, Any]:
+    def score(self, opportunity: dict[str, Any], date_reference: Any = None) -> dict[str, Any]:
         title = str(opportunity.get("title", ""))
         summary = str(opportunity.get("summary", "") or "")
         url = str(opportunity.get("url", ""))
         budget = opportunity.get("budget")
         deadline = opportunity.get("deadline")
         domain = str(opportunity.get("domain", "autre"))
-        current_date = datetime.now()
+        current_date = date_reference or datetime.now()
 
         score = 0
         details = []

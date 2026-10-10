@@ -1,4 +1,4 @@
-# GUIDE D'INTÉGRATION FRONTEND — FORMA-IA
+﻿# GUIDE D'INTÉGRATION FRONTEND — FORMA-IA
 
 > **Pour qui ?** Le binôme frontend qui branche le React sur le Backend FastAPI.
 > **Backend :** 100% terminé, 169 routes, 891 tests verts. Rien à changer côté backend.
@@ -1043,3 +1043,4 @@ if (result.success) {
 | J5-J6  | Créer`HitlReviewView.tsx`                                       | Validation IA possible                 |
 | J7-J8  | Créer`DocumentsView.tsx` + `PreparationView.tsx`              | M2/PREP fonctionnels                   |
 | J9-J10 | Brancher les boutons agents IA (M1, M2, M3, M7, M4)                | Étape 4 complète                     |
+

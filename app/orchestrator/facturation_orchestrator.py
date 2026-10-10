@@ -1,4 +1,4 @@
-# app/orchestrator/facturation_orchestrator.py
+﻿# app/orchestrator/facturation_orchestrator.py
 # ============================================================
 # ORCHESTRATEUR M7 — Facturation (relances)
 # ============================================================
@@ -21,9 +21,11 @@
 import logging
 import os
 import time
-from typing import Any
+from typing import Any, Dict
 
-from app.services.backend_sync import facture_sync
+from app.orchestrator.base_orchestrator import BaseOrchestrator
+from app.orchestrator.base_orchestrator import _vlog as vlog
+from app.services.backend_sync import facture_sync, review_sync
 from app.services.backend_sync.facture_calculator_service import (
     FactureCalculatorService,
 )
@@ -32,20 +34,15 @@ from app.services.hitl import create_review
 
 logger = logging.getLogger(__name__)
 
-VERBOSE = os.getenv("VERBOSE_LOGS", "true").lower() == "true"
-
-
-def vlog(msg: str, level: str = "info") -> None:
-    if VERBOSE:
-        getattr(logger, level)(msg)
-
 
 # =============================================================================
 # ORCHESTRATEUR
 # =============================================================================
 
-class FacturationOrchestrator:
+class FacturationOrchestrator(BaseOrchestrator):
     """Orchestrateur du module M7 — Facturation et relances."""
+
+    _name = "FacturationOrchestrator"
 
     def __init__(self):
         vlog("=" * 70)
@@ -59,61 +56,10 @@ class FacturationOrchestrator:
             FactureCalculatorService, "FactureCalculatorService"
         )
 
-        self._log_startup_summary()
-
-    # =========================================================================
-    # HELPERS INTERNES
-    # =========================================================================
-
-    def _safe_init(self, service_cls, label: str):
-        try:
-            instance = service_cls()
-            vlog(f"   ✅ {label} prêt")
-            return instance
-        except Exception as e:
-            logger.error(f"   ❌ {label} indisponible : {type(e).__name__} — {e}")
-            return None
-
-    def _log_startup_summary(self) -> None:
-        services_status = {
-            "Agent M7 — RelanceGenerator": self.relance_generator is not None,
-            "FactureCalculatorService":    self.calculator is not None,
-        }
-        active = [k for k, v in services_status.items() if v]
-        inactive = [k for k, v in services_status.items() if not v]
-
-        vlog("=" * 70)
-        vlog(f"📊 Bilan démarrage : {len(active)}/2 services actifs")
-        for name in active:
-            vlog(f"   ✅ {name}")
-        for name in inactive:
-            vlog(f"   ⏳ {name} (en attente)")
-        vlog("=" * 70)
-        vlog("✅ FacturationOrchestrator initialisé avec succès.")
-
-    def _log_start(self, method: str, **kwargs) -> float:
-        vlog("=" * 70)
-        vlog(f"🎬 [FacturationOrchestrator] → {method}()")
-        for k, v in kwargs.items():
-            vlog(f"   {k} : {v}")
-        vlog("=" * 70)
-        return time.perf_counter()
-
-    def _log_end(self, method: str, start: float, **counts) -> float:
-        elapsed = round(time.perf_counter() - start, 2)
-        vlog("=" * 70)
-        vlog(f"✅ [FacturationOrchestrator] {method}() terminé en {elapsed}s")
-        for k, v in counts.items():
-            vlog(f"   {k} : {v}")
-        vlog("=" * 70)
-        return elapsed
-
-    def _log_error(self, method: str, start: float, e: Exception) -> None:
-        elapsed = round(time.perf_counter() - start, 2)
-        logger.error("=" * 70)
-        logger.error(f"❌ [FacturationOrchestrator] {method}() ÉCHEC ({elapsed}s)")
-        logger.error(f"   💥 Erreur : {type(e).__name__} — {e}")
-        logger.error("=" * 70)
+        self._log_startup_summary({
+            "Agent M7 — RelanceGenerator": self.relance_generator,
+            "FactureCalculatorService":    self.calculator,
+        })
 
     # =========================================================================
     # GÉNÉRER UNE RELANCE (Agent M7 + HITL)
@@ -209,6 +155,64 @@ class FacturationOrchestrator:
             self._log_error("generer_relance", start, e)
             raise
 
+    # =========================================================================
+    # SYNCHRONISATION BACKEND (après approbation HITL)
+    # =========================================================================
+
+    async def synchroniser_backend(
+        self,
+        review_id: str,
+        force: bool = False,
+    ) -> dict[str, Any]:
+        """
+        Enregistre la relance APPROUVÉE côté Backend (POST /factures/{id}/relances).
+
+        Garde-fous : review approuvé uniquement (agent_m7_relance), un seul
+        envoi par review (sauf force=True).
+
+        Args:
+            review_id: ID du review HITL de la relance.
+            force: renvoyer même si déjà synchronisé.
+
+        Raises:
+            ValueError: review introuvable / non approuvé / d'un autre agent.
+        """
+        start = self._log_start(
+            "synchroniser_backend",
+            **{"🔍 Review": review_id, "🔁 Force": force},
+        )
+
+        review = review_sync.load_approved_review(
+            review_id, agent_ids=("agent_m7_relance",)
+        )
+        data = review.get("data") or {}
+        facture_id = data.get("facture_id")
+        if not facture_id:
+            raise ValueError(
+                f"Review '{review_id}' ne contient pas de facture_id — "
+                "relancez /ia/facturation/relances/generer."
+            )
+
+        async def _envoyer() -> dict[str, Any]:
+            return await facture_sync.sync_relance_to_backend(
+                facture_id=facture_id,
+                niveau=str(data.get("niveau", "1")),
+                objet=data.get("objet", "Relance"),
+                texte=data.get("texte", ""),
+                review_id=review_id,
+            )
+
+        result = await review_sync.sync_once(review_id, _envoyer, force=force)
+        self._log_end(
+            "synchroniser_backend", start,
+            **{
+                "📤 Envoyé": (result["backend_sync"] or {}).get("sent"),
+                "♻️  Déjà synchronisé": result["already_synced"],
+                "🆔 Relance ID": (result["backend_sync"] or {}).get("relance_id"),
+            },
+        )
+        return result
+
 
 # =============================================================================
 # SINGLETON — pour FastAPI Depends
@@ -229,3 +233,5 @@ def get_facturation_orchestrator() -> FacturationOrchestrator:
         logger.info("🔧 Création du singleton FacturationOrchestrator...")
         _facturation_orchestrator_instance = FacturationOrchestrator()
     return _facturation_orchestrator_instance
+
+

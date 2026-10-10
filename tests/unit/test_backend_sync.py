@@ -24,6 +24,7 @@ from app.services.backend_sync import (
     offre_sync,
     opportunity_sync,
     preparation_sync,
+    rh_sync,
     tdr_sync,
 )
 
@@ -256,31 +257,37 @@ def test_offre_sync_envoie_opportunite_et_montant(patch_backend):
     opp_id, doc_id = new_id(), new_id()
     fake = patch_backend(lambda m, p, j: ok({"id": doc_id}))
 
-    result = run(offre_sync.sync_offre_to_backend(opp_id, montant=2_280_000))
+    result = run(offre_sync.sync_offre_to_backend(
+        titre="Offre Test", client="Client Test",
+        opportunite_id=opp_id, montant_ht=2_280_000,
+    ))
 
     assert result["sent"] and result["verified"]
     assert result["resource_id"] == doc_id
     assert fake.calls[0] == (
-        "POST", "/documents/offre",
-        {"opportunite_id": opp_id, "montant": 2_280_000},
+        "POST", "/offres",
+        {"titre": "Offre Test", "client": "Client Test",
+         "opportunite_id": opp_id, "montant_ht": 2_280_000, "statut": "brouillon"},
     )
-    assert fake.calls[1][:2] == ("GET", f"/documents/{doc_id}")
+    assert fake.calls[1][:2] == ("GET", f"/offres/{doc_id}")
 
 
 def test_offre_sync_transmet_le_contenu_ia(patch_backend):
-    opp_id = new_id()
     fake = patch_backend(lambda m, p, j: ok({"id": new_id()}))
 
-    run(offre_sync.sync_offre_to_backend(opp_id, 10, contenu="OFFRE TECHNIQUE\nx"))
-    assert fake.calls[0][2]["contenu"] == "OFFRE TECHNIQUE\nx"
+    run(offre_sync.sync_offre_to_backend(
+        titre="Offre", client="Client", trame_technique="OFFRE TECHNIQUE\nx"))
+    assert fake.calls[0][2]["trame_technique"] == "OFFRE TECHNIQUE\nx"
 
     # Trop long : tronqué à la limite du Backend (500 000)
-    run(offre_sync.sync_offre_to_backend(opp_id, 10, contenu="y" * 600_000))
-    assert len(fake.calls[2][2]["contenu"]) == 500_000
+    run(offre_sync.sync_offre_to_backend(
+        titre="Offre", client="Client", trame_technique="y" * 600_000))
+    assert len(fake.calls[2][2]["trame_technique"]) == 500_000
 
     # Vide ou blanc : champ omis (le Backend garde son texte par défaut)
-    run(offre_sync.sync_offre_to_backend(opp_id, 10, contenu="   "))
-    assert "contenu" not in fake.calls[4][2]
+    run(offre_sync.sync_offre_to_backend(
+        titre="Offre", client="Client", trame_technique="   "))
+    assert "trame_technique" not in fake.calls[4][2]
 
 
 def test_build_contenu_texte_lisible_sans_cles_internes():
@@ -317,7 +324,8 @@ def test_build_contenu_offre_unique_sans_enveloppe():
 
 def test_offre_sync_refuse_un_opportunite_id_invalide(patch_backend):
     fake = patch_backend(lambda m, p, j: ok({}))
-    result = run(offre_sync.sync_offre_to_backend("pas-un-uuid", 10))
+    result = run(offre_sync.sync_offre_to_backend(
+        titre="Titre", client="Client", opportunite_id="pas-un-uuid"))
     assert result["sent"] is False
     assert "opportunite_id" in result["error"]
     assert fake.calls == []
@@ -373,7 +381,7 @@ def test_preparation_sync_session_seances_et_budget_non_persiste(patch_backend):
     sid = new_id()
 
     def handler(method, path, payload):
-        if method == "POST" and path == "/sessions":
+        if method == "POST" and path == "/projets":
             return ok({"id": sid})
         if method == "GET":
             return ok({"id": sid}, status=200)
@@ -396,17 +404,17 @@ def test_preparation_sync_session_seances_et_budget_non_persiste(patch_backend):
     ))
 
     session_payload = fake.calls[0][2]
-    assert session_payload["titre"] == "T" * 50
+    assert session_payload["titre"] == "T" * 80
     assert session_payload["date_debut"] == "2026-10-15"
     assert session_payload["date_fin"] == "2026-10-16"   # NOT NULL côté Backend
     assert session_payload["client"] == "Ministère"
     assert result["sent"] and result["verified"]
-    assert result["seances"] == {"sent": 2, "failed": 0}
+    assert result["edt"] == {"sent": 2, "failed": 0}
     assert result["budget"]["skipped"] is True
 
-    seance_calls = [c for c in fake.calls if c[1].endswith("/seances")]
-    assert seance_calls[0][2] == {
-        "date": "2026-10-16", "duree": "3h", "theme": "Apprentissage, Atelier"
+    edt_calls = [c for c in fake.calls if c[1].endswith("/edt")]
+    assert edt_calls[0][2] == {
+        "date": "2026-10-16", "module": "Apprentissage, Atelier"
     }
 
 
@@ -557,3 +565,121 @@ def test_opportunity_sync_source_valide_pour_le_backend(patch_backend):
 ])
 def test_parse_budget_formats_avec_multiplicateur(texte, attendu):
     assert opportunity_sync._parse_budget(texte) == attendu
+
+
+# ============================================================
+# rh_sync (M4 RH)
+# ============================================================
+
+def test_rh_sync_evaluation_formateur_met_a_jour(patch_backend):
+    fid = new_id()
+    fake = patch_backend(lambda m, p, j: ok({"id": fid}, status=200))
+    result = run(rh_sync.sync_evaluation_formateur(
+        formateur_id=fid,
+        score_moyen=82.5,
+        nb_sessions=5,
+        recommandation="OUI",
+        notes_internes="Bon formateur",
+    ))
+    assert result["sent"] is True and result["verified"] is True
+    assert fake.calls[0][:2] == ("PATCH", f"/rh/formateurs/{fid}")
+    payload = fake.calls[0][2]
+    assert payload["score_moyen"] == 82.5
+    assert payload["recommandation"] == "OUI"
+    assert payload["notes_internes"] == "Bon formateur"
+
+
+def test_rh_sync_evaluation_formateur_uuid_invalide(patch_backend):
+    fake = patch_backend(lambda m, p, j: ok({}))
+    result = run(rh_sync.sync_evaluation_formateur(
+        formateur_id="pas-un-uuid",
+        score_moyen=70.0,
+        nb_sessions=2,
+        recommandation="CONDITIONNEL",
+    ))
+    assert result["sent"] is False
+    assert "formateur_id" in result["error"]
+    assert fake.calls == []
+
+
+def test_rh_sync_evaluation_formateur_payload_vide(patch_backend):
+    fake = patch_backend(lambda m, p, j: ok({}))
+    result = run(rh_sync.sync_evaluation_formateur(
+        formateur_id=new_id(),
+        score_moyen=None,
+        nb_sessions=None,
+        recommandation=None,
+    ))
+    assert result["sent"] is False
+    assert "Aucune donnée" in result["error"]
+    assert fake.calls == []
+
+
+def test_rh_sync_candidat_cree_dossier(patch_backend):
+    cid = new_id()
+    fake = patch_backend(lambda m, p, j: ok({"id": cid}))
+    result = run(rh_sync.sync_candidat_to_backend(
+        nom="Jean Dupont",
+        poste_vise="Formateur Data",
+        score_preselection=78.0,
+        decision_preselection="RETENU",
+        review_id_preselection="rv-001",
+    ))
+    assert result["sent"] is True and result["verified"] is True
+    assert result["candidat_id"] == cid
+    assert fake.calls[0][:2] == ("POST", "/rh/candidats")
+    payload = fake.calls[0][2]
+    assert payload["nom"] == "Jean Dupont"
+    assert payload["decision_preselection"] == "RETENU"
+
+
+def test_rh_sync_candidat_tronque_les_noms_longs(patch_backend):
+    fake = patch_backend(lambda m, p, j: ok({"id": new_id()}))
+    run(rh_sync.sync_candidat_to_backend(
+        nom="N" * 300,
+        poste_vise="P" * 300,
+    ))
+    payload = fake.calls[0][2]
+    assert len(payload["nom"]) == 200
+    assert len(payload["poste_vise"]) == 200
+
+
+def test_rh_sync_entretien_cr_envoie_cr(patch_backend):
+    cid, eid = new_id(), new_id()
+    fake = patch_backend(lambda m, p, j: ok({"id": eid}))
+    result = run(rh_sync.sync_entretien_cr_to_backend(
+        candidat_id=cid,
+        compte_rendu="Excellent candidat.",
+        decision="RECRUTER",
+        interviewers="Alice, Bob",
+        date_entretien="2026-10-01",
+        review_id_entretien="rv-002",
+    ))
+    assert result["sent"] is True and result["verified"] is True
+    assert result["entretien_id"] == eid
+    assert fake.calls[0][:2] == ("POST", f"/rh/candidats/{cid}/entretiens")
+    payload = fake.calls[0][2]
+    assert payload["decision"] == "RECRUTER"
+    assert payload["compte_rendu"] == "Excellent candidat."
+
+
+def test_rh_sync_entretien_cr_uuid_invalide(patch_backend):
+    fake = patch_backend(lambda m, p, j: ok({}))
+    result = run(rh_sync.sync_entretien_cr_to_backend(
+        candidat_id="mauvais-id",
+        compte_rendu="CR.",
+    ))
+    assert result["sent"] is False
+    assert "candidat_id" in result["error"]
+    assert fake.calls == []
+
+
+def test_rh_sync_desactive_si_backend_sync_false(monkeypatch):
+    monkeypatch.setenv("BACKEND_SYNC_ENABLED", "false")
+    base_sync.reset_token_cache()
+    fid = new_id()
+    result = run(rh_sync.sync_evaluation_formateur(
+        formateur_id=fid, score_moyen=80.0, nb_sessions=1, recommandation="OUI"
+    ))
+    assert result["sent"] is False
+    assert result.get("enabled") is False

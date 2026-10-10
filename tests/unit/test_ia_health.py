@@ -34,15 +34,18 @@ def test_tous_les_agents_requis_sont_charges_dans_cet_environnement():
     assert etat["status"] == "healthy"
 
 
-def test_m5_expose_6_agents_actifs_sur_7():
+def test_m5_expose_7_agents_actifs_sur_7():
     m5 = ia_health.collecter()["modules"]["M5"]
 
-    assert (m5["charges"], m5["total"]) == (6, 7)
-    assert m5["manquants"] == []          # l'Agent 7 (RAG V2) est optionnel
+    assert (m5["charges"], m5["total"]) == (7, 7)
+    assert m5["manquants"] == []
 
 
-def test_les_quatre_modules_sont_couverts():
-    assert set(ia_health.collecter()["modules"]) == {"M5", "M3", "PREPARATION", "M7"}
+def test_les_cinq_modules_sont_couverts():
+    # C3 (RAG) ajouté à l'Étape H de la mission RAG (2026-09-25) : le
+    # module est livré (routes, chat, portfolio, syllabus, questions) et
+    # suit désormais son état via get_package_status() comme les autres.
+    assert set(ia_health.collecter()["modules"]) == {"M5", "M3", "PREPARATION", "M7", "C3"}
 
 
 def test_un_agent_requis_manquant_donne_degraded(monkeypatch):
@@ -52,7 +55,7 @@ def test_un_agent_requis_manquant_donne_degraded(monkeypatch):
 
     assert etat["status"] == "degraded"
     assert etat["manquants"] == ["M5 — Agent 2 — LevelAnalyzer"]
-    assert etat["modules"]["M5"]["charges"] == 5
+    assert etat["modules"]["M5"]["charges"] == 6
 
 
 def test_l_agent_7_absent_n_est_pas_une_degradation(monkeypatch):
@@ -86,7 +89,7 @@ def test_route_health_ia_sain(client):
     assert reponse.status_code == 200
     corps = reponse.json()
     assert corps["status"] == "healthy" and corps["manquants"] == []
-    assert corps["modules"]["M5"]["charges"] == 6
+    assert corps["modules"]["M5"]["charges"] == 7
     assert "timestamp" in corps
 
 

@@ -101,4 +101,4 @@ class DocumentExportService:
         if ligne_courante:
             lignes.append(ligne_courante)
 
-            return lignes or [""]
+        return lignes or [""]

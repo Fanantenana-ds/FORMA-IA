@@ -1,11 +1,12 @@
 from datetime import date as date_type
+from typing import List, Optional
 from uuid import UUID
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from app.models.facture import Facture, Paiement, StatutFacture
-from app.schemas.facture import FactureCreate, PaiementCreate
+from app.models.facture import Facture, Paiement, Relance, StatutFacture
+from app.schemas.facture import FactureCreate, FactureUpdate, PaiementCreate, RelanceIACreate
 
 
 class FactureService:
@@ -54,6 +55,15 @@ class FactureService:
         self.db.refresh(facture)
         return facture
 
+    def mettre_a_jour_facture(self, facture_id: UUID, data: FactureUpdate) -> Facture:
+        """Mise à jour partielle d'une facture (PATCH semantics)."""
+        facture = self.get_facture(facture_id)
+        for field, value in data.model_dump(exclude_none=True).items():
+            setattr(facture, field, value)
+        self.db.commit()
+        self.db.refresh(facture)
+        return facture
+
     def verifier_retard(self, facture_id: UUID) -> Facture:
         facture = self.get_facture(facture_id)
         if (
@@ -77,5 +87,41 @@ class FactureService:
             f"Merci de bien vouloir régulariser cette facture dans les meilleurs délais."
         )
 
-    def lister(self):
-        return self.db.query(Facture).all()
+    def enregistrer_relance_ia(self, facture_id: UUID, data: RelanceIACreate) -> Relance:
+        """Persiste une relance IA approuvée (HITL) liée à une facture."""
+        self.get_facture(facture_id)  # lève 404 si introuvable
+        relance = Relance(
+            facture_id=facture_id,
+            niveau=data.niveau,
+            objet=data.objet,
+            texte=data.texte,
+            review_id=data.review_id,
+        )
+        self.db.add(relance)
+        self.db.commit()
+        self.db.refresh(relance)
+        return relance
+
+    def lister_relances(self, facture_id: UUID):
+        self.get_facture(facture_id)
+        return self.db.query(Relance).filter(Relance.facture_id == facture_id).all()
+
+    def supprimer_facture(self, facture_id: UUID) -> None:
+        """Supprime une facture et ses paiements/relances (cascade ORM)."""
+        facture = self.get_facture(facture_id)
+        self.db.delete(facture)
+        self.db.commit()
+
+    def lister(
+        self,
+        statut: Optional[StatutFacture] = None,
+        client: Optional[str] = None,
+        skip: int = 0,
+        limit: int = 100,
+    ) -> list[Facture]:
+        q = self.db.query(Facture)
+        if statut is not None:
+            q = q.filter(Facture.statut == statut)
+        if client is not None:
+            q = q.filter(Facture.client.ilike(f"%{client}%"))
+        return q.order_by(Facture.date_emission.desc()).offset(skip).limit(limit).all()

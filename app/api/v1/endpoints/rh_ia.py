@@ -73,6 +73,8 @@ def _handle_exception(e: Exception, context: str) -> None:
     logger.exception("❌ [M4] %s : %s", context, e)
     if isinstance(e, HTTPException):
         raise
+    if isinstance(e, ValueError):
+        raise HTTPException(status_code=422, detail=str(e))
     raise HTTPException(status_code=500, detail=f"Erreur interne : {type(e).__name__} — {e}")
 
 

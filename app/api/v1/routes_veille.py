@@ -22,6 +22,7 @@ from fastapi import (
     Query,
     UploadFile,
 )
+from app.utils.security import verify_api_key
 from pydantic import (
     BaseModel,
     Field,

@@ -8,6 +8,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse
+from pydantic import BaseModel, Field
 
 from app.orchestrator.tdr_orchestrator import TdrOrchestrator
 from app.schemas.tdr import (
@@ -28,6 +29,21 @@ orchestrator = TdrOrchestrator()
 
 BASE_DIR = Path(__file__).resolve().parents[3]
 EXPORTS_DIR = BASE_DIR / "exports" / "tdr"
+
+
+class SynchroniserTDRRequest(BaseModel):
+    """Corps de la requête pour enregistrer un TDR APPROUVÉ dans le Backend."""
+    review_id: str = Field(
+        ..., description="ID du review APPROUVÉ du TDR (agent_m2_tdr)"
+    )
+    opportunite_id: str | None = Field(
+        default=None,
+        description="UUID de l'opportunité Backend liée (sinon lu dans le brief mémorisé)",
+    )
+    force: bool = Field(
+        default=False,
+        description="Renvoyer même si déjà synchronisé (crée un DOUBLON côté Backend)",
+    )
 
 
 # ============================================================

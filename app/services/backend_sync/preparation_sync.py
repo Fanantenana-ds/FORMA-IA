@@ -67,7 +67,15 @@ def _iso_time(value: Any) -> Optional[str]:
     return text[:5] if _TIME_RE.match(text) else None
 
 
-def _seance_payload(jour: dict[str, Any], date_iso: str) -> dict[str, Any]:
+def _minutes(session: dict[str, Any]) -> int:
+    """Durée d'une session en minutes (champ duree_min)."""
+    try:
+        return int(session.get("duree_min") or session.get("duree_minutes") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _seance_payload(jour: dict[str, Any], date_iso: str, formateur_id: str | None = None) -> dict[str, Any]:
     """Un jour d'EDT → SeanceCreate (duree et theme jamais vides : NOT NULL en base)."""
     sessions = [s for s in (jour.get("sessions") or []) if isinstance(s, dict)]
 
@@ -104,6 +112,8 @@ async def sync_preparation_to_backend(
     projet_info: dict[str, Any] | None = None,
     budget: dict[str, Any] | None = None,
     formateur_id: str | None = None,
+    opportunite_id: str | None = None,
+    offre_id: str | None = None,
 ) -> dict[str, Any]:
     """
     Enregistre la préparation côté Backend (projet + EDT).
@@ -148,14 +158,14 @@ async def sync_preparation_to_backend(
         "statut": "brouillon",
     }
     if client:
-        projet_payload["client"] = client
+        session_payload["client"] = client
     if base_sync.is_valid_uuid(opportunite_id):
-        projet_payload["opportunite_id"] = str(opportunite_id)
+        session_payload["opportunite_id"] = str(opportunite_id)
     if base_sync.is_valid_uuid(offre_id):
-        projet_payload["offre_id"] = str(offre_id)
+        session_payload["offre_id"] = str(offre_id)
 
     projet = await base_sync.post_and_verify(
-        "/projets", projet_payload, label="projet (préparation)"
+        "/projets", session_payload, label="projet (préparation)"
     )
     for key in ("sent", "skipped", "verified", "resource_id",
                 "status_code", "data", "error"):
@@ -167,7 +177,7 @@ async def sync_preparation_to_backend(
     for jour, date_iso in dated:
         edt_entry = await base_sync.post_and_verify(
             f"/projets/{projet['resource_id']}/edt",
-            _edt_payload(jour, date_iso, formateur_id),
+            _seance_payload(jour, date_iso, formateur_id),
             verify=False,
             label="edt",
         )

@@ -397,7 +397,7 @@ class BenchmarkRunner:
     # EXÉCUTION DU BENCHMARK
     # --------------------------------------------------------
 
-    async def run(self, limit: int = 20) -> dict[str, Any]:
+    async def run(self, limit: int = 20, pause_secondes: float = 0.0) -> dict[str, Any]:
         entries = self._load_corpus(limit=limit)
         total = len(entries)
 

@@ -24,11 +24,13 @@ from app.orchestrator.base_orchestrator import BaseOrchestrator, _vlog as vlog
 from app.services.formations import (
     AttestationGeneratorService,
     FormGeneratorService,
+    KnowledgeBaseService,
     LevelAnalyzerService,
     PresenceAnalyzerService,
     ReportGeneratorService,
     SatisfactionAnalyzerService,
 )
+from app.services.formations.google_forms_service import GoogleFormsService
 from app.services.hitl import get_review
 
 logger = logging.getLogger(__name__)
@@ -297,6 +299,17 @@ class FormationOrchestrator(BaseOrchestrator):
             "⚠️  [FormationOrchestrator] index_documents() "
             "non encore implémenté (Agent 7 — V2)."
         )
+        return {"success": False, "reason": "not implemented"}
+
+    # ========================================================
+    # AGENT 1b — CRÉER FORMULAIRES GOOGLE (après approbation HITL)
+    # ========================================================
+
+    async def creer_formulaires_google(
+        self, review_id: str, session_title: str = ""
+    ) -> dict[str, Any]:
+        """Publie les 4 Google Forms réels après approbation HITL."""
+        start = self._log_start("creer_formulaires_google", Review_ID=review_id)
 
         review = get_review(review_id)
         if not review:

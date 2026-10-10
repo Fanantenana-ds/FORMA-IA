@@ -11,9 +11,11 @@ from __future__ import annotations
 import io
 import logging
 
+import pypdf
 import PyPDF2
 from fastapi import (
     APIRouter,
+    Depends,
     File,
     Form,
     HTTPException,
@@ -32,6 +34,7 @@ from app.services.benchmark.benchmark_runner import BenchmarkRunner
 from app.services.veille import auto_detection_service as auto_detection
 from app.services.veille import tavily_quota_service
 from app.services.veille.tavily_quota_service import QuotaTavilyDepasseError
+from app.utils.security import verify_api_key
 
 logger = logging.getLogger(__name__)
 

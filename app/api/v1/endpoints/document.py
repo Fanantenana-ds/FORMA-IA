@@ -21,6 +21,11 @@ from app.core.dependencies import get_current_user, require_role
 from app.database import get_db
 from app.models.document import Document, FormatExport, TypeDocument
 from app.models.user import User
+from app.services.rag import registry_service as registre
+from app.services.rag.registry_service import initialiser_entree
+from app.services.storage import get_storage, calculer_hash, TAILLE_MAX_OCTETS, EXTENSIONS_AUTORISEES
+
+logger = logging.getLogger(__name__)
 from app.schemas.document import (
     DocumentResponse,
     OffreRequest,

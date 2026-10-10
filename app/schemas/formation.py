@@ -1,3 +1,4 @@
+import datetime as _dt
 from datetime import date, datetime
 from typing import Optional
 from uuid import UUID
@@ -42,7 +43,8 @@ class SeanceCreate(BaseModel):
 
 class SeanceUpdate(BaseModel):
     """Mise à jour partielle d'une séance (tous les champs sont optionnels)."""
-    date: date | None = None
+    # Le champ "date" masque le type dans le corps de classe : passer par le module.
+    date: _dt.date | None = None
     duree: str | None = None
     theme: str | None = None
 

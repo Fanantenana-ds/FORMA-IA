@@ -47,7 +47,7 @@ def creer_session(
     return service.creer_session(data)
 
 
-@router.get("", response_model=List[SessionResponse])
+@router.get("", response_model=list[SessionResponse])
 def lister_sessions(
     formateur_id: Optional[UUID] = Query(default=None),
     client: Optional[str] = Query(default=None),
@@ -100,7 +100,7 @@ def supprimer_session(
 # SÉANCES D'UNE SESSION
 # =============================================================================
 
-@router.get("/{session_id}/seances", response_model=List[SeanceResponse])
+@router.get("/{session_id}/seances", response_model=list[SeanceResponse])
 def lister_seances(
     session_id: UUID,
     service: FormationService = Depends(get_formation_service),
@@ -142,7 +142,7 @@ def supprimer_seance(
 # PRÉSENCES
 # =============================================================================
 
-@router.get("/seances/{seance_id}/presences", response_model=List[PresenceResponse])
+@router.get("/seances/{seance_id}/presences", response_model=list[PresenceResponse])
 def lister_presences(
     seance_id: UUID,
     service: FormationService = Depends(get_formation_service),
@@ -195,7 +195,7 @@ def desinscrire_participant(
     service.desinscrire_participant(session_id, participant_id)
 
 
-@router.get("/{session_id}/participants", response_model=List[ParticipantResponse])
+@router.get("/{session_id}/participants", response_model=list[ParticipantResponse])
 def lister_participants_session(
     session_id: UUID,
     service: FormationService = Depends(get_formation_service),
@@ -217,7 +217,7 @@ def creer_participant(
     return service.creer_participant(data)
 
 
-@participants_router.get("", response_model=List[ParticipantResponse])
+@participants_router.get("", response_model=list[ParticipantResponse])
 def lister_participants(
     nom: Optional[str] = Query(default=None),
     skip: int = Query(default=0, ge=0),

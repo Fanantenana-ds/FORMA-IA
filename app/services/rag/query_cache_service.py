@@ -53,14 +53,14 @@ def _sauvegarder(cache: dict, chemin: Path) -> None:
     os.replace(tmp, chemin)
 
 
-def depuis_cache(texte: str, modele_requete: str, chemin: Optional[Path] = None) -> Optional[List[float]]:
+def depuis_cache(texte: str, modele_requete: str, chemin: Optional[Path] = None) -> Optional[list[float]]:
     """Retourne le vecteur en cache, ou None si absent."""
     chemin = chemin or CHEMIN_CACHE_DEFAUT
     cache = _charger(chemin)
     return cache.get(_cle(texte, modele_requete))
 
 
-def mettre_en_cache(texte: str, modele_requete: str, vecteur: List[float], chemin: Optional[Path] = None) -> None:
+def mettre_en_cache(texte: str, modele_requete: str, vecteur: list[float], chemin: Optional[Path] = None) -> None:
     chemin = chemin or CHEMIN_CACHE_DEFAUT
     cache = _charger(chemin)
     cache[_cle(texte, modele_requete)] = vecteur
@@ -77,7 +77,7 @@ async def obtenir_ou_calculer(
     fonction_embed_query: Callable,
     chemin: Optional[Path] = None,
     **kwargs_embed,
-) -> List[float]:
+) -> list[float]:
     """
     Consulte le cache AVANT tout appel Voyage. `fonction_embed_query` a la
     signature de embedding_service.embed_query (async, texte, **kwargs).

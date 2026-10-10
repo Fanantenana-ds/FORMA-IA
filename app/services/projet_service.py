@@ -5,11 +5,16 @@ from uuid import UUID
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from app.models.projet import Projet, Salle, EdtSession, BudgetFormation, StatutProjet
+from app.models.projet import BudgetFormation, EdtSession, Projet, Salle, StatutProjet
 from app.schemas.projet import (
-    ProjetCreate, ProjetUpdate, ProjetReplace,
-    SalleCreate, SalleUpdate, SalleReplace,
-    EdtSessionCreate, BudgetCreate,
+    BudgetCreate,
+    EdtSessionCreate,
+    ProjetCreate,
+    ProjetReplace,
+    ProjetUpdate,
+    SalleCreate,
+    SalleReplace,
+    SalleUpdate,
 )
 
 
@@ -30,7 +35,7 @@ class SalleService:
             raise HTTPException(status_code=404, detail="Salle introuvable")
         return salle
 
-    def lister(self, disponible: Optional[bool] = None, skip: int = 0, limit: int = 100) -> List[Salle]:
+    def lister(self, disponible: Optional[bool] = None, skip: int = 0, limit: int = 100) -> list[Salle]:
         q = self.db.query(Salle)
         if disponible is not None:
             q = q.filter(Salle.disponible == disponible)
@@ -83,7 +88,7 @@ class ProjetService:
         statut: Optional[StatutProjet] = None,
         skip: int = 0,
         limit: int = 100,
-    ) -> List[Projet]:
+    ) -> list[Projet]:
         q = self.db.query(Projet)
         if statut:
             q = q.filter(Projet.statut == statut)
@@ -120,7 +125,7 @@ class ProjetService:
         self.db.refresh(edt)
         return edt
 
-    def lister_edt(self, projet_id: UUID) -> List[EdtSession]:
+    def lister_edt(self, projet_id: UUID) -> list[EdtSession]:
         self._get_projet(projet_id)
         return (
             self.db.query(EdtSession)

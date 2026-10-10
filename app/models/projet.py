@@ -5,12 +5,24 @@
 # ============================================================
 
 import uuid
-from datetime import date as date_type, datetime, time, timezone
+from datetime import date as date_type
+from datetime import datetime, time, timezone
 from enum import Enum
 
 from sqlalchemy import (
-    Column, String, Float, Text, Date, Time, DateTime,
-    Boolean, Integer, ForeignKey, Enum as SqlEnum,
+    Boolean,
+    Column,
+    Date,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    Time,
+)
+from sqlalchemy import (
+    Enum as SqlEnum,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship

@@ -1,14 +1,14 @@
 ﻿from typing import List, Optional
-
 from uuid import UUID
-from fastapi import APIRouter, Depends, Header, HTTPException, status, Query
+
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.core.dependencies import get_current_user, require_role
 from app.database import get_db
 from app.models.user import RoleEnum
 from app.schemas.auth import TokenResponse, UserLogin
-from app.schemas.user import UserCreate, UserUpdate, UserResponse, UserAdminResponse
+from app.schemas.user import UserAdminResponse, UserCreate, UserResponse, UserUpdate
 from app.services.auth_service import AuthService
 
 router = APIRouter(
@@ -83,7 +83,7 @@ def get_auth_service(db: Session = Depends(get_db)) -> AuthService:
 
 @router.get(
     "/users",
-    response_model=List[UserAdminResponse],
+    response_model=list[UserAdminResponse],
     summary="Lister tous les comptes utilisateurs",
     description=(
         "Retourne la liste de tous les comptes, triés par nom.\n\n"

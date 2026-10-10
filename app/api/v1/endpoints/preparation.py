@@ -1,13 +1,13 @@
 from uuid import UUID
+
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 
-from app.database import get_db
 from app.core.dependencies import require_role
+from app.database import get_db
 from app.models.user import User
 from app.schemas.preparation import EDTGeneratorOutput
 from app.services.preparation_service import PreparationService
-
 
 router = APIRouter(
     prefix="/projets",

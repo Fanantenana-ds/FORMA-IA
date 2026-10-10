@@ -140,7 +140,7 @@ def enregistrer_relance_ia(
 
 @router.get(
     "/{facture_id}/relances",
-    response_model=List[RelanceIAResponse],
+    response_model=list[RelanceIAResponse],
     summary="Lister les relances IA d'une facture",
 )
 def lister_relances(

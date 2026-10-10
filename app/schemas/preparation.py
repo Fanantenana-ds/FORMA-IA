@@ -1,7 +1,9 @@
 from datetime import date, time
 from typing import List, Optional
 from uuid import UUID
+
 from pydantic import BaseModel, Field
+
 from app.models.preparation import StatutProjet
 
 
@@ -41,7 +43,7 @@ class ProjetResponse(BaseModel):
     formateur_principal_id: Optional[UUID] = None
     salle_principale_id: Optional[UUID] = None
     resume_hebdomadaire: Optional[dict] = None
-    notes: Optional[List[str]] = None
+    notes: Optional[list[str]] = None
 
     model_config = {"from_attributes": True}
 
@@ -119,7 +121,7 @@ class EDTCreate(BaseModel):
     duree_minutes: Optional[int] = None
     module: Optional[str] = None
     type_activite: Optional[str] = None
-    objectifs: Optional[List[str]] = None
+    objectifs: Optional[list[str]] = None
     formateur_id: Optional[UUID] = None
     salle_id: Optional[UUID] = None
 
@@ -183,15 +185,15 @@ class SessionLLMSchema(BaseModel):
     duree_minutes: int
     formateur: Optional[str] = None
     salle: Optional[str] = None
-    objectifs: List[str] = []
+    objectifs: list[str] = []
 
 
 class JourLLMSchema(BaseModel):
     numero: int
     date: str = Field(..., pattern=r"^\d{4}-:\d{2}-\d{2}$")
     jour_semaine: str
-    sessions: List[SessionLLMSchema] = []
-    pauses: List[PauseLLMSchema] = []
+    sessions: list[SessionLLMSchema] = []
+    pauses: list[PauseLLMSchema] = []
 
 
 class ResumeHebdomadaireSchema(BaseModel):
@@ -208,6 +210,6 @@ class EDTGeneratorOutput(BaseModel):
     nombre_modules: int
     formateur: FormateurLLMSchema
     salle: SalleLLMSchema
-    jours: List[JourLLMSchema]
+    jours: list[JourLLMSchema]
     resume_hebdomadaire: ResumeHebdomadaireSchema
-    notes: List[str] = Field(default_factory=list)
+    notes: list[str] = Field(default_factory=list)

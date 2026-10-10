@@ -15,10 +15,10 @@ from pathlib import Path
 from typing import List, Optional
 
 import filetype
-from pypdf import PdfReader
 from docx import Document
-from pptx import Presentation
 from openpyxl import load_workbook
+from pptx import Presentation
+from pypdf import PdfReader
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +78,7 @@ def detect_file_type(file_path: str) -> str:
 # EXTRACTION — Point d'entrée (segments numérotés)
 # ============================================================
 
-def extract_segments(file_path: str, file_type: Optional[str] = None) -> List[Segment]:
+def extract_segments(file_path: str, file_type: Optional[str] = None) -> list[Segment]:
     """Extrait le contenu d'un fichier sous forme de segments numérotés."""
     if file_type is None:
         file_type = detect_file_type(file_path)
@@ -116,7 +116,7 @@ def compter_pages_pdf(path: str) -> int:
     return len(PdfReader(path).pages)
 
 
-def _extract_pdf(path: str) -> List[Segment]:
+def _extract_pdf(path: str) -> list[Segment]:
     reader = PdfReader(path)
     segments = []
     for numero, page in enumerate(reader.pages, start=1):
@@ -126,7 +126,7 @@ def _extract_pdf(path: str) -> List[Segment]:
     return segments
 
 
-def _extract_docx(path: str) -> List[Segment]:
+def _extract_docx(path: str) -> list[Segment]:
     """DOCX : pas de pagination native -> segment unique (numero=1)."""
     doc = Document(path)
     parts = []
@@ -151,7 +151,7 @@ def _extract_docx(path: str) -> List[Segment]:
     return [Segment(numero=1, texte=texte_complet)] if texte_complet else []
 
 
-def _extract_pptx(path: str) -> List[Segment]:
+def _extract_pptx(path: str) -> list[Segment]:
     """PPTX : un segment PAR DIAPOSITIVE (numero = numéro de diapositive),
     pour que le regroupement 3-5 diapositives/chunk (chunking_service) sache
     où couper."""
@@ -172,7 +172,7 @@ def _extract_pptx(path: str) -> List[Segment]:
     return segments
 
 
-def _extract_xlsx(path: str) -> List[Segment]:
+def _extract_xlsx(path: str) -> list[Segment]:
     """XLSX : un segment par feuille (numero = ordre 1-based, pas de
     notion de page dans un tableur)."""
     wb = load_workbook(path, data_only=True)
@@ -194,7 +194,7 @@ def _extract_xlsx(path: str) -> List[Segment]:
     return segments
 
 
-def _extract_txt(path: str) -> List[Segment]:
+def _extract_txt(path: str) -> list[Segment]:
     for encoding in ("utf-8", "latin-1", "cp1252"):
         try:
             with open(path, "r", encoding=encoding) as f:
@@ -213,7 +213,7 @@ def _extract_txt(path: str) -> List[Segment]:
 CARACTERES_MIN_PAR_PAGE_MOYENNE = 50
 
 
-def pdf_necessite_ocr(segments: List[Segment], nb_pages_total: int) -> bool:
+def pdf_necessite_ocr(segments: list[Segment], nb_pages_total: int) -> bool:
     """True si le PDF a moins de 50 caractères/page en moyenne (probablement
     scanné, sans couche texte) -> statut 'ocr_necessaire', pas une erreur."""
     if nb_pages_total == 0:

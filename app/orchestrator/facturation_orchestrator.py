@@ -23,13 +23,14 @@ import os
 import time
 from typing import Any, Dict
 
+from app.orchestrator.base_orchestrator import BaseOrchestrator
+from app.orchestrator.base_orchestrator import _vlog as vlog
 from app.services.backend_sync import facture_sync, review_sync
 from app.services.backend_sync.facture_calculator_service import (
     FactureCalculatorService,
 )
 from app.services.facturation import RelanceGeneratorService
 from app.services.hitl import create_review
-from app.orchestrator.base_orchestrator import BaseOrchestrator, _vlog as vlog
 
 logger = logging.getLogger(__name__)
 
@@ -162,7 +163,7 @@ class FacturationOrchestrator(BaseOrchestrator):
         self,
         review_id: str,
         force: bool = False,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Enregistre la relance APPROUVÉE côté Backend (POST /factures/{id}/relances).
 
@@ -192,7 +193,7 @@ class FacturationOrchestrator(BaseOrchestrator):
                 "relancez /ia/facturation/relances/generer."
             )
 
-        async def _envoyer() -> Dict[str, Any]:
+        async def _envoyer() -> dict[str, Any]:
             return await facture_sync.sync_relance_to_backend(
                 facture_id=facture_id,
                 niveau=str(data.get("niveau", "1")),

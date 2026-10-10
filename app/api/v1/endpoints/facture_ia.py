@@ -18,13 +18,15 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from app.schemas.common import RouteResponse
-from app.api.v1.endpoints._helpers import log_request as _log_req, handle_exception as _handle_exc, build_response as _build_resp
 
+from app.api.v1.endpoints._helpers import build_response as _build_resp
+from app.api.v1.endpoints._helpers import handle_exception as _handle_exc
+from app.api.v1.endpoints._helpers import log_request as _log_req
 from app.orchestrator.facturation_orchestrator import (
     FacturationOrchestrator,
     get_facturation_orchestrator,
 )
+from app.schemas.common import RouteResponse
 from app.schemas.facture_ia import CalculerMontantsRequest, GenererRelanceRequest, SynchroniserRelanceRequest
 from app.utils.security import verify_api_key
 

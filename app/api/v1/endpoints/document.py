@@ -23,7 +23,7 @@ from app.models.document import Document, FormatExport, TypeDocument
 from app.models.user import User
 from app.services.rag import registry_service as registre
 from app.services.rag.registry_service import initialiser_entree
-from app.services.storage import get_storage, calculer_hash, TAILLE_MAX_OCTETS, EXTENSIONS_AUTORISEES
+from app.services.storage import EXTENSIONS_AUTORISEES, TAILLE_MAX_OCTETS, calculer_hash, get_storage
 
 logger = logging.getLogger(__name__)
 from app.schemas.document import (
@@ -75,7 +75,7 @@ def generer_offre(
 # ─────────────────────────────────────────────────────────────
 @router.post(
     "/attestations/{session_id}",
-    response_model=List[DocumentResponse],
+    response_model=list[DocumentResponse],
     status_code=201,
 )
 def generer_attestations(
@@ -89,7 +89,7 @@ def generer_attestations(
 # ─────────────────────────────────────────────────────────────
 # ✅ NOUVEAU — LISTER tous les documents (avec filtres)
 # ─────────────────────────────────────────────────────────────
-@router.get("", response_model=List[DocumentResponse])
+@router.get("", response_model=list[DocumentResponse])
 def lister_documents(
     type: Optional[TypeDocument] = Query(
         None, description="Filtrer par type : TDR, OFFRE, ATTESTATION"
@@ -313,10 +313,11 @@ def telecharger_resume_formation(
     formation_code: str = Query(..., description="Code de la formation (ex: PYTHON-2026)"),
     current_user: User = Depends(get_current_user),
 ):
+    from collections import defaultdict
+    from io import BytesIO
+
     from docx import Document as DocxDocument
     from docx.shared import Pt, RGBColor
-    from io import BytesIO
-    from collections import defaultdict
 
     entrees = registre.charger_registre()
     supports = [e for e in entrees.values() if e.formation_code == formation_code]
@@ -408,10 +409,11 @@ def telecharger_bilan_formations(
     date_fin: Optional[str] = Query(default=None, description="Période fin YYYY-MM-DD (optionnel)"),
     current_user: User = Depends(require_role("DIRECTION", "ASSISTANT")),
 ):
+    from collections import defaultdict
+    from io import BytesIO
+
     from docx import Document as DocxDocument
     from docx.shared import RGBColor
-    from io import BytesIO
-    from collections import defaultdict
 
     entrees = registre.charger_registre()
     tous_supports = list(entrees.values())

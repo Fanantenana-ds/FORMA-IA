@@ -8,9 +8,9 @@ from typing import Any, Dict, List, Optional
 
 import yaml
 
+from app.services.formations.presence_analyzer_service import SEUIL_ELIGIBILITE_ATTESTATION
 from app.services.hitl import create_review
 from app.services.llm import LLMNotAvailableError, get_llm_provider
-from app.services.formations.presence_analyzer_service import SEUIL_ELIGIBILITE_ATTESTATION
 
 logger = logging.getLogger(__name__)
 
@@ -214,7 +214,7 @@ class AttestationGeneratorService:
     # signalé, jamais généré silencieusement (conformité CDC : attestation
     # à partir de 80% de présence).
     # --------------------------------------------------------
-    def _verifier_eligibilite(self, participant: Dict[str, Any]) -> "tuple[bool, Optional[str]]":
+    def _verifier_eligibilite(self, participant: dict[str, Any]) -> "tuple[bool, Optional[str]]":
         """
         Retourne (eligible, raison_du_refus). `eligible_attestation`
         (booléen déjà calculé par l'Agent 4) fait foi s'il est présent —
@@ -244,8 +244,8 @@ class AttestationGeneratorService:
         return False, f"Taux de présence {taux}% < seuil de {SEUIL_ELIGIBILITE_ATTESTATION}%."
 
     def _filtrer_eligibles(
-        self, eligible_participants: List[Dict[str, Any]],
-    ) -> "tuple[List[Dict[str, Any]], List[Dict[str, Any]]]":
+        self, eligible_participants: list[dict[str, Any]],
+    ) -> "tuple[list[dict[str, Any]], list[dict[str, Any]]]":
         verifies, rejetes = [], []
         for p in eligible_participants:
             ok, raison = self._verifier_eligibilite(p)
@@ -273,7 +273,7 @@ class AttestationGeneratorService:
 
         semaphore = asyncio.Semaphore(5)
 
-        async def _generer(index: int, p: Dict[str, Any]):
+        async def _generer(index: int, p: dict[str, Any]):
             async with semaphore:
                 return await self.generate_one(session_info, p, index=index)
 
@@ -640,7 +640,7 @@ class AttestationGeneratorService:
 
         semaphore = asyncio.Semaphore(5)
 
-        async def _generer_pdf(index: int, p: Dict[str, Any]):
+        async def _generer_pdf(index: int, p: dict[str, Any]):
             async with semaphore:
                 return await self.generate_one_with_pdf(session_info, p, index=index)
 

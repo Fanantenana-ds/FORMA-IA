@@ -29,17 +29,25 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
-from app.database import get_db
 from app.core.dependencies import get_current_user, require_role
+from app.database import get_db
 from app.models.projet import StatutProjet
 from app.models.user import User
 from app.schemas.projet import (
-    SalleCreate, SalleUpdate, SalleReplace, SalleResponse,
-    ProjetCreate, ProjetUpdate, ProjetReplace, ProjetResponse,
-    EdtSessionCreate, EdtSessionResponse,
-    BudgetCreate, BudgetResponse,
+    BudgetCreate,
+    BudgetResponse,
+    EdtSessionCreate,
+    EdtSessionResponse,
+    ProjetCreate,
+    ProjetReplace,
+    ProjetResponse,
+    ProjetUpdate,
+    SalleCreate,
+    SalleReplace,
+    SalleResponse,
+    SalleUpdate,
 )
-from app.services.projet_service import SalleService, ProjetService
+from app.services.projet_service import ProjetService, SalleService
 
 salles_router = APIRouter(prefix="/salles", tags=["Préparation — Salles"])
 projets_router = APIRouter(prefix="/projets", tags=["Préparation — Projets"])
@@ -74,7 +82,7 @@ def creer_salle(
 
 @salles_router.get(
     "",
-    response_model=List[SalleResponse],
+    response_model=list[SalleResponse],
     summary="Lister les salles",
     description="Filtre optionnel : `disponible=true|false`.",
 )
@@ -170,7 +178,7 @@ def creer_projet(
 
 @projets_router.get(
     "",
-    response_model=List[ProjetResponse],
+    response_model=list[ProjetResponse],
     summary="Lister les projets",
     description="Filtre optionnel : `statut` (BROUILLON|EN_COURS|VALIDE|TERMINE|ANNULE).",
 )
@@ -261,7 +269,7 @@ def ajouter_edt(
 
 @projets_router.get(
     "/{projet_id}/edt",
-    response_model=List[EdtSessionResponse],
+    response_model=list[EdtSessionResponse],
     summary="Lister l'emploi du temps d'un projet",
 )
 def lister_edt(

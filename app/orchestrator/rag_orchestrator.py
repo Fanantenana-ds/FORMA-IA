@@ -16,29 +16,40 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from app.models.knowledge_base import KnowledgeBase
-from app.services.rag.knowledge_repository import KnowledgeRepository
-from app.services.rag.document_loader_service import (
-    Segment, detect_file_type, extract_segments, pdf_necessite_ocr,
-    compter_pages_pdf, FORMATS_INDEXABLES, FORMATS_IMAGE,
-)
-from app.services.rag.text_cleaner_service import clean_text
-from app.services.rag.chunking_service import Chunk, chunk_segments, chunk_pptx_slides
-from app.services.rag.embedding_provider import (
-    get_embedding_provider, construire_lots, decouper_indices_par_lots, estimer_tokens,
-)
+from app.services.backend_sync import review_sync
+from app.services.hitl import create_review
+from app.services.rag import portfolio_service, questions_service, syllabus_service
 from app.services.rag import registry_service as registre
 from app.services.rag.catalogue_service import (
-    obtenir_formation, formation_indexable, charger_catalogue,
+    charger_catalogue,
+    formation_indexable,
+    obtenir_formation,
 )
-from app.services.rag.resume_service import generer_resume_support, generer_resume_formation
-from app.services.rag.zip_securite import verifier_et_lister, extraire_membre, ZipSecuriteError
-from app.services.rag.recherche_service import (
-    verifier_compatibilite_avec_base, IncompatibiliteModeleError,
+from app.services.rag.chunking_service import Chunk, chunk_pptx_slides, chunk_segments
+from app.services.rag.document_loader_service import (
+    FORMATS_IMAGE,
+    FORMATS_INDEXABLES,
+    Segment,
+    compter_pages_pdf,
+    detect_file_type,
+    extract_segments,
+    pdf_necessite_ocr,
 )
+from app.services.rag.embedding_provider import (
+    construire_lots,
+    decouper_indices_par_lots,
+    estimer_tokens,
+    get_embedding_provider,
+)
+from app.services.rag.knowledge_repository import KnowledgeRepository
 from app.services.rag.llm_json_helper import appeler_llm_json
-from app.services.rag import portfolio_service, syllabus_service, questions_service
-from app.services.hitl import create_review
-from app.services.backend_sync import review_sync
+from app.services.rag.recherche_service import (
+    IncompatibiliteModeleError,
+    verifier_compatibilite_avec_base,
+)
+from app.services.rag.resume_service import generer_resume_formation, generer_resume_support
+from app.services.rag.text_cleaner_service import clean_text
+from app.services.rag.zip_securite import ZipSecuriteError, extraire_membre, verifier_et_lister
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +74,7 @@ class RagOrchestrator:
     # ESTIMATION — coût avant indexation
     # ========================================================
 
-    def estimer_cout(self, textes: List[str]) -> Dict[str, Any]:
+    def estimer_cout(self, textes: list[str]) -> dict[str, Any]:
         """Tokens estimés, nombre de requêtes (lots), durée estimée à
         partir des limites RPM/TPM configurées."""
         tpm = self.embedding_provider.config.tpm
@@ -92,7 +103,7 @@ class RagOrchestrator:
         formation_code: Optional[str],
         collection: str = "support",
         nom_original: Optional[str] = None,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Ingestion complète d'UN fichier déjà sur disque (pas une archive).
         Idempotent : si déjà indexé (même SHA-256), ne rappelle pas Voyage.
@@ -288,7 +299,7 @@ class RagOrchestrator:
             "resume_genere": bool(resultat_resume),
         }
 
-    def _decouper_indices_par_lots(self, textes: List[str]) -> List[List[int]]:
+    def _decouper_indices_par_lots(self, textes: list[str]) -> list[list[int]]:
         return decouper_indices_par_lots(textes, self.embedding_provider.config.tpm)
 
     # ========================================================
@@ -299,7 +310,7 @@ class RagOrchestrator:
 
     def preparer_indexation(
         self, chemin_fichier: str, formation_code: Optional[str], collection: str = "support",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Calcule le hash (rapide, synchrone) et vérifie l'idempotence.
         Ne fait AUCUN appel Voyage. Retourne de quoi répondre
@@ -323,7 +334,7 @@ class RagOrchestrator:
     # SUPPRESSION D'UN DOCUMENT
     # ========================================================
 
-    async def supprimer_document(self, hash_fichier: str) -> Dict[str, Any]:
+    async def supprimer_document(self, hash_fichier: str) -> dict[str, Any]:
         """Supprime les chunks d'un document de knowledge_base, retire son
         entrée du registre, met à jour le résumé de sa formation."""
         entree = registre.obtenir_entree(hash_fichier)
@@ -393,7 +404,7 @@ class RagOrchestrator:
     async def ingerer_zip(
         self, chemin_zip: str, formation_code: Optional[str], collection: str = "support",
         dossier_temporaire: Optional[Path] = None,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Vérifie la sécurité du ZIP, extrait chaque membre, ingère
         chacun individuellement. Un fichier en échec n'arrête pas les
         autres — rapport détaillé par fichier."""
@@ -439,7 +450,7 @@ class RagOrchestrator:
 
     async def generer_portfolio(
         self, domaine: Optional[str] = None, reference_ao: Optional[str] = None,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Génère le portfolio : totaux Python (catalogue), descriptions RAG
         par référence (LLM, MODE STRICT), review HITL (agent_rag_portfolio).
@@ -487,7 +498,7 @@ class RagOrchestrator:
         resultat["_review_status"] = "pending_review"
         return resultat
 
-    async def exporter_portfolio(self, review_id: str) -> Dict[str, Any]:
+    async def exporter_portfolio(self, review_id: str) -> dict[str, Any]:
         """Export DOCX — UNIQUEMENT si le review est approuvé."""
         review = review_sync.load_approved_review(review_id, agent_ids=("agent_rag_portfolio",))
         donnees = review.get("data") or {}
@@ -504,9 +515,9 @@ class RagOrchestrator:
     async def generer_syllabus(
         self,
         formation_code: str,
-        modules: List[Dict[str, Any]],
-        options: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+        modules: list[dict[str, Any]],
+        options: Optional[dict[str, Any]] = None,
+    ) -> dict[str, Any]:
         """
         Génère le syllabus : somme des durées vérifiée en Python, contenu
         pédagogique rédigé par le LLM à partir des chunks RAG (MODE
@@ -559,7 +570,7 @@ class RagOrchestrator:
         resultat["_review_status"] = "pending_review"
         return resultat
 
-    async def exporter_syllabus(self, review_id: str) -> Dict[str, Any]:
+    async def exporter_syllabus(self, review_id: str) -> dict[str, Any]:
         """Export DOCX — UNIQUEMENT si le review est approuvé."""
         review = review_sync.load_approved_review(review_id, agent_ids=("agent_rag_syllabus",))
         donnees = review.get("data") or {}
@@ -573,7 +584,7 @@ class RagOrchestrator:
     # QUESTIONS (Étape G) — usage interne, PAS de HITL
     # ========================================================
 
-    async def generer_questions(self, formation_code: str, nb_questions_max: int = 10) -> Dict[str, Any]:
+    async def generer_questions(self, formation_code: str, nb_questions_max: int = 10) -> dict[str, Any]:
         formation = obtenir_formation(formation_code)
         if not formation:
             raise ValueError(f"Formation '{formation_code}' introuvable au catalogue.")

@@ -35,7 +35,7 @@ _SEUIL_CRITIQUE_OCTETS = 500 * 1024 ** 2  # 500 Mo libres → upload bloqué (HT
 class AbstractStorageService(ABC):
 
     @abstractmethod
-    def sauvegarder(self, contenu: bytes, doc_hash: str, ext: str) -> Tuple[str, bool]:
+    def sauvegarder(self, contenu: bytes, doc_hash: str, ext: str) -> tuple[str, bool]:
         """
         Sauvegarde le fichier.
         Retourne (chemin_ou_uri, deja_present).
@@ -83,7 +83,7 @@ class LocalStorageService(AbstractStorageService):
         except OSError:
             pass  # Si le chemin n'existe pas encore, pas d'alerte
 
-    def sauvegarder(self, contenu: bytes, doc_hash: str, ext: str) -> Tuple[str, bool]:
+    def sauvegarder(self, contenu: bytes, doc_hash: str, ext: str) -> tuple[str, bool]:
         chemin = self._chemin(doc_hash, ext)
         if chemin.exists():
             return str(chemin), True
@@ -145,7 +145,7 @@ class GCSStorageService(AbstractStorageService):
     def _uri(self, doc_hash: str, ext: str) -> str:
         return f"gs://{self._bucket.name}/{self._blob_name(doc_hash, ext)}"
 
-    def sauvegarder(self, contenu: bytes, doc_hash: str, ext: str) -> Tuple[str, bool]:
+    def sauvegarder(self, contenu: bytes, doc_hash: str, ext: str) -> tuple[str, bool]:
         blob = self._bucket.blob(self._blob_name(doc_hash, ext))
         if blob.exists():
             return self._uri(doc_hash, ext), True

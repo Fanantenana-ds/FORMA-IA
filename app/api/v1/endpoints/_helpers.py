@@ -51,7 +51,7 @@ def handle_exception(
     )
 
 
-def build_response(result: Dict[str, Any], msg_ok: str, elapsed: float) -> RouteResponse:
+def build_response(result: dict[str, Any], msg_ok: str, elapsed: float) -> RouteResponse:
     """Construit une réponse uniforme avec info HITL."""
     review_id = result.get("_review_id") if isinstance(result, dict) else None
     status_val = result.get("_review_status") if isinstance(result, dict) else None

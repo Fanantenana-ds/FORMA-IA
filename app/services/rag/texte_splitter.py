@@ -25,17 +25,17 @@ from typing import List
 SEPARATEURS_DEFAUT = ["\n\n", "\n", ". ", " ", ""]
 
 
-def _decouper_par_separateur(texte: str, separateur: str) -> List[str]:
+def _decouper_par_separateur(texte: str, separateur: str) -> list[str]:
     if separateur:
         return texte.split(separateur)
     return list(texte)  # dernier recours : caractère par caractère
 
 
-def _fusionner_morceaux(morceaux: List[str], separateur: str, taille: int, chevauchement: int) -> List[str]:
+def _fusionner_morceaux(morceaux: list[str], separateur: str, taille: int, chevauchement: int) -> list[str]:
     """Fusionne des petits morceaux en chunks d'environ `taille` caractères,
     avec `chevauchement` caractères communs entre chunks consécutifs."""
-    chunks: List[str] = []
-    courant: List[str] = []
+    chunks: list[str] = []
+    courant: list[str] = []
     longueur = 0
     len_sep = len(separateur)
 
@@ -65,8 +65,8 @@ def decouper_texte(
     texte: str,
     taille: int,
     chevauchement: int,
-    separateurs: List[str] = None,
-) -> List[str]:
+    separateurs: list[str] = None,
+) -> list[str]:
     """
     Découpe `texte` en chunks d'environ `taille` caractères (chevauchement
     `chevauchement`), en essayant les séparateurs dans l'ordre donné
@@ -80,12 +80,12 @@ def decouper_texte(
     return _decouper_recursif(texte, separateurs, taille, chevauchement)
 
 
-def _decouper_recursif(texte: str, separateurs: List[str], taille: int, chevauchement: int) -> List[str]:
+def _decouper_recursif(texte: str, separateurs: list[str], taille: int, chevauchement: int) -> list[str]:
     if not texte:
         return []
 
     separateur = separateurs[-1]
-    reste_separateurs: List[str] = []
+    reste_separateurs: list[str] = []
     for i, sep in enumerate(separateurs):
         if sep == "":
             separateur = sep
@@ -98,8 +98,8 @@ def _decouper_recursif(texte: str, separateurs: List[str], taille: int, chevauch
 
     morceaux = _decouper_par_separateur(texte, separateur)
 
-    resultat: List[str] = []
-    a_fusionner: List[str] = []
+    resultat: list[str] = []
+    a_fusionner: list[str] = []
 
     for morceau in morceaux:
         if len(morceau) < taille:

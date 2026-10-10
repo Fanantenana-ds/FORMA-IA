@@ -46,7 +46,9 @@ class KnowledgeBaseService:
     def is_available() -> bool:
         """Retourne True si la base RAG contient des supports de formation."""
         try:
-            from sqlalchemy import select, func as sqlfunc
+            from sqlalchemy import func as sqlfunc
+            from sqlalchemy import select
+
             from app.database import SessionLocal
             from app.models.knowledge_base import KnowledgeBase
 
@@ -73,7 +75,7 @@ class KnowledgeBaseService:
         collection: Optional[str] = None,
         top_k: int = _MAX_CHUNKS_PAR_RECHERCHE,
         score_min: float = _SCORE_MIN,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Recherche des chunks pertinents dans la base RAG.
 
@@ -88,8 +90,8 @@ class KnowledgeBaseService:
             Liste de dicts {contenu, score, fichier, formation_code, formation_titre}
         """
         try:
-            from app.services.rag.recherche_service import rechercher
             from app.services.rag.knowledge_repository import KnowledgeRepository
+            from app.services.rag.recherche_service import rechercher
 
             repo = KnowledgeRepository()
 
@@ -184,13 +186,15 @@ class KnowledgeBaseService:
     async def get_stats(
         self,
         formation_code: Optional[str] = None,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Retourne des statistiques sur les supports indexés.
         Utile pour le health check et le dashboard.
         """
         try:
-            from sqlalchemy import select, func as sqlfunc
+            from sqlalchemy import func as sqlfunc
+            from sqlalchemy import select
+
             from app.database import SessionLocal
             from app.models.knowledge_base import KnowledgeBase
 
@@ -203,7 +207,7 @@ class KnowledgeBaseService:
                 par_collection = {r.collection: r.n for r in rows}
                 total = sum(par_collection.values())
 
-                result: Dict[str, Any] = {
+                result: dict[str, Any] = {
                     "total_chunks": total,
                     "par_collection": par_collection,
                     "disponible": total > 0,

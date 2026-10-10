@@ -1,9 +1,9 @@
-﻿from typing import List, Optional
+﻿from datetime import date as date_type
+from typing import List, Optional
 from uuid import UUID
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session as DbSession
-from datetime import date as date_type
 
 from app.models.formation import Inscription, Participant, Presence, Seance, Session
 from app.schemas.formation import (
@@ -107,7 +107,7 @@ class FormationService:
         date_debut_max: Optional[date_type] = None,
         skip: int = 0,
         limit: int = 100,
-    ) -> List[Session]:
+    ) -> list[Session]:
         q = self.db.query(Session)
         if formateur_id is not None:
             q = q.filter(Session.formateur_id == formateur_id)
@@ -127,7 +127,7 @@ class FormationService:
     # SÉANCES D'UNE SESSION
     # -------------------------------------------------------------------------
 
-    def lister_seances(self, session_id: UUID) -> List[Seance]:
+    def lister_seances(self, session_id: UUID) -> list[Seance]:
         self.get_session(session_id)   # lève 404 si absente
         return (
             self.db.query(Seance)
@@ -151,7 +151,7 @@ class FormationService:
     nom: Optional[str] = None,
     skip: int = 0,
     limit: int = 100,
-    ) -> List[Participant]:
+    ) -> list[Participant]:
         q = self.db.query(Participant)
         if nom:
             q = q.filter(Participant.nom.ilike(f"%{nom}%"))
@@ -233,7 +233,7 @@ class FormationService:
     # PRÉSENCES — lister + corriger
     # -------------------------------------------------------------------------
 
-    def lister_presences(self, seance_id: UUID) -> List[Presence]:
+    def lister_presences(self, seance_id: UUID) -> list[Presence]:
         self.get_seance(seance_id)
         return (
             self.db.query(Presence)
@@ -274,7 +274,7 @@ class FormationService:
         self.db.delete(participant)
         self.db.commit()
 
-    def lister_participants_session(self, session_id: UUID) -> List[Participant]:
+    def lister_participants_session(self, session_id: UUID) -> list[Participant]:
         """Retourne les participants inscrits à une session (via la table inscriptions)."""
         self.get_session(session_id)
         inscriptions = (

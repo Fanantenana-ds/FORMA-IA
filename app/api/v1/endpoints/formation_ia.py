@@ -5,13 +5,15 @@ from typing import Any, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-from app.schemas.common import RouteResponse
-from app.api.v1.endpoints._helpers import log_request as _log_req, handle_exception as _handle_exc, build_response as _build_resp
 
+from app.api.v1.endpoints._helpers import build_response as _build_resp
+from app.api.v1.endpoints._helpers import handle_exception as _handle_exc
+from app.api.v1.endpoints._helpers import log_request as _log_req
 from app.orchestrator.formation_orchestrator import (
     FormationOrchestrator,
     get_formation_orchestrator,
 )
+from app.schemas.common import RouteResponse
 from app.services.hitl import approve_review as _approve
 from app.services.hitl import get_review as _get
 from app.services.hitl import get_stats, list_pending
@@ -514,7 +516,7 @@ class SyncResponsesRequest(BaseModel):
         ...,
         description="ID de la review agent_1_forms contenant les form_id Google",
     )
-    sections: Optional[List[str]] = Field(
+    sections: Optional[list[str]] = Field(
         default=None,
         description=(
             "Sections à récupérer : inscription, test_avant, test_apres, satisfaction. "

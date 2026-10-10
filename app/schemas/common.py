@@ -1,4 +1,5 @@
 from typing import Any, Dict, Optional
+
 from pydantic import BaseModel
 
 
@@ -10,4 +11,4 @@ class RouteResponse(BaseModel):
     review_id: Optional[str] = None
     review_status: Optional[str] = None
     requires_human_action: bool = False
-    data: Optional[Dict[str, Any]] = None
+    data: Optional[dict[str, Any]] = None

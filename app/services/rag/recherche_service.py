@@ -15,8 +15,8 @@ from dataclasses import dataclass
 from typing import List, Optional
 
 from app.services.rag.embedding_provider import get_embedding_provider, verifier_compatibilite_famille
-from app.services.rag.query_cache_service import obtenir_ou_calculer, CHEMIN_CACHE_DEFAUT
 from app.services.rag.knowledge_repository import KnowledgeRepository
+from app.services.rag.query_cache_service import CHEMIN_CACHE_DEFAUT, obtenir_ou_calculer
 
 logger = logging.getLogger(__name__)
 
@@ -83,7 +83,7 @@ async def rechercher(
     seuil_min: Optional[float] = None,
     attente_max_s: Optional[float] = 5.0,
     repository: Optional[KnowledgeRepository] = None,
-) -> List[ResultatRecherche]:
+) -> list[ResultatRecherche]:
     """
     Recherche par similarité cosinus dans knowledge_base.
 

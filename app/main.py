@@ -6,38 +6,39 @@ Plateforme intelligente de gestion de la formation pour ALTIORA PREST.
 =============================================================================
 """
 
+import logging
 import os
 import time
-import logging
 from datetime import datetime
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from app.config.settings import settings
-from app.database import Base, engine
-
-# ─────────────────────────────────────────────────────────────
-# MODÈLES
-# ─────────────────────────────────────────────────────────────
-from app.models.user import User
-from app.models.revoked_token import RevokedToken
-from app.models.opportunite import Opportunite
-from app.models.historique_analyse import HistoriqueAnalyse
+from app.api.v1.router import api_router
+from app.api.v1.routes_tdr import router as tdr_router
+from app.api.v1.routes_veille import (
+    orchestrator as veille_orchestrator,
+)
 
 # ─────────────────────────────────────────────────────────────
 # ROUTERS
 # ─────────────────────────────────────────────────────────────
 from app.api.v1.routes_veille import (
     router as veille_router,
-    orchestrator as veille_orchestrator,
 )
-from app.api.v1.routes_tdr import router as tdr_router
-from app.api.v1.router import api_router
-from app.services.veille import auto_detection_service
-from app.services import ia_health
+from app.config.settings import settings
+from app.database import Base, engine
+from app.models.historique_analyse import HistoriqueAnalyse
+from app.models.opportunite import Opportunite
+from app.models.revoked_token import RevokedToken
 
+# ─────────────────────────────────────────────────────────────
+# MODÈLES
+# ─────────────────────────────────────────────────────────────
+from app.models.user import User
+from app.services import ia_health
+from app.services.veille import auto_detection_service
 
 # =============================================================================
 # CONFIG — VERBOSE

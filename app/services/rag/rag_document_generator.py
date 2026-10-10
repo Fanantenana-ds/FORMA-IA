@@ -20,8 +20,8 @@ from pathlib import Path
 from typing import Any, Dict
 
 from docx import Document
-from docx.shared import Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.shared import Pt
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +55,7 @@ def _ajouter_tableau(doc: Document, entetes: list, lignes: list) -> None:
 # SYLLABUS
 # ============================================================
 
-def generer_docx_syllabus(donnees: Dict[str, Any], nom_fichier: str) -> Path:
+def generer_docx_syllabus(donnees: dict[str, Any], nom_fichier: str) -> Path:
     """Construit le DOCX du syllabus selon le gabarit de la mission (10
     sections + annexe interne des sources)."""
     doc = Document()
@@ -139,7 +139,7 @@ def generer_docx_syllabus(donnees: Dict[str, Any], nom_fichier: str) -> Path:
 # PORTFOLIO
 # ============================================================
 
-def generer_docx_portfolio(donnees: Dict[str, Any], nom_fichier: str) -> Path:
+def generer_docx_portfolio(donnees: dict[str, Any], nom_fichier: str) -> Path:
     """Construit le DOCX du portfolio selon le gabarit de la mission (6
     sections + annexe interne des sources)."""
     doc = Document()

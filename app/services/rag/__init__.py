@@ -3,24 +3,24 @@
 # RAG Package — Services
 # ============================================================
 
-from app.services.rag.document_loader_service import (
-    Segment,
-    detect_file_type,
-    extract_text,
-    extract_segments,
-    pdf_necessite_ocr,
-    compter_pages_pdf,
-    FORMATS_INDEXABLES,
-    FORMATS_IMAGE,
-)
-from app.services.rag.text_cleaner_service import clean_text
 from app.services.rag.chunking_service import (
     Chunk,
-    chunk_text,
-    chunk_segments,
     chunk_pptx_slides,
+    chunk_segments,
+    chunk_text,
 )
-from app.services.rag.embedding_service import embed_texts, embed_query
+from app.services.rag.document_loader_service import (
+    FORMATS_IMAGE,
+    FORMATS_INDEXABLES,
+    Segment,
+    compter_pages_pdf,
+    detect_file_type,
+    extract_segments,
+    extract_text,
+    pdf_necessite_ocr,
+)
+from app.services.rag.embedding_service import embed_query, embed_texts
+from app.services.rag.text_cleaner_service import clean_text
 
 __all__ = [
     "Segment",

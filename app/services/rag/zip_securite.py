@@ -41,7 +41,7 @@ def _chemin_est_sur(nom: str) -> bool:
     return True
 
 
-def verifier_et_lister(chemin_zip: str) -> List[MembreZip]:
+def verifier_et_lister(chemin_zip: str) -> list[MembreZip]:
     """
     Vérifie un fichier ZIP AVANT toute extraction et retourne la liste de
     ses membres sûrs à extraire.
@@ -75,7 +75,7 @@ def verifier_et_lister(chemin_zip: str) -> List[MembreZip]:
             )
 
         total_decompresse = 0
-        membres: List[MembreZip] = []
+        membres: list[MembreZip] = []
 
         for info in infos:
             if info.is_dir():

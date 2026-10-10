@@ -1,7 +1,9 @@
 import uuid
 from typing import Optional
+
 from sqlalchemy.orm import Session
-from app.models.preparation import Projet, Salle, EDT
+
+from app.models.preparation import EDT, Projet, Salle
 from app.models.rh import Formateur
 
 

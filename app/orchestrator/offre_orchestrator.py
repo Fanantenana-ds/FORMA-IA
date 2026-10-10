@@ -405,12 +405,11 @@ class OffreOrchestrator(BaseOrchestrator):
 
         async def _envoyer() -> dict[str, Any]:
             return await offre_sync.sync_offre_to_backend(
-                titre=offre_sync.extract_titre(data),
-                client=offre_sync.extract_client(data),
                 opportunite_id=opportunite_id,
-                trame_technique=offre_sync.build_trame_technique(data),
-                trame_financiere=offre_sync.build_trame_financiere(data),
+                titre=(data.get("offre_technique") or {}).get("titre") or data.get("titre"),
+                client=(data.get("offre_technique") or {}).get("client") or data.get("client"),
                 montant_ht=offre_sync.extract_montant(data),
+                contenu=offre_sync.build_contenu(data),
             )
 
         result = await review_sync.sync_once(review_id, _envoyer, force=force)

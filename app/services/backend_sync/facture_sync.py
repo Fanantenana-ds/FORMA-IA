@@ -73,6 +73,50 @@ async def sync_facture_to_backend(
     return result
 
 
+async def sync_relance_to_backend(
+    facture_id: str,
+    niveau: str,
+    objet: str,
+    texte: str,
+    review_id: str | None = None,
+) -> dict[str, Any]:
+    """
+    Enregistre la relance côté Backend (POST /factures/{id}/relances).
+
+    Args:
+        facture_id: UUID de la facture concernée.
+        niveau: niveau de relance ("1", "2", "3"…).
+        objet: objet/sujet de la relance.
+        texte: corps du message de relance.
+        review_id: ID du review HITL approuvé (optionnel).
+
+    Returns:
+        Résultat standard base_sync.new_result.
+    """
+    result = base_sync.new_result()
+    if not result["enabled"]:
+        logger.info("ℹ️ Backend sync DÉSACTIVÉ — relance non envoyée")
+        return result
+
+    if not base_sync.is_valid_uuid(facture_id):
+        result["error"] = f"facture_id invalide : {facture_id}"
+        return result
+
+    payload: dict[str, Any] = {
+        "niveau": str(niveau),
+        "objet": str(objet)[:255],
+        "texte": str(texte),
+    }
+    if review_id:
+        payload["review_id"] = review_id
+
+    sent = await base_sync.post_and_verify(
+        f"/factures/{facture_id}/relances", payload, label="relance"
+    )
+    result.update(sent)
+    return result
+
+
 async def fetch_facture(facture_id: str) -> dict[str, Any] | None:
     """
     Lit une facture Backend (GET /factures/{id}) — statut, TTC, paiements,

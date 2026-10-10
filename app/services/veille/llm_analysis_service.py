@@ -159,8 +159,8 @@ class LLMAnalysisService:
 
         return "\n".join(blocks)
 
-    def _build_prompt(self, query: str, results: list[dict[str, Any]]) -> str:
-        current_date = datetime.now().strftime("%Y-%m-%d")
+    def _build_prompt(self, query: str, results: list[dict[str, Any]], date_reference: Any = None) -> str:
+        current_date = (date_reference or datetime.now()).strftime("%Y-%m-%d") if hasattr(date_reference or datetime.now(), "strftime") else datetime.now().strftime("%Y-%m-%d")
         results_text = self._build_source_blocks(results)
 
         prompt = self._replace_placeholders(

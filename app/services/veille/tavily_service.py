@@ -247,7 +247,6 @@ class TavilyService:
             response = await retry_with_backoff(
                 self._do_request,
                 payload,
-                categorie,
                 max_retries=RETRY_MAX_ATTEMPTS,
                 base_delay=RETRY_BASE_DELAY,
                 retryable_exceptions=(httpx.TimeoutException, httpx.HTTPError),
@@ -299,7 +298,6 @@ class TavilyService:
             response = await retry_with_backoff(
                 self._do_request,
                 fallback_payload,
-                categorie,
                 max_retries=RETRY_MAX_ATTEMPTS,
                 base_delay=RETRY_BASE_DELAY,
                 retryable_exceptions=(httpx.TimeoutException, httpx.HTTPError),

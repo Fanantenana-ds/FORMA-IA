@@ -111,13 +111,13 @@ def traduire_erreur_voyage(status_code: Optional[int], detail: str = "") -> str:
 
 class EmbeddingProvider(ABC):
     @abstractmethod
-    async def embed_documents(self, textes: List[str]) -> List[List[float]]:
+    async def embed_documents(self, textes: list[str]) -> list[list[float]]:
         """Vectorise des textes en mode DOCUMENT (indexation)."""
 
     @abstractmethod
     async def embed_query(
         self, texte: str, *, attente_max_s: Optional[float] = 5.0
-    ) -> List[float]:
+    ) -> list[float]:
         """Vectorise une requête en mode QUERY (recherche/chat)."""
 
     @property
@@ -210,8 +210,8 @@ MAX_TEXTES_PAR_LOT = 1000
 
 
 def decouper_indices_par_lots(
-    textes: List[str], tpm: int, pourcentage_max: float = 0.8
-) -> List[List[int]]:
+    textes: list[str], tpm: int, pourcentage_max: float = 0.8
+) -> list[list[int]]:
     """
     Découpe `textes` en lots (listes d'INDICES, pas de textes — pour
     pouvoir retrouver l'objet d'origine de chaque texte après l'appel
@@ -222,8 +222,8 @@ def decouper_indices_par_lots(
         return []
 
     budget_tokens = max(1, int(tpm * pourcentage_max))
-    lots: List[List[int]] = []
-    lot_courant: List[int] = []
+    lots: list[list[int]] = []
+    lot_courant: list[int] = []
     tokens_lot_courant = 0
 
     for i, texte in enumerate(textes):
@@ -247,8 +247,8 @@ def decouper_indices_par_lots(
 
 
 def construire_lots(
-    textes: List[str], tpm: int, pourcentage_max: float = 0.8
-) -> List[List[str]]:
+    textes: list[str], tpm: int, pourcentage_max: float = 0.8
+) -> list[list[str]]:
     """Comme decouper_indices_par_lots(), mais retourne directement les
     textes (pratique quand on n'a pas besoin de retrouver l'origine)."""
     indices_par_lot = decouper_indices_par_lots(textes, tpm, pourcentage_max)
@@ -286,8 +286,8 @@ class VoyageEmbeddingProvider(EmbeddingProvider):
         return self.config.modele_requete
 
     async def _appeler_api(
-        self, textes: List[str], modele: str, input_type: str
-    ) -> List[List[float]]:
+        self, textes: list[str], modele: str, input_type: str
+    ) -> list[list[float]]:
         headers = {
             "Authorization": f"Bearer {self.config.cle_api}",
             "Content-Type": "application/json",
@@ -331,11 +331,11 @@ class VoyageEmbeddingProvider(EmbeddingProvider):
 
         raise EmbeddingProviderError(derniere_erreur or traduire_erreur_voyage(None))
 
-    async def embed_documents(self, textes: List[str]) -> List[List[float]]:
+    async def embed_documents(self, textes: list[str]) -> list[list[float]]:
         if not textes:
             return []
 
-        resultats: List[List[float]] = []
+        resultats: list[list[float]] = []
         lots = construire_lots(textes, self.config.tpm)
 
         for lot in lots:
@@ -354,7 +354,7 @@ class VoyageEmbeddingProvider(EmbeddingProvider):
 
     async def embed_query(
         self, texte: str, *, attente_max_s: Optional[float] = 5.0
-    ) -> List[float]:
+    ) -> list[float]:
         tokens = estimer_tokens(texte)
         await self.limiteur.attendre_puis_consommer(tokens, attente_max_s=attente_max_s)
         resultats = await self._appeler_api([texte], self.config.modele_requete, "query")

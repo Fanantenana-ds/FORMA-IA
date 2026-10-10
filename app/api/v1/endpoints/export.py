@@ -21,8 +21,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
-from app.database import get_db
 from app.core.dependencies import require_role
+from app.database import get_db
 from app.models.facture import Facture, StatutFacture
 from app.models.user import User
 
@@ -45,7 +45,7 @@ _COLONNES = [
 ]
 
 
-def _lignes(factures: List[Facture]):
+def _lignes(factures: list[Facture]):
     """Générateur : retourne une liste de valeurs par facture."""
     for f in factures:
         encaisse = round(sum(p.montant for p in f.paiements), 2)
@@ -65,7 +65,7 @@ def _lignes(factures: List[Facture]):
         ]
 
 
-def _export_csv(factures: List[Facture]) -> bytes:
+def _export_csv(factures: list[Facture]) -> bytes:
     buf = io.StringIO()
     w = csv.writer(buf, delimiter=";", quoting=csv.QUOTE_MINIMAL)
     w.writerow(_COLONNES)
@@ -74,9 +74,9 @@ def _export_csv(factures: List[Facture]) -> bytes:
     return buf.getvalue().encode("utf-8-sig")  # BOM pour Excel FR
 
 
-def _export_excel(factures: List[Facture]) -> bytes:
+def _export_excel(factures: list[Facture]) -> bytes:
     import openpyxl
-    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
     from openpyxl.utils import get_column_letter
 
     wb = openpyxl.Workbook()
@@ -127,13 +127,13 @@ def _export_excel(factures: List[Facture]) -> bytes:
     return buf.getvalue()
 
 
-def _export_pdf(factures: List[Facture], date_export: str) -> bytes:
+def _export_pdf(factures: list[Facture], date_export: str) -> bytes:
     """Export PDF simple via reportlab."""
-    from reportlab.lib.pagesizes import A4, landscape
     from reportlab.lib import colors
-    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+    from reportlab.lib.pagesizes import A4, landscape
     from reportlab.lib.styles import getSampleStyleSheet
     from reportlab.lib.units import cm
+    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=landscape(A4), leftMargin=1*cm, rightMargin=1*cm,

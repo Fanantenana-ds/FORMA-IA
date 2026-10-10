@@ -1,10 +1,10 @@
 from datetime import date, datetime
+from typing import Optional
 from uuid import UUID
 
 from pydantic import BaseModel, Field
 
 from app.models.formation import SourcePresence, StatutPresence
-from typing import Optional
 
 
 class SessionCreate(BaseModel):

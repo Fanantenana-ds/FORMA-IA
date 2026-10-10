@@ -14,17 +14,22 @@ from pathlib import Path
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from fastapi.responses import FileResponse
-from app.utils.security import verify_api_key
 
 from app.orchestrator.chat_orchestrator import get_chat_orchestrator
 from app.orchestrator.rag_orchestrator import get_rag_orchestrator
 from app.schemas.rag_ia import (
-    ChatRequest, ChatResponse, FormationResume,
-    GenererPortfolioRequest, GenererSyllabusRequest, GenererQuestionsRequest,
-    IndexerDocumentRequest, RechercherRequest,
+    ChatRequest,
+    ChatResponse,
+    FormationResume,
+    GenererPortfolioRequest,
+    GenererQuestionsRequest,
+    GenererSyllabusRequest,
+    IndexerDocumentRequest,
+    RechercherRequest,
 )
 from app.services.rag import catalogue_service as catalogue
 from app.services.rag import registry_service as registre
+from app.utils.security import verify_api_key
 
 logger = logging.getLogger(__name__)
 

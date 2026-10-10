@@ -56,7 +56,7 @@ def _env_int(nom: str, defaut: int) -> int:
         return defaut
 
 
-def config() -> Dict[str, int]:
+def config() -> dict[str, int]:
     return {
         "quota_mensuel": _env_int("TAVILY_QUOTA_MENSUEL", 1000),
         "budget_auto": _env_int("TAVILY_BUDGET_AUTO", 600),
@@ -83,7 +83,7 @@ def _periode(maintenant: datetime, jour_reset: int) -> str:
 # PERSISTANCE (écriture atomique)
 # ============================================================
 
-def _charger() -> Dict[str, Any]:
+def _charger() -> dict[str, Any]:
     if not QUOTA_PATH.exists():
         return {}
     try:
@@ -95,7 +95,7 @@ def _charger() -> Dict[str, Any]:
         return {}
 
 
-def _sauvegarder(data: Dict[str, Any]) -> None:
+def _sauvegarder(data: dict[str, Any]) -> None:
     QUOTA_PATH.parent.mkdir(parents=True, exist_ok=True)
     tmp = QUOTA_PATH.with_suffix(".tmp")
     with open(tmp, "w", encoding="utf-8") as f:
@@ -103,7 +103,7 @@ def _sauvegarder(data: Dict[str, Any]) -> None:
     os.replace(tmp, QUOTA_PATH)
 
 
-def _nettoyer_runs_par_jour(runs_par_jour: Dict[str, int], maintenant: datetime) -> Dict[str, int]:
+def _nettoyer_runs_par_jour(runs_par_jour: dict[str, int], maintenant: datetime) -> dict[str, int]:
     """Retire les entrées de plus de 30 jours (point 3 de la mission)."""
     limite = maintenant - timedelta(days=RETENTION_JOURS_RUNS)
     propre = {}
@@ -117,7 +117,7 @@ def _nettoyer_runs_par_jour(runs_par_jour: Dict[str, int], maintenant: datetime)
     return propre
 
 
-def _etat(maintenant: Optional[datetime] = None) -> Dict[str, Any]:
+def _etat(maintenant: Optional[datetime] = None) -> dict[str, Any]:
     """Charge l'état ; réinitialise les compteurs d'APPELS si la période a
     changé (les runs/jour sont indépendants — nettoyés par ancienneté,
     pas par bascule de mois)."""
@@ -204,7 +204,7 @@ def plafond_dur_atteint(maintenant: Optional[datetime] = None) -> bool:
 # VÉRIFICATIONS PRÉALABLES
 # ============================================================
 
-def verifier_quota_auto(maintenant: Optional[datetime] = None) -> Tuple[bool, Optional[str]]:
+def verifier_quota_auto(maintenant: Optional[datetime] = None) -> tuple[bool, Optional[str]]:
     """Vérification UNIQUE avant de lancer un passage auto (pas par appel
     HTTP individuel) — appelée depuis executer_detection, après le verrou
     anti-chevauchement. Retourne (autorise, raison_si_refuse)."""
@@ -239,7 +239,7 @@ def verifier_quota_auto(maintenant: Optional[datetime] = None) -> Tuple[bool, Op
 # ROUTE — GET /ia/veille/quota
 # ============================================================
 
-def etat_pour_route(maintenant: Optional[datetime] = None) -> Dict[str, Any]:
+def etat_pour_route(maintenant: Optional[datetime] = None) -> dict[str, Any]:
     maintenant = maintenant or datetime.now(timezone.utc)
     cfg = config()
     data = _etat(maintenant)

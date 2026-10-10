@@ -53,7 +53,7 @@ def _f1(precision: Optional[float], rappel: Optional[float]) -> Optional[float]:
     return 2 * precision * rappel / (precision + rappel)
 
 
-def _percentile(valeurs: List[float], p: float) -> Optional[float]:
+def _percentile(valeurs: list[float], p: float) -> Optional[float]:
     """Percentile par interpolation linéaire (méthode usuelle) — sans
     dépendance externe (numpy)."""
     if not valeurs:
@@ -69,7 +69,7 @@ def _percentile(valeurs: List[float], p: float) -> Optional[float]:
     return valeurs_triees[f] + (valeurs_triees[c] - valeurs_triees[f]) * (k - f)
 
 
-def _f1_macro_domaine(matrice: Dict[str, Dict[str, int]], domaines: List[str]) -> Optional[float]:
+def _f1_macro_domaine(matrice: dict[str, dict[str, int]], domaines: list[str]) -> Optional[float]:
     """F1 macro (one-vs-rest) sur la matrice de confusion des domaines.
     matrice[domaine_attendu][domaine_predit] = nombre de cas."""
     scores = []
@@ -158,7 +158,7 @@ def _valeur_correcte(predite: Any, attendue: Any, est_date: bool = False) -> boo
     return p == a
 
 
-def fusionner_rapports(rapports: List[Dict[str, Any]]) -> Dict[str, Any]:
+def fusionner_rapports(rapports: list[dict[str, Any]]) -> dict[str, Any]:
     """
     Fusionne plusieurs rapports de BenchmarkRunner.run() (ex. après une
     reprise --reprendre : un rapport par tranche traitée) en un seul
@@ -181,7 +181,7 @@ def fusionner_rapports(rapports: List[Dict[str, Any]]) -> Dict[str, Any]:
     tn = sum(r["confusion_matrix"]["true_negatives"] for r in rapports)
     total = tp + fp + fn + tn
 
-    domain_matrix: Dict[str, Dict[str, int]] = {}
+    domain_matrix: dict[str, dict[str, int]] = {}
     for r in rapports:
         for attendu, predictions in r["domain_confusion_matrix"].items():
             domain_matrix.setdefault(attendu, {})
@@ -190,7 +190,7 @@ def fusionner_rapports(rapports: List[Dict[str, Any]]) -> Dict[str, Any]:
     domain_total = sum(sum(p.values()) for p in domain_matrix.values())
     domain_correct = sum(domain_matrix.get(d, {}).get(d, 0) for d in domain_matrix)
 
-    extraction_par_champ: Dict[str, Dict[str, Any]] = {}
+    extraction_par_champ: dict[str, dict[str, Any]] = {}
     for champ in ("budget", "deadline", "organizer"):
         correct = sum(r["extraction_par_champ"][champ]["correct"] for r in rapports)
         total_champ = sum(r["extraction_par_champ"][champ]["total"] for r in rapports)
@@ -316,7 +316,7 @@ class BenchmarkRunner:
     # MESURE DÉTERMINISTE SÉPARÉE (Étape C point 4) — AUCUN LLM
     # --------------------------------------------------------
 
-    def mesurer_classification_deterministe(self, limit: Optional[int] = None) -> Dict[str, Any]:
+    def mesurer_classification_deterministe(self, limit: Optional[int] = None) -> dict[str, Any]:
         """
         ClassificationService SEUL sur les textes gold (règles de
         mots-clés, Python pur — aucun appel réseau, aucun LLM). Isole la
@@ -331,8 +331,8 @@ class BenchmarkRunner:
 
         domain_total = 0
         domain_correct = 0
-        domain_confusion_matrix: Dict[str, Dict[str, int]] = {}
-        details: List[Dict[str, Any]] = []
+        domain_confusion_matrix: dict[str, dict[str, int]] = {}
+        details: list[dict[str, Any]] = []
 
         for entry in entries:
             gold = entry.get("gold", {}) or {}
@@ -381,7 +381,7 @@ class BenchmarkRunner:
     # INSTANTANÉ DE CONFIGURATION (Étape C point 2)
     # --------------------------------------------------------
 
-    def _instantane_configuration(self) -> Dict[str, Any]:
+    def _instantane_configuration(self) -> dict[str, Any]:
         """Fournisseur/modèle LLM actifs, empreinte des prompts M1, date
         d'exécution — pour pouvoir expliquer un écart entre deux rapports
         de benchmark (prompt modifié ? fournisseur changé ? etc.)."""
@@ -410,7 +410,7 @@ class BenchmarkRunner:
 
         domain_correct = 0
         domain_total = 0
-        domain_confusion_matrix: Dict[str, Dict[str, int]] = {}
+        domain_confusion_matrix: dict[str, dict[str, int]] = {}
 
         budget_correct = budget_total = 0
         deadline_correct = deadline_total = 0
@@ -590,7 +590,7 @@ class BenchmarkRunner:
         })
         f1_macro_domain = _f1_macro_domaine(domain_confusion_matrix, domaines_observes)
 
-        def _stat_champ(correct: int, total_champ: int) -> Dict[str, Any]:
+        def _stat_champ(correct: int, total_champ: int) -> dict[str, Any]:
             return {
                 "correct": correct, "total": total_champ,
                 "accuracy": round(correct / total_champ, 3) if total_champ > 0 else None,

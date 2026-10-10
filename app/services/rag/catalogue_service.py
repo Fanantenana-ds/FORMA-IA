@@ -49,8 +49,8 @@ class Formation:
     niveau: Optional[str] = None
     duree_jours: Optional[int] = None
     confidentiel: bool = False
-    synonymes: List[str] = field(default_factory=list)
-    realisations: List[Realisation] = field(default_factory=list)
+    synonymes: list[str] = field(default_factory=list)
+    realisations: list[Realisation] = field(default_factory=list)
 
     def annee_la_plus_recente(self) -> Optional[int]:
         annees = [r.annee for r in self.realisations if r.annee]
@@ -61,7 +61,7 @@ class CatalogueFormationsError(Exception):
     """Erreur de lecture du catalogue, message déjà en français."""
 
 
-def charger_catalogue(chemin: Optional[Path] = None) -> List[Formation]:
+def charger_catalogue(chemin: Optional[Path] = None) -> list[Formation]:
     """Charge et valide data/rag/catalogue_formations.yaml."""
     chemin = chemin or CHEMIN_CATALOGUE_DEFAUT
 

@@ -17,7 +17,7 @@ from typing import Optional
 
 import yaml
 
-from app.services.llm import get_llm_provider, LLMNotAvailableError
+from app.services.llm import LLMNotAvailableError, get_llm_provider
 
 logger = logging.getLogger(__name__)
 

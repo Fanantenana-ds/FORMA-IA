@@ -29,19 +29,25 @@
 #   Écriture → DIRECTION, ADMIN
 # ============================================================
 
-from uuid import UUID
 from typing import List, Optional
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
-from app.database import get_db
 from app.core.dependencies import get_current_user, require_role
+from app.database import get_db
 from app.models.user import User
 from app.schemas.rh import (
-    FormateurCreate, FormateurUpdate, FormateurResponse,
-    CandidatCreate, CandidatUpdate, CandidatResponse,
-    EntretienCreate, EntretienUpdate, EntretienResponse,
+    CandidatCreate,
+    CandidatResponse,
+    CandidatUpdate,
+    EntretienCreate,
+    EntretienResponse,
+    EntretienUpdate,
+    FormateurCreate,
+    FormateurResponse,
+    FormateurUpdate,
 )
 from app.services.rh_service import RhService
 
@@ -79,7 +85,7 @@ def creer_formateur(
 
 @router.get(
     "/formateurs",
-    response_model=List[FormateurResponse],
+    response_model=list[FormateurResponse],
     summary="Lister les formateurs",
     description=(
         "Retourne tous les formateurs, triés par nom.\n\n"
@@ -191,7 +197,7 @@ def creer_candidat(
 
 @router.get(
     "/candidats",
-    response_model=List[CandidatResponse],
+    response_model=list[CandidatResponse],
     summary="Lister les dossiers candidats",
     description=(
         "Retourne tous les dossiers candidats, triés par date de création décroissante.\n\n"
@@ -301,7 +307,7 @@ def creer_entretien(
 
 @router.get(
     "/candidats/{candidat_id}/entretiens",
-    response_model=List[EntretienResponse],
+    response_model=list[EntretienResponse],
     summary="Lister les entretiens d'un candidat",
     description=(
         "Retourne tous les entretiens d'un candidat, triés par date de création décroissante.\n\n"

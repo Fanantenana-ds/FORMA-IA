@@ -137,7 +137,7 @@ class AuthService:
         self,
         role: Optional[RoleEnum] = None,
         actif: Optional[bool] = None,
-    ) -> List[User]:
+    ) -> list[User]:
         return self.user_repository.find_all(role=role, actif=actif)
 
     def get_utilisateur(self, user_id: UUID) -> User:

@@ -1,12 +1,24 @@
 from fastapi import APIRouter
 
-
 from app.api.v1.endpoints import (
-    auth, opportunite, analyse, facture, document, formation, dashboard,
-    formation_ia, offre_ia, preparation_ia, facture_ia, rag_ia, rh_ia, rh,
-    export, offre, projet,
+    analyse,
+    auth,
+    dashboard,
+    document,
+    export,
+    facture,
+    facture_ia,
+    formation,
+    formation_ia,
+    offre,
+    offre_ia,
+    opportunite,
+    preparation_ia,
+    projet,
+    rag_ia,
+    rh,
+    rh_ia,
 )
-
 
 api_router = APIRouter()
 

@@ -100,17 +100,17 @@ class GoogleFormsService:
     # CONVERSION JSON → requêtes API
     # ----------------------------------------------------------
     @staticmethod
-    def _question_type(q: Dict[str, Any]) -> str:
+    def _question_type(q: dict[str, Any]) -> str:
         raw = str(q.get("type") or "text").lower()
         return _QUESTION_TYPES.get(raw, "TEXT")
 
     @staticmethod
-    def _build_question_item(q: Dict[str, Any], index: int) -> Dict[str, Any]:
+    def _build_question_item(q: dict[str, Any], index: int) -> dict[str, Any]:
         label = str(q.get("label") or q.get("question") or f"Question {index + 1}")
         q_type = GoogleFormsService._question_type(q)
         required = bool(q.get("required", True))
 
-        question_body: Dict[str, Any] = {
+        question_body: dict[str, Any] = {
             "required": required,
         }
 
@@ -156,8 +156,8 @@ class GoogleFormsService:
         service,
         title: str,
         description: str,
-        questions: List[Dict[str, Any]],
-    ) -> Dict[str, Any]:
+        questions: list[dict[str, Any]],
+    ) -> dict[str, Any]:
         """
         Crée un formulaire Google Forms :
         1. POST /forms  → crée le formulaire vide
@@ -169,7 +169,7 @@ class GoogleFormsService:
         responder_uri = form.get("responderUri", "")
         vlog(f"   📋 Formulaire créé : {title} (id={form_id})")
 
-        requests: List[Dict[str, Any]] = []
+        requests: list[dict[str, Any]] = []
 
         if description:
             requests.append({
@@ -201,9 +201,9 @@ class GoogleFormsService:
     # ----------------------------------------------------------
     async def create_forms(
         self,
-        approved_data: Dict[str, Any],
+        approved_data: dict[str, Any],
         session_title: str = "",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Crée les 4 Google Forms à partir du JSON HITL approuvé.
 
@@ -225,14 +225,14 @@ class GoogleFormsService:
             ("satisfaction","Satisfaction","Questionnaire de satisfaction post-formation."),
         ]
 
-        results: Dict[str, Any] = {
+        results: dict[str, Any] = {
             "success": True,
             "session_title": session_title,
             "forms": {},
         }
 
         prefix = f"[{session_title}] " if session_title else ""
-        errors: List[str] = []
+        errors: list[str] = []
 
         for key, label, description in sections:
             section = approved_data.get(key)
@@ -270,8 +270,8 @@ class GoogleFormsService:
     # ----------------------------------------------------------
     async def fetch_responses(
         self,
-        form_ids: Dict[str, str],
-    ) -> Dict[str, Any]:
+        form_ids: dict[str, str],
+    ) -> dict[str, Any]:
         """
         Récupère les réponses de chaque formulaire via l'API Google Forms.
 
@@ -284,7 +284,7 @@ class GoogleFormsService:
             Chaque réponse est un dict {question_id: réponse_brute}.
         """
         service = self._get_service()
-        results: Dict[str, Any] = {}
+        results: dict[str, Any] = {}
 
         for key, form_id in form_ids.items():
             if not form_id:
@@ -297,7 +297,7 @@ class GoogleFormsService:
 
                 parsed = []
                 for r in raw_responses:
-                    answers: Dict[str, Any] = {}
+                    answers: dict[str, Any] = {}
                     for q_id, answer_obj in (r.get("answers") or {}).items():
                         # textAnswers → liste de valeurs
                         text_answers = answer_obj.get("textAnswers", {}).get("answers", [])

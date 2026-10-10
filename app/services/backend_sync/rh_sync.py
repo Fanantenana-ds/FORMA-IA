@@ -27,7 +27,7 @@ async def sync_evaluation_formateur(
     nb_sessions: Optional[str],
     recommandation: Optional[str],
     notes_internes: Optional[str] = None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Met à jour le profil d'un formateur avec les résultats de l'évaluation A5
     (PATCH /rh/formateurs/{id}).
@@ -43,7 +43,7 @@ async def sync_evaluation_formateur(
         result["error"] = "formateur_id n'est pas un UUID valide"
         return result
 
-    payload: Dict[str, Any] = {}
+    payload: dict[str, Any] = {}
     if score_moyen is not None:
         payload["score_moyen"] = score_moyen
     if nb_sessions is not None:
@@ -73,7 +73,7 @@ async def sync_candidat_to_backend(
     score_preselection: Optional[float] = None,
     decision_preselection: Optional[str] = None,
     review_id_preselection: Optional[str] = None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Crée un dossier candidat côté Backend (POST /rh/candidats).
     Appelé après approbation HITL de la présélection (A1).
@@ -82,7 +82,7 @@ async def sync_candidat_to_backend(
     if not result["enabled"]:
         return result
 
-    payload: Dict[str, Any] = {
+    payload: dict[str, Any] = {
         "nom": nom[:200],
         "poste_vise": poste_vise[:200],
     }
@@ -109,7 +109,7 @@ async def sync_entretien_cr_to_backend(
     interviewers: Optional[str] = None,
     date_entretien: Optional[str] = None,
     review_id_entretien: Optional[str] = None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Crée un entretien avec son CR approuvé (POST /rh/candidats/{id}/entretiens).
     Appelé après approbation HITL du CR (A2).
@@ -122,7 +122,7 @@ async def sync_entretien_cr_to_backend(
         result["error"] = "candidat_id n'est pas un UUID valide"
         return result
 
-    payload: Dict[str, Any] = {
+    payload: dict[str, Any] = {
         "compte_rendu": compte_rendu[:10000] if compte_rendu else "",
     }
     if decision:

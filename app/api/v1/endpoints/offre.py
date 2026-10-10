@@ -15,11 +15,11 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
-from app.database import get_db
 from app.core.dependencies import get_current_user, require_role
+from app.database import get_db
 from app.models.offre import StatutOffre
 from app.models.user import User
-from app.schemas.offre import OffreCreate, OffreUpdate, OffreReplace, OffreResponse
+from app.schemas.offre import OffreCreate, OffreReplace, OffreResponse, OffreUpdate
 from app.services.offre_service import OffreService
 
 router = APIRouter(prefix="/offres", tags=["Offres"])
@@ -51,7 +51,7 @@ def creer_offre(
 
 @router.get(
     "",
-    response_model=List[OffreResponse],
+    response_model=list[OffreResponse],
     summary="Lister les offres (avec filtres et pagination)",
     description=(
         "**Filtres optionnels :** `statut`, `client` (recherche partielle), `opportunite_id`.\n\n"

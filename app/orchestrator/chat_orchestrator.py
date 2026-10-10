@@ -14,17 +14,17 @@ from typing import Any, Dict, List, Optional
 
 import yaml
 
-from app.services.llm import get_llm_provider, LLMNotAvailableError
+from app.services.llm import LLMNotAvailableError, get_llm_provider
 from app.services.rag import catalogue_service as catalogue
-from app.services.rag import registry_service as registre
-from app.services.rag import recherche_service as recherche
-from app.services.rag import conversation_service as memoire
 from app.services.rag import chat_log_service as journal
+from app.services.rag import conversation_service as memoire
+from app.services.rag import recherche_service as recherche
+from app.services.rag import registry_service as registre
+from app.services.rag.embedding_provider import get_embedding_provider
 from app.services.rag.formation_resolver_service import resoudre_formation
-from app.services.rag.type_detection_service import detecter_type
 from app.services.rag.knowledge_repository import KnowledgeRepository
 from app.services.rag.rate_limiter import DelaiDepasseError
-from app.services.rag.embedding_provider import get_embedding_provider
+from app.services.rag.type_detection_service import detecter_type
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +42,7 @@ def _charger_prompt(nom_fichier: str) -> str:
 
 async def _appeler_llm_json(
     nom_prompt: str, contenu: str, temperature: float = 0.3
-) -> Optional[Dict[str, Any]]:
+) -> Optional[dict[str, Any]]:
     import json
     try:
         llm = get_llm_provider()
@@ -82,7 +82,7 @@ class ChatOrchestrator:
     async def traiter_message(
         self, message: str, conversation_id: Optional[str] = None,
         formation_code: Optional[str] = None,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         debut = time.perf_counter()
         conversation_id = conversation_id or memoire.nouveau_id()
         conv = memoire.charger_conversation(conversation_id)
@@ -326,7 +326,7 @@ class ChatOrchestrator:
             return _reponse_mode_strict(), [], provider.modele_requete, cache_avant
 
         # Groupé par fichier (mission §"localisation")
-        par_fichier: Dict[str, List] = {}
+        par_fichier: dict[str, list] = {}
         for r in resultats:
             par_fichier.setdefault(r.fichier, []).append(r)
 
@@ -489,17 +489,17 @@ class ChatOrchestrator:
     }
 
     @staticmethod
-    def _suggestions(type_detecte: str) -> List[str]:
+    def _suggestions(type_detecte: str) -> list[str]:
         return ChatOrchestrator._GABARITS_SUGGESTIONS.get(type_detecte, [])[:3]
 
     @staticmethod
     async def _suggestions_dynamiques(
         type_detecte: str, message: str, reponse: str
-    ) -> List[str]:
+    ) -> list[str]:
         """Génère 2 suggestions de relance contextuelles via LLM.
         Retombe sur le gabarit statique si le LLM échoue ou est trop lent."""
-        import json as _json
         import asyncio
+        import json as _json
         if type_detecte in ("hors_sujet", "inventaire", "catalogue", "conversationnel"):
             return ChatOrchestrator._GABARITS_SUGGESTIONS.get(type_detecte, [])[:2]
         prompt_sys = (

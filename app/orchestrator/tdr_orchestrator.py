@@ -3,7 +3,8 @@ import os
 import time
 from typing import Any, Dict, Optional
 
-from app.orchestrator.base_orchestrator import BaseOrchestrator, _vlog as vlog
+from app.orchestrator.base_orchestrator import BaseOrchestrator
+from app.orchestrator.base_orchestrator import _vlog as vlog
 from app.services.backend_sync import review_sync
 from app.services.backend_sync.tdr_sync import sync_tdr_to_backend
 from app.services.hitl import create_review
@@ -190,7 +191,7 @@ class TdrOrchestrator(BaseOrchestrator):
         review_id: str,
         opportunite_id: Optional[str] = None,
         force: bool = False,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Envoie le TDR APPROUVÉ au Backend. Même mécanisme que M3
         (OffreOrchestrator.synchroniser_backend) : garde-fou via
@@ -220,7 +221,7 @@ class TdrOrchestrator(BaseOrchestrator):
 
         opportunite_id = opportunite_id or brief.get("opportunite_id")
 
-        async def _envoyer() -> Dict[str, Any]:
+        async def _envoyer() -> dict[str, Any]:
             return await sync_tdr_to_backend(
                 tdr_content=data.get("data") or {},
                 docx_filename=files.get("docx"),

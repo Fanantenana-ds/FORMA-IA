@@ -44,7 +44,7 @@ def enregistrer(
         f.write(json.dumps(ligne, ensure_ascii=False) + "\n")
 
 
-def lire_toutes_les_lignes(chemin: Optional[Path] = None) -> List[Dict[str, Any]]:
+def lire_toutes_les_lignes(chemin: Optional[Path] = None) -> list[dict[str, Any]]:
     chemin = chemin or CHEMIN_JOURNAL_DEFAUT
     if not chemin.exists():
         return []

@@ -45,7 +45,7 @@ class BaseOrchestrator:
             logger.error(f"   ❌ {label} indisponible : {type(e).__name__} — {e}")
             return None
 
-    def _log_startup_summary(self, agents: Dict[str, Any]) -> None:
+    def _log_startup_summary(self, agents: dict[str, Any]) -> None:
         """
         Log un bilan de démarrage à partir d'un dict {label: instance_or_None}.
 

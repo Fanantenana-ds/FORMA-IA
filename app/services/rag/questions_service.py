@@ -17,7 +17,7 @@ async def generer_questions(
     appeler_llm_json,
     nb_questions_max: int = 10,
     repository=None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Génère des questions de révision à partir des supports indexés
     d'une formation. Retourne une liste vide si aucun contenu n'est
     indexé (MODE STRICT : jamais de question inventée)."""

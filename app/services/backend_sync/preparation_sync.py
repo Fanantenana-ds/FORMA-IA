@@ -39,7 +39,7 @@ _TIME_RE = re.compile(r"^\d{2}:\d{2}")
 _BUDGET_FIELDS = ("cout_formateur", "cout_salle", "cout_supports")
 
 
-def _budget_payload(budget: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+def _budget_payload(budget: dict[str, Any]) -> Optional[dict[str, Any]]:
     """Convertit le résultat de BudgetCalculatorService → BudgetCreate."""
     try:
         cout_formateur = float(budget.get("cout_formateur") or 0)
@@ -88,7 +88,7 @@ def _seance_payload(jour: dict[str, Any], date_iso: str, formateur_id: str | Non
         if module and module not in modules:
             modules.append(module)
 
-    payload: Dict[str, Any] = {"date": date_iso}
+    payload: dict[str, Any] = {"date": date_iso}
 
     heure_debut = _iso_time(jour.get("heure_debut"))
     heure_fin = _iso_time(jour.get("heure_fin"))
@@ -139,7 +139,7 @@ async def sync_preparation_to_backend(
         return result
 
     jours = [j for j in (edt or {}).get("jours", []) if isinstance(j, dict)]
-    dated: List[Tuple[Dict[str, Any], str]] = [
+    dated: list[tuple[dict[str, Any], str]] = [
         (j, d)
         for j in jours
         if (d := _iso_date(j.get("date"))) is not None

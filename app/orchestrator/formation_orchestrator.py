@@ -20,7 +20,8 @@ import os
 import time
 from typing import Any, Dict, List, Optional
 
-from app.orchestrator.base_orchestrator import BaseOrchestrator, _vlog as vlog
+from app.orchestrator.base_orchestrator import BaseOrchestrator
+from app.orchestrator.base_orchestrator import _vlog as vlog
 from app.services.formations import (
     AttestationGeneratorService,
     FormGeneratorService,
@@ -361,8 +362,8 @@ class FormationOrchestrator(BaseOrchestrator):
     async def sync_responses(
         self,
         review_id: str,
-        sections: Optional[List[str]] = None,
-    ) -> Dict[str, Any]:
+        sections: Optional[list[str]] = None,
+    ) -> dict[str, Any]:
         """
         Récupère les réponses des formulaires Google liés à une review.
 
@@ -388,8 +389,8 @@ class FormationOrchestrator(BaseOrchestrator):
                 "total_responses": int,
             }
         """
-        from app.services.hitl import get_review
         from app.services.formations.google_forms_service import GoogleFormsService
+        from app.services.hitl import get_review
 
         start = self._log_start(
             "sync_responses",
@@ -406,7 +407,7 @@ class FormationOrchestrator(BaseOrchestrator):
             )
 
         meta = review.get("meta") or {}
-        form_ids: Dict[str, str] = meta.get("google_form_ids") or {}
+        form_ids: dict[str, str] = meta.get("google_form_ids") or {}
 
         if not form_ids:
             raise ValueError(
@@ -451,7 +452,7 @@ class FormationOrchestrator(BaseOrchestrator):
         review_id: str,
         seance_id: str,
         force: bool = False,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Enregistre les présences validées côté Backend
         (POST /sessions/seances/{seance_id}/presences).
@@ -461,7 +462,7 @@ class FormationOrchestrator(BaseOrchestrator):
             seance_id: UUID Backend de la séance.
             force: relance même si déjà envoyé.
         """
-        from app.services.backend_sync import review_sync, formation_sync
+        from app.services.backend_sync import formation_sync, review_sync
 
         start = self._log_start(
             "synchroniser_presences",
@@ -474,7 +475,7 @@ class FormationOrchestrator(BaseOrchestrator):
         data = review.get("data") or {}
         presences = data.get("presences_brutes") or data.get("presences") or []
 
-        async def _envoyer() -> Dict[str, Any]:
+        async def _envoyer() -> dict[str, Any]:
             return await formation_sync.sync_presences_to_backend(
                 seance_id=seance_id,
                 presences=presences,
@@ -494,7 +495,7 @@ class FormationOrchestrator(BaseOrchestrator):
         review_id: str,
         session_id: str,
         force: bool = False,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Déclenche la création des attestations côté Backend
         (POST /documents/attestations/{session_id}).
@@ -504,7 +505,7 @@ class FormationOrchestrator(BaseOrchestrator):
             session_id: UUID Backend de la session.
             force: relance même si déjà envoyé.
         """
-        from app.services.backend_sync import review_sync, formation_sync
+        from app.services.backend_sync import formation_sync, review_sync
 
         start = self._log_start(
             "synchroniser_attestations",
@@ -515,7 +516,7 @@ class FormationOrchestrator(BaseOrchestrator):
             review_id, agent_ids=("agent_5_attestations",)
         )
 
-        async def _envoyer() -> Dict[str, Any]:
+        async def _envoyer() -> dict[str, Any]:
             return await formation_sync.sync_attestations_to_backend(session_id)
 
         result = await review_sync.sync_once(review_id, _envoyer, force=force)

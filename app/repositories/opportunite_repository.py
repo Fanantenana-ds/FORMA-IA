@@ -1,10 +1,10 @@
+from typing import List, Optional
 from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from app.models.opportunite import Opportunite, Domaine, StatutOpportunite
+from app.models.opportunite import Domaine, Opportunite, StatutOpportunite
 from app.repositories.interfaces.iopportunite_repository import IOpportuniteRepository
-from typing import List, Optional
 
 
 class OpportuniteRepository(IOpportuniteRepository):
@@ -31,7 +31,7 @@ class OpportuniteRepository(IOpportuniteRepository):
         domaine: Optional[Domaine] = None,
         skip: int = 0,
         limit: int = 100,
-    ) -> List[Opportunite]:
+    ) -> list[Opportunite]:
         q = self.db.query(Opportunite)
         if statut is not None:
             q = q.filter(Opportunite.statut == statut)

@@ -1,4 +1,5 @@
 from typing import Dict, Optional
+
 from pydantic import BaseModel
 
 
@@ -10,8 +11,8 @@ class StatistiquesResponse(BaseModel):
 
     # ---- Opportunités ----
     opportunite_total: int
-    opportunite_par_domaine: Dict[str, int]
-    opportunite_par_statut: Dict[str, int]
+    opportunite_par_domaine: dict[str, int]
+    opportunite_par_statut: dict[str, int]
 
     # ---- Documents générés ----
     tdr_generes: int

@@ -40,8 +40,8 @@ def _duree_en_heures(duree_texte: str) -> Optional[float]:
 
 
 def verifier_somme_durees(
-    modules: List[Dict[str, Any]], duree_totale_annoncee_jours: float,
-) -> Tuple[bool, str]:
+    modules: list[dict[str, Any]], duree_totale_annoncee_jours: float,
+) -> tuple[bool, str]:
     """
     Vérifie (Python pur) que la somme des durées des modules du programme
     correspond à la durée totale annoncée. Retourne (conforme, message) —
@@ -82,11 +82,11 @@ def verifier_somme_durees(
 
 async def generer_contenu_pedagogique(
     formation_titre: str,
-    modules: List[Dict[str, Any]],
+    modules: list[dict[str, Any]],
     appeler_llm_json,
     formation_code: Optional[str] = None,
     repository=None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Rédige les sections textuelles du syllabus à partir des chunks RAG
     de la formation (contexte/enjeux, objectifs, compétences, méthodes,
     évaluation, supports) — mission §Syllabus."""

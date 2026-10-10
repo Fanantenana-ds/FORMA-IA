@@ -31,7 +31,7 @@ class Echange:
 @dataclass
 class Conversation:
     conversation_id: str
-    echanges: List[Echange] = field(default_factory=list)
+    echanges: list[Echange] = field(default_factory=list)
     derniere_formation_code: Optional[str] = None
 
 

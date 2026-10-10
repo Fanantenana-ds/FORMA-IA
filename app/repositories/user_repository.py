@@ -1,4 +1,5 @@
 from typing import List, Optional
+
 from sqlalchemy.orm import Session
 
 from app.models.user import RoleEnum, User
@@ -18,7 +19,7 @@ class UserRepository:
         self,
         role: Optional[RoleEnum] = None,
         actif: Optional[bool] = None,
-    ) -> List[User]:
+    ) -> list[User]:
         q = self.db.query(User)
         if role is not None:
             q = q.filter(User.role == role)

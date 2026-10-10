@@ -13,7 +13,7 @@ from typing import Any, Dict, Optional
 
 import yaml
 
-from app.services.llm import get_llm_provider, LLMNotAvailableError
+from app.services.llm import LLMNotAvailableError, get_llm_provider
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +27,7 @@ def charger_prompt(nom_fichier: str) -> str:
     return "\n\n".join(s for s in sections if s)
 
 
-async def appeler_llm_json(nom_prompt: str, contenu: str, max_tokens: int = 2000) -> Optional[Dict[str, Any]]:
+async def appeler_llm_json(nom_prompt: str, contenu: str, max_tokens: int = 2000) -> Optional[dict[str, Any]]:
     """
     Appelle le LLM en json_mode avec le prompt RTFCE `nom_prompt`, retourne
     le JSON parsé ou None (LLM indisponible/erreur/JSON invalide — jamais

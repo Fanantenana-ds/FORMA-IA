@@ -51,8 +51,8 @@ class EntreeRegistre:
 
     # Résumé (Étape C §9)
     resume: Optional[str] = None
-    plan: List[Dict[str, Any]] = field(default_factory=list)
-    mots_cles: List[str] = field(default_factory=list)
+    plan: list[dict[str, Any]] = field(default_factory=list)
+    mots_cles: list[str] = field(default_factory=list)
     resume_statut: str = "a_generer"  # a_generer | genere | echec
 
     # Reprise après interruption : index (0-based) du dernier lot de chunks
@@ -69,7 +69,7 @@ def calculer_hash_fichier(chemin: str) -> str:
     return sha256.hexdigest()
 
 
-def _charger_brut(chemin: Path) -> Dict[str, Any]:
+def _charger_brut(chemin: Path) -> dict[str, Any]:
     if not chemin.exists():
         return {}
     try:
@@ -81,7 +81,7 @@ def _charger_brut(chemin: Path) -> Dict[str, Any]:
         return {}
 
 
-def _sauvegarder_brut(registre: Dict[str, Any], chemin: Path) -> None:
+def _sauvegarder_brut(registre: dict[str, Any], chemin: Path) -> None:
     chemin.parent.mkdir(parents=True, exist_ok=True)
     tmp = chemin.with_suffix(".tmp")
     with open(tmp, "w", encoding="utf-8") as f:
@@ -89,7 +89,7 @@ def _sauvegarder_brut(registre: Dict[str, Any], chemin: Path) -> None:
     os.replace(tmp, chemin)  # écriture atomique
 
 
-def charger_registre(chemin: Optional[Path] = None) -> Dict[str, EntreeRegistre]:
+def charger_registre(chemin: Optional[Path] = None) -> dict[str, EntreeRegistre]:
     chemin = chemin or CHEMIN_REGISTRE_DEFAUT
     brut = _charger_brut(chemin)
     return {h: EntreeRegistre(**v) for h, v in brut.items()}
@@ -190,14 +190,14 @@ def marquer_statut_special(
     enregistrer_entree(entree, chemin)
 
 
-def entrees_pour_formation(formation_code: str, chemin: Optional[Path] = None) -> List[EntreeRegistre]:
+def entrees_pour_formation(formation_code: str, chemin: Optional[Path] = None) -> list[EntreeRegistre]:
     return [
         e for e in charger_registre(chemin).values()
         if e.formation_code == formation_code
     ]
 
 
-def entrees_sans_resume(chemin: Optional[Path] = None) -> List[EntreeRegistre]:
+def entrees_sans_resume(chemin: Optional[Path] = None) -> list[EntreeRegistre]:
     return [
         e for e in charger_registre(chemin).values()
         if e.statut == "indexe" and e.resume_statut == "a_generer"

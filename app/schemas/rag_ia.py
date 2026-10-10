@@ -4,6 +4,7 @@
 # ============================================================
 
 from typing import Any, Dict, List, Optional
+
 from pydantic import BaseModel, Field
 
 
@@ -25,9 +26,9 @@ class ChatResponse(BaseModel):
     conversation_id: str
     type_reponse: str
     reponse: str
-    sources: List[Dict[str, Any]] = []
+    sources: list[dict[str, Any]] = []
     formation_resolue: Optional[str] = None
-    suggestions: List[str] = []
+    suggestions: list[str] = []
     duree_ms: float
 
 
@@ -57,8 +58,8 @@ class ModuleSyllabus(BaseModel):
 
 class GenererSyllabusRequest(BaseModel):
     formation_code: str
-    modules: List[ModuleSyllabus] = Field(..., min_length=1)
-    options: Dict[str, Any] = Field(
+    modules: list[ModuleSyllabus] = Field(..., min_length=1)
+    options: dict[str, Any] = Field(
         default_factory=dict,
         description="format, public_cible, prerequis, effectif_recommande, langue, lieu, prepare_pour",
     )

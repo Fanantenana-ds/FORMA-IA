@@ -6,7 +6,7 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.models.offre import Offre, StatutOffre
-from app.schemas.offre import OffreCreate, OffreUpdate, OffreReplace
+from app.schemas.offre import OffreCreate, OffreReplace, OffreUpdate
 
 
 class OffreService:
@@ -33,7 +33,7 @@ class OffreService:
         opportunite_id: Optional[UUID] = None,
         skip: int = 0,
         limit: int = 100,
-    ) -> List[Offre]:
+    ) -> list[Offre]:
         q = self.db.query(Offre)
         if statut:
             q = q.filter(Offre.statut == statut)

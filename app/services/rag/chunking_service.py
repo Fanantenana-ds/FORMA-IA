@@ -16,9 +16,9 @@ import os
 from dataclasses import dataclass
 from typing import List
 
-from app.services.rag.texte_splitter import decouper_texte
 from app.services.rag.document_loader_service import Segment
 from app.services.rag.embedding_provider import CARACTERES_PAR_TOKEN_ESTIME
+from app.services.rag.texte_splitter import decouper_texte
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +42,7 @@ DEFAULT_PPTX_SLIDES_MAX = int(os.getenv("RAG_PPTX_SLIDES_MAX", "5"))
 _SEPARATEUR_SEGMENTS = "\n\n"
 
 
-def _construire_texte_et_limites(segments: List[Segment]):
+def _construire_texte_et_limites(segments: list[Segment]):
     """Concatène les segments et retient, pour chaque plage de caractères,
     le numéro de page/diapositive d'origine."""
     morceaux = []
@@ -68,10 +68,10 @@ def _numero_pour_offset(limites, offset: int) -> int:
 
 
 def chunk_segments(
-    segments: List[Segment],
+    segments: list[Segment],
     chunk_size_tokens: int = DEFAULT_CHUNK_SIZE_TOKENS,
     chunk_overlap_tokens: int = DEFAULT_CHUNK_OVERLAP_TOKENS,
-) -> List[Chunk]:
+) -> list[Chunk]:
     """
     Découpe une liste de segments (pages PDF, feuilles XLSX, ou le segment
     unique d'un DOCX) en chunks d'environ `chunk_size_tokens` tokens
@@ -118,10 +118,10 @@ def chunk_segments(
 
 
 def chunk_pptx_slides(
-    segments: List[Segment],
+    segments: list[Segment],
     slides_min: int = DEFAULT_PPTX_SLIDES_MIN,
     slides_max: int = DEFAULT_PPTX_SLIDES_MAX,
-) -> List[Chunk]:
+) -> list[Chunk]:
     """
     PPTX uniquement : groupe `slides_min` à `slides_max` diapositives
     consécutives par chunk (PAS de découpage par tokens — la mission le
@@ -134,7 +134,7 @@ def chunk_pptx_slides(
     if not segments:
         return []
 
-    groupes: List[List[Segment]] = []
+    groupes: list[list[Segment]] = []
     i = 0
     n = len(segments)
 
@@ -174,7 +174,7 @@ def chunk_text(
     text: str,
     chunk_size: int = DEFAULT_CHUNK_SIZE,
     chunk_overlap: int = DEFAULT_CHUNK_OVERLAP,
-) -> List[str]:
+) -> list[str]:
     """Découpage générique par caractères (ex. blocs pour résumé Groq d'un
     document long) — ne garde PAS la page d'origine, contrairement à
     chunk_segments()."""

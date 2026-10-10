@@ -41,8 +41,8 @@ class LimiteurDebit:
     rpm: int
     tpm: int
     horloge: Callable[[], float] = time.monotonic
-    _appels: Deque[float] = field(default_factory=deque, init=False, repr=False)
-    _tokens: Deque[Tuple[float, int]] = field(default_factory=deque, init=False, repr=False)
+    _appels: deque[float] = field(default_factory=deque, init=False, repr=False)
+    _tokens: deque[tuple[float, int]] = field(default_factory=deque, init=False, repr=False)
 
     def _purger(self, maintenant: float) -> None:
         limite = maintenant - FENETRE_S

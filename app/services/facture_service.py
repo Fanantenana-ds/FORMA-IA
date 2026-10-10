@@ -118,7 +118,7 @@ class FactureService:
         client: Optional[str] = None,
         skip: int = 0,
         limit: int = 100,
-    ) -> List[Facture]:
+    ) -> list[Facture]:
         q = self.db.query(Facture)
         if statut is not None:
             q = q.filter(Facture.statut == statut)

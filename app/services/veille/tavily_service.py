@@ -21,10 +21,10 @@ from typing import Any
 
 import httpx
 
-from app.utils.retry import retry_with_backoff
-from app.utils.url_utils import normalize_url
 from app.services.veille import tavily_quota_service
 from app.services.veille.tavily_quota_service import QuotaTavilyDepasseError
+from app.utils.retry import retry_with_backoff
+from app.utils.url_utils import normalize_url
 
 logger = logging.getLogger(__name__)
 

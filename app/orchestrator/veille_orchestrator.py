@@ -6,12 +6,14 @@ from typing import Any, Dict
 
 import pypdf
 
-from app.orchestrator.base_orchestrator import BaseOrchestrator, _vlog as vlog
+from app.orchestrator.base_orchestrator import BaseOrchestrator
+from app.orchestrator.base_orchestrator import _vlog as vlog
 from app.services.backend_sync import base_sync
 from app.services.backend_sync.opportunity_sync import (
     sync_new_opportunities_to_backend,
     sync_opportunities_to_backend,
 )
+from app.services.hitl import create_review
 from app.services.veille import validation_service
 from app.services.veille.classification_service import ClassificationService
 from app.services.veille.llm_analysis_service import (
@@ -22,7 +24,6 @@ from app.services.veille.llm_analysis_service import (
 from app.services.veille.prefilter_service import rank_results
 from app.services.veille.scoring_service import ScoringService
 from app.services.veille.tavily_service import TavilyService
-from app.services.hitl import create_review
 
 logger = logging.getLogger(__name__)
 
@@ -783,7 +784,7 @@ class VeilleOrchestrator(BaseOrchestrator):
         self,
         review_id: str,
         force: bool = False,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Envoie les opportunités approuvées au Backend.
         Appelé après validation HITL de l'analyse M1.
@@ -800,7 +801,7 @@ class VeilleOrchestrator(BaseOrchestrator):
         )
         opportunities = (review.get("data") or {}).get("opportunities", [])
 
-        async def _envoyer() -> Dict[str, Any]:
+        async def _envoyer() -> dict[str, Any]:
             return await sync_opportunities_to_backend(opportunities)
 
         result = await review_sync.sync_once(review_id, _envoyer, force=force)

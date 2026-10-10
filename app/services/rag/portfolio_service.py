@@ -12,9 +12,9 @@ from typing import Any, Dict, List, Optional
 
 import yaml
 
-from app.services.rag.catalogue_service import Formation, Realisation, CHEMIN_CATALOGUE_DEFAUT
-from app.services.rag.knowledge_repository import KnowledgeRepository
 from app.services.backend_sync.formation_sync import fetch_session
+from app.services.rag.catalogue_service import CHEMIN_CATALOGUE_DEFAUT, Formation, Realisation
+from app.services.rag.knowledge_repository import KnowledgeRepository
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +33,7 @@ def lire_presentation_altiora() -> str:
     return texte or TEXTE_A_COMPLETER_ALTIORA
 
 
-def calculer_synthese_chiffree(formations: List[Formation]) -> Dict[str, Any]:
+def calculer_synthese_chiffree(formations: list[Formation]) -> dict[str, Any]:
     """Python pur, aucune IA (mission §Portfolio point 2)."""
     realisations = [(f, r) for f in formations for r in f.realisations]
 
@@ -52,7 +52,7 @@ def calculer_synthese_chiffree(formations: List[Formation]) -> Dict[str, Any]:
     }
 
 
-def tableau_recapitulatif(formations: List[Formation]) -> List[Dict[str, Any]]:
+def tableau_recapitulatif(formations: list[Formation]) -> list[dict[str, Any]]:
     """Python pur — mission §Portfolio point 3."""
     lignes = []
     for f in formations:
@@ -68,7 +68,7 @@ def tableau_recapitulatif(formations: List[Formation]) -> List[Dict[str, Any]]:
     return lignes
 
 
-async def _verifier_session_backend(realisation: Realisation) -> Optional[Dict[str, Any]]:
+async def _verifier_session_backend(realisation: Realisation) -> Optional[dict[str, Any]]:
     """
     'Résultats (satisfaction/progression Agents 2/3) SI la session existe
     dans le Backend, sinon rubrique absente' (mission §Portfolio point 4).
@@ -102,7 +102,7 @@ async def generer_fiche_reference(
     realisation: Realisation,
     appeler_llm_json,
     repository: Optional[KnowledgeRepository] = None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Une fiche de référence (mission §Portfolio point 4). `appeler_llm_json`
     est injecté (fonction async(nom_prompt, contenu) -> dict|None) pour
@@ -115,7 +115,7 @@ async def generer_fiche_reference(
         formation_code=formation.code, top_k=6, attente_max_s=None, repository=repository,
     )
 
-    contenus_cles: List[str] = []
+    contenus_cles: list[str] = []
     objectifs = TEXTE_A_COMPLETER
 
     if resultats_rag:

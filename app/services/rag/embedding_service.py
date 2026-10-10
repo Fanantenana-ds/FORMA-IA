@@ -19,7 +19,7 @@ from app.services.rag.embedding_provider import get_embedding_provider
 logger = logging.getLogger(__name__)
 
 
-async def embed_texts(texts: List[str]) -> List[List[float]]:
+async def embed_texts(texts: list[str]) -> list[list[float]]:
     """Vectorise une liste de textes en mode DOCUMENT (indexation)."""
     provider = get_embedding_provider()
     return await provider.embed_documents(texts)
@@ -27,7 +27,7 @@ async def embed_texts(texts: List[str]) -> List[List[float]]:
 
 async def embed_query(
     text: str, *, attente_max_s: Optional[float] = 5.0
-) -> List[float]:
+) -> list[float]:
     """
     Vectorise une requête en mode QUERY (recherche/chat).
 

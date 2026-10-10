@@ -16,9 +16,9 @@ from typing import Any, Dict, List, Optional
 
 import yaml
 
-from app.services.llm import get_llm_provider, LLMNotAvailableError
-from app.services.rag.document_loader_service import Segment
+from app.services.llm import LLMNotAvailableError, get_llm_provider
 from app.services.rag.chunking_service import chunk_text
+from app.services.rag.document_loader_service import Segment
 
 logger = logging.getLogger(__name__)
 
@@ -34,11 +34,11 @@ def _charger_prompt(nom_fichier: str) -> str:
     return "\n\n".join(s for s in sections if s)
 
 
-def _texte_segments(segments: List[Segment]) -> str:
+def _texte_segments(segments: list[Segment]) -> str:
     return "\n\n".join(f"[Page/Diapositive {s.numero}]\n{s.texte}" for s in segments)
 
 
-async def _appeler_llm(system_prompt: str, contenu: str) -> Optional[Dict[str, Any]]:
+async def _appeler_llm(system_prompt: str, contenu: str) -> Optional[dict[str, Any]]:
     try:
         llm = get_llm_provider()
     except LLMNotAvailableError:
@@ -69,8 +69,8 @@ async def _appeler_llm(system_prompt: str, contenu: str) -> Optional[Dict[str, A
 
 
 async def generer_resume_support(
-    segments: List[Segment], titre_fichier: str
-) -> Optional[Dict[str, Any]]:
+    segments: list[Segment], titre_fichier: str
+) -> Optional[dict[str, Any]]:
     """
     Résume UN support (§9). Retourne {"resume", "plan", "mots_cles"} ou
     None si Groq échoue (le document reste indexé quand même, voir
@@ -108,7 +108,7 @@ async def generer_resume_support(
 
 
 async def generer_resume_formation(
-    formation_titre: str, resumes_supports: List[str]
+    formation_titre: str, resumes_supports: list[str]
 ) -> Optional[str]:
     """Résume UNE formation (§10) à partir des résumés de ses supports déjà
     générés. Retourne le texte du résumé, ou None si Groq échoue."""

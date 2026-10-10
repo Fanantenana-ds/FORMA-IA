@@ -1,10 +1,10 @@
 from datetime import date, datetime
+from typing import Optional
 from uuid import UUID
 
 from pydantic import BaseModel, Field
 
 from app.models.facture import StatutFacture
-from typing import Optional
 
 
 class FactureCreate(BaseModel):

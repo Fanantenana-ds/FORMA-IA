@@ -1,9 +1,9 @@
-import os
 import json
 import logging
-from pathlib import Path
+import os
 from datetime import datetime
-from typing import Dict, Any, Optional, List
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +19,7 @@ STORAGE_PATH = Path(__file__).resolve().parents[3] / "data" / "hitl_reviews.json
 STORAGE_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 
-def _load_store() -> Dict[str, Any]:
+def _load_store() -> dict[str, Any]:
     """Charge le store depuis le fichier JSON."""
     if not STORAGE_PATH.exists():
         vlog(f"ℹ️  [HITL] Store inexistant → création : {STORAGE_PATH.name}")
@@ -39,7 +39,7 @@ def _load_store() -> Dict[str, Any]:
         return {"reviews": {}, "counter": 0}
 
 
-def _save_store(store: Dict[str, Any]) -> None:
+def _save_store(store: dict[str, Any]) -> None:
     """Sauvegarde le store dans le fichier JSON."""
     try:
         with open(STORAGE_PATH, "w", encoding="utf-8") as f:
@@ -51,7 +51,7 @@ def _save_store(store: Dict[str, Any]) -> None:
     except IOError as e:
         logger.error(f"❌ [HITL] Erreur écriture store : {e}")
 
-AGENT_CRITICITY: Dict[str, str] = {
+AGENT_CRITICITY: dict[str, str] = {
     # ── M5 — Formations ──
     "agent_1_forms":         "critical",
     "agent_2_levels":        "medium",
@@ -74,7 +74,7 @@ AGENT_CRITICITY: Dict[str, str] = {
 
 def create_review(
     agent_id: str,
-    data: Dict[str, Any],
+    data: dict[str, Any],
     summary: str,
     criticity: Optional[str] = None,
 ) -> str:
@@ -135,7 +135,7 @@ def create_review(
 def list_pending(
     agent_id: Optional[str] = None,
     criticity: Optional[str] = None,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """
     Liste les reviews en attente (status='pending_review').
 
@@ -180,7 +180,7 @@ def list_pending(
     return results
 
 
-def get_review(review_id: str) -> Optional[Dict[str, Any]]:
+def get_review(review_id: str) -> Optional[dict[str, Any]]:
     """
     Récupère un review complet (avec data).
 
@@ -209,7 +209,7 @@ def get_review(review_id: str) -> Optional[Dict[str, Any]]:
 def approve_review(
     review_id: str,
     reviewer_note: Optional[str] = None,
-) -> Optional[Dict[str, Any]]:
+) -> Optional[dict[str, Any]]:
     """
     Approuve un review.
 
@@ -245,7 +245,7 @@ def approve_review(
 def reject_review(
     review_id: str,
     reason: str,
-) -> Optional[Dict[str, Any]]:
+) -> Optional[dict[str, Any]]:
     """
     Rejette un review (nécessite une régénération).
 
@@ -277,7 +277,7 @@ def reject_review(
     vlog("=" * 70)
     return review
 
-def patch_review(review_id: str, extra: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+def patch_review(review_id: str, extra: dict[str, Any]) -> Optional[dict[str, Any]]:
     """
     Ajoute / met à jour des champs dans la section `meta` d'une review existante.
     Utilisé pour stocker les form_id Google après création des formulaires.
@@ -304,7 +304,7 @@ def patch_review(review_id: str, extra: Dict[str, Any]) -> Optional[Dict[str, An
     return review
 
 
-def get_stats() -> Dict[str, Any]:
+def get_stats() -> dict[str, Any]:
     """
     Statistiques globales des reviews.
 

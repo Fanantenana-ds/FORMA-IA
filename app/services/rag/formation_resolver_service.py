@@ -35,11 +35,11 @@ def _normaliser(texte: str) -> str:
 class ResolutionFormation:
     statut: str  # "trouvee" | "ambigue" | "aucune"
     formation: Optional[Formation] = None
-    candidats: List[Formation] = field(default_factory=list)  # si ambigue
+    candidats: list[Formation] = field(default_factory=list)  # si ambigue
     score: float = 0.0
 
 
-def _libelles_formation(formation: Formation) -> List[str]:
+def _libelles_formation(formation: Formation) -> list[str]:
     """Tous les libellés comparables d'une formation : code, titre, synonymes."""
     return [formation.code, formation.titre, *formation.synonymes]
 

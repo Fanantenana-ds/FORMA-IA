@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 class KnowledgeRepository:
     """Implémentation réelle (PostgreSQL, via SessionLocal)."""
 
-    def modeles_presents(self, collection: Optional[str] = None) -> List[str]:
+    def modeles_presents(self, collection: Optional[str] = None) -> list[str]:
         db = SessionLocal()
         try:
             requete = select(KnowledgeBase.modele_embed).distinct()
@@ -33,14 +33,14 @@ class KnowledgeRepository:
 
     def rechercher_par_similarite(
         self,
-        vecteur: List[float],
+        vecteur: list[float],
         collection: str,
         top_k: int,
         formation_code: Optional[str] = None,
         domaine: Optional[str] = None,
         annee: Optional[int] = None,
         type_support: Optional[str] = None,
-    ) -> List[Tuple[KnowledgeBase, float]]:
+    ) -> list[tuple[KnowledgeBase, float]]:
         """Retourne [(ligne, distance_cosinus)], triées par distance
         croissante (les plus similaires d'abord)."""
         db = SessionLocal()
@@ -63,7 +63,7 @@ class KnowledgeRepository:
         finally:
             db.close()
 
-    def inserer_chunks(self, lignes: List[KnowledgeBase]) -> None:
+    def inserer_chunks(self, lignes: list[KnowledgeBase]) -> None:
         if not lignes:
             return
         db = SessionLocal()

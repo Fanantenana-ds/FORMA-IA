@@ -1,14 +1,17 @@
-from uuid import UUID
 from typing import List, Optional
+from uuid import UUID
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from app.models.rh import Formateur, Candidat, Entretien
+from app.models.rh import Candidat, Entretien, Formateur
 from app.schemas.rh import (
-    FormateurCreate, FormateurUpdate,
-    CandidatCreate, CandidatUpdate,
-    EntretienCreate, EntretienUpdate,
+    CandidatCreate,
+    CandidatUpdate,
+    EntretienCreate,
+    EntretienUpdate,
+    FormateurCreate,
+    FormateurUpdate,
 )
 
 
@@ -37,7 +40,7 @@ class RhService:
         self,
         specialite: Optional[str] = None,
         statut: Optional[str] = None,
-    ) -> List[Formateur]:
+    ) -> list[Formateur]:
         q = self.db.query(Formateur)
         if specialite:
             q = q.filter(Formateur.specialite.ilike(f"%{specialite}%"))
@@ -81,7 +84,7 @@ class RhService:
         self,
         poste_vise: Optional[str] = None,
         decision: Optional[str] = None,
-    ) -> List[Candidat]:
+    ) -> list[Candidat]:
         q = self.db.query(Candidat)
         if poste_vise:
             q = q.filter(Candidat.poste_vise.ilike(f"%{poste_vise}%"))
@@ -122,7 +125,7 @@ class RhService:
             raise HTTPException(status_code=404, detail="Entretien introuvable")
         return e
 
-    def lister_entretiens(self, candidat_id: UUID) -> List[Entretien]:
+    def lister_entretiens(self, candidat_id: UUID) -> list[Entretien]:
         self.get_candidat(candidat_id)
         return (
             self.db.query(Entretien)

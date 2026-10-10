@@ -9,12 +9,18 @@
 # ============================================================
 
 import uuid
-from sqlalchemy import (
-    Column, String, Text, TIMESTAMP, Integer, JSON,
-)
-from sqlalchemy.dialects.postgresql import UUID, JSONB
-from sqlalchemy.sql import func
+
 from pgvector.sqlalchemy import Vector
+from sqlalchemy import (
+    JSON,
+    TIMESTAMP,
+    Column,
+    Integer,
+    String,
+    Text,
+)
+from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.sql import func
 
 from app.database import Base
 

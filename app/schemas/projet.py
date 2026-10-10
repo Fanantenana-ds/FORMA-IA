@@ -1,12 +1,11 @@
 # app/schemas/projet.py
 from datetime import date, datetime, time
-from typing import Optional, List
+from typing import List, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, Field
 
 from app.models.projet import StatutProjet
-
 
 # ── Salle ───────────────────────────────────────────────────
 

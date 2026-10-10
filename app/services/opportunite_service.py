@@ -1,10 +1,10 @@
-﻿from uuid import UUID
+﻿from typing import List, Optional
+from uuid import UUID
 
 from app.models.opportunite import Domaine, Opportunite, StatutOpportunite
 from app.repositories.interfaces.iopportunite_repository import IOpportuniteRepository
 from app.schemas.opportunite import OpportuniteCreate, OpportuniteUpdate
 from app.services.interfaces.iopportunite_service import IOpportuniteService
-from typing import List, Optional
 
 
 class OpportuniteService(IOpportuniteService):
@@ -33,7 +33,7 @@ class OpportuniteService(IOpportuniteService):
         domaine: Optional[Domaine] = None,
         skip: int = 0,
         limit: int = 100,
-    ) -> List[Opportunite]:
+    ) -> list[Opportunite]:
         return self.repository.find_all(statut=statut, domaine=domaine, skip=skip, limit=limit)
 
     def delete(self, opportunite_id: UUID) -> bool:

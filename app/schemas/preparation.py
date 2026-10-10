@@ -1,3 +1,4 @@
+import datetime as _dt
 from datetime import date, time
 from typing import List, Optional
 from uuid import UUID
@@ -130,7 +131,8 @@ class EDTUpdate(BaseModel):
     code_session: str | None = None
     numero_jour: int | None = None
     jour_semaine: str | None = None
-    date: date | None = None
+    # Le champ "date" masque le type dans le corps de classe : passer par le module.
+    date: _dt.date | None = None
     heure_debut: time | None = None
     heure_fin: time | None = None
     duree_minutes: int | None = None

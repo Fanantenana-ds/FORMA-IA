@@ -606,7 +606,7 @@ class SyncResponsesRequest(BaseModel):
         ...,
         description="ID de la review agent_1_forms contenant les form_id Google",
     )
-    sections: Optional[list[str]] = Field(
+    sections: list[str] | None = Field(
         default=None,
         description=(
             "Sections à récupérer : inscription, test_avant, test_apres, satisfaction. "

@@ -141,7 +141,7 @@ def _export_pdf(factures: list[Facture], date_export: str) -> bytes:
     styles = getSampleStyleSheet()
     elements = []
 
-    elements.append(Paragraph(f"Export comptable — Factures ALTIORA PREST", styles["Title"]))
+    elements.append(Paragraph("Export comptable — Factures ALTIORA PREST", styles["Title"]))
     elements.append(Paragraph(f"Généré le {date_export} — {len(factures)} facture(s)", styles["Normal"]))
     elements.append(Spacer(1, 0.4*cm))
 
@@ -203,9 +203,9 @@ def _export_pdf(factures: list[Facture], date_export: str) -> bytes:
 def export_comptable(
     format: str = Query(default="csv", pattern="^(csv|excel|pdf)$",
                         description="Format de l'export : csv | excel | pdf"),
-    statut: Optional[StatutFacture] = Query(default=None),
-    client: Optional[str] = Query(default=None, description="Recherche partielle sur le nom du client"),
-    annee: Optional[int] = Query(default=None, ge=2020, le=2100, description="Filtrer par année d'émission"),
+    statut: StatutFacture | None = Query(default=None),
+    client: str | None = Query(default=None, description="Recherche partielle sur le nom du client"),
+    annee: int | None = Query(default=None, ge=2020, le=2100, description="Filtrer par année d'émission"),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role("DIRECTION", "COMPTABLE")),
 ):

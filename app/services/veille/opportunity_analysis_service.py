@@ -32,7 +32,7 @@ import asyncio
 import logging
 import os
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from typing import Any
 
 from app.models.opportunite import Domaine
@@ -117,7 +117,7 @@ def _date_vers_datetime(date_iso: str | None) -> datetime | None:
     if not date_iso:
         return None
     try:
-        return datetime.fromisoformat(date_iso).replace(tzinfo=timezone.utc)
+        return datetime.fromisoformat(date_iso).replace(tzinfo=UTC)
     except ValueError:
         return None
 

@@ -39,7 +39,7 @@ _TIME_RE = re.compile(r"^\d{2}:\d{2}")
 _BUDGET_FIELDS = ("cout_formateur", "cout_salle", "cout_supports")
 
 
-def _budget_payload(budget: dict[str, Any]) -> Optional[dict[str, Any]]:
+def _budget_payload(budget: dict[str, Any]) -> dict[str, Any] | None:
     """Convertit le résultat de BudgetCalculatorService → BudgetCreate."""
     try:
         cout_formateur = float(budget.get("cout_formateur") or 0)
@@ -62,7 +62,7 @@ def _iso_date(value: Any) -> str | None:
     return text[:10] if _DATE_RE.match(text) else None
 
 
-def _iso_time(value: Any) -> Optional[str]:
+def _iso_time(value: Any) -> str | None:
     text = str(value or "").strip()
     return text[:5] if _TIME_RE.match(text) else None
 

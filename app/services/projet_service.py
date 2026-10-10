@@ -35,7 +35,7 @@ class SalleService:
             raise HTTPException(status_code=404, detail="Salle introuvable")
         return salle
 
-    def lister(self, disponible: Optional[bool] = None, skip: int = 0, limit: int = 100) -> list[Salle]:
+    def lister(self, disponible: bool | None = None, skip: int = 0, limit: int = 100) -> list[Salle]:
         q = self.db.query(Salle)
         if disponible is not None:
             q = q.filter(Salle.disponible == disponible)
@@ -85,7 +85,7 @@ class ProjetService:
 
     def lister(
         self,
-        statut: Optional[StatutProjet] = None,
+        statut: StatutProjet | None = None,
         skip: int = 0,
         limit: int = 100,
     ) -> list[Projet]:
@@ -146,7 +146,7 @@ class ProjetService:
 
     # ── Budget ──────────────────────────────────────────────
 
-    def creer_ou_maj_budget(self, projet_id: UUID, data: BudgetCreate, valideur_id: Optional[UUID] = None) -> BudgetFormation:
+    def creer_ou_maj_budget(self, projet_id: UUID, data: BudgetCreate, valideur_id: UUID | None = None) -> BudgetFormation:
         self._get_projet(projet_id)
         cout_total = round(data.cout_formateur + data.cout_salle + data.cout_supports, 2)
 

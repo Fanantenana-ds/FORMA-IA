@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 class KnowledgeRepository:
     """Implémentation réelle (PostgreSQL, via SessionLocal)."""
 
-    def modeles_presents(self, collection: Optional[str] = None) -> list[str]:
+    def modeles_presents(self, collection: str | None = None) -> list[str]:
         db = SessionLocal()
         try:
             requete = select(KnowledgeBase.modele_embed).distinct()
@@ -36,10 +36,10 @@ class KnowledgeRepository:
         vecteur: list[float],
         collection: str,
         top_k: int,
-        formation_code: Optional[str] = None,
-        domaine: Optional[str] = None,
-        annee: Optional[int] = None,
-        type_support: Optional[str] = None,
+        formation_code: str | None = None,
+        domaine: str | None = None,
+        annee: int | None = None,
+        type_support: str | None = None,
     ) -> list[tuple[KnowledgeBase, float]]:
         """Retourne [(ligne, distance_cosinus)], triées par distance
         croissante (les plus similaires d'abord)."""

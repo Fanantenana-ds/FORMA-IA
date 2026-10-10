@@ -78,6 +78,7 @@ class GoogleFormsPublisherService:
                 raise FileNotFoundError(f"OAuth client introuvable : {client_file}")
 
             import json
+
             from google.oauth2.credentials import Credentials
             from googleapiclient.discovery import build
 
@@ -121,9 +122,9 @@ class GoogleFormsPublisherService:
     # ----------------------------------------------------------
     async def publish_all(
         self,
-        forms_data: Dict[str, Any],
+        forms_data: dict[str, Any],
         session_titre: str = "Formation",
-    ) -> Dict[str, str]:
+    ) -> dict[str, str]:
         """
         Publie les 4 formulaires d'une session sur Google Forms.
 
@@ -146,8 +147,8 @@ class GoogleFormsPublisherService:
             "satisfaction": "⭐ Évaluation de satisfaction",
         }
 
-        results: Dict[str, str] = {}
-        errors: List[str] = []
+        results: dict[str, str] = {}
+        errors: list[str] = []
 
         for section in sections:
             if section not in forms_data:
@@ -174,7 +175,7 @@ class GoogleFormsPublisherService:
     # ----------------------------------------------------------
     async def publish_one(
         self,
-        section_data: Dict[str, Any],
+        section_data: dict[str, Any],
         titre: str,
         section_type: str = "generic",
     ) -> str:
@@ -219,9 +220,9 @@ class GoogleFormsPublisherService:
     # ----------------------------------------------------------
     def _build_batch_requests(
         self,
-        questions: List[Dict[str, Any]],
+        questions: list[dict[str, Any]],
         section_type: str,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Convertit les questions FORMA-IA en requêtes Google Forms batchUpdate."""
         requests = []
         is_test = section_type in ("test_avant", "test_apres")
@@ -247,11 +248,11 @@ class GoogleFormsPublisherService:
         self,
         label: str,
         q_type: str,
-        options: List[str],
+        options: list[str],
         required: bool,
         is_test: bool,
-        raw_q: Dict[str, Any],
-    ) -> Optional[Dict[str, Any]]:
+        raw_q: dict[str, Any],
+    ) -> dict[str, Any] | None:
         """Construit un item Google Forms à partir d'une question FORMA-IA."""
 
         # Mapping des types
@@ -269,7 +270,7 @@ class GoogleFormsPublisherService:
             gforms_type = "TEXT"
 
         # Structure de la question
-        question_spec: Dict[str, Any] = {"required": required}
+        question_spec: dict[str, Any] = {"required": required}
 
         if gforms_type in ("RADIO", "CHECKBOX", "DROP_DOWN") and options:
             question_spec["choiceQuestion"] = {
@@ -311,7 +312,7 @@ class GoogleFormsPublisherService:
                 removeParents=previous_parents,
                 fields="id, parents",
             ).execute()
-            vlog(f"   📁 Formulaire déplacé dans le dossier Drive")
+            vlog("   📁 Formulaire déplacé dans le dossier Drive")
         except Exception as e:
             logger.warning(f"⚠️ Impossible de déplacer dans Drive : {e}")
 

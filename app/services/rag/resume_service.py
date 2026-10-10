@@ -38,7 +38,7 @@ def _texte_segments(segments: list[Segment]) -> str:
     return "\n\n".join(f"[Page/Diapositive {s.numero}]\n{s.texte}" for s in segments)
 
 
-async def _appeler_llm(system_prompt: str, contenu: str) -> Optional[dict[str, Any]]:
+async def _appeler_llm(system_prompt: str, contenu: str) -> dict[str, Any] | None:
     try:
         llm = get_llm_provider()
     except LLMNotAvailableError:
@@ -70,7 +70,7 @@ async def _appeler_llm(system_prompt: str, contenu: str) -> Optional[dict[str, A
 
 async def generer_resume_support(
     segments: list[Segment], titre_fichier: str
-) -> Optional[dict[str, Any]]:
+) -> dict[str, Any] | None:
     """
     Résume UN support (§9). Retourne {"resume", "plan", "mots_cles"} ou
     None si Groq échoue (le document reste indexé quand même, voir
@@ -109,7 +109,7 @@ async def generer_resume_support(
 
 async def generer_resume_formation(
     formation_titre: str, resumes_supports: list[str]
-) -> Optional[str]:
+) -> str | None:
     """Résume UNE formation (§10) à partir des résumés de ses supports déjà
     générés. Retourne le texte du résumé, ou None si Groq échoue."""
     if not resumes_supports:

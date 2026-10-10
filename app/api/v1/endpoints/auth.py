@@ -95,8 +95,8 @@ def get_auth_service(db: Session = Depends(get_db)) -> AuthService:
     ),
 )
 def lister_utilisateurs(
-    role: Optional[RoleEnum] = Query(default=None, description="Filtrer par rôle"),
-    actif: Optional[bool] = Query(default=None, description="Filtrer par statut actif/inactif"),
+    role: RoleEnum | None = Query(default=None, description="Filtrer par rôle"),
+    actif: bool | None = Query(default=None, description="Filtrer par statut actif/inactif"),
     service: AuthService = Depends(get_auth_service),
     current_user=Depends(require_role("DIRECTION")),
 ):

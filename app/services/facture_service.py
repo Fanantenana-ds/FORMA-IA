@@ -114,8 +114,8 @@ class FactureService:
 
     def lister(
         self,
-        statut: Optional[StatutFacture] = None,
-        client: Optional[str] = None,
+        statut: StatutFacture | None = None,
+        client: str | None = None,
         skip: int = 0,
         limit: int = 100,
     ) -> list[Facture]:

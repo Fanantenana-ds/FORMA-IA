@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from enum import Enum
 
 from sqlalchemy import Column, Date, DateTime, ForeignKey, String
@@ -28,7 +28,7 @@ class Session(Base):
     date_debut = Column(Date, nullable=False)
     date_fin = Column(Date, nullable=False)
     formateur_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
-    date_creation = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+    date_creation = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False)
 
     seances = relationship("Seance", back_populates="session", cascade="all, delete-orphan")
     inscriptions = relationship("Inscription", back_populates="session", cascade="all, delete-orphan")

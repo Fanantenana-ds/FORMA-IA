@@ -17,11 +17,11 @@ class SessionCreate(BaseModel):
 
 class SessionUpdate(BaseModel):
     """Mise à jour partielle d'une session (tous les champs sont optionnels)."""
-    titre: Optional[str] = Field(default=None, min_length=1)
-    client: Optional[str] = None
-    date_debut: Optional[date] = None
-    date_fin: Optional[date] = None
-    formateur_id: Optional[UUID] = None
+    titre: str | None = Field(default=None, min_length=1)
+    client: str | None = None
+    date_debut: date | None = None
+    date_fin: date | None = None
+    formateur_id: UUID | None = None
 
 
 class SessionResponse(BaseModel):
@@ -42,9 +42,9 @@ class SeanceCreate(BaseModel):
 
 class SeanceUpdate(BaseModel):
     """Mise à jour partielle d'une séance (tous les champs sont optionnels)."""
-    date: Optional[date] = None
-    duree: Optional[str] = None
-    theme: Optional[str] = None
+    date: date | None = None
+    duree: str | None = None
+    theme: str | None = None
 
 class SeanceResponse(BaseModel):
     id: UUID
@@ -62,9 +62,9 @@ class ParticipantCreate(BaseModel):
 
 class ParticipantUpdate(BaseModel):
     """Mise à jour partielle d'un participant (tous les champs sont optionnels)."""
-    nom: Optional[str] = Field(default=None, min_length=1)
-    email: Optional[str] = None
-    entreprise: Optional[str] = None
+    nom: str | None = Field(default=None, min_length=1)
+    email: str | None = None
+    entreprise: str | None = None
 
 class ParticipantResponse(BaseModel):
     id: UUID

@@ -18,13 +18,13 @@ CHEMIN_JOURNAL_DEFAUT = Path(__file__).resolve().parents[3] / "data" / "rag" / "
 def enregistrer(
     question: str,
     type_detecte: str,
-    formation_code: Optional[str],
+    formation_code: str | None,
     nb_sources: int,
-    modele_requete: Optional[str],
+    modele_requete: str | None,
     cache_utilise: bool,
     duree_ms: float,
     statut: str,
-    chemin: Optional[Path] = None,
+    chemin: Path | None = None,
 ) -> None:
     chemin = chemin or CHEMIN_JOURNAL_DEFAUT
     chemin.parent.mkdir(parents=True, exist_ok=True)
@@ -44,7 +44,7 @@ def enregistrer(
         f.write(json.dumps(ligne, ensure_ascii=False) + "\n")
 
 
-def lire_toutes_les_lignes(chemin: Optional[Path] = None) -> list[dict[str, Any]]:
+def lire_toutes_les_lignes(chemin: Path | None = None) -> list[dict[str, Any]]:
     chemin = chemin or CHEMIN_JOURNAL_DEFAUT
     if not chemin.exists():
         return []

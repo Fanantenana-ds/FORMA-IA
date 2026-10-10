@@ -71,7 +71,7 @@ class LocalStorageService(AbstractStorageService):
         try:
             libre = shutil.disk_usage(self._dossier).free
             if libre < _SEUIL_CRITIQUE_OCTETS:
-                raise IOError(
+                raise OSError(
                     f"Espace disque critique : {libre // (1024**2)} Mo libres. "
                     "Upload impossible. Contactez l'administrateur."
                 )

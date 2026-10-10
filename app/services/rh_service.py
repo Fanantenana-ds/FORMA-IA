@@ -38,8 +38,8 @@ class RhService:
 
     def lister_formateurs(
         self,
-        specialite: Optional[str] = None,
-        statut: Optional[str] = None,
+        specialite: str | None = None,
+        statut: str | None = None,
     ) -> list[Formateur]:
         q = self.db.query(Formateur)
         if specialite:
@@ -82,8 +82,8 @@ class RhService:
 
     def lister_candidats(
         self,
-        poste_vise: Optional[str] = None,
-        decision: Optional[str] = None,
+        poste_vise: str | None = None,
+        decision: str | None = None,
     ) -> list[Candidat]:
         q = self.db.query(Candidat)
         if poste_vise:

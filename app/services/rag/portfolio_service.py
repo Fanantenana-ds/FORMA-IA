@@ -68,7 +68,7 @@ def tableau_recapitulatif(formations: list[Formation]) -> list[dict[str, Any]]:
     return lignes
 
 
-async def _verifier_session_backend(realisation: Realisation) -> Optional[dict[str, Any]]:
+async def _verifier_session_backend(realisation: Realisation) -> dict[str, Any] | None:
     """
     'Résultats (satisfaction/progression Agents 2/3) SI la session existe
     dans le Backend, sinon rubrique absente' (mission §Portfolio point 4).
@@ -101,7 +101,7 @@ async def generer_fiche_reference(
     formation: Formation,
     realisation: Realisation,
     appeler_llm_json,
-    repository: Optional[KnowledgeRepository] = None,
+    repository: KnowledgeRepository | None = None,
 ) -> dict[str, Any]:
     """
     Une fiche de référence (mission §Portfolio point 4). `appeler_llm_json`

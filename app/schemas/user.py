@@ -15,10 +15,10 @@ class UserCreate(BaseModel):
 
 class UserUpdate(BaseModel):
     """Mise à jour partielle d'un utilisateur (tous les champs sont optionnels)."""
-    nom: Optional[str] = None
-    email: Optional[EmailStr] = None
-    role: Optional[RoleEnum] = None
-    actif: Optional[bool] = None
+    nom: str | None = None
+    email: EmailStr | None = None
+    role: RoleEnum | None = None
+    actif: bool | None = None
 
 
 class UserLogin(BaseModel):

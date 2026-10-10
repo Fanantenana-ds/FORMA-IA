@@ -71,8 +71,8 @@ class KnowledgeBaseService:
     async def search(
         self,
         query: str,
-        formation_code: Optional[str] = None,
-        collection: Optional[str] = None,
+        formation_code: str | None = None,
+        collection: str | None = None,
         top_k: int = _MAX_CHUNKS_PAR_RECHERCHE,
         score_min: float = _SCORE_MIN,
     ) -> list[dict[str, Any]]:
@@ -132,7 +132,7 @@ class KnowledgeBaseService:
         self,
         formation_titre: str,
         domaine: str,
-        formation_code: Optional[str] = None,
+        formation_code: str | None = None,
         max_chars: int = 3000,
     ) -> str:
         """
@@ -185,7 +185,7 @@ class KnowledgeBaseService:
     # ----------------------------------------------------------
     async def get_stats(
         self,
-        formation_code: Optional[str] = None,
+        formation_code: str | None = None,
     ) -> dict[str, Any]:
         """
         Retourne des statistiques sur les supports indexés.

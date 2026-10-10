@@ -53,21 +53,21 @@ def _sauvegarder(cache: dict, chemin: Path) -> None:
     os.replace(tmp, chemin)
 
 
-def depuis_cache(texte: str, modele_requete: str, chemin: Optional[Path] = None) -> Optional[list[float]]:
+def depuis_cache(texte: str, modele_requete: str, chemin: Path | None = None) -> list[float] | None:
     """Retourne le vecteur en cache, ou None si absent."""
     chemin = chemin or CHEMIN_CACHE_DEFAUT
     cache = _charger(chemin)
     return cache.get(_cle(texte, modele_requete))
 
 
-def mettre_en_cache(texte: str, modele_requete: str, vecteur: list[float], chemin: Optional[Path] = None) -> None:
+def mettre_en_cache(texte: str, modele_requete: str, vecteur: list[float], chemin: Path | None = None) -> None:
     chemin = chemin or CHEMIN_CACHE_DEFAUT
     cache = _charger(chemin)
     cache[_cle(texte, modele_requete)] = vecteur
     _sauvegarder(cache, chemin)
 
 
-def taille_cache(chemin: Optional[Path] = None) -> int:
+def taille_cache(chemin: Path | None = None) -> int:
     return len(_charger(chemin or CHEMIN_CACHE_DEFAUT))
 
 
@@ -75,7 +75,7 @@ async def obtenir_ou_calculer(
     texte: str,
     modele_requete: str,
     fonction_embed_query: Callable,
-    chemin: Optional[Path] = None,
+    chemin: Path | None = None,
     **kwargs_embed,
 ) -> list[float]:
     """

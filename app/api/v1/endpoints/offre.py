@@ -59,9 +59,9 @@ def creer_offre(
     ),
 )
 def lister_offres(
-    statut: Optional[StatutOffre] = Query(default=None),
-    client: Optional[str] = Query(default=None),
-    opportunite_id: Optional[UUID] = Query(default=None),
+    statut: StatutOffre | None = Query(default=None),
+    client: str | None = Query(default=None),
+    opportunite_id: UUID | None = Query(default=None),
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=500),
     service: OffreService = Depends(get_service),

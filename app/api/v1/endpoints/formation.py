@@ -49,10 +49,10 @@ def creer_session(
 
 @router.get("", response_model=list[SessionResponse])
 def lister_sessions(
-    formateur_id: Optional[UUID] = Query(default=None),
-    client: Optional[str] = Query(default=None),
-    date_debut_min: Optional[date_type] = Query(default=None),
-    date_debut_max: Optional[date_type] = Query(default=None),
+    formateur_id: UUID | None = Query(default=None),
+    client: str | None = Query(default=None),
+    date_debut_min: date_type | None = Query(default=None),
+    date_debut_max: date_type | None = Query(default=None),
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=500),
     service: FormationService = Depends(get_formation_service),
@@ -219,7 +219,7 @@ def creer_participant(
 
 @participants_router.get("", response_model=list[ParticipantResponse])
 def lister_participants(
-    nom: Optional[str] = Query(default=None),
+    nom: str | None = Query(default=None),
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=500),
     service: FormationService = Depends(get_formation_service),

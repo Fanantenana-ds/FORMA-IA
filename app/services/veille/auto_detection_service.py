@@ -33,7 +33,7 @@ import asyncio
 import json
 import logging
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
 
@@ -171,7 +171,7 @@ async def executer_detection(
         raise DetectionAutoEnCours()
 
     _en_cours = True
-    debut = datetime.now(timezone.utc)
+    debut = datetime.now(UTC)
     etat: dict[str, Any] = {
         "derniere_execution": debut.isoformat(),
         "declenchement": declenchement,
@@ -227,7 +227,7 @@ async def executer_detection(
 
 def secondes_avant_prochaine_execution(maintenant: datetime | None = None) -> float:
     """0 = passage dû maintenant. Tient compte des passages manuels et des redémarrages."""
-    maintenant = maintenant or datetime.now(timezone.utc)
+    maintenant = maintenant or datetime.now(UTC)
     derniere = lire_etat().get("derniere_execution")
 
     if derniere:
@@ -269,7 +269,7 @@ def demarrer_planification(orchestrator) -> Optional["asyncio.Task"]:
     if _tache is not None and not _tache.done():
         return _tache
 
-    _demarre_a = datetime.now(timezone.utc)
+    _demarre_a = datetime.now(UTC)
     _tache = asyncio.get_running_loop().create_task(_boucle_planifiee(orchestrator))
     logger.info(
         "⏰ Détection automatique planifiée : toutes les %d h (%d requête(s))",

@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 
 from sqlalchemy import Column, DateTime, Float, ForeignKey, String, Text
 from sqlalchemy import Enum as SqlEnum
@@ -22,5 +22,5 @@ class HistoriqueAnalyse(Base):
     domaine = Column(SqlEnum(Domaine))
     exigences = Column(Text)
     score_pertinence = Column(Float, default=0.0)
-    date_analyse = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+    date_analyse = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False)
     opportunite = relationship("Opportunite", back_populates="historique_analyses")

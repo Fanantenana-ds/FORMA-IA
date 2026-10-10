@@ -22,7 +22,7 @@ _MOTIF_HEURES = re.compile(r"(\d+(?:[.,]\d+)?)\s*h", re.IGNORECASE)
 _MOTIF_JOURS = re.compile(r"(\d+(?:[.,]\d+)?)\s*j(?:our)?s?", re.IGNORECASE)
 
 
-def _duree_en_heures(duree_texte: str) -> Optional[float]:
+def _duree_en_heures(duree_texte: str) -> float | None:
     """Parse '3h', '3 h', '1 jour', '2j' -> heures. None si non reconnu."""
     if not duree_texte:
         return None
@@ -84,7 +84,7 @@ async def generer_contenu_pedagogique(
     formation_titre: str,
     modules: list[dict[str, Any]],
     appeler_llm_json,
-    formation_code: Optional[str] = None,
+    formation_code: str | None = None,
     repository=None,
 ) -> dict[str, Any]:
     """Rédige les sections textuelles du syllabus à partir des chunks RAG

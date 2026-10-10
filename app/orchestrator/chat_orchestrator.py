@@ -42,7 +42,7 @@ def _charger_prompt(nom_fichier: str) -> str:
 
 async def _appeler_llm_json(
     nom_prompt: str, contenu: str, temperature: float = 0.3
-) -> Optional[dict[str, Any]]:
+) -> dict[str, Any] | None:
     import json
     try:
         llm = get_llm_provider()
@@ -72,7 +72,7 @@ def _reponse_mode_strict(suggestion_texte: str = "") -> str:
 
 
 class ChatOrchestrator:
-    def __init__(self, repository: Optional[KnowledgeRepository] = None):
+    def __init__(self, repository: KnowledgeRepository | None = None):
         self.repository = repository or KnowledgeRepository()
 
     # ========================================================
@@ -80,8 +80,8 @@ class ChatOrchestrator:
     # ========================================================
 
     async def traiter_message(
-        self, message: str, conversation_id: Optional[str] = None,
-        formation_code: Optional[str] = None,
+        self, message: str, conversation_id: str | None = None,
+        formation_code: str | None = None,
     ) -> dict[str, Any]:
         debut = time.perf_counter()
         conversation_id = conversation_id or memoire.nouveau_id()
@@ -91,7 +91,7 @@ class ChatOrchestrator:
 
         modele_requete = None
         cache_utilise = None
-        formation_resolue: Optional[str] = None
+        formation_resolue: str | None = None
         statut = "ok"
 
         try:
@@ -528,7 +528,7 @@ class ChatOrchestrator:
         return ChatOrchestrator._GABARITS_SUGGESTIONS.get(type_detecte, [])[:2]
 
 
-_orchestrateur_instance: Optional[ChatOrchestrator] = None
+_orchestrateur_instance: ChatOrchestrator | None = None
 
 
 def get_chat_orchestrator() -> ChatOrchestrator:

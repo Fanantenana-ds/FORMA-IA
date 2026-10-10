@@ -33,24 +33,24 @@ STATUTS_VALIDES = (
 class EntreeRegistre:
     hash: str
     fichier: str
-    formation_code: Optional[str] = None
+    formation_code: str | None = None
     collection: str = "support"
     statut: str = "en_attente"
 
-    nb_pages: Optional[int] = None
-    nb_chunks: Optional[int] = None
-    tokens_estimes: Optional[int] = None
-    modele_embed: Optional[str] = None
-    message: Optional[str] = None
+    nb_pages: int | None = None
+    nb_chunks: int | None = None
+    tokens_estimes: int | None = None
+    modele_embed: str | None = None
+    message: str | None = None
 
-    date_debut: Optional[str] = None
-    date_fin: Optional[str] = None
+    date_debut: str | None = None
+    date_fin: str | None = None
 
     # Module pédagogique (optionnel) — ex: "Module 1 — Introduction"
-    module: Optional[str] = None
+    module: str | None = None
 
     # Résumé (Étape C §9)
-    resume: Optional[str] = None
+    resume: str | None = None
     plan: list[dict[str, Any]] = field(default_factory=list)
     mots_cles: list[str] = field(default_factory=list)
     resume_statut: str = "a_generer"  # a_generer | genere | echec
@@ -89,31 +89,31 @@ def _sauvegarder_brut(registre: dict[str, Any], chemin: Path) -> None:
     os.replace(tmp, chemin)  # écriture atomique
 
 
-def charger_registre(chemin: Optional[Path] = None) -> dict[str, EntreeRegistre]:
+def charger_registre(chemin: Path | None = None) -> dict[str, EntreeRegistre]:
     chemin = chemin or CHEMIN_REGISTRE_DEFAUT
     brut = _charger_brut(chemin)
     return {h: EntreeRegistre(**v) for h, v in brut.items()}
 
 
-def obtenir_entree(hash_fichier: str, chemin: Optional[Path] = None) -> Optional[EntreeRegistre]:
+def obtenir_entree(hash_fichier: str, chemin: Path | None = None) -> EntreeRegistre | None:
     return charger_registre(chemin).get(hash_fichier)
 
 
-def enregistrer_entree(entree: EntreeRegistre, chemin: Optional[Path] = None) -> None:
+def enregistrer_entree(entree: EntreeRegistre, chemin: Path | None = None) -> None:
     chemin = chemin or CHEMIN_REGISTRE_DEFAUT
     registre = _charger_brut(chemin)
     registre[entree.hash] = asdict(entree)
     _sauvegarder_brut(registre, chemin)
 
 
-def supprimer_entree(hash_fichier: str, chemin: Optional[Path] = None) -> None:
+def supprimer_entree(hash_fichier: str, chemin: Path | None = None) -> None:
     chemin = chemin or CHEMIN_REGISTRE_DEFAUT
     registre = _charger_brut(chemin)
     registre.pop(hash_fichier, None)
     _sauvegarder_brut(registre, chemin)
 
 
-def deja_indexe(hash_fichier: str, chemin: Optional[Path] = None) -> bool:
+def deja_indexe(hash_fichier: str, chemin: Path | None = None) -> bool:
     """True si ce fichier (par son SHA-256) est déjà indexé avec succès :
     aucun appel Voyage à refaire."""
     entree = obtenir_entree(hash_fichier, chemin)
@@ -123,10 +123,10 @@ def deja_indexe(hash_fichier: str, chemin: Optional[Path] = None) -> bool:
 def initialiser_entree(
     hash_fichier: str,
     fichier: str,
-    formation_code: Optional[str],
+    formation_code: str | None,
     collection: str = "support",
-    module: Optional[str] = None,
-    chemin: Optional[Path] = None,
+    module: str | None = None,
+    chemin: Path | None = None,
 ) -> EntreeRegistre:
     """Crée (ou retourne) l'entrée pour ce fichier, statut 'en_attente' si
     nouvelle, INCHANGÉE si elle existe déjà (reprise après interruption)."""
@@ -143,7 +143,7 @@ def initialiser_entree(
     return entree
 
 
-def marquer_lot_termine(hash_fichier: str, numero_lot: int, chemin: Optional[Path] = None) -> None:
+def marquer_lot_termine(hash_fichier: str, numero_lot: int, chemin: Path | None = None) -> None:
     """Enregistre qu'un lot de chunks a été inséré en base avec succès —
     permet de reprendre exactement là en cas d'interruption."""
     entree = obtenir_entree(hash_fichier, chemin)
@@ -156,7 +156,7 @@ def marquer_lot_termine(hash_fichier: str, numero_lot: int, chemin: Optional[Pat
 
 def marquer_termine(
     hash_fichier: str, nb_pages: int, nb_chunks: int, tokens_estimes: int,
-    modele_embed: str, chemin: Optional[Path] = None,
+    modele_embed: str, chemin: Path | None = None,
 ) -> None:
     entree = obtenir_entree(hash_fichier, chemin)
     if entree is None:
@@ -171,8 +171,8 @@ def marquer_termine(
 
 
 def marquer_statut_special(
-    hash_fichier: str, fichier: str, formation_code: Optional[str],
-    statut: str, message: str, chemin: Optional[Path] = None,
+    hash_fichier: str, fichier: str, formation_code: str | None,
+    statut: str, message: str, chemin: Path | None = None,
 ) -> None:
     """Pour non_indexable_image / ocr_necessaire / erreur : crée ou met à
     jour l'entrée avec le statut et un message clair, sans chunk ni appel
@@ -190,14 +190,14 @@ def marquer_statut_special(
     enregistrer_entree(entree, chemin)
 
 
-def entrees_pour_formation(formation_code: str, chemin: Optional[Path] = None) -> list[EntreeRegistre]:
+def entrees_pour_formation(formation_code: str, chemin: Path | None = None) -> list[EntreeRegistre]:
     return [
         e for e in charger_registre(chemin).values()
         if e.formation_code == formation_code
     ]
 
 
-def entrees_sans_resume(chemin: Optional[Path] = None) -> list[EntreeRegistre]:
+def entrees_sans_resume(chemin: Path | None = None) -> list[EntreeRegistre]:
     return [
         e for e in charger_registre(chemin).values()
         if e.statut == "indexe" and e.resume_statut == "a_generer"

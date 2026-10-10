@@ -8,153 +8,153 @@ from app.models.preparation import StatutProjet
 
 
 class ProjetCreate(BaseModel):
-    marche_id: Optional[UUID] = None
-    tdr_id: Optional[UUID] = None
-    client_id: Optional[UUID] = None
+    marche_id: UUID | None = None
+    tdr_id: UUID | None = None
+    client_id: UUID | None = None
     titre: str = Field(..., min_length=1)
-    date_debut: Optional[date] = None
-    date_fin: Optional[date] = None
-    budget: Optional[float] = Field(default=None, ge=0)
+    date_debut: date | None = None
+    date_fin: date | None = None
+    budget: float | None = Field(default=None, ge=0)
 
 
 class ProjetUpdate(BaseModel):
-    marche_id: Optional[UUID] = None
-    tdr_id: Optional[UUID] = None
-    client_id: Optional[UUID] = None
-    titre: Optional[str] = Field(default=None, min_length=1)
-    date_debut: Optional[date] = None
-    date_fin: Optional[date] = None
-    statut: Optional[StatutProjet] = None
-    budget: Optional[float] = Field(default=None, ge=0)
+    marche_id: UUID | None = None
+    tdr_id: UUID | None = None
+    client_id: UUID | None = None
+    titre: str | None = Field(default=None, min_length=1)
+    date_debut: date | None = None
+    date_fin: date | None = None
+    statut: StatutProjet | None = None
+    budget: float | None = Field(default=None, ge=0)
 
 
 class ProjetResponse(BaseModel):
     id: UUID
-    marche_id: Optional[UUID] = None
-    tdr_id: Optional[UUID] = None
-    client_id: Optional[UUID] = None
+    marche_id: UUID | None = None
+    tdr_id: UUID | None = None
+    client_id: UUID | None = None
     titre: str
-    date_debut: Optional[date] = None
-    date_fin: Optional[date] = None
+    date_debut: date | None = None
+    date_fin: date | None = None
     statut: StatutProjet
-    budget: Optional[float] = None
-    duree_totale_jours: Optional[int] = None
-    nombre_modules: Optional[int] = None
-    formateur_principal_id: Optional[UUID] = None
-    salle_principale_id: Optional[UUID] = None
-    resume_hebdomadaire: Optional[dict] = None
-    notes: Optional[list[str]] = None
+    budget: float | None = None
+    duree_totale_jours: int | None = None
+    nombre_modules: int | None = None
+    formateur_principal_id: UUID | None = None
+    salle_principale_id: UUID | None = None
+    resume_hebdomadaire: dict | None = None
+    notes: list[str] | None = None
 
     model_config = {"from_attributes": True}
 
 
 class FormateurCreate(BaseModel):
     nom: str = Field(..., min_length=1)
-    prenom: Optional[str] = None
-    email: Optional[str] = None
-    specialite: Optional[str] = None
-    tarif_journalier: Optional[float] = Field(default=None, ge=0)
+    prenom: str | None = None
+    email: str | None = None
+    specialite: str | None = None
+    tarif_journalier: float | None = Field(default=None, ge=0)
     disponible: bool = True
-    commentaire: Optional[str] = None
+    commentaire: str | None = None
 
 
 class FormateurUpdate(BaseModel):
-    nom: Optional[str] = Field(default=True, min_length=1)
-    prenom: Optional[str] = None
-    email: Optional[str] = None
-    specialite: Optional[str] = None
-    tarif_journalier: Optional[float] = Field(default=None, ge=0)
-    disponible: Optional[bool] = None
-    commentaire: Optional[str] = None
+    nom: str | None = Field(default=True, min_length=1)
+    prenom: str | None = None
+    email: str | None = None
+    specialite: str | None = None
+    tarif_journalier: float | None = Field(default=None, ge=0)
+    disponible: bool | None = None
+    commentaire: str | None = None
 
 
 class FormateurResponse(BaseModel):
     id: UUID
     nom: str
-    prenom: Optional[str] = None
-    email: Optional[str] = None
-    specialite: Optional[str] = None
-    tarif_journalier: Optional[float] = None
+    prenom: str | None = None
+    email: str | None = None
+    specialite: str | None = None
+    tarif_journalier: float | None = None
     disponible: bool
-    commentaire: Optional[str] = None
+    commentaire: str | None = None
 
     model_config = {"from_attributes": True}
 
 
 class SalleCreate(BaseModel):
     nom: str = Field(..., min_length=1)
-    adresse: Optional[str] = None
-    capacite: Optional[int] = Field(default=None, ge=0)
-    tarif_journalier: Optional[float] = Field(default=None, ge=0)
+    adresse: str | None = None
+    capacite: int | None = Field(default=None, ge=0)
+    tarif_journalier: float | None = Field(default=None, ge=0)
     disponible: bool = True
-    commentaire: Optional[str] = None
+    commentaire: str | None = None
 
 
 class SalleUpdate(BaseModel):
-    nom: Optional[str] = Field(default=None, min_length=1)
-    adresse: Optional[str] = None
-    capacite: Optional[int] = Field(default=None, ge=0)
-    tarif_journalier: Optional[float] = Field(default=None, ge=0)
-    disponible: Optional[bool] = None
-    commentaire: Optional[str] = None
+    nom: str | None = Field(default=None, min_length=1)
+    adresse: str | None = None
+    capacite: int | None = Field(default=None, ge=0)
+    tarif_journalier: float | None = Field(default=None, ge=0)
+    disponible: bool | None = None
+    commentaire: str | None = None
 
 
 class SalleResponse(BaseModel):
     id: UUID
     nom: str
-    adresse: Optional[str] = None
-    capacite: Optional[int] = None
-    tarif_journalier: Optional[float] = None
+    adresse: str | None = None
+    capacite: int | None = None
+    tarif_journalier: float | None = None
     disponible: bool
-    commentaire: Optional[str] = None
+    commentaire: str | None = None
 
     model_config = {"from_attributes": True}
 
 
 class EDTCreate(BaseModel):
-    code_session: Optional[str] = None
-    numero_jour: Optional[int] = None
-    jour_semaine: Optional[str] = None
+    code_session: str | None = None
+    numero_jour: int | None = None
+    jour_semaine: str | None = None
     date: date
-    heure_debut: Optional[time] = None
-    heure_fin: Optional[time] = None
-    duree_minutes: Optional[int] = None
-    module: Optional[str] = None
-    type_activite: Optional[str] = None
-    objectifs: Optional[list[str]] = None
-    formateur_id: Optional[UUID] = None
-    salle_id: Optional[UUID] = None
+    heure_debut: time | None = None
+    heure_fin: time | None = None
+    duree_minutes: int | None = None
+    module: str | None = None
+    type_activite: str | None = None
+    objectifs: list[str] | None = None
+    formateur_id: UUID | None = None
+    salle_id: UUID | None = None
 
 
 class EDTUpdate(BaseModel):
-    code_session: Optional[str] = None
-    numero_jour: Optional[int] = None
-    jour_semaine: Optional[str] = None
-    date: Optional[date] = None
-    heure_debut: Optional[time] = None
-    heure_fin: Optional[time] = None
-    duree_minutes: Optional[int] = None
-    module: Optional[str] = None
-    type_activite: Optional[str] = None
-    objectifs: Optional[str] = None
-    formateur_id: Optional[UUID] = None
-    salle_id: Optional[UUID] = None
+    code_session: str | None = None
+    numero_jour: int | None = None
+    jour_semaine: str | None = None
+    date: date | None = None
+    heure_debut: time | None = None
+    heure_fin: time | None = None
+    duree_minutes: int | None = None
+    module: str | None = None
+    type_activite: str | None = None
+    objectifs: str | None = None
+    formateur_id: UUID | None = None
+    salle_id: UUID | None = None
 
 
 class EDTResponse(BaseModel):
     id: UUID
-    code_session: Optional[str] = None
-    numero_jour: Optional[int] = None
-    jour_semaine: Optional[str] = None
+    code_session: str | None = None
+    numero_jour: int | None = None
+    jour_semaine: str | None = None
     date: date
-    heure_debut: Optional[time] = None
-    heure_fin: Optional[time] = None
-    duree_minutes: Optional[int] = None
-    module: Optional[str] = None
-    type_activite: Optional[str] = None
-    objectifs: Optional[str] = None
-    formateur_id: Optional[UUID] = None
-    salle_id: Optional[UUID] = None
+    heure_debut: time | None = None
+    heure_fin: time | None = None
+    duree_minutes: int | None = None
+    module: str | None = None
+    type_activite: str | None = None
+    objectifs: str | None = None
+    formateur_id: UUID | None = None
+    salle_id: UUID | None = None
 
     model_config = {"from_attributes": True}
 
@@ -162,12 +162,12 @@ class EDTResponse(BaseModel):
 # Output LLM Agent EDT
 class FormateurLLMSchema(BaseModel):
     nom: str
-    specialite: Optional[str] = None
+    specialite: str | None = None
 
 
 class SalleLLMSchema(BaseModel):
     nom: str
-    adresse: Optional[str] = None
+    adresse: str | None = None
 
 
 class PauseLLMSchema(BaseModel):
@@ -183,8 +183,8 @@ class SessionLLMSchema(BaseModel):
     module: str
     type: str
     duree_minutes: int
-    formateur: Optional[str] = None
-    salle: Optional[str] = None
+    formateur: str | None = None
+    salle: str | None = None
     objectifs: list[str] = []
 
 

@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from enum import Enum
 
 from sqlalchemy import Column, DateTime, Float, ForeignKey, String, Text
@@ -33,7 +33,7 @@ class Document(Base):
     contenu = Column(Text, nullable=True)
     statut_validation = Column(SQLEnum(StatutValidation), nullable=False, default=StatutValidation.EN_ATTENTE)
     valide_par = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
-    date_generation = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+    date_generation = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False)
     date_validation = Column(DateTime(timezone=True), nullable=True)
 
     client = Column(String(255), nullable=True)

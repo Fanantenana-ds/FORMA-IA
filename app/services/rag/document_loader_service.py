@@ -78,7 +78,7 @@ def detect_file_type(file_path: str) -> str:
 # EXTRACTION — Point d'entrée (segments numérotés)
 # ============================================================
 
-def extract_segments(file_path: str, file_type: Optional[str] = None) -> list[Segment]:
+def extract_segments(file_path: str, file_type: str | None = None) -> list[Segment]:
     """Extrait le contenu d'un fichier sous forme de segments numérotés."""
     if file_type is None:
         file_type = detect_file_type(file_path)
@@ -99,7 +99,7 @@ def extract_segments(file_path: str, file_type: Optional[str] = None) -> list[Se
     return extracteur(file_path)
 
 
-def extract_text(file_path: str, file_type: Optional[str] = None) -> str:
+def extract_text(file_path: str, file_type: str | None = None) -> str:
     """Texte plat (concatène tous les segments) — pratique pour un aperçu
     ou un résumé global, mais perd la numérotation par page/diapositive."""
     segments = extract_segments(file_path, file_type)

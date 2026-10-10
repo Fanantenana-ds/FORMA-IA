@@ -56,8 +56,8 @@ def emettre_facture(
 
 @router.get("", response_model=list[FactureResponse])
 def lister_factures(
-    statut: Optional[StatutFacture] = Query(default=None, description="Filtrer par statut"),
-    client: Optional[str] = Query(default=None, description="Recherche partielle sur le nom du client"),
+    statut: StatutFacture | None = Query(default=None, description="Filtrer par statut"),
+    client: str | None = Query(default=None, description="Recherche partielle sur le nom du client"),
     skip: int = Query(default=0, ge=0, description="Nombre d'éléments à ignorer"),
     limit: int = Query(default=100, ge=1, le=500, description="Nombre max d'éléments"),
     service: FactureService = Depends(get_facture_service),

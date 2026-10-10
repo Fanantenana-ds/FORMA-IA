@@ -1,4 +1,4 @@
-﻿from datetime import datetime, timedelta, timezone
+﻿from datetime import UTC, datetime, timedelta, timezone
 from uuid import uuid4
 
 from jose import ExpiredSignatureError, JWTError, jwt
@@ -21,7 +21,7 @@ def create_access_token(data: dict) -> str:
     to_encode = data.copy()
 
     expire = (
-        datetime.now(timezone.utc)
+        datetime.now(UTC)
         + timedelta(
             minutes=settings.access_token_expire_minutes
         )

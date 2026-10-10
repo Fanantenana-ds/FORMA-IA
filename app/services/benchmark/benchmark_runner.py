@@ -26,7 +26,7 @@ import json
 import logging
 import os
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -47,13 +47,13 @@ VALEURS_VIDES = (None, "", "Non précisé")
 # INDICATEURS SUPPLÉMENTAIRES (Étape C, mission "Préparation soutenance")
 # ============================================================
 
-def _f1(precision: Optional[float], rappel: Optional[float]) -> Optional[float]:
+def _f1(precision: float | None, rappel: float | None) -> float | None:
     if precision is None or rappel is None or (precision + rappel) == 0:
         return None
     return 2 * precision * rappel / (precision + rappel)
 
 
-def _percentile(valeurs: list[float], p: float) -> Optional[float]:
+def _percentile(valeurs: list[float], p: float) -> float | None:
     """Percentile par interpolation linéaire (méthode usuelle) — sans
     dépendance externe (numpy)."""
     if not valeurs:
@@ -69,7 +69,7 @@ def _percentile(valeurs: list[float], p: float) -> Optional[float]:
     return valeurs_triees[f] + (valeurs_triees[c] - valeurs_triees[f]) * (k - f)
 
 
-def _f1_macro_domaine(matrice: dict[str, dict[str, int]], domaines: list[str]) -> Optional[float]:
+def _f1_macro_domaine(matrice: dict[str, dict[str, int]], domaines: list[str]) -> float | None:
     """F1 macro (one-vs-rest) sur la matrice de confusion des domaines.
     matrice[domaine_attendu][domaine_predit] = nombre de cas."""
     scores = []
@@ -89,7 +89,7 @@ def _f1_macro_domaine(matrice: dict[str, dict[str, int]], domaines: list[str]) -
     return sum(scores) / len(scores) if scores else None
 
 
-def _parser_date_collectee(valeur: Any) -> Optional[datetime]:
+def _parser_date_collectee(valeur: Any) -> datetime | None:
     """Parse le champ date_collected du corpus (ISO AAAA-MM-JJ). None si
     absent/invalide — analyser_texte() retombe alors sur "maintenant"
     (comportement inchangé, voir ScoringService.score)."""
@@ -124,7 +124,7 @@ def _est_valeur_inventee(valeur: Any) -> bool:
     return valeur not in VALEURS_VIDES
 
 
-def _dates_concordent(predite: Any, attendue: Any) -> Optional[bool]:
+def _dates_concordent(predite: Any, attendue: Any) -> bool | None:
     """Compare deux dates si les deux sont parseables en ISO 8601.
     Retourne None si l'une des deux n'est pas parseable (comparaison
     textuelle en repli, la date pouvant être en langage naturel)."""
@@ -316,7 +316,7 @@ class BenchmarkRunner:
     # MESURE DÉTERMINISTE SÉPARÉE (Étape C point 4) — AUCUN LLM
     # --------------------------------------------------------
 
-    def mesurer_classification_deterministe(self, limit: Optional[int] = None) -> dict[str, Any]:
+    def mesurer_classification_deterministe(self, limit: int | None = None) -> dict[str, Any]:
         """
         ClassificationService SEUL sur les textes gold (règles de
         mots-clés, Python pur — aucun appel réseau, aucun LLM). Isole la
@@ -390,7 +390,7 @@ class BenchmarkRunner:
             "fournisseur_llm": llm.get_provider_name() if llm else None,
             "modele_llm": llm.get_model_name() if llm else None,
             "empreinte_prompts_m1": _empreinte_prompts(),
-            "date_execution": datetime.now(timezone.utc).isoformat(),
+            "date_execution": datetime.now(UTC).isoformat(),
         }
 
     # --------------------------------------------------------

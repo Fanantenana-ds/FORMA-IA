@@ -34,7 +34,7 @@ def _normaliser(texte: str) -> str:
 @dataclass
 class ResolutionFormation:
     statut: str  # "trouvee" | "ambigue" | "aucune"
-    formation: Optional[Formation] = None
+    formation: Formation | None = None
     candidats: list[Formation] = field(default_factory=list)  # si ambigue
     score: float = 0.0
 

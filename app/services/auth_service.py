@@ -1,4 +1,4 @@
-﻿from datetime import datetime, timezone
+﻿from datetime import UTC, datetime, timezone
 from typing import List, Optional
 from uuid import UUID
 
@@ -113,7 +113,7 @@ class AuthService:
                 detail="Token dÃ©jÃ  rÃ©voquÃ©"
             )
 
-        expire_at = datetime.fromtimestamp(exp, tz=timezone.utc)
+        expire_at = datetime.fromtimestamp(exp, tz=UTC)
 
         self.revoked_token_repository.save(
             jti = jti,
@@ -135,8 +135,8 @@ class AuthService:
 
     def lister_utilisateurs(
         self,
-        role: Optional[RoleEnum] = None,
-        actif: Optional[bool] = None,
+        role: RoleEnum | None = None,
+        actif: bool | None = None,
     ) -> list[User]:
         return self.user_repository.find_all(role=role, actif=actif)
 

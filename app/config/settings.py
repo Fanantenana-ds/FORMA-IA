@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     # ========================================================
     # GROQ (ta config principale)
     # ========================================================
-    GROQ_API_KEY: Optional[str] = None
+    GROQ_API_KEY: str | None = None
     GROQ_MODEL: str = "openai/gpt-oss-20b"
     GROQ_TIMEOUT: int = 20
     GROQ_MAX_OUTPUT_TOKENS: int = 1200
@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     # ========================================================
     # TAVILY
     # ========================================================
-    TAVILY_API_KEY: Optional[str] = None
+    TAVILY_API_KEY: str | None = None
     TAVILY_MAX_RESULTS: int = 10
     TAVILY_TIMEOUT: int = 10
     

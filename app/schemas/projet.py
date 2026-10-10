@@ -11,29 +11,29 @@ from app.models.projet import StatutProjet
 
 class SalleCreate(BaseModel):
     nom: str = Field(..., min_length=1, max_length=100)
-    adresse: Optional[str] = None
-    capacite: Optional[int] = Field(default=None, gt=0)
-    tarif_journalier: Optional[float] = Field(default=None, gt=0)
-    equipements: Optional[str] = None
+    adresse: str | None = None
+    capacite: int | None = Field(default=None, gt=0)
+    tarif_journalier: float | None = Field(default=None, gt=0)
+    equipements: str | None = None
     disponible: bool = True
 
 
 class SalleUpdate(BaseModel):
-    nom: Optional[str] = Field(default=None, min_length=1, max_length=100)
-    adresse: Optional[str] = None
-    capacite: Optional[int] = Field(default=None, gt=0)
-    tarif_journalier: Optional[float] = Field(default=None, gt=0)
-    equipements: Optional[str] = None
-    disponible: Optional[bool] = None
+    nom: str | None = Field(default=None, min_length=1, max_length=100)
+    adresse: str | None = None
+    capacite: int | None = Field(default=None, gt=0)
+    tarif_journalier: float | None = Field(default=None, gt=0)
+    equipements: str | None = None
+    disponible: bool | None = None
 
 
 class SalleResponse(BaseModel):
     id: UUID
     nom: str
-    adresse: Optional[str] = None
-    capacite: Optional[int] = None
-    tarif_journalier: Optional[float] = None
-    equipements: Optional[str] = None
+    adresse: str | None = None
+    capacite: int | None = None
+    tarif_journalier: float | None = None
+    equipements: str | None = None
     disponible: bool
     date_creation: datetime
 
@@ -44,55 +44,55 @@ class SalleResponse(BaseModel):
 
 class ProjetCreate(BaseModel):
     titre: str = Field(..., min_length=1, max_length=100)
-    client: Optional[str] = Field(default=None, max_length=100)
-    date_debut: Optional[date] = None
-    date_fin: Optional[date] = None
+    client: str | None = Field(default=None, max_length=100)
+    date_debut: date | None = None
+    date_fin: date | None = None
     statut: StatutProjet = StatutProjet.BROUILLON
-    notes: Optional[str] = None
-    opportunite_id: Optional[UUID] = None
-    offre_id: Optional[UUID] = None
+    notes: str | None = None
+    opportunite_id: UUID | None = None
+    offre_id: UUID | None = None
 
 
 class SalleReplace(BaseModel):
     """PUT — remplacement complet d'une salle."""
     nom: str = Field(..., min_length=1, max_length=100)
-    adresse: Optional[str] = None
-    capacite: Optional[int] = Field(default=None, gt=0)
-    tarif_journalier: Optional[float] = Field(default=None, gt=0)
-    equipements: Optional[str] = None
+    adresse: str | None = None
+    capacite: int | None = Field(default=None, gt=0)
+    tarif_journalier: float | None = Field(default=None, gt=0)
+    equipements: str | None = None
     disponible: bool = True
 
 
 class ProjetReplace(BaseModel):
     """PUT — remplacement complet d'un projet."""
     titre: str = Field(..., min_length=1, max_length=100)
-    client: Optional[str] = Field(default=None, max_length=100)
-    date_debut: Optional[date] = None
-    date_fin: Optional[date] = None
+    client: str | None = Field(default=None, max_length=100)
+    date_debut: date | None = None
+    date_fin: date | None = None
     statut: StatutProjet = StatutProjet.BROUILLON
-    notes: Optional[str] = None
-    opportunite_id: Optional[UUID] = None
-    offre_id: Optional[UUID] = None
+    notes: str | None = None
+    opportunite_id: UUID | None = None
+    offre_id: UUID | None = None
 
 
 class ProjetUpdate(BaseModel):
-    titre: Optional[str] = Field(default=None, min_length=1, max_length=100)
-    client: Optional[str] = Field(default=None, max_length=100)
-    date_debut: Optional[date] = None
-    date_fin: Optional[date] = None
-    statut: Optional[StatutProjet] = None
-    notes: Optional[str] = None
+    titre: str | None = Field(default=None, min_length=1, max_length=100)
+    client: str | None = Field(default=None, max_length=100)
+    date_debut: date | None = None
+    date_fin: date | None = None
+    statut: StatutProjet | None = None
+    notes: str | None = None
 
 
 class EdtSessionResponse(BaseModel):
     id: UUID
     projet_id: UUID
     date: date
-    heure_debut: Optional[time] = None
-    heure_fin: Optional[time] = None
-    module: Optional[str] = None
-    formateur_id: Optional[UUID] = None
-    salle_id: Optional[UUID] = None
+    heure_debut: time | None = None
+    heure_fin: time | None = None
+    module: str | None = None
+    formateur_id: UUID | None = None
+    salle_id: UUID | None = None
 
     model_config = {"from_attributes": True}
 
@@ -105,7 +105,7 @@ class BudgetResponse(BaseModel):
     cout_supports: float
     cout_total: float
     valide: bool
-    valide_par: Optional[UUID] = None
+    valide_par: UUID | None = None
     date_creation: datetime
 
     model_config = {"from_attributes": True}
@@ -114,13 +114,13 @@ class BudgetResponse(BaseModel):
 class ProjetResponse(BaseModel):
     id: UUID
     titre: str
-    client: Optional[str] = None
-    date_debut: Optional[date] = None
-    date_fin: Optional[date] = None
+    client: str | None = None
+    date_debut: date | None = None
+    date_fin: date | None = None
     statut: StatutProjet
-    notes: Optional[str] = None
-    opportunite_id: Optional[UUID] = None
-    offre_id: Optional[UUID] = None
+    notes: str | None = None
+    opportunite_id: UUID | None = None
+    offre_id: UUID | None = None
     date_creation: datetime
 
     model_config = {"from_attributes": True}
@@ -130,11 +130,11 @@ class ProjetResponse(BaseModel):
 
 class EdtSessionCreate(BaseModel):
     date: date
-    heure_debut: Optional[time] = None
-    heure_fin: Optional[time] = None
-    module: Optional[str] = Field(default=None, max_length=200)
-    formateur_id: Optional[UUID] = None
-    salle_id: Optional[UUID] = None
+    heure_debut: time | None = None
+    heure_fin: time | None = None
+    module: str | None = Field(default=None, max_length=200)
+    formateur_id: UUID | None = None
+    salle_id: UUID | None = None
 
 
 # ── Budget ──────────────────────────────────────────────────

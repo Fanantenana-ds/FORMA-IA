@@ -10,9 +10,9 @@ import asyncio
 
 import pytest
 
+import app.services.hitl.hitl_helper as hitl_helper_module
 from app.orchestrator import veille_orchestrator as vo_module
 from app.orchestrator.veille_orchestrator import VeilleOrchestrator
-import app.services.hitl.hitl_helper as hitl_helper_module
 
 
 def run(coro):

@@ -12,13 +12,13 @@ import pytest
 
 import app.orchestrator.chat_orchestrator as chat_module
 from app.orchestrator.chat_orchestrator import ChatOrchestrator
-from app.services.rag import catalogue_service as catalogue
-from app.services.rag import registry_service as registre
-from app.services.rag import conversation_service as memoire
-from app.services.rag import chat_log_service as journal
-from app.services.rag import recherche_service as recherche
-from app.services.rag import type_detection_service as detection
 from app.services.llm import LLMNotAvailableError
+from app.services.rag import catalogue_service as catalogue
+from app.services.rag import chat_log_service as journal
+from app.services.rag import conversation_service as memoire
+from app.services.rag import recherche_service as recherche
+from app.services.rag import registry_service as registre
+from app.services.rag import type_detection_service as detection
 
 CATALOGUE_TEST = """
 formations:

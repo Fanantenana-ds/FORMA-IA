@@ -12,9 +12,9 @@ Pour lancer les tests d'intégration :
 
 import asyncio
 import os
-import pytest
-
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 # ──────────────────────────────────────────────
 # Helpers
@@ -254,8 +254,9 @@ class TestRoutePublishForms:
 
     @pytest.fixture
     def client(self, db_isolee):
-        from app.main import app
         from fastapi.testclient import TestClient
+
+        from app.main import app
         return TestClient(app)
 
     def test_review_inexistante_retourne_404(self, client):

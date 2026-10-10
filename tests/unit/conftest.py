@@ -19,6 +19,7 @@ os.environ["IA_API_KEY"] = _TEST_TOKEN
 
 import pytest
 from fastapi import FastAPI as _FastAPI
+
 from app.utils.security import verify_api_key as _verify_api_key
 
 _orig_include_router = _FastAPI.include_router
@@ -42,6 +43,7 @@ _FastAPI.include_router = _include_router_with_override
 # FauxLLM — fixture partagée pour tous les tests unitaires IA
 # ============================================================
 import json as _json
+
 import pytest
 
 

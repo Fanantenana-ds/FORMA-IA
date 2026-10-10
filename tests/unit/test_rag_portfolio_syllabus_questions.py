@@ -9,15 +9,15 @@ import asyncio
 
 import pytest
 
-from app.services.rag import portfolio_service, syllabus_service
-from app.services.rag.catalogue_service import Formation, Realisation
 import app.orchestrator.rag_orchestrator as rag_orch_module
 import app.services.rag.recherche_service as recherche_service_module
 from app.orchestrator.rag_orchestrator import RagOrchestrator
-from app.services.hitl import hitl_helper
 from app.services.backend_sync import review_sync
+from app.services.hitl import hitl_helper
 from app.services.rag import catalogue_service as catalogue
+from app.services.rag import portfolio_service, syllabus_service
 from app.services.rag import registry_service as registre
+from app.services.rag.catalogue_service import Formation, Realisation
 
 
 def run(coro):

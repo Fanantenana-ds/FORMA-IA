@@ -8,20 +8,20 @@ import pytest
 from pydantic import ValidationError
 
 from app.schemas.preparation_ia import (
-    EDTSession,
-    EDTPause,
-    EDTJour,
-    EDTFormateur,
-    EDTSalle,
-    EDTResume,
-    EDTResponse,
-    CoutDetail,
     BudgetPrevisionnel,
-    PreparationCompleteData,
-    PreparationCompleteResponse,
     CalculateBudgetRequest,
+    CoutDetail,
+    EDTFormateur,
+    EDTJour,
+    EDTPause,
+    EDTResponse,
+    EDTResume,
+    EDTSalle,
+    EDTSession,
     GenerateEDTRequest,
     GeneratePreparationCompleteRequest,
+    PreparationCompleteData,
+    PreparationCompleteResponse,
     RegeneratePreparationRequest,
 )
 

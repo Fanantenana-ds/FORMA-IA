@@ -22,8 +22,8 @@ import pytest
 from app.orchestrator import veille_orchestrator as vo_module
 from app.services.benchmark.benchmark_runner import (
     BenchmarkRunner,
-    _valeur_correcte,
     _est_valeur_inventee,
+    _valeur_correcte,
 )
 
 

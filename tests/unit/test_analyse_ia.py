@@ -11,7 +11,7 @@ Exécution :
 """
 
 import asyncio
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
 
@@ -78,7 +78,7 @@ def test_un_contenu_ia_pertinent_score_plus_qu_un_contenu_bureautique(service):
     ia = service.analyser(
         contenu=TEXTE_IA,
         budget=60_000_000.0,
-        echeance=datetime.now(timezone.utc) + timedelta(days=10),
+        echeance=datetime.now(UTC) + timedelta(days=10),
     )
     bureautique = service.analyser(contenu="Formation Excel et Word pour le personnel")
 
@@ -101,10 +101,10 @@ def test_le_budget_float_n_est_pas_gonfle_par_le_scoring(service):
 
 def test_une_echeance_expiree_penalise_le_score(service):
     en_cours = service.analyser(
-        contenu=TEXTE_IA, echeance=datetime.now(timezone.utc) + timedelta(days=10)
+        contenu=TEXTE_IA, echeance=datetime.now(UTC) + timedelta(days=10)
     )
     expiree = service.analyser(
-        contenu=TEXTE_IA, echeance=datetime.now(timezone.utc) - timedelta(days=10)
+        contenu=TEXTE_IA, echeance=datetime.now(UTC) - timedelta(days=10)
     )
 
     assert expiree["score"] < en_cours["score"]
@@ -139,7 +139,7 @@ def test_l_objet_est_tronque_a_la_taille_de_la_colonne(service):
 
 
 def test_budget_et_echeance_saisis_sont_renvoyes_tels_quels(service):
-    echeance = datetime(2026, 12, 1, tzinfo=timezone.utc)
+    echeance = datetime(2026, 12, 1, tzinfo=UTC)
     resultat = service.analyser(contenu=TEXTE_IA, budget=1234.5, echeance=echeance)
 
     assert resultat["budget"] == 1234.5
@@ -183,7 +183,7 @@ def test_le_llm_complete_objet_budget_et_echeance_manquants(monkeypatch, service
     assert resultat["llm_utilise"] is True
     assert resultat["objet"] == "Formation IA — Ministère de l'Économie"
     assert resultat["budget"] == 60_000_000.0
-    assert resultat["echeance"] == datetime(2026, 12, 15, tzinfo=timezone.utc)
+    assert resultat["echeance"] == datetime(2026, 12, 15, tzinfo=UTC)
     assert "Organisme (+15)" in resultat["raisons"]        # ministère lu par le LLM
     assert "Budget (+15)" in resultat["raisons"]           # 60 M → tranche 50-100 M
 
@@ -192,7 +192,7 @@ def test_le_llm_n_ecrase_pas_les_valeurs_saisies(monkeypatch, service):
     activer_llm(monkeypatch, FauxLLM({"opportunities": [{
         "title": "Titre du LLM", "budget": "999M Ar", "deadline": "2030-01-01",
     }]}))
-    echeance = datetime(2026, 12, 1, tzinfo=timezone.utc)
+    echeance = datetime(2026, 12, 1, tzinfo=UTC)
 
     resultat = service.analyser(
         contenu=TEXTE_IA, objet="Titre saisi", budget=1000.0, echeance=echeance

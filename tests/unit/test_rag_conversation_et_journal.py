@@ -2,9 +2,8 @@
 # TESTS — conversation_service.py (§5) + chat_log_service.py (§6)
 # ============================================================
 
-from app.services.rag import conversation_service as memoire
 from app.services.rag import chat_log_service as journal
-
+from app.services.rag import conversation_service as memoire
 
 # ---- conversation_service ----
 

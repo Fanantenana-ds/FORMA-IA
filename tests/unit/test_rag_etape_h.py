@@ -15,10 +15,10 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from app.api.v1.endpoints import rag_ia
 import app.orchestrator.rag_orchestrator as rag_orch_module
 import app.services.rag.recherche_service as recherche_service_module
 import app.services.rag.registry_service as registry_service_module
+from app.api.v1.endpoints import rag_ia
 from app.orchestrator.rag_orchestrator import RagOrchestrator
 
 

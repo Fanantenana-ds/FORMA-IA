@@ -12,7 +12,7 @@ Exécution :
 
 import asyncio
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
 from fastapi import FastAPI
@@ -454,7 +454,7 @@ def ecrire_etat(**kw):
 
 
 def test_jamais_execute_premier_passage_apres_le_delai_de_demarrage(monkeypatch):
-    maintenant = datetime.now(timezone.utc)
+    maintenant = datetime.now(UTC)
     monkeypatch.setattr(auto, "_demarre_a", maintenant - timedelta(seconds=20))
 
     attente = auto.secondes_avant_prochaine_execution(maintenant)
@@ -463,14 +463,14 @@ def test_jamais_execute_premier_passage_apres_le_delai_de_demarrage(monkeypatch)
 
 
 def test_premier_passage_du_une_fois_le_delai_ecoule(monkeypatch):
-    maintenant = datetime.now(timezone.utc)
+    maintenant = datetime.now(UTC)
     monkeypatch.setattr(auto, "_demarre_a", maintenant - timedelta(minutes=5))
 
     assert auto.secondes_avant_prochaine_execution(maintenant) == 0.0
 
 
 def test_derniere_execution_recente_prochain_passage_dans_l_intervalle(monkeypatch):
-    maintenant = datetime.now(timezone.utc)
+    maintenant = datetime.now(UTC)
     ecrire_etat(derniere_execution=(maintenant - timedelta(hours=2)).isoformat())
     monkeypatch.setenv("VEILLE_AUTO_INTERVAL_HOURS", "24")
 
@@ -480,7 +480,7 @@ def test_derniere_execution_recente_prochain_passage_dans_l_intervalle(monkeypat
 
 
 def test_apres_redemarrage_un_passage_en_retard_est_du_tout_de_suite():
-    maintenant = datetime.now(timezone.utc)
+    maintenant = datetime.now(UTC)
     ecrire_etat(derniere_execution=(maintenant - timedelta(hours=30)).isoformat())
 
     assert auto.secondes_avant_prochaine_execution(maintenant) == 0.0
@@ -488,7 +488,7 @@ def test_apres_redemarrage_un_passage_en_retard_est_du_tout_de_suite():
 
 def test_etat_illisible_traite_comme_jamais_execute(monkeypatch):
     auto.STATE_PATH.write_text("pas du json", encoding="utf-8")
-    maintenant = datetime.now(timezone.utc)
+    maintenant = datetime.now(UTC)
     monkeypatch.setattr(auto, "_demarre_a", maintenant)
 
     assert auto.secondes_avant_prochaine_execution(maintenant) == pytest.approx(
@@ -527,7 +527,7 @@ def test_la_boucle_lance_un_passage_quand_il_est_du(monkeypatch):
 
     monkeypatch.setattr(auto, "executer_detection", faux_executer)
     monkeypatch.setattr(auto, "_demarre_a",
-                        datetime.now(timezone.utc) - timedelta(minutes=5))
+                        datetime.now(UTC) - timedelta(minutes=5))
 
     with pytest.raises(asyncio.CancelledError):
         run(auto._boucle_planifiee(object()))

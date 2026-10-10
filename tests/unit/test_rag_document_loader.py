@@ -12,8 +12,13 @@ from pptx.util import Inches
 from reportlab.pdfgen import canvas
 
 from app.services.rag.document_loader_service import (
-    detect_file_type, extract_segments, pdf_necessite_ocr, compter_pages_pdf,
-    Segment, FORMATS_IMAGE, FORMATS_INDEXABLES,
+    FORMATS_IMAGE,
+    FORMATS_INDEXABLES,
+    Segment,
+    compter_pages_pdf,
+    detect_file_type,
+    extract_segments,
+    pdf_necessite_ocr,
 )
 
 

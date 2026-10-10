@@ -11,18 +11,17 @@ import json
 import httpx
 import pytest
 
-from app.services.rag.rate_limiter import LimiteurDebit, DelaiDepasseError
 from app.services.rag.embedding_provider import (
     ConfigurationVoyage,
-    VoyageEmbeddingProvider,
     EmbeddingProviderError,
+    VoyageEmbeddingProvider,
     construire_lots,
     estimer_tokens,
     famille_de,
-    verifier_compatibilite_famille,
     traduire_erreur_voyage,
+    verifier_compatibilite_famille,
 )
-
+from app.services.rag.rate_limiter import DelaiDepasseError, LimiteurDebit
 
 # ============================================================
 # HORLOGE SIMULÉE
@@ -41,18 +40,18 @@ class HorlogeSimulee:
 
 async def dormir_instantane(secondes: float) -> None:
     """Remplace asyncio.sleep dans les tests : n'attend jamais réellement."""
-    return None
+    return
 
 
 def config_test(**overrides) -> ConfigurationVoyage:
-    base = dict(
-        cle_api="cle-de-test-jamais-reelle",
-        modele_document="voyage-4-large",
-        modele_requete="voyage-4-large",
-        rpm=3,
-        tpm=10_000,
-        opt_out=False,
-    )
+    base = {
+        "cle_api": "cle-de-test-jamais-reelle",
+        "modele_document": "voyage-4-large",
+        "modele_requete": "voyage-4-large",
+        "rpm": 3,
+        "tpm": 10_000,
+        "opt_out": False,
+    }
     base.update(overrides)
     return ConfigurationVoyage(**base)
 

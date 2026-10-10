@@ -12,7 +12,6 @@ import io
 import logging
 
 import pypdf
-import PyPDF2
 from fastapi import (
     APIRouter,
     Depends,
@@ -22,7 +21,6 @@ from fastapi import (
     Query,
     UploadFile,
 )
-from app.utils.security import verify_api_key
 from pydantic import (
     BaseModel,
     Field,

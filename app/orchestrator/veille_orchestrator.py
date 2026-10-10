@@ -369,7 +369,7 @@ class VeilleOrchestrator(BaseOrchestrator):
     # ========================================================
 
     async def analyser_texte(
-        self, texte: str, source: str = "manuel", date_reference: Any = None
+        self, texte: str, source: str = "manuel", date_reference: Any = None, sync_backend: bool = False
     ) -> dict[str, Any]:
         """Pipeline : texte collé → analyse directe (sans recherche web)."""
 

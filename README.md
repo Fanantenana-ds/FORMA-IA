@@ -1,720 +1,306 @@
-
-# 🎓 FORMA-IA
-
-**Plateforme intelligente de gestion de la formation pour ALTIORA Prest**
-
-[![Python](https://img.shields.io/badge/Python-3.11%2B-blue)](https://python.org)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.100%2B-green)](https://fastapi.tiangolo.com)
-[![Groq](https://img.shields.io/badge/Groq-API-orange)](https://groq.com)
-[![Voyage AI](https://img.shields.io/badge/Voyage%20AI-Embeddings-purple)](https://voyageai.com)
-[![pgvector](https://img.shields.io/badge/pgvector-PostgreSQL-blueviolet)](https://github.com/pgvector/pgvector)
-[![Tests](https://img.shields.io/badge/tests-624%20passed-brightgreen)]()
-[![Coverage](https://img.shields.io/badge/coverage-70%25-yellowgreen)]()
-[![License](https://img.shields.io/badge/License-Proprietary-red)]()
-
----
-
-## 📖 Description
-
-**FORMA-IA** est une plateforme intelligente destinée à automatiser et
-centraliser le cycle complet de l'activité de formation professionnelle
-d'**ALTIORA Prest**.
-
-Le pipeline couvre la chaîne métier depuis la **détection des opportunités
-de formation** jusqu'à la **facturation et au suivi des paiements**, avec
-une génération assistée de documents tels que les TDR, offres, attestations
-et rapports.
-
-Le projet intègre :
-
-* **13 agents IA / services intelligents** orchestrés par module ;
-* une couche de **validation humaine obligatoire (HITL — Human-In-The-Loop)**
-  généralisée à tous les modules produisant un contenu à diffusion externe ;
-* une architecture **Provider Abstraction** permettant de changer de
-  fournisseur LLM sans modifier la logique métier ;
-* un **moteur RAG complet** (ingestion, recherche sémantique, chat, portfolio,
-  syllabus) basé sur **Voyage AI + pgvector** ;
-* une architecture modulaire basée sur **FastAPI** ;
-* des mécanismes de **fallback Python pur** pour limiter la dépendance aux
-  services IA externes.
-
-**Client :** ALTIORA Prest — Antananarivo, Madagascar
-
-**Contexte :** Stage de Master Informatique — ENI Madagascar (2025-2026)
-
----
-
-## 🏗️ Pipeline Métier
-
-Le projet suit un pipeline métier en **5 étapes + finalisation**, validé par
-l'encadreur professionnel.
-
-### 🔹 ÉTAPE 1 — DÉTECTION MARCHÉ + TDR
-
-**Veille → Classification → Scoring → Génération TDR**
-
-* **Modules :** M1, M2
-* **Statut :** ✅ Développé
-* **Points clés :**
-  - M1 : analyse LLM + classification et scoring en **Python déterministe**
-  - M1 : détection automatique planifiée (mode 2) avec **quota Tavily**
-    (1000 appels/mois, plafond dur 980)
-  - M2 : TDR avec **HITL obligatoire** avant synchronisation Backend
-    (correction critique du 25/09/2026)
-
-⬇️
-
-### 🔹 ÉTAPE 2 — OFFRE TECHNIQUE + FINANCIÈRE
-
-**Trame technique → Grille tarifaire → Export Word/PDF**
-
-* **Module :** M3
-* **Statut :** ✅ Développé
-* **Points clés :**
-  - Montants calculés en **Python pur** (le LLM ne doit jamais inventer de chiffres)
-  - HITL `critical` avant synchronisation Backend
-  - Route `POST /ia/offres/synchroniser` avec idempotence
-
-⬇️
-
-### 🔹 ÉTAPE 3 — PRÉPARATION DE LA FORMATION
-
-**EDT → Formateur → Salle → Budget prévisionnel**
-
-* **Module :** Préparation
-* **Statut :** 🟡 Partiel
-* **Points clés :**
-  - EDT généré (gabarit Python, LLM optionnel)
-  - Budget calculé en Python pur
-  - HITL obligatoire
-  - ⚠️ **Limite connue :** budget **non persisté** côté Backend
-
-⬇️
-
-### 🔹 ÉTAPE 4 — UPLOAD SUPPORTS + RAG
-
-**Upload documents → Embeddings → Recherche sémantique → Chat**
-
-* **Module :** C3 (RAG)
-* **Statut :** ✅ Développé
-* **Points clés :**
-  - Pipeline complet : hash → idempotence → confidentialité →
-    classification → extraction → nettoyage → découpage → embeddings par lot
-  - **Voyage AI** `voyage-4-large` (dimension 1024) appelé par httpx
-  - Base vectorielle **PostgreSQL + pgvector** (index HNSW, cosinus)
-  - **Chat avec MODE STRICT** : aucune réponse sans source indexée
-  - Portfolio, syllabus, questions, aide plateforme
-  - Guide utilisateur indexé (collection `aide_plateforme`, 10 chunks)
-
-⬇️
-
-### 🔹 ÉTAPE 5 — PENDANT LA FORMATION
-
-**Présences → Tests → Satisfaction → Attestations → Rapport**
-
-* **Modules :** M5, M6
-* **Statut :** ✅ Développé — **6 agents opérationnels sur 7**
-* **Points clés :**
-  - Attestations avec **revérification du seuil 80%** côté Agent 5
-    (correction critique du 25/09/2026)
-  - HITL sur les agents critiques
-  - ⚠️ Agent 7 (KnowledgeBase V2) : vestige d'un ancien projet, non implémenté
-
-⬇️
-
-### 🔹 ÉTAPE FINALE — FACTURATION + SUIVI DES PAIEMENTS
-
-**Factures → Relances → Export comptable → Dashboard**
-
-* **Modules :** M7, M8a
-* **Statut :** 🟡 Partiel
-* **Points clés :**
-  - Relances générées par LLM avec 3 niveaux (15j / 45j)
-  - HITL `critical` obligatoire
-  - ⚠️ **Limite connue :** relance **non persistée** côté Backend
-  - Backend ne dispose pas encore de route de stockage de relance
-
----
-
-### 📊 Vue synthétique
-
-| Étape      | Fonction principale          | Module(s)   | Statut                 |
-| ---------- | ---------------------------- | ----------- | ---------------------- |
-| **1**      | Détection marché + TDR       | M1, M2      | ✅ Développé            |
-| **2**      | Offre technique + financière | M3          | ✅ Développé            |
-| **3**      | Préparation de la formation  | Préparation | 🟡 Partiel (budget non persisté) |
-| **4**      | Supports + RAG               | C3          | ✅ Développé            |
-| **5**      | Exécution de la formation    | M5, M6      | ✅ Développé — 6/7 agents |
-| **Finale** | Facturation + paiements      | M7, M8a     | 🟡 Partiel             |
-
----
-
-## 🤖 Les Agents IA / Services Intelligents
-
-### Module M5 — Gestion des Formations
-
-| #     | Agent                    | Type                 | Fonction                                    | Criticité HITL |
-| ----- | ------------------------ | -------------------- | ------------------------------------------- | -------------- |
-| **1** | **FormGenerator**        | LLM (Groq)           | Génération de 4 formulaires                 | 🔴 Critical    |
-| **2** | **LevelAnalyzer**        | Pandas + LLM         | Analyse des niveaux avant/après formation   | 🟡 Medium      |
-| **3** | **SatisfactionAnalyzer** | Pandas + LLM         | Analyse de la satisfaction des participants | 🟡 Medium      |
-| **4** | **PresenceAnalyzer**     | Python pur           | Détection des anomalies de présence         | 🔴 Critical    |
-| **5** | **AttestationGenerator** | LLM + PDF            | Attestations PDF (seuil 80% revérifié)      | 🔴 Critical    |
-| **6** | **ReportGenerator**      | LLM + fallback       | Rapport final de formation                  | 🔴 Critical    |
-
-### Module C3 — RAG (Assistant documentaire)
-
-| Service                     | Type                  | Fonction                                          |
-| --------------------------- | --------------------- | ------------------------------------------------- |
-| **RagOrchestrator**         | Pipeline Python       | Ingestion, résumés, portfolio, syllabus, questions |
-| **ChatOrchestrator**        | 9 types de questions  | Chat documentaire en MODE STRICT                  |
-| **EmbeddingProvider**       | Voyage AI + httpx     | Embeddings `voyage-4-large` (1024 dim)            |
-| **RechercheService**        | pgvector              | Similarité cosinus, seuil configurable            |
-| **KnowledgeRepository**     | SQL direct            | Accès BDD isolé, testable sans PostgreSQL         |
-
-### Autres modules
-
-| Module        | Service principal              | Type            | Fonction                              |
-| ------------- | ------------------------------ | --------------- | ------------------------------------- |
-| **M1**        | OpportuniteAnalyseIAService    | LLM + Python    | Analyse, classification, scoring      |
-| **M1**        | AutoDetectionService           | Python          | Détection auto planifiée (quota)      |
-| **M2**        | TdrOrchestrator                | LLM + HITL      | Génération TDR                        |
-| **M3**        | OffreOrchestrator              | LLM + HITL      | Offres technique + financière         |
-| **Préparation** | BudgetCalculatorService      | Python pur      | Calcul budget prévisionnel            |
-| **Préparation** | EDTGeneratorService          | LLM optionnel   | Emploi du temps                       |
-| **M7**        | RelanceGeneratorService        | LLM + HITL      | Relances facture (3 niveaux)          |
-
-> **Note :** L'Agent 7 « KnowledgeBase (RAG V2) » apparaît dans
-> `app/services/formations/__init__.py` comme vestige d'un ancien projet V2
-> distinct du module C3 actuel. Il est protégé par `OPTIONNELS=('Agent 7',)`
-> et n'entre pas dans le décompte réel des 6 agents M5.
-
----
-
-## 🔄 Human-In-The-Loop (HITL)
-
-Toute génération IA destinée à une **utilisation ou diffusion externe**
-doit faire l'objet d'une **validation humaine obligatoire** avant son
-utilisation.
-
-### Statuts de validation
-
-| Statut           | Signification            | Action                                   |
-| ---------------- | ------------------------ | ---------------------------------------- |
-| `pending_review` | En attente de validation | Affichage au frontend                    |
-| `approved`       | Validé par l'utilisateur | Le workflow continue                     |
-| `rejected`       | Rejeté                   | Régénération ou correction avec feedback |
-
-### Fonctionnement
-
-```text
-Agent IA
-   ↓
-Génération du contenu
-   ↓
-create_review()
-   ↓
-review_id (ex. HITL-A1F-0001)
-   ↓
-Frontend
-   ↓
-/ia/formations/pending-reviews
-   ↓
-Révision humaine
-   ├── APPROUVE → /reviews/{id}/approve
-   │                 ↓
-   │              Synchronisation Backend autorisée
-   │              (route /synchroniser du module)
-   │
-   └── REJETTE → /reviews/{id}/reject
-                     ↓
-                  Feedback transmis à l'agent
-                     ↓
-                  Régénération
-
-
-### Modules soumis au HITL
-
-| Module               | Agents / Fonction                                                      | Criticité   |
-| -------------------- | ---------------------------------------------------------------------- | ----------- |
-| **M2 — TDR**         | Génération TDR                                                         | 🔴 Critical |
-| **M3 — Offres**      | Offre technique, offre financière                                      | 🔴 Critical |
-| **M5 — Formations**  | FormGenerator, PresenceAnalyzer, AttestationGenerator, ReportGenerator | 🔴 Critical |
-| **M5 — Formations**  | LevelAnalyzer, SatisfactionAnalyzer                                    | 🟡 Medium   |
-| **Préparation**      | EDT, budget                                                            | 🔴 Critical |
-| **M7 — Facturation** | Relance facture                                                        | 🔴 Critical |
-| **C3 — RAG**         | Portfolio, syllabus (export DOCX uniquement après approbation)         | 🔴 Critical |
-
-> **Écart documenté :** M1 (Veille) ne dispose **pas** de HITL — c'est un
-> usage interne, aucun contenu n'est diffusé à l'extérieur.
-
----
-
-## 🔌 Provider Abstraction — LLM
-
-L'architecture sépare strictement **la logique métier et l'orchestration**
-du **fournisseur LLM**.
-
-```text
-app/services/llm/
-├── llm_provider.py          # Interface abstraite LLMProvider
-├── groq_provider.py         # Implémentation Groq — actif (openai/gpt-oss-20b)
-├── claude_provider.py       # Implémentation Claude — préparée
-└── llm_factory.py           # Sélection du provider via LLM_PROVIDER (.env)
-```
-
-### Configuration `.env`
-
-```bash
-LLM_PROVIDER=groq
-GROQ_API_KEY=xxx
-GROQ_MODEL=openai/gpt-oss-20b
-
-# Migration Claude (préparée)
-ANTHROPIC_API_KEY=xxx
-ANTHROPIC_MODEL=claude-3-5-sonnet-20241022
-```
-
-**Migration Groq → Claude :** estimée à **1 jour-homme maximum** (écriture
-de `claude_provider.py` + tests, sans modification de la logique métier).
-
-### Notes importantes
-
-- **`reasoning_effort='low'`** est requis pour les modèles de raisonnement
-  Groq (évite l'épuisement du budget de tokens avant émission du JSON).
-- **`json_mode`** appliqué automatiquement avec filet de sécurité (le mot
-  « json » est ajouté si absent, exigence de l'API Groq).
-- **Fallback Python** : si le LLM échoue, un gabarit Python prend le relais
-  (jamais d'échec côté route).
-
----
-
-## 🔍 RAG — Voyage AI + pgvector
-
-### Pourquoi Voyage AI ?
-
-**sentence-transformers + torch** initialement prévus, mais **bloqués par
-Smart App Control** sur le poste de développement (DLL `_regex.cp312-win_amd64.pyd`
-non signée). Migration vers **Voyage AI** (API HTTP via httpx) :
-
-- Aucune installation lourde requise
-- Modèle `voyage-4-large`, dimension 1024
-- Appel direct par `httpx` (pas de SDK officiel)
-
-### Base vectorielle
-
-- **PostgreSQL + extension pgvector** (0.8.6)
-- Migration `Vector(384)` → `Vector(1024)` exécutée sur la base `formaia`
-- Index **HNSW** pour la recherche approximative
-- Similarité **cosinus** (`1 - cosine_distance`)
-
-### Pipeline d'ingestion
-
-```text
-Fichier (PDF/DOCX/PPTX/XLSX)
-   ↓
-Hash (idempotence)
-   ↓
-Vérification confidentialité
-   ↓
-Classification (image / vidéo-audio / PDF scanné → OCR requis)
-   ↓
-Extraction (Segment avec numéro de page/diapo/feuille)
-   ↓
-Nettoyage (text_cleaner_service)
-   ↓
-Découpage (chunk_segments / chunk_pptx_slides)
-   ↓
-Embeddings par lot (rate_limiter + Voyage AI)
-   ↓
-Insertion PostgreSQL (knowledge_base)
-   ↓
-Résumé Groq (résumé support → résumé formation)
-```
-
-### Sécurité ZIP
-
-- Refus > 200 Mo compressé, > 500 Mo décompressé
-- Refus Zip Slip (`..`, chemin absolu)
-- Refus ZIP imbriqué (`.zip` dans `.zip`)
-- Refus > 200 fichiers
-
-### Chat documentaire — MODE STRICT
-
-9 types de questions routées automatiquement :
-
-| Type                       | Voyage | LLM | HITL |
-| -------------------------- | ------ | --- | ---- |
-| `conversationnel`          | Non    | Non | Non  |
-| `catalogue`                | Non    | Non | Non  |
-| `inventaire`               | Non    | Non | Non  |
-| `contenu_formation`        | Non    | Oui | Non  |
-| `localisation`             | Oui    | Oui | Non  |
-| `question_fond`            | Oui    | Oui | Non  |
-| `synthese_thematique`      | Oui    | Oui | Non  |
-| `aide_plateforme`          | Oui    | Oui | Non  |
-| `hors_sujet`               | Non    | Non | Non  |
-
-**Règle MODE STRICT :** si la recherche ne retourne rien, le message fixe
-« Aucun support ALTIORA ne traite ce sujet » est renvoyé **SANS appeler le LLM**.
-
----
-
-## 📊 Qualité logicielle
-
-### Tests et couverture
-
-| Métrique                  | Valeur                    |
-| ------------------------- | ------------------------- |
-| **Tests passés**          | **624** (au 26/09/2026)   |
-| **Couverture**            | **70 %** (objectif CDC atteint) |
-| **Amélioration**          | 59 % → 70 % (133 nouveaux tests) |
-
-### Corrections critiques pipeline (25/09/2026)
-
-| #   | Module            | Bug                                                            |
-| --- | ----------------- | -------------------------------------------------------------- |
-| 1a  | M5 / Attestations | Pas de revérification du seuil 80% côté Agent 5                 |
-| 1b  | M2 / TDR          | Envoi au Backend **sans validation HITL**                       |
-| 1c  | M1 / Benchmark    | Benchmark polluait la base `formaia`                            |
-| 1d  | M1 / Benchmark    | `extraction_accuracy` comptait sans comparer au gold            |
-| 1e  | M1 / Classification | Pluriels non détectés (`bureautiques`, `applications`)        |
-
-### Bugs réels documentés (extraits)
-
-- Import `langchain.text_splitter` cassé avec langchain 1.4.2
-- `reasoning_effort` manquant sur RAG → Groq épuisait son budget
-- Route `/documents` non montée dans `router.py` → 404 sur toutes les routes
-- `parse_budget('5M Ar')` → 5.0 au lieu de 5 000 000
-- `+{progression_absolue}` → `+-10.0` pour une progression négative
-
-### Health check global
-
-Route `GET /health/ia` retourne l'état de **5 modules** :
-
-```json
-{
-  "status": "healthy",
-  "modules": {
-    "M5": "6/7 agents",
-    "M3": "OK",
-    "PREPARATION": "OK",
-    "M7": "OK",
-    "C3": "OK"
-  }
-}
-```
-
-Retourne `degraded` si un agent requis est indisponible (ex. `pandas` manquant).
-
----
-
-## 🚀 Lancement
-
-### Développement
-
-Activer l'environnement virtuel :
-
-```powershell
-.\venv\Scripts\Activate.ps1
-```
-
-Démarrer le serveur FastAPI :
-
-```powershell
-python -m uvicorn app.main:app --reload
-```
-
-> **Note Windows :** l'utilisation de `python -m uvicorn` est recommandée
-> si `uvicorn.exe` est bloqué par une stratégie de contrôle d'application
-> (Smart App Control).
-
-Le serveur sera accessible à :
-
-```text
-http://localhost:8000
-```
-
-### 📚 Documentation interactive
-
-- **Swagger UI** : `http://localhost:8000/api/docs`
-- **ReDoc** : `http://localhost:8000/api/redoc`
-- **OpenAPI JSON** : `http://localhost:8000/api/openapi.json`
-
-### 🐳 Production — Docker
-
-```bash
-docker-compose build
-docker-compose up -d
-docker-compose logs -f
-```
-
----
-
-## 📁 Structure du Projet
-
-```text
-FORMA-IA/
-├── app/
-│   ├── api/
-│   │   ├── v1/
-│   │   │   ├── endpoints/
-│   │   │   │   ├── auth.py                 # Authentification JWT
-│   │   │   │   ├── opportunite.py          # CRUD opportunités
-│   │   │   │   ├── analyse.py              # Analyse M1 + scoring
-│   │   │   │   ├── document.py             # Génération documents
-│   │   │   │   ├── facture.py              # M7 — CRUD factures
-│   │   │   │   ├── facture_ia.py           # M7 — Routes IA
-│   │   │   │   ├── formation.py            # Sessions, participants
-│   │   │   │   ├── formation_ia.py         # M5 — Routes IA + HITL
-│   │   │   │   ├── offre_ia.py             # M3 — Routes IA + HITL
-│   │   │   │   ├── preparation_ia.py       # Préparation — Routes IA
-│   │   │   │   ├── rag_ia.py               # C3 — Routes RAG + chat
-│   │   │   │   └── dashboard.py            # Statistiques
-│   │   │   ├── routes_tdr.py               # M2 — Routes TDR
-│   │   │   ├── routes_veille.py            # M1 — Routes veille + quota
-│   │   │   └── router.py                   # Agrégateur
-│   │   │
-│   │   ├── orchestrator/
-│   │   │   ├── formation_orchestrator.py   # M5
-│   │   │   ├── tdr_orchestrator.py         # M2 + HITL
-│   │   │   ├── veille_orchestrator.py      # M1
-│   │   │   ├── offre_orchestrator.py       # M3 + HITL
-│   │   │   ├── preparation_orchestrator.py # Préparation + HITL
-│   │   │   ├── facturation_orchestrator.py # M7 + HITL
-│   │   │   ├── rag_orchestrator.py         # C3
-│   │   │   └── chat_orchestrator.py        # C3 — chat
-│   │   │
-│   │   ├── services/
-│   │   │   ├── llm/                        # Provider Abstraction
-│   │   │   │   ├── llm_provider.py
-│   │   │   │   ├── groq_provider.py
-│   │   │   │   ├── claude_provider.py
-│   │   │   │   └── llm_factory.py
-│   │   │   ├── hitl/                       # HITL générique
-│   │   │   ├── backend_sync/               # Sync IA → Backend
-│   │   │   │   ├── base_sync.py
-│   │   │   │   ├── review_sync.py
-│   │   │   │   ├── tdr_sync.py
-│   │   │   │   ├── offre_sync.py
-│   │   │   │   ├── preparation_sync.py
-│   │   │   │   ├── facture_sync.py
-│   │   │   │   ├── facture_calculator_service.py
-│   │   │   │   └── opportunity_sync.py
-│   │   │   ├── formations/                 # M5 — 6 agents
-│   │   │   │   ├── form_generator_service.py
-│   │   │   │   ├── level_analyzer_service.py
-│   │   │   │   ├── satisfaction_analyzer_service.py
-│   │   │   │   ├── presence_analyzer_service.py
-│   │   │   │   ├── attestation_generator_service.py
-│   │   │   │   └── report_generator_service.py
-│   │   │   ├── veille/                     # M1
-│   │   │   │   ├── llm_analysis_service.py
-│   │   │   │   ├── classification_service.py
-│   │   │   │   ├── scoring_service.py
-│   │   │   │   ├── auto_detection_service.py
-│   │   │   │   ├── tavily_service.py
-│   │   │   │   └── tavily_quota_service.py
-│   │   │   ├── tdr/                        # M2
-│   │   │   │   ├── tdr_service.py
-│   │   │   │   └── tdr_document_generator.py
-│   │   │   ├── offres/                     # M3
-│   │   │   │   ├── offre_technique_service.py
-│   │   │   │   ├── offre_financiere_service.py
-│   │   │   │   └── grille_tarifaire_service.py
-│   │   │   ├── preparation/                # Préparation
-│   │   │   │   ├── budget_calculator_service.py
-│   │   │   │   └── edt_generator_service.py
-│   │   │   ├── facturation/                # M7
-│   │   │   │   └── relance_generator_service.py
-│   │   │   ├── rag/                        # C3 — RAG complet
-│   │   │   │   ├── embedding_provider.py
-│   │   │   │   ├── embedding_service.py
-│   │   │   │   ├── rate_limiter.py
-│   │   │   │   ├── document_loader_service.py
-│   │   │   │   ├── text_cleaner_service.py
-│   │   │   │   ├── texte_splitter.py       # Python pur
-│   │   │   │   ├── chunking_service.py
-│   │   │   │   ├── zip_securite.py
-│   │   │   │   ├── catalogue_service.py
-│   │   │   │   ├── registry_service.py
-│   │   │   │   ├── resume_service.py
-│   │   │   │   ├── knowledge_repository.py
-│   │   │   │   ├── recherche_service.py
-│   │   │   │   ├── query_cache_service.py
-│   │   │   │   ├── formation_resolver_service.py
-│   │   │   │   ├── type_detection_service.py
-│   │   │   │   ├── conversation_service.py
-│   │   │   │   ├── chat_log_service.py
-│   │   │   │   ├── portfolio_service.py
-│   │   │   │   ├── syllabus_service.py
-│   │   │   │   ├── questions_service.py
-│   │   │   │   ├── rag_document_generator.py
-│   │   │   │   └── llm_json_helper.py
-│   │   │   ├── benchmark/                  # Benchmark M1
-│   │   │   ├── generator/                  # PDF/Word
-│   │   │   └── ia_health.py                # Health check IA
-│   │   │
-│   │   ├── schemas/                        # Pydantic schemas
-│   │   ├── models/                         # SQLAlchemy models
-│   │   │   └── knowledge_base.py           # C3 — pgvector
-│   │   ├── prompts/                        # Prompts RTFCE — YAML
-│   │   │   ├── m1/                         # Veille
-│   │   │   ├── m2/                         # TDR
-│   │   │   ├── m3/                         # Offres
-│   │   │   ├── m5/                         # Formations
-│   │   │   ├── m7/                         # Facturation
-│   │   │   ├── m_prep/                     # Préparation
-│   │   │   └── rag/                        # RAG (10 prompts)
-│   │   ├── templates/                      # Templates Word
-│   │   ├── core/                           # Configuration, sécurité
-│   │   └── utils/                          # Helpers
-│   │
-│   ├── scripts/                            # Scripts utilitaires
-│   │   ├── setup_pgvector.py
-│   │   ├── migrer_knowledge_base_v1024.py
-│   │   ├── verifier_voyage.py
-│   │   ├── diagnostic_rag.py
-│   │   ├── importer_corpus.py
-│   │   ├── valider_corpus.py
-│   │   ├── prechauffer_cache.py
-│   │   ├── evaluer_rag.py
-│   │   ├── stats_chat.py
-│   │   ├── verifier_sync.py
-│   │   └── verifier_provider.py
-│   │
-│   ├── tests/
-│   │   ├── unit/                           # ~500 tests
-│   │   └── integration/                    # ~120 tests
-│   │
-│   ├── docs/
-│   │   ├── guide_utilisateur/              # 9 fichiers Markdown indexés
-│   │   └── protocole_annotation_corpus_m1.md
-│   │
-│   ├── data/                               # Données persistées (gitignore)
-│   │   ├── rag/
-│   │   │   ├── index_registry.json
-│   │   │   ├── query_cache.json
-│   │   │   ├── conversations/
-│   │   │   ├── chat_logs.jsonl
-│   │   │   └── fichiers/{hash}.{ext}
-│   │   ├── backend_sync_registry.json
-│   │   ├── hitl_reviews.json
-│   │   ├── veille_auto_state.json
-│   │   └── tavily_quota.json
-│   │
-│   ├── requirements.txt
-│   └── README.md
-│
-├── docker-compose.yml
-└── ...
-```
-
----
-
-## 📊 Avancement Global
-
-```text
-██████████████████████████████░░░░░░░░░  ~75 %
-```
-
-### État actuel (au 26/09/2026)
-
-| Domaine                      | Avancement                                        |
-| ---------------------------- | ------------------------------------------------- |
-| Détection marché + TDR (M1, M2) | ✅ Développé (HITL sur M2)                     |
-| Offre technique + financière (M3) | ✅ Développé (HITL)                          |
-| Préparation formation        | 🟡 Partiel (budget non persisté)                 |
-| RAG / Base de connaissances (C3) | ✅ Développé (chat, portfolio, syllabus)     |
-| Gestion de la formation (M5, M6) | ✅ Développé — 6/7 agents                    |
-| Facturation + paiements (M7) | 🟡 Partiel (relance non persistée)               |
-| Tableau de bord (M8a)        | 🟡 Partiel                                       |
-| **Qualité**                  | ✅ 624 tests, 70% couverture                    |
-| **Avancement global estimé** | **~75 %**                                         |
-
----
-
-## 🔐 Principes d'architecture
-
-FORMA-IA repose sur plusieurs principes structurants :
-
-1. **Python calcule, le LLM rédige** — les montants, scores, dates, seuils
-   sont toujours calculés en Python pur. Le LLM ne fait que rédiger du texte.
-2. **Human-In-The-Loop généralisé** — tout contenu à diffusion externe passe
-   par une validation humaine.
-3. **Provider Abstraction** — indépendance vis-à-vis du fournisseur LLM
-   (Groq actif, Claude préparé).
-4. **Fallback systématique** — si le LLM échoue, un gabarit Python prend le
-   relais. Aucune route ne plante à cause de l'IA.
-5. **MODE STRICT du RAG** — aucune réponse sans source indexée.
-6. **Idempotence des synchronisations** — un seul envoi par review approuvé.
-7. **Traçabilité complète** — journal `trace-claude.ps1` documente chaque
-   modification.
-8. **API-first** — exposition des fonctionnalités métier via FastAPI.
-9. **Sécurité ZIP** — protections contre bombes ZIP, Zip Slip, ZIP imbriqués.
-10. **Tests isolés** — aucun test ne touche la base réelle ni le réseau.
-
----
-
-## ⚠️ Limites connues
-
-À assumer honnêtement devant le jury :
-
-| Limite                                | Module       | Statut        |
-| ------------------------------------- | ------------ | ------------- |
-| Budget non persisté côté Backend      | Préparation  | Documenté     |
-| Relance non persistée côté Backend    | M7           | Documenté     |
-| Enchaînement inter-modules via Frontend | Pipeline   | Documenté     |
-| Latence chat RAG > 3s sur certaines questions | C3   | À surveiller  |
-| Mesure précision M1 (>85%) non réalisée | M1         | À faire       |
-| Import corpus réel RAG non effectué   | C3           | À faire       |
-| Intégration Google Forms réelle       | M5           | À faire       |
-| Déploiement Docker production         | Infrastructure | À faire     |
-
-Ces limites sont **documentées** dans le code et les prompts, et ne sont
-**jamais masquées**.
-
----
-
-## 📌 Statut du projet
-
-**FORMA-IA est en phase finale de développement.**
-
-Le socle fonctionnel actuel couvre :
-
-**Avancement global estimé : ~55 %.**
-=======
 # FORMA-IA
 
-Plateforme intelligente de gestion de la formation pour ALTIORA SOLUTIONS.
+**Plateforme intelligente de gestion de la formation professionnelle pour ALTIORA PREST (Antananarivo, Madagascar)**
+
+Stage de Master Informatique — ENI Madagascar — 2025-2026
+
+> État décrit : **11 octobre 2026**, branche `main`.
+> Chaque statut ci-dessous distingue ce qui est **vérifié** (code lu, test exécuté ou essai réel) de ce qui reste **à mesurer**.
+
+---
+
+## Sommaire
+
+1. [Objectif](#objectif)
+2. [Équipe](#équipe)
+3. [Pipeline métier](#pipeline-métier)
+4. [Architecture](#architecture)
+5. [Agents IA par module](#agents-ia-par-module)
+6. [Human-in-the-Loop (HITL)](#human-in-the-loop-hitl)
+7. [RAG — Voyage AI + pgvector](#rag--voyage-ai--pgvector)
+8. [Qualité logicielle](#qualité-logicielle)
+9. [Installation et lancement](#installation-et-lancement)
+10. [Structure du dépôt](#structure-du-dépôt)
+11. [Limites connues](#limites-connues)
+
+---
 
 ## Objectif
 
-Automatiser la veille commerciale, la production documentaire (TDR, attestations)
-et la gestion opérationnelle des formations grâce à un agent IA basé sur l'API
-Claude d'Anthropic.
+ALTIORA PREST gère manuellement tout le cycle d'une formation : repérer les appels d'offres, rédiger TDR et offres, préparer, animer et évaluer la formation, produire les attestations, facturer et relancer.
 
-## Stack technique
-
-- Backend : FastAPI, PostgreSQL, SQLAlchemy
-- IA : API Claude (Anthropic), LangChain
-- Frontend : Streamlit
-- Infrastructure : Docker, docker-compose
-- Tests : pytest, coverage.py, ruff
+FORMA-IA automatise cette chaîne avec des **agents LLM orchestrés par module** et un **moteur RAG documentaire**, tout en gardant **un humain qui valide** chaque contenu destiné à l'extérieur.
 
 ## Équipe
 
-| Rôle | Étudiant |
-| --- | --- |
-| Intégrateur IA & Data — chef de projet | RANDRIANIRINIMARO Manaosoa Fanantenana Jean Claude |
+| Rôle | Membre |
+|---|---|
+| Responsable IA & Data — chef de projet | RANDRIANIRINIMARO Manaosoa Fanantenana Jean Claude |
 | Développeur Backend | ANDRIANOTAHINA Todisoa Olivier |
 | Développeur Frontend | RAKOTOZAFIMALALA Fandeferana Michel Princy |
 | Développeur Frontend | RAKOTONDRAZAKA Notahinjanahary Mirajo |
 | DevOps | RAZAFIMANJATO Tombomara Marcelo |
 
-Encadreur professionnel : M. RANAIVOSOA Sandamampianina (ALTIORA SOLUTIONS)
+Encadreur professionnel : M. RANAIVOSOA Sandamampianina
 
-## Démarrage
+---
 
-_À compléter au fur et à mesure (instructions Docker à venir)._
->>>>>>> altiora/develop
+## Pipeline métier
+
+```text
+Étape 1  Détection marché + TDR          M1 + M2
+   ↓
+Étape 2  Offre technique + financière    M3
+   ↓
+Étape 3  Préparation (EDT + budget)      Préparation
+   ↓
+Étape 4  Supports + RAG                  C3
+   ↓
+Étape 5  Pendant la formation            M5 + M6
+   ↓
+Finale   Facturation + tableau de bord   M7 + M8a
+Transverse  Assistance RH (bonus)        M4
+```
+
+| Module | Fonction | Statut |
+|---|---|---|
+| **M1** Veille | Recherche Tavily, analyse LLM, classification et scoring en Python, détection automatique planifiée (quota Tavily : 1000/mois, plafond 980) | ✅ Détection réelle observée le 10/10/2026 |
+| **M2** TDR | Génération du TDR, HITL obligatoire avant synchronisation | ✅ |
+| **M3** Offres | Offre technique + financière, montants calculés en Python, HITL `critical`, export Word/PDF | ✅ |
+| **Préparation** | EDT (gabarit Python, LLM optionnel), budget en Python pur, HITL ; projet, EDT et budget envoyés au Backend (`/projets`, `/projets/{id}/budget`) | 🟢 |
+| **C3** RAG | Ingestion, embeddings Voyage AI, recherche pgvector, chat MODE STRICT, portfolio, syllabus, questions | ✅ Validé de bout en bout le 10/10/2026 |
+| **M5** Formations | 6 agents (formulaires, niveaux, satisfaction, présences, attestations, rapport), publication Google Forms (OAuth2) après HITL | ✅ |
+| **M6** Attestations | Attestations PDF, seuil de présence 80 % revérifié | ✅ |
+| **M7** Facturation | Montants en Python, relances LLM à 3 niveaux, HITL `critical`, relances approuvées enregistrées (`POST /factures/{id}/relances`) | 🟢 |
+| **M8a** Dashboard | `GET /api/v1/dashboard/statistiques` | 🟡 Non raccordé au frontend |
+| **M4** RH (bonus) | Extraction et présélection de CV, entretiens, contrats et évaluation des formateurs, e-mails RH | 🟢 |
+
+Légende : ✅ vérifié · 🟢 fonctionnel et testé, écarts documentés · 🟡 partiel.
+
+---
+
+## Architecture
+
+```text
+Frontend React
+     ↓
+Backend FastAPI  (/api/v1, JWT + rôles)
+     ↓
+Routes IA  (/api/v1/ia/*, jeton interne partagé)
+     ↓
+Orchestrateurs  (veille, tdr, offre, preparation, formation, facturation, rag, chat, rh)
+     ↓
+Agents IA  ── Provider Abstraction LLM (Groq actif, Claude préparé)
+     ↓
+backend_sync/  (IA → Backend, uniquement après approbation HITL)
+     ↓
+PostgreSQL + pgvector
+```
+
+**Stack** : Python 3.11+ · FastAPI · SQLAlchemy + Alembic · PostgreSQL + pgvector · Groq (`openai/gpt-oss-20b`) · Voyage AI (`voyage-4-large`) · Tavily · docxtpl + reportlab · Google Forms/Drive API · React (frontend).
+
+### Principes d'architecture
+
+1. **Python calcule, le LLM rédige** : montants, scores, dates et seuils ne sont jamais produits par le LLM.
+2. **HITL généralisé** : tout contenu diffusé à l'extérieur est validé par un humain.
+3. **Provider Abstraction** : la logique métier ne dépend pas du fournisseur LLM.
+4. **Fallback systématique** : si le LLM échoue, un gabarit Python prend le relais.
+5. **MODE STRICT du RAG** : aucune réponse sans source indexée.
+6. **Idempotence** des synchronisations : un seul envoi par review approuvée.
+7. **Prompts RTFCE** (Rôle, Tâche, Format, Contexte, Exemples) externalisés en YAML.
+8. **L'IA n'écrit jamais directement en base** : elle passe par l'API Backend.
+9. **Sécurité ZIP** : refus des bombes ZIP, du Zip Slip et des ZIP imbriqués.
+10. **Tests isolés** : ni base réelle ni réseau dans les tests unitaires.
+
+### Provider Abstraction LLM
+
+```text
+app/services/llm/
+├── llm_provider.py      interface abstraite
+├── groq_provider.py     implémentation active (openai/gpt-oss-20b)
+├── claude_provider.py   préparé — is_available() renvoie encore False
+└── llm_factory.py       sélection via LLM_PROVIDER
+```
+
+Notes Groq : `reasoning_effort="low"` est obligatoire pour les modèles de raisonnement (sinon le budget de tokens s'épuise avant le JSON) ; `json_mode` est appliqué avec un filet de sécurité.
+
+---
+
+## Agents IA par module
+
+### M5 — Gestion des formations (cœur du projet)
+
+| # | Agent | Technologie | HITL |
+|---|---|---|---|
+| 1 | FormGenerator — 4 formulaires (+ publication Google Forms) | Groq | critical |
+| 2 | LevelAnalyzer — niveaux avant/après | Groq + pandas | medium |
+| 3 | SatisfactionAnalyzer | Groq + pandas | medium |
+| 4 | PresenceAnalyzer — anomalies de présence | Python pur | critical |
+| 5 | AttestationGenerator — seuil 80 % revérifié | Python + reportlab | critical |
+| 6 | ReportGenerator — rapport final | Groq + reportlab | critical |
+
+### Autres modules
+
+| Module | Service principal | Type |
+|---|---|---|
+| M1 | Analyse LLM + classification + scoring + détection automatique | LLM + Python |
+| M2 | TdrOrchestrator | LLM + HITL |
+| M3 | OffreOrchestrator (technique + financière) | LLM + HITL |
+| Préparation | EDTGenerator + BudgetCalculator | LLM optionnel + Python |
+| M7 | RelanceGenerator (3 niveaux) | LLM + HITL |
+| M4 | CV, présélection, entretien, contrat, évaluation, e-mails | LLM + Python |
+| C3 | RagOrchestrator + ChatOrchestrator | Voyage AI + pgvector + LLM |
+
+---
+
+## Human-in-the-Loop (HITL)
+
+```text
+Agent IA → contenu généré → create_review() → pending_review
+                                                  │
+                     ┌────────────────────────────┴───────────────────────┐
+                 approve                                                reject
+                     ↓                                                     ↓
+       synchronisation Backend autorisée                  feedback → régénération
+       (route /synchroniser du module)
+```
+
+| Criticité | Règle |
+|---|---|
+| critical | validation obligatoire |
+| medium | validation recommandée |
+| low | validation optionnelle |
+
+Routes : `GET /ia/formations/pending-reviews`, `GET /ia/formations/reviews/{id}`, `POST /ia/formations/reviews/{id}/approve`, `POST /ia/formations/reviews/{id}/reject`, `GET /ia/formations/reviews/stats`.
+
+Garde-fou commun : `backend_sync/review_sync.py` refuse toute synchronisation d'une review non approuvée.
+Écart assumé : M1 (veille interne) n'a pas de HITL.
+Stockage actuel des reviews : fichier JSON local (`data/hitl_reviews.json`).
+
+---
+
+## RAG — Voyage AI + pgvector
+
+### Pourquoi Voyage AI ?
+
+`sentence-transformers` + `torch` étaient prévus, mais **bloqués par Smart App Control** de Windows (DLL non signée). Le projet est passé à **Voyage AI**, appelé directement en HTTP (httpx) : aucune installation lourde, modèle `voyage-4-large`, dimension 1024. Le découpage de texte est réimplémenté en Python pur (`texte_splitter.py`), LangChain ayant été retiré.
+
+### Pipeline d'ingestion
+
+```text
+Fichier (PDF/DOCX/PPTX/XLSX)
+ → hash SHA-256 (idempotence) → confidentialité → classification (OCR si scanné)
+ → extraction (page / diapo / feuille) → nettoyage → découpage (700 tokens, chevauchement 100)
+ → embeddings par lot (limiteur de débit) → PostgreSQL knowledge_base (pgvector, HNSW, cosinus)
+ → résumé Groq
+```
+
+### Chat documentaire — MODE STRICT
+
+9 types de questions routés automatiquement (`conversationnel`, `catalogue`, `inventaire`, `contenu_formation`, `localisation`, `question_fond`, `synthese_thematique`, `aide_plateforme`, `hors_sujet`). Si la recherche ne renvoie rien, la réponse fixe « Aucun support ALTIORA ne traite ce sujet » est renvoyée **sans appeler le LLM**.
+
+### Validation réelle du 10/10/2026 (Swagger, services réels)
+
+| Étape | Résultat |
+|---|---|
+| Upload `POST /api/v1/documents/upload` | PDF de 34 pages enregistré (nom = hash SHA-256) |
+| Indexation `POST /api/v1/ia/rag/indexer-document` | 30 chunks, `voyage-4-large`, 4 lots (50-58 s d'attente entre lots, palier gratuit) |
+| Statut `GET /api/v1/ia/rag/statut/{hash}` | `indexe`, résumé et mots-clés générés |
+| Recherche `POST /api/v1/ia/rag/rechercher` | scores cosinus ≥ 0,70 sur les passages pertinents |
+| Questions de révision | générées depuis le support indexé |
+| Syllabus + HITL | review créée → approuvée → export DOCX |
+| Chat | réponse sourcée |
+
+Incident observé et documenté : une première indexation en tâche de fond a échoué sans remonter d'erreur (statut `erreur`) ; la relance a réussi.
+
+---
+
+## Qualité logicielle
+
+| Indicateur | Valeur | Source |
+|---|---|---|
+| Fonctions de test | **937** (63 fichiers) | comptage du dépôt, 11/10/2026 |
+| Dernière exécution complète mesurée | 624 tests passés, couverture **70 %** | 26/09/2026 — **à remesurer** |
+| CI GitHub Actions | ruff ✅ depuis le 10/10/2026 ; pytest à reconfirmer après le correctif des modèles du 11/10 | `.github/workflows/ci.yml` |
+| Routes API | 173 | comptage du dépôt |
+| Migrations Alembic | 13 | `alembic/versions/` |
+| Prompts YAML | 29 (dont 10 pour le RAG) | `app/prompts/` |
+
+Corrections critiques notables : seuil de 80 % non revérifié (M6), TDR envoyé sans HITL (M2), benchmark M1 qui polluait la base, route `/documents` non montée (404 partout), `parse_budget('5M Ar')` → 5 au lieu de 5 000 000, champ `date` qui masquait son propre type dans deux schémas (PATCH de date toujours refusé), doublon des modèles `projets/salles/edt_sessions/budgets_formation`.
+
+---
+
+## Installation et lancement
+
+```powershell
+git clone https://github.com/Fanantenana-ds/FORMA-IA.git
+cd FORMA-IA
+git checkout main
+python -m venv venv
+.\venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+copy .env.example .env      # puis remplacer chaque CHANGE_ME
+alembic upgrade head
+python -m uvicorn app.main:app --reload --port 8000
+```
+
+- Swagger : `http://localhost:8000/api/docs`
+- Deux authentifications dans Swagger : **JWT** (routes Backend, ex. `/documents/upload`) et **jeton interne `SHARED_INTERNAL_TOKEN`** (routes `/ia/*`).
+- Windows : préférer `python -m uvicorn` si `uvicorn.exe` est bloqué par Smart App Control.
+
+Tests :
+
+```powershell
+python -m pytest tests/unit -q --noconftest   # sans base de données
+python -m coverage run -m pytest -q
+python -m coverage report
+ruff check .
+```
+
+Docker : `docker-compose up -d` (fichiers `Dockerfile`, `docker-compose.yml`, `docker-compose.recette.yml`, `docker-compose.monitoring.yml`).
+
+---
+
+## Structure du dépôt
+
+```text
+app/
+├── api/v1/endpoints/      routes Backend + routes IA (*_ia.py)
+├── orchestrator/          un orchestrateur par module
+├── services/
+│   ├── llm/               Provider Abstraction
+│   ├── hitl/              Human-in-the-Loop
+│   ├── backend_sync/      synchronisation IA → Backend
+│   ├── veille/ tdr/ offres/ preparation/ formations/ facturation/ rh/
+│   ├── rag/               C3 : embeddings, ingestion, recherche, chat, portfolio, syllabus
+│   ├── benchmark/         benchmark M1
+│   └── storage/           stockage local → GCS
+├── models/  schemas/  repositories/  core/  utils/
+├── prompts/               prompts RTFCE (YAML)
+└── templates/             modèles Word
+alembic/                   migrations
+scripts/                   diagnostic RAG, import de corpus, vérifications
+tests/                     unitaires (tests/unit) + Backend
+docs/                      guide utilisateur, bilan d'écart CDC, contrat d'intégration IA, infra
+```
+
+Données d'exécution (non versionnées) : `data/` — registre RAG, fichiers indexés, reviews HITL, quota Tavily, état de la veille automatique.
+
+---
+
+## Limites connues
+
+Présentées telles quelles, sans les masquer :
+
+| Limite | Module |
+|---|---|
+| Frontend React encore largement en données simulées, non raccordé à `/api/v1` ni au JWT | Frontend |
+| Vues HITL, RAG, Préparation et M3 absentes du frontend | Frontend |
+| Précision M1 (> 85 %) et extraction (> 90 %) non encore mesurées sur un corpus annoté | M1 |
+| Corpus réel ALTIORA non encore importé dans le RAG | C3 |
+| Latence du chat parfois > 3 s ; quotas gratuits Voyage et Groq | C3 |
+| Indexation en tâche de fond : un échec peut rester silencieux jusqu'à la consultation du statut | C3 |
+| Fournisseur Claude préparé mais non actif | LLM |
+| Reviews HITL stockées dans un fichier JSON local (pas multi-instance) | HITL |
+| Route `endpoints/preparation.py` (ingestion d'EDT) non montée et à reprendre | Préparation |
+| Charge (10 utilisateurs), disponibilité (99 %) et déploiement de production non mesurés | Infra |

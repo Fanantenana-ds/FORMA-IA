@@ -36,8 +36,10 @@ TAVILY_TIMEOUT = float(os.getenv("TAVILY_TIMEOUT", "12"))
 RETRY_MAX_ATTEMPTS = int(os.getenv("RETRY_MAX_ATTEMPTS", "3"))
 RETRY_BASE_DELAY = float(os.getenv("RETRY_BASE_DELAY", "1.0"))
 
-# Domaine MALGACHES Fiable (utilisés pour site: ET post-filtrage)
-TRUSTED_DOMAINS = [
+# Domaines autorisés (utilisés pour site: ET post-filtrage).
+# Surchargeables par TAVILY_INCLUDE_DOMAINS (liste séparée par des virgules) ;
+# les TAVILY_SITES_MAX premiers servent aux opérateurs site: de la requête.
+_DEFAULT_TRUSTED_DOMAINS = [
     "asako.mg",
     "job2mada.com",
     "portaljob-madagascar.com",
@@ -51,6 +53,15 @@ TRUSTED_DOMAINS = [
     "indeed.com",
 ]
 
+
+def _domains_from_env(raw: str | None) -> list[str]:
+    domains = [d.strip().lower() for d in (raw or "").split(",") if d.strip()]
+    return domains or list(_DEFAULT_TRUSTED_DOMAINS)
+
+
+TRUSTED_DOMAINS = _domains_from_env(os.getenv("TAVILY_INCLUDE_DOMAINS"))
+TAVILY_SITES_MAX = max(1, int(os.getenv("TAVILY_SITES_MAX", "6")))
+
 # Mots-clés bruit à rejeter (contenu non-pertinent)
 NOISE_KEYWORDS = [
     # Conflits géopolitiques
@@ -58,14 +69,17 @@ NOISE_KEYWORDS = [
     "guerre", "war", "missile", "drone", "sanctions",
     # Lifestyle / non-tech
     "pilates", "yoga", "fitness", "skincare", "cosmetic", "beauty",
-    "recipe", "cuisine", "restaurant", "travel", "voyage", "tourisme",
+    # (pas "travel"/"voyage" : fréquents dans les TDR — "frais de voyage")
+    "recipe", "cuisine", "restaurant", "tourisme",
     "sports", "football", "tennis", "movie", "film", "cinema",
     # Finance générale
     "bourse", "crypto", "bitcoin", "trading", "forex",
-    # Santé / bien-être
-    "santé", "health", "wellness", "spa", "massage",
-    # Universités / études (pas des offres d'emploi)
-    "université", "university", "sapienza", "étudiant", "student",
+    # Bien-être (pas "santé"/"health" : un ministère de la Santé peut
+    # lancer un appel d'offres de formation)
+    "wellness", "spa", "massage",
+    # Études (pas "université"/"university" : une université peut être
+    # l'acheteur d'un appel d'offres de formation)
+    "sapienza", "étudiant", "student",
     "bachelor", "master académique", "thèse", "phd",
 ]
 
@@ -112,10 +126,17 @@ def is_latin_content(text: str) -> bool:
     return non_latin_count < (len(text) * 0.05)
 
 
+# Mots entiers uniquement : en sous-chaîne, "war" rejetait "software",
+# "spa" rejetait "espace", etc.
+_NOISE_REGEX = re.compile(
+    r"\b(?:" + "|".join(re.escape(kw) for kw in NOISE_KEYWORDS) + r")\b",
+    re.IGNORECASE,
+)
+
+
 def contains_noise(text: str) -> bool:
-    """Retourne True si le texte contient des mots-clés bruit."""
-    text_lower = text.lower()
-    return any(kw in text_lower for kw in NOISE_KEYWORDS)
+    """Retourne True si le texte contient des mots-clés bruit (mots entiers)."""
+    return bool(_NOISE_REGEX.search(text or ""))
 
 
 def is_trusted_url(url: str) -> bool:
@@ -223,15 +244,8 @@ class TavilyService:
             base_query = base_query.replace(word, "")
         base_query = base_query.strip()
 
-        # Sites prioritaires (top 5 seulement pour éviter query trop longue)
-        priority_sites = [
-            "asako.mg",
-            "job2mada.com",
-            "portaljob-madagascar.com",
-            "codeko.tech",
-            "linkdin",
-            "optioncarriere.mg",
-        ]
+        # Sites prioritaires (les premiers seulement pour éviter query trop longue)
+        priority_sites = TRUSTED_DOMAINS[:TAVILY_SITES_MAX]
         site_operators = " OR ".join([f"site:{s}" for s in priority_sites])
         enhanced_query = f"{base_query} Madagascar ({site_operators})"
 

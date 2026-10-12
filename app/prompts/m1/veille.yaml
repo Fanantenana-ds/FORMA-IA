@@ -99,12 +99,12 @@ format: |
         "deadline": null,
         "organizer": "Organisation/Nom de l'entreprise/organisme",
         "domain": "ia",
-        "opportunity_type": "emploi",
+        "opportunity_type": "appel_offres",
         "summary": "Résumé concret de l'opportunité en 2-3 phrases.",
         "is_actionable": true,
-        "score": 80,
+        "score": 75,
         "confidence": 0.90,
-        "reason": "Domaine IA (+30), source niveau 1 (+10), organisation identifiée (+10) = 50",
+        "reason": "Domaine IA (+30), source niveau 1 (+10), organisation identifiée (+10), besoin précis (+15), formation demandée (+10) = 75",
         "flags": []
       }
     ],

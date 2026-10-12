@@ -267,6 +267,49 @@ _PERSONAL_PROFILE_REGEX = re.compile(
 
 _HARD_REJECT_REGEX = re.compile("|".join(HARD_REJECT_PATTERNS), re.IGNORECASE)
 
+# Pages sans valeur pour le LLM : listing vide, CV / profil candidat
+_EMPTY_LISTING_REGEX = re.compile(
+    r"\b0\s+offres?\s+d'emplois?\s+trouv|aucune\s+offre\s+(?:d'emploi\s+)?ne\s+correspond",
+    re.IGNORECASE,
+)
+_CV_URL_REGEX = re.compile(r"/(?:cv|candidats?|profils?)(?:[/_-]|$)", re.IGNORECASE)
+
+# Vocabulaire des marchés / consultations : c'est la cible de M1
+TENDER_TERMS = (
+    "appel d'offres", "appel d'offre", "avis d'appel", "manifestation d'intérêt",
+    "manifestation d'interet", "termes de référence", "termes de reference",
+    "dossier d'appel", "consultation", "sollicitation", "request for proposal",
+    "expression of interest", "terms of reference",
+)
+
+
+def _is_low_value(result: dict[str, Any]) -> bool:
+    """Listing vide ou page CV : jamais une opportunité, inutile d'appeler le LLM."""
+    content = str(result.get("content", "") or result.get("snippet", ""))
+    if _EMPTY_LISTING_REGEX.search(content):
+        return True
+    return bool(_CV_URL_REGEX.search(str(result.get("url", ""))))
+
+
+def _dedupe(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Retire les doublons (même URL, ou même titre + même début de contenu)."""
+    seen: set[str] = set()
+    unique = []
+    for result in results:
+        url = str(result.get("url", "")).strip().lower().rstrip("/")
+        content = str(result.get("content", "") or result.get("snippet", ""))
+        signature = (
+            str(result.get("title", "")).strip().lower()
+            + "|" + re.sub(r"\s+", " ", content[:200]).strip().lower()
+        )
+        if (url and url in seen) or signature in seen:
+            continue
+        if url:
+            seen.add(url)
+        seen.add(signature)
+        unique.append(result)
+    return unique
+
 
 def _is_hard_rejected(title: str, url: str) -> bool:
     """
@@ -319,11 +362,19 @@ def rank_results(
             logger.info("🚫 Rejet dur (article/profil) : %s", title[:70])
             continue
 
+        if _is_low_value(result):
+            logger.info("🚫 Rejet dur (listing vide / CV) : %s", title[:70])
+            continue
+
         survivors.append(result)
 
+    nb_avant_dedup = len(survivors)
+    survivors = _dedupe(survivors)
+
     logger.info(
-        "✅ Rejet dur : %d résultat(s) écarté(s), %d restant(s)",
+        "✅ Rejet dur : %d résultat(s) écarté(s) dont %d doublon(s), %d restant(s)",
         len(results) - len(survivors),
+        nb_avant_dedup - len(survivors),
         len(survivors),
     )
 
@@ -369,6 +420,10 @@ def rank_results(
         # Bonus action (recrute, CDI, stage, etc.)
         if any(term in content for term in ACTION_INDICATORS):
             score += 3
+
+        # Bonus marché / consultation (cible principale de M1)
+        if any(term in title or term in content for term in TENDER_TERMS):
+            score += 8
 
         # ✅ Bonus AGRÉGATEURS reconnus (ils contiennent des offres)
         if "asako" in url:

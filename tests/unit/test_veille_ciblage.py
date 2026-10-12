@@ -2,6 +2,7 @@
 # TESTS — M1 ciblage des sources (aucun appel réseau)
 # ============================================================
 import asyncio
+from datetime import datetime
 
 from app.orchestrator import veille_orchestrator as vo
 from app.services.veille import prefilter_service as pf
@@ -146,3 +147,38 @@ def test_rejets_journalises(caplog):
         [_res("Avis ARMP", "https://armp.mg/1")],
     )
     assert "Avis ARMP → expiré le 2024-11-28" in caplog.text
+
+
+# ---- Garde-fous déterministes (après le LLM) ----
+
+AUJOURD_HUI = datetime(2026, 10, 12)
+
+
+def test_echeance_passee_rejetee():
+    assert vo.echeance_depassee("2024-11-28", AUJOURD_HUI)
+    assert vo.echeance_depassee("2026-10-11T23:59:00", AUJOURD_HUI)
+
+
+def test_echeance_future_absente_ou_illisible_acceptee():
+    assert not vo.echeance_depassee("2026-10-12", AUJOURD_HUI)
+    assert not vo.echeance_depassee(None, AUJOURD_HUI)
+    assert not vo.echeance_depassee("dans 3 semaines", AUJOURD_HUI)
+
+
+def test_mention_madagascar():
+    assert vo.mentionne_madagascar({"title": "Formation IA", "organizer": "Ministère, Antananarivo"})
+    assert vo.mentionne_madagascar({"title": "Avis", "url": "https://www.armp.mg/avis/12"})
+    assert not vo.mentionne_madagascar({"title": "Avis", "url": "https://img.mgx.com/a"})
+
+
+def test_cas_reel_emme_hdm4_rejete():
+    """Faux positif du 12/10/2026 : accepté par le LLM (score 75),
+    alors qu'il est expiré et sans mention de Madagascar."""
+    opp = {
+        "title": "MISSION DE FORMATION ET D'ACCOMPAGNEMENT SUR LES LOGICIELS EMME, HDM-4",
+        "organizer": "Agence Française de Développement (AFD)",
+        "url": "https://afd.dgmarket.com/tenders/adminShowBuyer.do?buyerId=6696755",
+        "deadline": "2024-11-28",
+    }
+    assert vo.echeance_depassee(opp["deadline"], AUJOURD_HUI)
+    assert not vo.mentionne_madagascar(opp)

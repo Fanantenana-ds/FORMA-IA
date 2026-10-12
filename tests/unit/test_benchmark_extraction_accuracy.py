@@ -100,6 +100,7 @@ def pas_de_sync_backend(monkeypatch):
 def _corpus(tmp_path, gold_extra):
     ligne = {
         "id": "corpus-test-0001",
+        "date_collected": "2026-09-01",
         "raw_text": "ALTIORA recrute un formateur en IA, budget 5M Ar, échéance 15 septembre 2026.",
         "gold": {"is_opportunity": True, "domain": "ia", **gold_extra},
     }
@@ -116,6 +117,7 @@ def _runner_avec_prediction(tmp_path, monkeypatch, gold_extra, prediction_extra)
         return {"opportunities": [{
             "title": "Formation IA", "summary": "Recrutement formateur IA",
             "domain": "ia", "confidence": 0.9, "opportunity_type": "autre",
+            "url": "https://example.mg/ao",
             **prediction_extra,
         }]}
 

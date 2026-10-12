@@ -11,7 +11,8 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:15
+        # pgvector requis : la table knowledge_base (C3/RAG) a une colonne VECTOR(1024)
+        image: pgvector/pgvector:pg15
         env:
           POSTGRES_USER: forma_user
           POSTGRES_PASSWORD: forma_pass
@@ -37,6 +38,10 @@ jobs:
       - name: Lint with ruff
         working-directory: .
         run: ruff check .
+      - name: Enable pgvector extension
+        env:
+          PGPASSWORD: forma_pass
+        run: psql -h localhost -U forma_user -d forma_ia -c "CREATE EXTENSION IF NOT EXISTS vector;"
       - name: Run tests with coverage
         working-directory: .
         env:

@@ -182,3 +182,49 @@ def test_cas_reel_emme_hdm4_rejete():
     }
     assert vo.echeance_depassee(opp["deadline"], AUJOURD_HUI)
     assert not vo.mentionne_madagascar(opp)
+
+
+# ---- Découpage des pages de liste en avis individuels ----
+
+PAGE_ARMP = (
+    "## Avis spécifiques Source des données : e-GP "
+    "| MINISTERE DES TRAVAUX PUBLICS ----------------------------- "
+    "Ref: 011-2026/MTP/PRMP Mode: ACO | Entretien et réparation de routes "
+    "| MINISTERE DE L'ENSEIGNEMENT TECHNIQUE ET DE LA FORMATION PROFESSIONNELLE "
+    "----------------------------- Ref: 012-2026/METFP/SG | Formation des formateurs en informatique "
+    "| COMMUNE URBAINE D'ANTANANARIVO ----------------------------- "
+    "Ref: 045-2024/CUA | Fourniture de bureau"
+)
+
+PAGE_DGMARKET = (
+    "Avis publiés par l'acheteur "
+    "| Nov 28, 2024 | | Appel d'offres | MISSION DE FORMATION EMME, HDM-4 | Madagascar "
+    "| Mar 20, 2026 | | Appel d'offres | Formation IA pour agents publics | Madagascar "
+    "| Sep 02, 2026 | | Appel à Manifestation d'Intérêt | Consultant data | Madagascar"
+)
+
+
+def test_page_armp_decoupee_et_avis_anciens_ecartes():
+    avis = ts.decouper_liste_avis("Site ARMP", "https://armp.mg/avis", PAGE_ARMP, annee_courante=2026)
+    assert len(avis) == 2                                   # l'avis 2024 est écarté
+    assert "METFP" in avis[1]["content"]
+    assert avis[0]["url"] != avis[1]["url"]                 # pas fusionnés par le dédoublonnage
+
+
+def test_tableau_dgmarket_decoupe():
+    avis = ts.decouper_liste_avis("AFD - dgMarket", "https://dgmarket.com/x", PAGE_DGMARKET, annee_courante=2026)
+    assert [a["content"][:12] for a in avis] == ["Mar 20, 2026", "Sep 02, 2026"]
+    assert "Formation IA" in avis[0]["title"]
+
+
+def test_page_simple_non_decoupee():
+    assert ts.decouper_liste_avis("Avis", "https://a.mg", "Un seul avis, Ref: 1-2026", annee_courante=2026) is None
+    assert ts.decouper_liste_avis("Avis", "https://a.mg", None) is None
+
+
+def test_filtre_tavily_remplace_la_liste_par_ses_avis():
+    service = ts.TavilyService.__new__(ts.TavilyService)
+    resultats = service._resultats_page(
+        {"raw_content": PAGE_DGMARKET}, "AFD - dgMarket", "https://dgmarket.com/x", "snippet",
+    )
+    assert len(resultats) == 2

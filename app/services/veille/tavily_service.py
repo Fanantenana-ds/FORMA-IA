@@ -152,6 +152,58 @@ _REPERES_AVIS = re.compile(
 )
 
 
+# Découpage des pages de liste (ARMP « Avis spécifiques », tableaux dgMarket)
+# en avis individuels : le LLM rejetait la page entière comme « liste sans
+# annonce précise » alors qu'elle contenait de vrais avis malgaches.
+TAVILY_AVIS_MAX_PAR_PAGE = max(1, int(os.getenv("TAVILY_AVIS_MAX_PAR_PAGE", "10")))
+
+# Début d'un avis : "| ORGANISME EN MAJUSCULES ----- Ref:" (ARMP)
+# ou "| Nov 28, 2024 |" (ligne datée d'un tableau dgMarket)
+_DEBUT_AVIS = re.compile(
+    r"\|\s*(?=[A-ZÀ-Ý][A-ZÀ-Ý'’ ,.&()\-]{5,}?\s*-{3,}\s*R[ée]f\s*:)"
+    r"|\|\s*(?=[A-Z][a-z]{2,8}\.?\s+\d{1,2},\s+\d{4}\s*\|)",
+)
+_ANNEE = re.compile(r"\b(20\d{2})\b")
+
+
+def decouper_liste_avis(
+    title: str,
+    url: str,
+    raw: str | None,
+    annee_courante: int | None = None,
+    maximum: int = TAVILY_EXTRAIT_MAX,
+) -> list[dict[str, Any]] | None:
+    """
+    Si `raw` est une page de liste (≥ 2 débuts d'avis reconnus), retourne un
+    résultat par avis encore d'actualité ; sinon None (page traitée telle quelle).
+
+    Filtre de fraîcheur : un avis dont toutes les années citées sont
+    antérieures à l'année courante est écarté (avis clos).
+    """
+    texte = " ".join((raw or "").split())
+    debuts = [m.start() for m in _DEBUT_AVIS.finditer(texte)]
+    if len(debuts) < 2:
+        return None
+
+    annee_courante = annee_courante or time.localtime().tm_year
+    avis: list[dict[str, Any]] = []
+    for numero, (debut, fin) in enumerate(zip(debuts, debuts[1:] + [len(texte)]), start=1):
+        segment = texte[debut:fin].strip(" |")
+        annees = [int(a) for a in _ANNEE.findall(segment)]
+        if annees and max(annees) < annee_courante:
+            continue
+        intitule = " ".join(p.strip() for p in segment.split("|") if p.strip())
+        avis.append({
+            "title": f"{title} — {intitule[:120]}",
+            "url": f"{url}#avis-{numero}",
+            "content": segment[:maximum],
+            "score": 0.0,
+        })
+        if len(avis) >= TAVILY_AVIS_MAX_PAR_PAGE:
+            break
+    return avis
+
+
 def extrait_utile(snippet: str, raw: str | None, maximum: int = TAVILY_EXTRAIT_MAX) -> str:
     """
     Snippet Tavily + fenêtre du texte brut autour du premier repère d'avis
@@ -434,16 +486,32 @@ class TavilyService:
                 logger.debug("   🚫 Bruit détecté: %s", title[:60])
                 continue
 
-            filtered.append({
-                "title": title,
-                "url": normalize_url(url),
-                "content": clean_scraped_content(
-                    extrait_utile(content, result.get("raw_content"))
-                ),
-                "score": result.get("score", 0.0),
-            })
+            filtered.extend(self._resultats_page(result, title, url, content))
 
         return filtered
+
+    @staticmethod
+    def _resultats_page(
+        result: dict[str, Any], title: str, url: str, content: str,
+    ) -> list[dict[str, Any]]:
+        """Page de liste → un résultat par avis récent ; sinon la page seule."""
+        url = normalize_url(url)
+        avis = decouper_liste_avis(title, url, result.get("raw_content"))
+        if avis is not None:
+            logger.info(
+                "   ✂️ Liste découpée : %s → %d avis récent(s)", title[:60], len(avis)
+            )
+            for item in avis:
+                item["content"] = clean_scraped_content(item["content"])
+            return avis
+        return [{
+            "title": title,
+            "url": url,
+            "content": clean_scraped_content(
+                extrait_utile(content, result.get("raw_content"))
+            ),
+            "score": result.get("score", 0.0),
+        }]
 
     def _filter_minimal(
         self, raw_results: list[dict[str, Any]]
@@ -471,13 +539,6 @@ class TavilyService:
             if contains_noise(title + " " + content):
                 continue
 
-            filtered.append({
-                "title": title,
-                "url": normalize_url(url),
-                "content": clean_scraped_content(
-                    extrait_utile(content, result.get("raw_content"))
-                ),
-                "score": result.get("score", 0.0),
-            })
+            filtered.extend(self._resultats_page(result, title, url, content))
 
         return filtered

@@ -109,16 +109,22 @@ format: |
       }
     ],
     "market_signals": [],
+    "rejets": [
+      {"resultat": 2, "raison": "appel d'offres de travaux publics, hors domaine"}
+    ],
     "total": 1,
     "notes": ""
   }
 
   Si aucune opportunité réelle n'est trouvée dans cette source,
-  retourne exactement cet objet JSON :
+  retourne cet objet JSON (avec un rejet par RESULTAT) :
 
   {
     "opportunities": [],
     "market_signals": [],
+    "rejets": [
+      {"resultat": 1, "raison": "page de liste sans annonce précise"}
+    ],
     "total": 0,
     "notes": "Aucune opportunité concrète et actionnable détectée dans cette source."
   }
@@ -128,4 +134,8 @@ format: |
   - is_actionable doit être true pour toute opportunité retournée.
   - score doit être cohérent avec reason.
   - confidence comprise entre 0 et 1.
-  - opportunities doit être [] si aucune opportunité réelle.s
+  - opportunities doit être [] si aucune opportunité réelle.
+  - rejets : un objet par RESULTAT non retenu, "resultat" = son numéro,
+    "raison" = 12 mots maximum (ex. "expiré le 2024-11-28",
+    "hors domaine : fournitures", "page de liste sans annonce précise",
+    "organisation ou besoin non identifiable").

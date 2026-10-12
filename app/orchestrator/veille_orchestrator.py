@@ -2,6 +2,7 @@ import asyncio
 import io
 import logging
 import os
+import re
 import time
 from datetime import datetime
 from typing import Any
@@ -39,6 +40,39 @@ MAX_FALLBACK_BATCHES = int(os.getenv("MAX_FALLBACK_BATCHES", "2"))
 # Délai minimal entre deux appels LLM (lots et requêtes enchaînés) :
 # évite les 429 Groq (quota tokens/minute). 0 = pas de pause.
 VEILLE_PAUSE_LLM_S = max(0.0, float(os.getenv("VEILLE_PAUSE_LLM_S", "0")))
+# Garde-fou zone : rejeter toute opportunité sans mention vérifiable de Madagascar
+VEILLE_EXIGER_MADAGASCAR = os.getenv("VEILLE_EXIGER_MADAGASCAR", "true").lower() == "true"
+
+# =============================================================================
+# GARDE-FOUS DÉTERMINISTES (après le LLM) — le LLM propose, le code vérifie
+# =============================================================================
+_MOTS_MADAGASCAR = re.compile(
+    r"madagascar|malgache|malagasy|antananarivo|tananarive|toamasina|tamatave|"
+    r"mahajanga|majunga|fianarantsoa|toliara|tul[ée]ar|antsiranana|di[ée]go[- ]suarez|"
+    r"\.mg(?![a-z0-9])",
+    re.IGNORECASE,
+)
+
+
+def echeance_depassee(deadline: Any, reference: datetime | None = None) -> bool:
+    """True si la date limite (ISO, AAAA-MM-JJ…) est antérieure à la date de référence.
+    Date absente ou illisible → False (le scoring la pénalise déjà)."""
+    if not deadline:
+        return False
+    try:
+        echeance = datetime.fromisoformat(str(deadline).strip()[:10]).date()
+    except ValueError:
+        return False
+    return echeance < (reference or datetime.now()).date()
+
+
+def mentionne_madagascar(opportunity: dict[str, Any]) -> bool:
+    """True si Madagascar (pays, ville, gentilé ou domaine .mg) apparaît dans l'opportunité."""
+    texte = " ".join(
+        str(opportunity.get(champ) or "")
+        for champ in ("title", "summary", "organizer", "source", "url", "location")
+    )
+    return bool(_MOTS_MADAGASCAR.search(texte))
 
 
 # =============================================================================
@@ -565,6 +599,8 @@ class VeilleOrchestrator(BaseOrchestrator):
         stats_rejected = {
             "normalize": 0,
             "quality_filter": 0,
+            "echeance_depassee": 0,
+            "hors_madagascar": 0,
             "score_trop_bas": 0,
         }
 
@@ -591,6 +627,24 @@ class VeilleOrchestrator(BaseOrchestrator):
                 continue
 
             vlog(f"   ✅ [{idx}] quality_filter OK")
+
+            # ── ÉTAPE B2 : GARDE-FOUS DÉTERMINISTES ──
+            if echeance_depassee(cleaned.get("deadline"), date_reference):
+                stats_rejected["echeance_depassee"] += 1
+                vlog(
+                    f"   ❌ [{idx}] REJETÉ par garde-fou : échéance dépassée "
+                    f"({cleaned.get('deadline')})",
+                    "warning",
+                )
+                continue
+
+            if VEILLE_EXIGER_MADAGASCAR and not mentionne_madagascar(cleaned):
+                stats_rejected["hors_madagascar"] += 1
+                vlog(
+                    f"   ❌ [{idx}] REJETÉ par garde-fou : aucune mention de Madagascar",
+                    "warning",
+                )
+                continue
 
             # ── ÉTAPE C : CLASSIFICATION + COUNTRY ──
             cleaned.update(self.classification_service.classify(cleaned))
@@ -655,6 +709,8 @@ class VeilleOrchestrator(BaseOrchestrator):
         vlog(
             f"📊 Rejets : normalize={stats_rejected['normalize']} | "
             f"quality_filter={stats_rejected['quality_filter']} | "
+            f"échéance={stats_rejected['echeance_depassee']} | "
+            f"hors_madagascar={stats_rejected['hors_madagascar']} | "
             f"score_bas={stats_rejected['score_trop_bas']}"
         )
         vlog("=" * 70)

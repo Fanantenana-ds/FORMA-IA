@@ -35,6 +35,7 @@ def _async(fn):
 
 LIGNE_CORPUS = {
     "id": "corpus-test-0001",
+    "date_collected": "2026-09-01",
     "raw_text": "ALTIORA recrute un formateur en IA à Antananarivo, budget 5M Ar, échéance 15 septembre 2026.",
     "gold": {
         "is_opportunity": True, "domain": "ia",

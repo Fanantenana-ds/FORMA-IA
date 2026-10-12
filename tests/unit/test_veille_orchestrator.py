@@ -152,9 +152,9 @@ def test_analyser_opportunites_rejets_normalize_et_quality_et_score_bas(orchestr
         orchestrateur.llm_service, "analyze",
         _async(lambda *a, **k: {
             "opportunities": [
-                {"title": "Rejetée par normalize"},
-                {"title": "Rejetée par quality_filter"},
-                {"title": "Rejetée par score trop bas"},
+                {"title": "Rejetée par normalize", "url": "https://a.mg"},
+                {"title": "Rejetée par quality_filter", "url": "https://b.mg"},
+                {"title": "Rejetée par score trop bas", "url": "https://c.mg"},
             ],
             "market_signals": [], "notes": "x",
         }),

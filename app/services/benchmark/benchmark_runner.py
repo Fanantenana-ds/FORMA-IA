@@ -26,9 +26,9 @@ import json
 import logging
 import os
 import time
-from datetime import UTC, datetime, timezone
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from app.orchestrator.veille_orchestrator import VeilleOrchestrator
 from app.services.veille.classification_service import ClassificationService
@@ -390,15 +390,28 @@ class BenchmarkRunner:
             "fournisseur_llm": llm.get_provider_name() if llm else None,
             "modele_llm": llm.get_model_name() if llm else None,
             "empreinte_prompts_m1": _empreinte_prompts(),
-            "date_execution": datetime.now(UTC).isoformat(),
+            "date_execution": datetime.now(timezone.utc).isoformat(),
         }
 
     # --------------------------------------------------------
     # EXÉCUTION DU BENCHMARK
     # --------------------------------------------------------
 
-    async def run(self, limit: int = 20, pause_secondes: float = 0.0) -> dict[str, Any]:
-        entries = self._load_corpus(limit=limit)
+    async def run(
+        self,
+        limit: int = 20,
+        entries: list[dict[str, Any]] | None = None,
+        pause_secondes: float = 0.0,
+    ) -> dict[str, Any]:
+        """
+        entries : liste déjà chargée/filtrée (ex. par split ou par reprise
+        --reprendre dans scripts/benchmark_m1.py) — si fournie, le fichier
+        corpus n'est PAS relu ; `limit` reste un plafond appliqué dessus.
+
+        pause_secondes : délai après CHAQUE document (courtoisie API lors
+        d'un vrai run Groq — évite de dépasser un débit raisonnable).
+        """
+        entries = entries[:limit] if entries is not None else self._load_corpus(limit=limit)
         total = len(entries)
 
         logger.info("📊 BENCHMARK M1 — DÉBUT (%d document(s) du corpus)", total)

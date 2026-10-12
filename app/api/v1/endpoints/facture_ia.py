@@ -16,8 +16,7 @@ import os
 import time
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends
 
 from app.api.v1.endpoints._helpers import build_response as _build_resp
 from app.api.v1.endpoints._helpers import handle_exception as _handle_exc
@@ -59,36 +58,11 @@ def _log_request(method: str, path: str, **kwargs) -> None:
 
 
 def _handle_exception(e: Exception, context: str) -> None:
-    if isinstance(e, ValueError):
-        if "introuvable" in str(e).lower():
-            raise HTTPException(status_code=404, detail=str(e))
-        raise HTTPException(status_code=422, detail=f"Données invalides : {e}")
-    if isinstance(e, RuntimeError):
-        logger.error(f"❌ [Route M7] {context} — service : {e}")
-        raise HTTPException(status_code=503, detail=str(e))
-    logger.exception(f"💥 [Route M7] {context} : {e}")
-    raise HTTPException(
-        status_code=500,
-        detail=f"Erreur interne : {type(e).__name__} — {e}",
-    )
-
-
-class RouteResponse(BaseModel):
-    """Réponse standardisée pour les routes M7."""
-    success: bool
-    message: str
-    duration_seconds: float | None = None
-    review_id: str | None = None
-    review_status: str | None = None
-    requires_human_action: bool = False
-    data: dict[str, Any] | None = None
+    _handle_exc(e, context, "Route M7", logger, not_found_on_value_error=True)
 
 
 def _build_response(result: dict[str, Any], msg_ok: str, elapsed: float) -> RouteResponse:
-    review_id = result.get("_review_id") if isinstance(result, dict) else None
-    status_val = result.get("_review_status") if isinstance(result, dict) else None
-    requires_action = status_val == "pending_review"
-
+    # Cas spécifique M7 : pas de relance nécessaire
     if isinstance(result, dict) and result.get("necessaire") is False:
         return RouteResponse(
             success=True,

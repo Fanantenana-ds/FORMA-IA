@@ -86,3 +86,26 @@ def test_valider_document_inexistant(client_role):
         }
     )
     assert response.status_code == 404
+def test_supprimer_document_en_attente(client_role):
+    """DELETE /documents/{id} supprime réellement (régression : NameError → 500)."""
+    client = client_role(role="DIRECTION")
+    creation = client.post(
+        "/api/v1/documents/tdr",
+        json={"client": "Todisoa Olivier", "objectifs": "Former 20 agents sur PostgreSQL"},
+    )
+    document_id = creation.json()["id"]
+
+    assert client.delete(f"/api/v1/documents/{document_id}").status_code == 204
+    assert client.get(f"/api/v1/documents/{document_id}").status_code == 404
+
+
+def test_supprimer_document_valide_refuse(client_role):
+    client = client_role(role="DIRECTION")
+    creation = client.post(
+        "/api/v1/documents/tdr",
+        json={"client": "Todisoa Olivier", "objectifs": "Former 20 agents sur PostgreSQL"},
+    )
+    document_id = creation.json()["id"]
+    client.post(f"/api/v1/documents/{document_id}/valider", json={"approuve": True})
+
+    assert client.delete(f"/api/v1/documents/{document_id}").status_code == 400

@@ -96,6 +96,7 @@ class SatisfactionAnalyzerService:
         session_info: dict[str, Any],
         stats: dict[str, Any],
         feedbacks: list[dict[str, Any]],
+        contexte_rag: str = "",
     ) -> str:
         """Prompt avec stats calculées + feedbacks bruts."""
         s = stats["statistiques"]
@@ -343,6 +344,7 @@ class SatisfactionAnalyzerService:
         responses: list[dict[str, Any]],
         temperature: float,
         max_tokens: int,
+        contexte_rag: str = "",
     ) -> dict[str, Any]:
         """Appel Groq — analyse qualitative uniquement."""
         # Extraire les feedbacks textuels

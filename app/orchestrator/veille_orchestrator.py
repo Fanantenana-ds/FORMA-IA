@@ -2,10 +2,10 @@ import io
 import logging
 import os
 import time
-from typing import Any, Dict
+from datetime import datetime
+from typing import Any
 
 import pypdf
-
 from app.orchestrator.base_orchestrator import BaseOrchestrator
 from app.orchestrator.base_orchestrator import _vlog as vlog
 from app.services.backend_sync import base_sync
@@ -13,7 +13,7 @@ from app.services.backend_sync.opportunity_sync import (
     sync_new_opportunities_to_backend,
     sync_opportunities_to_backend,
 )
-from app.services.hitl import create_review
+from app.services.hitl.hitl_helper import create_review
 from app.services.veille import validation_service
 from app.services.veille.classification_service import ClassificationService
 from app.services.veille.llm_analysis_service import (
@@ -58,39 +58,12 @@ class VeilleOrchestrator(BaseOrchestrator):
         )
         self.scoring_service = self._safe_init(ScoringService, "ScoringService")
 
-        self._log_startup_summary()
-
-    # =========================================================================
-    # HELPERS INTERNES
-    # =========================================================================
-
-    def _safe_init(self, cls, label: str):
-        try:
-            instance = cls()
-            vlog(f"   ✅ {label} prêt")
-            return instance
-        except Exception as e:
-            logger.error(f"   ❌ {label} indisponible : {type(e).__name__} — {e}")
-            return None
-
-    def _log_startup_summary(self) -> None:
-        services_status = {
-            "TavilyService":         self.tavily_service is not None,
-            "LLMAnalysisService":    self.llm_service is not None,
-            "ClassificationService": self.classification_service is not None,
-            "ScoringService":        self.scoring_service is not None,
-        }
-        active = [k for k, v in services_status.items() if v]
-        inactive = [k for k, v in services_status.items() if not v]
-
-        vlog("=" * 70)
-        vlog(f"📊 Bilan démarrage M1 : {len(active)}/4 services actifs")
-        for name in active:
-            vlog(f"   ✅ {name}")
-        for name in inactive:
-            vlog(f"   ⏳ {name} (en attente)")
-        vlog("=" * 70)
-        vlog(" VeilleOrchestrator initialisé avec succès.")
+        self._log_startup_summary({
+            "TavilyService":         self.tavily_service,
+            "LLMAnalysisService":    self.llm_service,
+            "ClassificationService": self.classification_service,
+            "ScoringService":        self.scoring_service,
+        })
 
     # ========================================================
     # ENTRÉE 1 — RECHERCHE WEB
@@ -286,7 +259,7 @@ class VeilleOrchestrator(BaseOrchestrator):
         for query in queries:
             try:
                 resultat = await self.analyser_opportunites(
-                    query, sync_backend=False
+                    query, sync_backend=False, categorie="auto"
                 )
             except Exception as exc:
                 logger.exception("❌ Détection auto — requête en échec : %s", query)
@@ -369,9 +342,25 @@ class VeilleOrchestrator(BaseOrchestrator):
     # ========================================================
 
     async def analyser_texte(
-        self, texte: str, source: str = "manuel", date_reference: Any = None, sync_backend: bool = False
+        self,
+        texte: str,
+        source: str = "manuel",
+        sync_backend: bool = True,
+        date_reference: datetime | None = None,
     ) -> dict[str, Any]:
-        """Pipeline : texte collé → analyse directe (sans recherche web)."""
+        """Pipeline : texte collé → analyse directe (sans recherche web).
+
+        sync_backend=False : n'envoie rien au Backend (utilisé par le
+        benchmark M1 — correction 1c, mission "Étape 1" : lancer le
+        benchmark sur le corpus annoté ne doit jamais polluer la base
+        formaia avec de fausses opportunités).
+
+        date_reference : date à laquelle évaluer le score (Étape C,
+        mission "Préparation soutenance" — reproductibilité). Le
+        benchmark passe la date de collecte de chaque document ; sans
+        cela, rejouer le même corpus à des dates différentes donnerait
+        des scores différents (ScoringService évalue l'échéance par
+        rapport à "maintenant")."""
 
         texte = str(texte or "").strip()
         source_label = str(source or "manuel").strip() or "manuel"
@@ -544,7 +533,7 @@ class VeilleOrchestrator(BaseOrchestrator):
         start_total: float,
         extra_statistics: dict[str, Any] | None = None,
         sync_backend: bool = True,
-        date_reference: Any = None,
+        date_reference: datetime | None = None,
     ) -> dict[str, Any]:
         """Post-traitement : normalisation, qualité, classification, scoring,
         déduplication, validation, sync backend (si sync_backend)."""

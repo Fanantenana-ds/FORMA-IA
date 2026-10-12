@@ -16,9 +16,7 @@ Agents :
 """
 
 import logging
-import os
-import time
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from app.orchestrator.base_orchestrator import BaseOrchestrator
 from app.orchestrator.base_orchestrator import _vlog as vlog
@@ -295,12 +293,21 @@ class FormationOrchestrator(BaseOrchestrator):
     # ========================================================
 
     async def index_documents(self, documents: dict[str, Any]) -> dict[str, Any]:
-        """Agent 7 — Indexation RAG (à venir — V2)."""
-        logger.warning(
-            "⚠️  [FormationOrchestrator] index_documents() "
-            "non encore implémenté (Agent 7 — V2)."
-        )
-        return {"success": False, "reason": "not implemented"}
+        """
+        Agent 7 — Retourne les statistiques de la base RAG.
+
+        L'indexation réelle se fait via les scripts d'ingestion (Étape C),
+        pas via cette API. Cette méthode expose l'état courant de la base
+        pour que le frontend puisse afficher le nombre de supports indexés.
+        """
+        self._check_agent(self.knowledge_base, "Agent 7 (KnowledgeBaseService)")
+        formation_code = documents.get("formation_code") if documents else None
+        stats = await self.knowledge_base.get_stats(formation_code=formation_code)
+        return {
+            "agent": "KnowledgeBaseService",
+            "statut": "disponible" if stats.get("disponible") else "vide",
+            **stats,
+        }
 
     # ========================================================
     # AGENT 1b — CRÉER FORMULAIRES GOOGLE (après approbation HITL)

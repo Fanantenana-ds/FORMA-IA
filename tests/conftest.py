@@ -1,4 +1,10 @@
+import os
 import uuid
+
+# Le CI n'a pas de GROQ_API_KEY : sans clé, les agents (TDR, M5…) valent None
+# et les tests qui mockent leur appel LLM échouent. Clé factice, jamais appelée
+# (ces tests mockent le LLM) ; une vraie clé du .env reste prioritaire.
+os.environ.setdefault("GROQ_API_KEY", "test-cle-factice")
 
 import pytest
 from fastapi.testclient import TestClient

@@ -11,7 +11,6 @@
 
 import logging
 from pathlib import Path
-from typing import List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile
@@ -43,8 +42,8 @@ router = APIRouter(
 def get_document_service(db: Session = Depends(get_db)) -> DocumentService:
     return DocumentService(db)
 
-def get_document_export_service(db: Session = Depends(get_db)) -> DocumentExportService:
-    return DocumentExportService(db)
+def get_document_export_service() -> DocumentExportService:
+    return DocumentExportService()
 
 # Chemin local des fichiers RAG (utilisé pour vérifier l'existence côté filesystem)
 DOSSIER_FICHIERS_RAG = Path(__file__).resolve().parents[4] / "data" / "rag" / "fichiers"
@@ -139,6 +138,16 @@ def get_document(
 # ─────────────────────────────────────────────────────────────
 # EXPORT Word / PDF
 # ─────────────────────────────────────────────────────────────
+@router.post("/{document_id}/valider", response_model=DocumentResponse)
+def valider_document(
+    document_id: UUID,
+    data: ValidationRequest,
+    service: DocumentService = Depends(get_document_service),
+    current_user: User = Depends(require_role("DIRECTION")),
+):
+    return service.valider(document_id, current_user.id, data.approuve)
+
+
 @router.get("/{document_id}/export")
 def exporter_document(
     document_id: UUID,
@@ -172,7 +181,23 @@ def supprimer_document(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role("DIRECTION")),
 ):
-    return service.generer_offre(data)
+    """
+    Supprime un document. Réservé à la Direction.
+    Refuse la suppression d'un document déjà validé.
+    """
+    document = db.query(Document).filter(Document.id == document_id).first()
+    if not document:
+        raise HTTPException(status_code=404, detail="Document introuvable")
+
+    # Sécurité : on ne supprime pas un document validé
+    if document.statut_validation and document.statut_validation.value == "VALIDE":
+        raise HTTPException(
+            status_code=400,
+            detail="Impossible de supprimer un document validé",
+        )
+
+    db.delete(document)
+    db.commit()
 
 
 # ============================================================
@@ -308,7 +333,7 @@ def telecharger_resume_formation(
     from io import BytesIO
 
     from docx import Document as DocxDocument
-    from docx.shared import Pt, RGBColor
+    from docx.shared import RGBColor
 
     entrees = registre.charger_registre()
     supports = [e for e in entrees.values() if e.formation_code == formation_code]
@@ -540,22 +565,3 @@ def supprimer_support(
         "fichier_supprime": fichier_supprime,
         "message": f"Support '{entree.fichier}' supprimé avec succès.",
     }
-
-    """
-    Supprime un document. Réservé à la Direction.
-    Refuse la suppression d'un document déjà validé.
-    """
-    document = db.query(Document).filter(Document.id == document_id).first()
-    if not document:
-        raise HTTPException(status_code=404, detail="Document introuvable")
-
-    # Sécurité : on ne supprime pas un document validé
-    if document.statut_validation and document.statut_validation.value == "VALIDE":
-        raise HTTPException(
-            status_code=400,
-            detail="Impossible de supprimer un document validé",
-        )
-
-    db.delete(document)
-    db.commit()
-    return None

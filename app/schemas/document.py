@@ -19,7 +19,7 @@ class TDRRequest(BaseModel):
 class DocumentResponse(BaseModel):
     id: UUID
     type: TypeDocument
-    contenu: str
+    contenu: str | None = None
     client: str | None = None
     objectifs: str | None = None
     format_export: FormatExport | None = None

@@ -105,3 +105,44 @@ def test_pause_llm_desactivee_par_defaut(monkeypatch):
     run(orch._respecter_pause_llm())
 
     assert attentes == []
+
+
+# ---- E : extrait utile du texte brut ----
+
+def test_extrait_sans_texte_brut_garde_le_snippet():
+    assert ts.extrait_utile("court", None, maximum=500) == "court"
+
+
+def test_extrait_centre_sur_le_repere_d_avis():
+    raw = ("menu accueil contact " * 50) + "Date limite de dépôt des offres : 15/11/2026. Budget 80M Ar."
+    extrait = ts.extrait_utile("Avis formation IA", raw, maximum=400)
+    assert len(extrait) <= 400
+    assert "Date limite" in extrait and extrait.startswith("Avis formation IA")
+
+
+# ---- A / budget : toutes les sources du lot sont montrées au LLM ----
+
+def _service_llm():
+    from app.services.veille.llm_analysis_service import LLMAnalysisService
+    return LLMAnalysisService.__new__(LLMAnalysisService)
+
+
+def test_toutes_les_sources_sont_dans_le_prompt():
+    results = [_res(f"T{i}", f"https://x.mg/{i}", "x" * 3000) for i in range(1, 9)]
+    texte = _service_llm()._build_source_blocks(results)
+    assert texte.count("===== RESULTAT") == 8
+
+
+def test_titres_nettoyes_dans_le_prompt():
+    texte = _service_llm()._build_source_blocks([_res("Agence\n\n\n  AFD", "https://afd.fr/1")])
+    assert "TITRE: Agence AFD" in texte
+
+
+def test_rejets_journalises(caplog):
+    from app.services.veille.llm_analysis_service import LLMAnalysisService
+    caplog.set_level("INFO")
+    LLMAnalysisService._log_rejets(
+        {"rejets": [{"resultat": 1, "raison": "expiré le 2024-11-28"}, "invalide"]},
+        [_res("Avis ARMP", "https://armp.mg/1")],
+    )
+    assert "Avis ARMP → expiré le 2024-11-28" in caplog.text

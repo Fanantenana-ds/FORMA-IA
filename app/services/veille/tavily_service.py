@@ -139,6 +139,41 @@ def contains_noise(text: str) -> bool:
     return bool(_NOISE_REGEX.search(text or ""))
 
 
+# Contenu enrichi (point E) : texte brut de la page, réduit à un extrait utile
+TAVILY_RAW_CONTENT = os.getenv("TAVILY_RAW_CONTENT", "false").lower() == "true"
+TAVILY_EXTRAIT_MAX = max(300, int(os.getenv("TAVILY_EXTRAIT_MAX", "1500")))
+
+# Repères qui portent l'information utile d'un avis (échéance, objet, budget)
+_REPERES_AVIS = re.compile(
+    r"date\s+limite|cl[ôo]ture|d[ée]p[ôo]t\s+des|remise\s+des|deadline|"
+    r"appel\s+d'offres?|manifestation\s+d'int[ée]r[êe]t|termes\s+de\s+r[ée]f[ée]rence|"
+    r"budget|montant|objet\s*:",
+    re.IGNORECASE,
+)
+
+
+def extrait_utile(snippet: str, raw: str | None, maximum: int = TAVILY_EXTRAIT_MAX) -> str:
+    """
+    Snippet Tavily + fenêtre du texte brut autour du premier repère d'avis
+    (sinon le début du texte brut). Jamais plus de `maximum` caractères.
+    """
+    snippet = (snippet or "").strip()
+    raw = " ".join((raw or "").split())
+    if not raw:
+        return snippet[:maximum]
+
+    reste = maximum - len(snippet) - 5
+    if reste <= 100:
+        return snippet[:maximum]
+
+    match = _REPERES_AVIS.search(raw)
+    debut = max(0, match.start() - reste // 4) if match else 0
+    fenetre = raw[debut:debut + reste]
+    if not snippet:
+        return fenetre[:maximum]
+    return f"{snippet}\n[…] {fenetre}"[:maximum]
+
+
 def is_trusted_url(url: str) -> bool:
     """Retourne True si l'URL vient d'un domaine autorisé."""
     url_lower = url.lower()
@@ -256,7 +291,7 @@ class TavilyService:
             "query": enhanced_query,
             "search_depth": "basic",  # Basic = rapide ; advanced = 10-28s
             "max_results": MAX_RESULTS_TAVILY,
-            "include_raw_content": False,
+            "include_raw_content": TAVILY_RAW_CONTENT,
             "include_images": False,
             "include_answer": False,
         }
@@ -308,7 +343,7 @@ class TavilyService:
             "query": fallback_query,
             "search_depth": "basic",
             "max_results": MAX_RESULTS_TAVILY,
-            "include_raw_content": False,
+            "include_raw_content": TAVILY_RAW_CONTENT,
             "include_images": False,
             "include_answer": False,
         }
@@ -378,7 +413,7 @@ class TavilyService:
             if not isinstance(result, dict):
                 continue
 
-            title = str(result.get("title", "")).strip()
+            title = " ".join(str(result.get("title", "")).split())
             url = str(result.get("url", "")).strip()
             content = str(
                 result.get("content", "") or result.get("snippet", "")
@@ -402,7 +437,9 @@ class TavilyService:
             filtered.append({
                 "title": title,
                 "url": normalize_url(url),
-                "content": clean_scraped_content(content),
+                "content": clean_scraped_content(
+                    extrait_utile(content, result.get("raw_content"))
+                ),
                 "score": result.get("score", 0.0),
             })
 
@@ -422,7 +459,7 @@ class TavilyService:
             if not isinstance(result, dict):
                 continue
 
-            title = str(result.get("title", "")).strip()
+            title = " ".join(str(result.get("title", "")).split())
             url = str(result.get("url", "")).strip()
             content = str(
                 result.get("content", "") or result.get("snippet", "")
@@ -437,7 +474,9 @@ class TavilyService:
             filtered.append({
                 "title": title,
                 "url": normalize_url(url),
-                "content": clean_scraped_content(content),
+                "content": clean_scraped_content(
+                    extrait_utile(content, result.get("raw_content"))
+                ),
                 "score": result.get("score", 0.0),
             })
 

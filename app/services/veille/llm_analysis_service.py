@@ -130,34 +130,43 @@ class LLMAnalysisService:
         return rendered
 
     def _build_source_blocks(self, results: list[dict[str, Any]]) -> str:
+        # Budget réparti équitablement : avant, on s'arrêtait dès que le total
+        # dépassait MAX_SOURCE_CHARS_TOTAL, et les dernières sources du lot
+        # n'étaient jamais montrées au LLM (sans aucun log).
+        sources = [r for r in results if isinstance(r, dict)]
+        part = min(MAX_SOURCE_CHARS_EACH, MAX_SOURCE_CHARS_TOTAL // max(1, len(sources)))
+
         blocks = []
-        total_chars = 0
-
-        for index, result in enumerate(results, start=1):
-            if not isinstance(result, dict):
-                continue
-
-            title = str(result.get("title", "")).strip()
+        for index, result in enumerate(sources, start=1):
+            title = " ".join(str(result.get("title", "")).split())
             url = normalize_url(result.get("url", ""))
             content = str(
                 result.get("content", "") or result.get("snippet", "")
-            ).strip()[:MAX_SOURCE_CHARS_EACH]
+            ).strip()[:part]
 
-            block = (
+            blocks.append(
                 f"===== RESULTAT {index} =====\n"
                 f"TITRE: {title}\n"
                 f"URL: {url}\n"
                 f"CONTENU:\n{content}\n"
             )
 
-            projected = total_chars + len(block)
-            if projected > MAX_SOURCE_CHARS_TOTAL:
-                break
-
-            blocks.append(block)
-            total_chars = projected
-
         return "\n".join(blocks)
+
+    @staticmethod
+    def _log_rejets(data: dict[str, Any], results: list[dict[str, Any]]) -> None:
+        """Journalise la raison de rejet de chaque source (diagnostic / mesure M1)."""
+        rejets = data.get("rejets")
+        if not isinstance(rejets, list):
+            return
+        for rejet in rejets:
+            if not isinstance(rejet, dict):
+                continue
+            numero = rejet.get("resultat")
+            titre = "?"
+            if isinstance(numero, int) and 1 <= numero <= len(results):
+                titre = " ".join(str(results[numero - 1].get("title", "?")).split())[:60]
+            logger.info("   ❌ [%s] %s → %s", numero, titre, rejet.get("raison", "?"))
 
     def _build_prompt(
         self,
@@ -283,7 +292,8 @@ class LLMAnalysisService:
             )[:150]
             logger.info(
                 "   [%d] %s | contenu: %s...",
-                i, str(r.get("title", "?"))[:60], content_preview,
+                i, " ".join(str(r.get("title", "?")).split())[:60],
+                " ".join(content_preview.split()),
             )
         logger.info("📦 Taille prompt : %d caractères", len(prompt))
 
@@ -339,6 +349,7 @@ class LLMAnalysisService:
                 "✅ GROQ : réponse JSON valide — %d opportunités",
                 len(data["opportunities"]),
             )
+            self._log_rejets(data, results)
             logger.info(f"🔍 Réponse GROQ: {data}")
 
             return data

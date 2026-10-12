@@ -1,3 +1,4 @@
+import asyncio
 import io
 import logging
 import os
@@ -35,6 +36,9 @@ MIN_SCORE_TO_REVIEW = int(os.getenv("MIN_SCORE_TO_REVIEW", "5"))
 MIN_CONFIDENCE_VALIDATED = float(os.getenv("MIN_CONFIDENCE_VALIDATED", "0.10"))
 MAX_RESULTS_AI = int(os.getenv("MAX_RESULTS_AI", "8"))
 MAX_FALLBACK_BATCHES = int(os.getenv("MAX_FALLBACK_BATCHES", "2"))
+# Délai minimal entre deux appels LLM (lots et requêtes enchaînés) :
+# évite les 429 Groq (quota tokens/minute). 0 = pas de pause.
+VEILLE_PAUSE_LLM_S = max(0.0, float(os.getenv("VEILLE_PAUSE_LLM_S", "0")))
 
 
 # =============================================================================
@@ -64,6 +68,17 @@ class VeilleOrchestrator(BaseOrchestrator):
             "ClassificationService": self.classification_service,
             "ScoringService":        self.scoring_service,
         })
+
+    async def _respecter_pause_llm(self) -> None:
+        """Attend si le dernier appel LLM date de moins de VEILLE_PAUSE_LLM_S."""
+        if VEILLE_PAUSE_LLM_S > 0:
+            dernier = getattr(self, "_dernier_appel_llm", None)
+            if dernier is not None:
+                reste = VEILLE_PAUSE_LLM_S - (time.monotonic() - dernier)
+                if reste > 0:
+                    vlog(f"⏸️ Pause LLM {reste:.1f}s (VEILLE_PAUSE_LLM_S)")
+                    await asyncio.sleep(reste)
+        self._dernier_appel_llm = time.monotonic()
 
     # ========================================================
     # ENTRÉE 1 — RECHERCHE WEB
@@ -146,6 +161,7 @@ class VeilleOrchestrator(BaseOrchestrator):
                 f"{len(batch)} source(s)"
             )
 
+            await self._respecter_pause_llm()
             batch_response = await self.llm_service.analyze(query, batch)
             filtered_results = batch
 

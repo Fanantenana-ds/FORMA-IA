@@ -12,7 +12,6 @@ Pour lancer les tests d'intégration :
 
 import asyncio
 import os
-from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -253,11 +252,9 @@ class TestRoutePublishForms:
     """Tests sur la route POST /ia/formations/reviews/{id}/publish-forms."""
 
     @pytest.fixture
-    def client(self, db_isolee):
-        from fastapi.testclient import TestClient
-
-        from app.main import app
-        return TestClient(app)
+    def client(self, client_ia):
+        # Route protégée par verify_api_key : client_ia (conftest) la contourne.
+        return client_ia
 
     def test_review_inexistante_retourne_404(self, client):
         resp = client.post(
@@ -306,7 +303,6 @@ class TestRoutePublishForms:
 
     def test_token_absent_retourne_503(self, client, monkeypatch):
         import app.api.v1.endpoints.formation_ia as mod
-        from app.services.formations import google_forms_publisher_service as pub_mod
         monkeypatch.setattr(
             mod, "_get",
             lambda review_id: {

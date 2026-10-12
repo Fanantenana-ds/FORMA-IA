@@ -1,7 +1,6 @@
 import json
 import logging
 import os
-import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -10,6 +9,7 @@ import yaml
 
 from app.services.hitl import create_review
 from app.services.llm import LLMError, get_llm_provider
+from app.utils.json_repair import repair_json
 
 logger = logging.getLogger(__name__)
 
@@ -247,33 +247,7 @@ class OffreTechniqueGeneratorService:
     # =========================================================================
 
     def _repair_json(self, raw: str) -> str:
-        """Corrige les erreurs JSON courantes du LLM."""
-        if not raw:
-            return raw
-
-        # 1. Enlever markdown ```json ... ```
-        raw = re.sub(r"^```(?:json)?\s*", "", raw.strip())
-        raw = re.sub(r"\s*```\s*$", "", raw)
-
-        # 2. Escapes invalides
-        raw = raw.replace("\\'", "'")
-        raw = raw.replace("\\/", "/")
-
-        # 3. Extraire le premier { ... }
-        start = raw.find("{")
-        if start > 0:
-            raw = raw[start:]
-
-        end = raw.rfind("}")
-        if end > 0:
-            raw = raw[:end + 1]
-
-        return raw
-
-    # =========================================================================
-    # NORMALISATION
-    # =========================================================================
-
+        return repair_json(raw)
     def _normalize_output(self, data: Any) -> dict[str, Any]:
         """Normalise la structure LLM (liste → dict)."""
         if isinstance(data, list):

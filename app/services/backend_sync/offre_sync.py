@@ -23,7 +23,6 @@ from app.services.backend_sync import base_sync
 logger = logging.getLogger(__name__)
 
 _TRAME_MAX = 500_000  # trame_technique / trame_financiere (colonnes TEXT)
-_CONTENU_MAX = 500_000  # contenu texte offre (compatibilité ancien contrat)
 
 # Clés internes de l'IA, sans intérêt pour le lecteur de l'offre
 _CLES_IGNOREES = {"success", "metadata", "reviews_individuels"}
@@ -123,12 +122,26 @@ def _render(value: Any, indent: int = 0) -> list[str]:
     return lines
 
 
+def build_trame_technique(offre_result: dict[str, Any]) -> str | None:
+    """Texte lisible de la partie technique uniquement."""
+    bloc = offre_result.get("offre_technique")
+    if not isinstance(bloc, dict) or not bloc:
+        return None
+    lines = ["OFFRE TECHNIQUE", "=" * 16, *_render(bloc)]
+    return "\n".join(lines).strip() or None
+
+
+def build_trame_financiere(offre_result: dict[str, Any]) -> str | None:
+    """Texte lisible de la partie financière uniquement."""
+    bloc = offre_result.get("offre_financiere")
+    if not isinstance(bloc, dict) or not bloc:
+        return None
+    lines = ["OFFRE FINANCIÈRE", "=" * 16, *_render(bloc)]
+    return "\n".join(lines).strip() or None
+
+
 def build_contenu(offre_result: dict[str, Any]) -> str:
-    """
-    Texte lisible de l'offre à partir du résultat de
-    OffreOrchestrator.generate_complete() (offre_technique + offre_financiere)
-    ou d'une offre seule (generate_technique / generate_financiere).
-    """
+    """Texte complet (technique + financière) — conservé pour compatibilité."""
     parts: list[str] = []
     for titre, cle in (
         ("OFFRE TECHNIQUE", "offre_technique"),
@@ -142,6 +155,28 @@ def build_contenu(offre_result: dict[str, Any]) -> str:
         parts = _render(offre_result)
 
     return "\n".join(parts).strip()
+
+
+def extract_titre(offre_result: dict[str, Any]) -> str:
+    """Titre de l'offre depuis les inputs IA ou la référence technique."""
+    inputs = offre_result.get("_inputs") or {}
+    tdr = inputs.get("tdr_data") or {}
+    titre = tdr.get("titre") or ""
+    if not titre:
+        offre_tech = offre_result.get("offre_technique") or {}
+        titre = offre_tech.get("titre_offre") or offre_tech.get("reference") or ""
+    return titre[:255] if titre else "Offre sans titre"
+
+
+def extract_client(offre_result: dict[str, Any]) -> str:
+    """Client depuis session_info ou offre_technique."""
+    inputs = offre_result.get("_inputs") or {}
+    session = inputs.get("session_info") or {}
+    client = session.get("client") or ""
+    if not client:
+        offre_tech = offre_result.get("offre_technique") or {}
+        client = offre_tech.get("client") or ""
+    return client[:100] if client else "Client inconnu"
 
 
 def extract_montant(offre_result: dict[str, Any]) -> float | None:
@@ -164,12 +199,13 @@ def extract_montant(offre_result: dict[str, Any]) -> float | None:
 
 
 async def sync_offre_to_backend(
-    opportunite_id: str | None,
-    titre: str | None = None,
-    client: str | None = None,
+    titre: str,
+    client: str,
+    opportunite_id: str | None = None,
+    trame_technique: str | None = None,
+    trame_financiere: str | None = None,
     montant_ht: float | None = None,
-    montant: float | None = None,
-    contenu: str | None = None,
+    statut: str = "brouillon",
 ) -> dict[str, Any]:
     """
     Enregistre l'offre côté Backend (POST /offres).
@@ -207,11 +243,19 @@ async def sync_offre_to_backend(
         logger.warning("⚠️ Sync offre non envoyée : %s", result["error"])
         return result
 
-    payload: dict[str, Any] = {"opportunite_id": str(opportunite_id)}
-    if montant is not None:
-        payload["montant"] = montant
-    if contenu and contenu.strip():
-        payload["contenu"] = contenu[:_CONTENU_MAX]
+    payload: dict[str, Any] = {
+        "titre": titre[:255],
+        "client": client[:100],
+        "statut": statut,
+    }
+    if opportunite_id and base_sync.is_valid_uuid(opportunite_id):
+        payload["opportunite_id"] = str(opportunite_id)
+    if trame_technique and trame_technique.strip():
+        payload["trame_technique"] = trame_technique[:_TRAME_MAX]
+    if trame_financiere and trame_financiere.strip():
+        payload["trame_financiere"] = trame_financiere[:_TRAME_MAX]
+    if montant_ht is not None:
+        payload["montant_ht"] = montant_ht
 
     return await base_sync.post_and_verify(
         "/offres",

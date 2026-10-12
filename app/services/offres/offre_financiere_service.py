@@ -1,7 +1,6 @@
 import json
 import logging
 import os
-import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -10,6 +9,7 @@ import yaml
 
 from app.services.hitl import create_review
 from app.services.llm import LLMError, get_llm_provider
+from app.utils.json_repair import repair_json
 
 from .grille_tarifaire_service import GrilleTarifaireService
 
@@ -299,19 +299,7 @@ class OffreFinanciereGeneratorService:
     # =========================================================================
 
     def _repair_json(self, raw: str) -> str:
-        if not raw:
-            return raw
-        raw = re.sub(r"^```(?:json)?\s*", "", raw.strip())
-        raw = re.sub(r"\s*```\s*$", "", raw)
-        raw = raw.replace("\\'", "'").replace("\\/", "/")
-        start = raw.find("{")
-        if start > 0:
-            raw = raw[start:]
-        end = raw.rfind("}")
-        if end > 0:
-            raw = raw[:end + 1]
-        return raw
-
+        return repair_json(raw)
     def _normalize_output(self, data: Any) -> dict[str, Any]:
         if isinstance(data, list):
             dict_items = [item for item in data if isinstance(item, dict)]

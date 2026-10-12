@@ -159,8 +159,18 @@ class LLMAnalysisService:
 
         return "\n".join(blocks)
 
-    def _build_prompt(self, query: str, results: list[dict[str, Any]], date_reference: Any = None) -> str:
-        current_date = (date_reference or datetime.now()).strftime("%Y-%m-%d") if hasattr(date_reference or datetime.now(), "strftime") else datetime.now().strftime("%Y-%m-%d")
+    def _build_prompt(
+        self,
+        query: str,
+        results: list[dict[str, Any]],
+        date_reference: datetime | None = None,
+    ) -> str:
+        # date_reference : si fournie (ex. benchmark M1 — reproductibilité),
+        # remplace datetime.now() pour que le LLM évalue les échéances par
+        # rapport à la DATE DE COLLECTE du document, pas à aujourd'hui.
+        # Sans ce paramètre, un document annoté "valide" le 2026-09-01 avec
+        # deadline 2026-09-15 serait vu comme "expiré" le 2026-09-26.
+        current_date = (date_reference or datetime.now()).strftime("%Y-%m-%d")
         results_text = self._build_source_blocks(results)
 
         prompt = self._replace_placeholders(
@@ -209,7 +219,10 @@ class LLMAnalysisService:
         return prompt
 
     def build_prompt_with_budget(
-        self, query: str, results: list[dict[str, Any]], date_reference: Any = None
+        self,
+        query: str,
+        results: list[dict[str, Any]],
+        date_reference: datetime | None = None,
     ) -> str:
         """Conserve le YAML complet, réduit uniquement les sources si besoin."""
 
@@ -244,7 +257,10 @@ class LLMAnalysisService:
     # --------------------------------------------------------
 
     async def analyze(
-        self, query: str, results: list[dict[str, Any]], date_reference: Any = None
+        self,
+        query: str,
+        results: list[dict[str, Any]],
+        date_reference: datetime | None = None,
     ) -> dict[str, Any] | None:
         """
         Construit le prompt et interroge le LLM. Retourne le JSON

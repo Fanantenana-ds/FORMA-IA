@@ -87,7 +87,9 @@ class ReportGeneratorService:
             else "\n".join(f"- {r}" for r in cfg.get("regles", [])),
         ])
 
-    def _build_user_prompt(self, session_data: dict[str, Any]) -> str:
+    def _build_user_prompt(
+        self, session_data: dict[str, Any], contexte_rag: str = ""
+    ) -> str:
         s = session_data
         lines = [
             "Génère le rapport final pour la session suivante :",
@@ -227,6 +229,7 @@ class ReportGeneratorService:
         session_data: dict[str, Any],
         temperature: float,
         max_tokens: int,
+        contexte_rag: str = "",
     ) -> dict[str, Any]:
         response = await self.llm.generate(
             system_prompt=self._build_system_prompt(),

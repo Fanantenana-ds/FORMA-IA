@@ -78,6 +78,7 @@ class LevelAnalyzerService:
         self,
         session_info: dict[str, Any],
         stats: dict[str, Any],
+        contexte_rag: str = "",
     ) -> str:
         """Construit le prompt utilisateur avec les stats déjà calculées."""
         lines = [
@@ -375,6 +376,7 @@ class LevelAnalyzerService:
         stats: dict[str, Any],
         temperature: float,
         max_tokens: int,
+        contexte_rag: str = "",
     ) -> dict[str, Any]:
         """Appel LLM — génère resume + interpretation + recommandations."""
         response = await self.llm.generate(

@@ -218,7 +218,17 @@ class ScoringService:
         self.scoring_reference = _load_yaml_reference(SCORING_YAML_PATH)
         logger.info("✅ scoring.yaml chargé (référence)")
 
-    def score(self, opportunity: dict[str, Any], date_reference: Any = None) -> dict[str, Any]:
+    def score(
+        self, opportunity: dict[str, Any], date_reference: datetime | None = None,
+    ) -> dict[str, Any]:
+        """
+        date_reference : date à laquelle évaluer l'échéance ("dans N
+        jours ?" / "expirée ?"). Défaut : maintenant (comportement API
+        inchangé). Le benchmark M1 (Étape C, mission "Préparation
+        soutenance") passe la date de collecte de chaque document, pour
+        que rejouer le même corpus donne toujours le même résultat, quelle
+        que soit la date réelle d'exécution du benchmark.
+        """
         title = str(opportunity.get("title", ""))
         summary = str(opportunity.get("summary", "") or "")
         url = str(opportunity.get("url", ""))

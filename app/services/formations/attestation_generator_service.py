@@ -4,7 +4,7 @@ import logging
 import os
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import yaml
 
@@ -94,6 +94,7 @@ class AttestationGeneratorService:
         self,
         session_info: dict[str, Any],
         participant: dict[str, Any],
+        contexte_rag: str = "",
     ) -> str:
         lines = [
             "Génère le contenu de l'attestation pour le participant suivant.",
@@ -136,7 +137,7 @@ class AttestationGeneratorService:
         participant: dict[str, Any],
         index: int = 1,
         temperature: float = 0.4,
-        max_tokens: int = 8000,
+        max_tokens: int = 800,
     ) -> dict[str, Any]:
         start = datetime.now()
         numero = self._build_unique_number(session_info, index)
@@ -336,6 +337,7 @@ class AttestationGeneratorService:
         participant: dict[str, Any],
         temperature: float,
         max_tokens: int,
+        contexte_rag: str = "",
     ) -> dict[str, Any]:
         response = await self.llm.generate(
             system_prompt=self._build_system_prompt(),
@@ -510,13 +512,7 @@ class AttestationGeneratorService:
         from reportlab.lib.pagesizes import A4, landscape
         from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
         from reportlab.lib.units import cm
-        from reportlab.platypus import (
-            Paragraph,
-            SimpleDocTemplate,
-            Spacer,
-            Table,
-            TableStyle,
-        )
+        from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
         content = result["content"]
         d = content["details"]

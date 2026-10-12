@@ -1,10 +1,9 @@
 import json
 import logging
 import os
-import re
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import yaml
 
@@ -110,7 +109,7 @@ class EntretienService:
             "",
             "Retourne UNIQUEMENT le JSON valide, sans texte autour.",
         ]
-        return "\n".join(ligne for ligne in lignes if ligne is not None)
+        return "\n".join(l for l in lignes if l is not None)
 
     async def generate(
         self,

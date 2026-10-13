@@ -63,6 +63,15 @@ exemples: |
   → is_actionable=true, opportunity_type=appel_offres, domain=ia,
   score=30(ia)+20(budget)+10(deadline)+10(org)+15(besoin)=85.
 
+  DOMAINE bureautique (pas ia) : "formation à l'utilisation des outils
+  bureautiques et à l'automatisation des tâches administratives"
+  → domain=bureautique (l'automatisation porte sur des tâches Office
+  courantes, aucune mention de LLM, d'IA générative ou d'agents IA).
+
+  DOMAINE data (pas bureautique) : "formation en analyse de données
+  avec Excel, niveau intermédiaire" → domain=data (Excel est l'outil,
+  mais la compétence est l'analyse de données / data analyst).
+
   REJETÉ : "Apprenez l'intelligence artificielle en 2026, guide complet"
   → is_actionable=false, reason="contenu éducatif générique, aucune
   organisation demandeuse".

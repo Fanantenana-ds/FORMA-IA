@@ -1,4 +1,4 @@
-# Module M4 — Préparation de la formation
+# Module Préparation de la formation
 
 ## À quoi ça sert
 

@@ -68,6 +68,15 @@ class KnowledgeRepository:
             return
         db = SessionLocal()
         try:
+            # Reprise après interruption : un lot déjà écrit mais non marqué
+            # terminé dans le registre est REMPLACÉ, pas dupliqué.
+            for ligne in lignes:
+                if ligne.doc_hash is not None:
+                    db.execute(delete(KnowledgeBase).where(
+                        KnowledgeBase.doc_hash == ligne.doc_hash,
+                        KnowledgeBase.collection == ligne.collection,
+                        KnowledgeBase.chunk_index == ligne.chunk_index,
+                    ))
             db.add_all(lignes)
             db.commit()
         except Exception:

@@ -3,7 +3,8 @@
 
 > **Pour qui ?** Le développeur frontend, pour savoir exactement ce qu'il reste à faire.  
 > **Méthode :** Lecture directe du code backend (19 fichiers endpoints) et du code frontend (34 fichiers .tsx + api.ts).  
-> **Dernière mise à jour :** 2026-10-06
+> **Dernière mise à jour :** 2026-10-06 (chemins des séances et champs HITL corrigés le 2026-10-13)  
+> **Formats exacts des requêtes et ordre de travail :** voir `GUIDE_INTEGRATION_FRONTEND.md`, vérifié dans le code le 13/10/2026.
 
 ---
 
@@ -166,8 +167,8 @@ Le `request()` dans `api.ts` **n'envoie jamais le token JWT**. Résultat : toute
 - `DELETE /sessions/{id}` → supprimer
 - `GET /sessions/{id}/seances` → lister les séances d'une session
 - `POST /sessions/{id}/seances` → ajouter une séance
-- `PATCH /seances/{id}` → modifier une séance
-- `DELETE /seances/{id}` → supprimer une séance
+- `PATCH /sessions/seances/{id}` → modifier une séance
+- `DELETE /sessions/seances/{id}` → supprimer une séance
 - `POST /sessions/{id}/inscrire` → inscrire un participant
 - `DELETE /sessions/{id}/inscrire/{pid}` → désinscrire
 - `GET /sessions/{id}/participants` → lister les participants inscrits
@@ -198,9 +199,9 @@ Le `request()` dans `api.ts` **n'envoie jamais le token JWT**. Résultat : toute
 **Problème :** `getPresences()` retourne directement des mocks (aucun appel réseau). Marquer présent/absent modifie un état React local. Rien n'est sauvegardé.
 
 **Ce qui est prêt côté backend :**
-- `GET /seances/{id}/presences` → lister les présences d'une séance
-- `POST /seances/{id}/presences` → enregistrer une présence
-- `PATCH /seances/presences/{id}` → corriger (modifier présent/absent, ajouter motif d'absence)
+- `GET /sessions/seances/{id}/presences` → lister les présences d'une séance
+- `POST /sessions/seances/{id}/presences` → enregistrer une présence
+- `PATCH /sessions/seances/presences/{id}` → corriger le statut (`PRESENT`, `ABSENT` ou `EXCUSE`)
 
 **Ce qui manque dans le frontend :**
 - Sélectionner une séance spécifique pour afficher ses présences
@@ -389,8 +390,8 @@ C'est la vue la plus critique. Tous les agents IA retournent un `review_id` — 
 - `GET /ia/formations/pending-reviews` → lister tous les contenus IA en attente (filtrables par agent)
 - `GET /ia/formations/reviews/{id}` → lire le contenu généré dans son détail
 - `GET /ia/formations/reviews/stats` → statistiques (combien en attente, combien approuvés, etc.)
-- `POST /ia/formations/reviews/{id}/approve` → approuver (avec commentaire optionnel)
-- `POST /ia/formations/reviews/{id}/reject` → rejeter avec un feedback (minimum 10 caractères) — l'agent peut régénérer avec ce feedback
+- `POST /ia/formations/reviews/{id}/approve` → approuver (`reviewer_note` optionnel)
+- `POST /ia/formations/reviews/{id}/reject` → rejeter avec un motif `reason` (3 caractères minimum) — l'agent peut régénérer en tenant compte de ce motif
 
 **Ce qui manque dans le frontend :**
 - La liste de tous les contenus en attente avec le nom de l'agent et la date de création

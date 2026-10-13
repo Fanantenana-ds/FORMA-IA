@@ -17,6 +17,7 @@ import logging
 import os
 import re
 import time
+from datetime import date as datetime_date
 from typing import Any
 
 import httpx
@@ -165,6 +166,31 @@ _DEBUT_AVIS = re.compile(
 )
 _ANNEE = re.compile(r"\b(20\d{2})\b")
 
+# Ancienneté maximale d'un avis daté (date de publication en tête de ligne
+# dgMarket). 0 = pas de limite. Les avis sans date gardent le filtre par année.
+VEILLE_AGE_MAX_JOURS = max(0, int(os.getenv("VEILLE_AGE_MAX_JOURS", "14")))
+_DATE_TETE = re.compile(r"^([A-Za-zÀ-ÿ]{3,9})\.?\s+(\d{1,2}),\s+(\d{4})")
+_MOIS = {
+    "jan": 1, "fev": 2, "fév": 2, "feb": 2, "mar": 3, "avr": 4, "apr": 4,
+    "mai": 5, "may": 5, "jun": 6, "jui": 6, "jul": 7, "aou": 8, "aoû": 8,
+    "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12, "déc": 12,
+}
+
+
+def date_publication(segment: str) -> datetime_date | None:
+    """Date en tête d'un avis ("Mar 26, 2026", "Aou 13, 2026", "Juil 2, 2026")."""
+    m = _DATE_TETE.match(segment)
+    if not m:
+        return None
+    mot = m.group(1).lower()
+    mois = 7 if mot.startswith("juil") else _MOIS.get(mot[:3])
+    if not mois:
+        return None
+    try:
+        return datetime_date(int(m.group(3)), mois, int(m.group(2)))
+    except ValueError:
+        return None
+
 
 def decouper_liste_avis(
     title: str,
@@ -172,6 +198,7 @@ def decouper_liste_avis(
     raw: str | None,
     annee_courante: int | None = None,
     maximum: int = TAVILY_EXTRAIT_MAX,
+    aujourd_hui: datetime_date | None = None,
 ) -> list[dict[str, Any]] | None:
     """
     Si `raw` est une page de liste (≥ 2 débuts d'avis reconnus), retourne un
@@ -185,13 +212,19 @@ def decouper_liste_avis(
     if len(debuts) < 2:
         return None
 
-    annee_courante = annee_courante or time.localtime().tm_year
+    aujourd_hui = aujourd_hui or datetime_date.today()
+    annee_courante = annee_courante or aujourd_hui.year
     avis: list[dict[str, Any]] = []
     for numero, (debut, fin) in enumerate(zip(debuts, debuts[1:] + [len(texte)]), start=1):
         segment = texte[debut:fin].strip(" |")
-        annees = [int(a) for a in _ANNEE.findall(segment)]
-        if annees and max(annees) < annee_courante:
-            continue
+        publie_le = date_publication(segment)
+        if publie_le is not None:
+            if VEILLE_AGE_MAX_JOURS and (aujourd_hui - publie_le).days > VEILLE_AGE_MAX_JOURS:
+                continue
+        else:
+            annees = [int(a) for a in _ANNEE.findall(segment)]
+            if annees and max(annees) < annee_courante:
+                continue
         intitule = " ".join(p.strip() for p in segment.split("|") if p.strip())
         avis.append({
             "title": f"{title} — {intitule[:120]}",

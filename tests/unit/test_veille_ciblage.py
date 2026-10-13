@@ -2,7 +2,7 @@
 # TESTS — M1 ciblage des sources (aucun appel réseau)
 # ============================================================
 import asyncio
-from datetime import datetime
+from datetime import date, datetime
 
 from app.orchestrator import veille_orchestrator as vo
 from app.services.veille import prefilter_service as pf
@@ -211,10 +211,22 @@ def test_page_armp_decoupee_et_avis_anciens_ecartes():
     assert avis[0]["url"] != avis[1]["url"]                 # pas fusionnés par le dédoublonnage
 
 
-def test_tableau_dgmarket_decoupe():
-    avis = ts.decouper_liste_avis("AFD - dgMarket", "https://dgmarket.com/x", PAGE_DGMARKET, annee_courante=2026)
-    assert [a["content"][:12] for a in avis] == ["Mar 20, 2026", "Sep 02, 2026"]
-    assert "Formation IA" in avis[0]["title"]
+def test_tableau_dgmarket_decoupe_garde_les_avis_recents():
+    # 10/09/2026 : Sep 02 (8 j) gardé ; Mar 20 (174 j) et Nov 28, 2024 écartés
+    avis = ts.decouper_liste_avis(
+        "AFD - dgMarket", "https://dgmarket.com/x", PAGE_DGMARKET,
+        aujourd_hui=date(2026, 9, 10),
+    )
+    assert [a["content"][:12] for a in avis] == ["Sep 02, 2026"]
+    assert "Consultant data" in avis[0]["title"]
+
+
+def test_dates_de_publication_francaises_et_anglaises():
+    assert ts.date_publication("Aou 13, 2026 | Appel") == date(2026, 8, 13)
+    assert ts.date_publication("Sept 16, 2026 |") == date(2026, 9, 16)
+    assert ts.date_publication("Juil 2, 2026 |") == date(2026, 7, 2)
+    assert ts.date_publication("Jun 15, 2026 |") == date(2026, 6, 15)
+    assert ts.date_publication("MINISTERE Ref: 012-2026") is None
 
 
 def test_page_simple_non_decoupee():
@@ -225,6 +237,17 @@ def test_page_simple_non_decoupee():
 def test_filtre_tavily_remplace_la_liste_par_ses_avis():
     service = ts.TavilyService.__new__(ts.TavilyService)
     resultats = service._resultats_page(
-        {"raw_content": PAGE_DGMARKET}, "AFD - dgMarket", "https://dgmarket.com/x", "snippet",
+        {"raw_content": PAGE_ARMP}, "Site ARMP", "https://armp.mg/avis", "snippet",
     )
     assert len(resultats) == 2
+
+
+def test_avis_de_resultats_rejetes_avant_le_llm():
+    results = [
+        _res("AVIS DE PUBLICATION DE RÉSULTATS - PSO N° OF 78/2024", "https://d.com/1",
+             "Acquisition de véhicules"),
+        _res("Avis d'attribution définitive", "https://d.com/2"),
+        _res("TDR formation réseau", "https://armp.mg/3",
+             "Résultats attendus : agents formés à l'administration réseau"),
+    ]
+    assert [r["title"] for r in pf.rank_results(results, "q")] == ["TDR formation réseau"]

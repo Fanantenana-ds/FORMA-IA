@@ -11,12 +11,13 @@ Si une opportunité a déjà été détectée par le module Veille marché (M1),
 1. **Pré-remplissage depuis une opportunité** : si vous partez d'une opportunité détectée, sélectionnez-la et les champs du formulaire sont remplis automatiquement.
 2. **Remplissage manuel** : sinon, remplissez le formulaire avec le titre, le public cible, la durée, le domaine et les objectifs.
 3. **Générer le TDR** : lancez la génération. L'IA crée un document structuré et professionnel.
-4. **Télécharger** : une fois généré, le TDR est disponible en téléchargement immédiat (Word ou PDF).
-5. **Consulter la liste** : accédez à la liste de tous les TDR générés depuis le module.
+4. **Relire le brouillon** : une fois généré, le TDR est téléchargeable en brouillon (Word ou PDF) pour relecture.
+5. **Validation obligatoire** : chaque TDR généré crée une demande de validation (review HITL) de criticité critique. Un responsable doit l'approuver avant que le TDR soit transmis au Backend.
+6. **Consulter la liste** : accédez à la liste de tous les TDR générés depuis le module.
 
-## Ce qui ne nécessite pas de validation
+## Ce qui nécessite une validation humaine
 
-Le TDR est immédiatement disponible après génération — aucune approbation humaine n'est requise avant de le télécharger.
+Le brouillon peut être téléchargé dès sa génération pour relecture, mais le TDR n'est enregistré dans le Backend qu'après approbation par un responsable. Tant que la demande n'est pas approuvée, l'envoi est refusé — voir le guide sur la Validation HITL.
 
 ## Si quelque chose ne fonctionne pas
 

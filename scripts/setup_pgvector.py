@@ -74,6 +74,18 @@ def setup_pgvector():
             print("   ✅ Index HNSW créé")
         except Exception as exc:
             print(f"   ⚠️ Index HNSW : {exc}")
+
+        # 4 bis. Unicité d'un passage par fichier et collection (anti-doublon)
+        try:
+            conn.execute(text("""
+                CREATE UNIQUE INDEX IF NOT EXISTS uq_kb_hash_collection_chunk
+                ON knowledge_base (doc_hash, collection, chunk_index);
+            """))
+            conn.commit()
+            print("   ✅ Index d'unicité créé")
+        except Exception as exc:
+            conn.rollback()
+            print(f"   ⚠️ Index d'unicité (doublons présents ?) : {exc}")
         
         # 5. Vérifier les index
         result = conn.execute(text("""

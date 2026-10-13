@@ -15,6 +15,7 @@ from sqlalchemy import (
     JSON,
     TIMESTAMP,
     Column,
+    Index,
     Integer,
     String,
     Text,
@@ -40,6 +41,12 @@ class KnowledgeBase(Base):
       - "aide_plateforme"   : guide utilisateur FORMA-IA (Étape F)
     """
     __tablename__ = "knowledge_base"
+    # Un passage d'un fichier n'existe qu'une fois par collection : empêche
+    # les doublons d'une reprise d'indexation (constat du 12/10/2026 :
+    # chunks 14 à 29 insérés deux fois). doc_hash NULL (résumés) non concerné.
+    __table_args__ = (
+        Index("uq_kb_hash_collection_chunk", "doc_hash", "collection", "chunk_index", unique=True),
+    )
 
     # ═══ IDENTIFIANT ═══
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)

@@ -4,7 +4,7 @@
 
 Stage de Master Informatique — ENI Madagascar — 2025-2026
 
-> État décrit : **11 octobre 2026**, branche `main`.
+> État décrit : **13 octobre 2026**, branche `main`.
 > Chaque statut ci-dessous distingue ce qui est **vérifié** (code lu, test exécuté ou essai réel) de ce qui reste **à mesurer**.
 
 ---
@@ -64,7 +64,7 @@ Transverse  Assistance RH (bonus)        M4
 
 | Module | Fonction | Statut |
 |---|---|---|
-| **M1** Veille | Recherche Tavily, analyse LLM, classification et scoring en Python, détection automatique planifiée (quota Tavily : 1000/mois, plafond 980) | ✅ Détection réelle observée le 10/10/2026 |
+| **M1** Veille | Recherche Tavily, analyse LLM, classification et scoring en Python, détection automatique planifiée (quota Tavily : 1000/mois, plafond 980), HITL `medium` sur la recherche manuelle | ✅ Précision 1,00 au benchmark (voir [Qualité](#qualité-logicielle)) |
 | **M2** TDR | Génération du TDR, HITL obligatoire avant synchronisation | ✅ |
 | **M3** Offres | Offre technique + financière, montants calculés en Python, HITL `critical`, export Word/PDF | ✅ |
 | **Préparation** | EDT (gabarit Python, LLM optionnel), budget en Python pur, HITL ; projet, EDT et budget envoyés au Backend (`/projets`, `/projets/{id}/budget`) | 🟢 |
@@ -143,12 +143,12 @@ Notes Groq : `reasoning_effort="low"` est obligatoire pour les modèles de raiso
 
 | Module | Service principal | Type |
 |---|---|---|
-| M1 | Analyse LLM + classification + scoring + détection automatique | LLM + Python |
 | M2 | TdrOrchestrator | LLM + HITL |
 | M3 | OffreOrchestrator (technique + financière) | LLM + HITL |
 | Préparation | EDTGenerator + BudgetCalculator | LLM optionnel + Python |
 | M7 | RelanceGenerator (3 niveaux) | LLM + HITL |
 | M4 | CV, présélection, entretien, contrat, évaluation, e-mails | LLM + Python |
+| M1 | VeilleOrchestrator — HITL `medium` (recherche manuelle) | LLM + Python |
 | C3 | RagOrchestrator + ChatOrchestrator | Voyage AI + pgvector + LLM |
 
 ---
@@ -174,7 +174,7 @@ Agent IA → contenu généré → create_review() → pending_review
 Routes : `GET /ia/formations/pending-reviews`, `GET /ia/formations/reviews/{id}`, `POST /ia/formations/reviews/{id}/approve`, `POST /ia/formations/reviews/{id}/reject`, `GET /ia/formations/reviews/stats`.
 
 Garde-fou commun : `backend_sync/review_sync.py` refuse toute synchronisation d'une review non approuvée.
-Écart assumé : M1 (veille interne) n'a pas de HITL.
+M1 : la recherche manuelle et l'analyse de texte créent une review `agent_m1_veille` (`medium`), synchronisée par `POST /ia/veille/synchroniser-backend` après approbation. **Écart assumé** : la détection automatique planifiée envoie directement au Backend les opportunités au-dessus du score minimal, sans review (veille interne, aucun contenu diffusé à l'extérieur).
 Stockage actuel des reviews : fichier JSON local (`data/hitl_reviews.json`).
 
 ---
@@ -213,20 +213,41 @@ Fichier (PDF/DOCX/PPTX/XLSX)
 
 Incident observé et documenté : une première indexation en tâche de fond a échoué sans remonter d'erreur (statut `erreur`) ; la relance a réussi.
 
+Doublons corrigés le 12/10/2026 : une reprise d'indexation avait réinséré 16 chunks. Désormais un lot repris **remplace** ses chunks (`knowledge_repository.inserer_chunks`) et l'index unique `uq_kb_hash_collection_chunk` (doc_hash, collection, chunk_index) rejette tout doublon.
+
+### Évaluation du 12/10/2026 (`scripts/evaluer_rag.py`)
+
+Base : 1 support (30 chunks) + 9 guides `aide_plateforme` (10 chunks). Jeu `data/rag/eval_questions.yaml` : 15 questions support (page attendue vérifiée), 10 questions plateforme (guide attendu vérifié), 5 hors sujet.
+
+| Recall@5 | Score moyen bonnes réponses | Score max hors sujet | Seuil proposé |
+|---|---|---|---|
+| **1,00** (25/25) | 0,540 | 0,288 | **0,414** → confirme `RAG_MIN_SCORE=0.41` du `.env` |
+
 ---
 
 ## Qualité logicielle
 
 | Indicateur | Valeur | Source |
 |---|---|---|
-| Fonctions de test | **937** (63 fichiers) | comptage du dépôt, 11/10/2026 |
-| Dernière exécution complète mesurée | 624 tests passés, couverture **70 %** | 26/09/2026 — **à remesurer** |
-| CI GitHub Actions | ruff ✅ depuis le 10/10/2026 ; pytest à reconfirmer après le correctif des modèles du 11/10 | `.github/workflows/ci.yml` |
-| Routes API | 173 | comptage du dépôt |
+| Exécution complète | **996 passés / 4 en échec**, couverture **75 %** (14 328 instructions) | 12/10/2026, clés API factices |
+| Échecs restants | 4 tests `TestIntegrationGoogleForms` : exigent `GOOGLE_REFRESH_TOKEN` (dépendance d'environnement) | `tests/unit/test_google_forms_publisher.py` |
+| CI GitHub Actions | ✅ vert (ruff + pytest, image Postgres avec pgvector) | `.github/workflows/ci.yml` |
+| Routes API | 176 | comptage du dépôt |
 | Migrations Alembic | 13 | `alembic/versions/` |
-| Prompts YAML | 29 (dont 10 pour le RAG) | `app/prompts/` |
+| Prompts YAML | 28 | `app/prompts/` |
 
-Corrections critiques notables : seuil de 80 % non revérifié (M6), TDR envoyé sans HITL (M2), benchmark M1 qui polluait la base, route `/documents` non montée (404 partout), `parse_budget('5M Ar')` → 5 au lieu de 5 000 000, champ `date` qui masquait son propre type dans deux schémas (PATCH de date toujours refusé), doublon des modèles `projets/salles/edt_sessions/budgets_formation`.
+### Benchmark M1 (`scripts/benchmark_m1.py`)
+
+Corpus `data/corpus_veille/corpus_v1.jsonl` : 105 textes annotés (84 `dev`, 21 `test`), dont **8 opportunités seulement**.
+
+| Mesure | Précision | Rappel | Extraction | Latence moy. |
+|---|---|---|---|---|
+| 12/10, version initiale, 15 premiers textes | 1,00 | 0,50 | 0,571 | 10,4 s |
+| 13/10, après les 5 commits M1, 20 textes `test` | 1,00 | 1,00 (2/2) | 0,80 | 10,7 s |
+
+Objectifs CDC : précision > 85 % ✅ · extraction > 90 % ❌ (organisme jamais extrait) · latence < 3 s ❌. Mesure sur les 105 textes à faire : `python scripts/benchmark_m1.py --limit 105 --pause 15` (lots de 10 sauvegardés, arrêt propre si quota Groq épuisé, reprise avec `--reprendre`).
+
+Corrections critiques notables : seuil de 80 % non revérifié (M6), TDR envoyé sans HITL (M2), benchmark M1 qui polluait la base, route `/documents` non montée (404 partout), `parse_budget('5M Ar')` → 5 au lieu de 5 000 000, champ `date` qui masquait son propre type dans deux schémas (PATCH de date toujours refusé), doublon des modèles `projets/salles/edt_sessions/budgets_formation`, chunks RAG indexés en double (12/10).
 
 ---
 
@@ -296,7 +317,7 @@ Présentées telles quelles, sans les masquer :
 |---|---|
 | Frontend React encore largement en données simulées, non raccordé à `/api/v1` ni au JWT | Frontend |
 | Vues HITL, RAG, Préparation et M3 absentes du frontend | Frontend |
-| Précision M1 (> 85 %) et extraction (> 90 %) non encore mesurées sur un corpus annoté | M1 |
+| M1 mesuré sur 20 à 35 textes ; corpus pauvre en opportunités (8/105) ; extraction de l'organisme et latence hors objectif | M1 |
 | Corpus réel ALTIORA non encore importé dans le RAG | C3 |
 | Latence du chat parfois > 3 s ; quotas gratuits Voyage et Groq | C3 |
 | Indexation en tâche de fond : un échec peut rester silencieux jusqu'à la consultation du statut | C3 |

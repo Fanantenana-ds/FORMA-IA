@@ -27,6 +27,7 @@ load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 import yaml
 
 from app.services.rag import recherche_service
+from app.services.rag.embedding_provider import EmbeddingProviderError
 
 CHEMIN_QUESTIONS_DEFAUT = Path(__file__).resolve().parents[1] / "data" / "rag" / "eval_questions.yaml"
 
@@ -51,11 +52,22 @@ async def evaluer_pour_modele(questions, modele_requete: str, top_k: int = 5):
 
         for q in questions:
             collection = q.get("collection", "support")
-            debut = time.perf_counter()
-            resultats = await recherche_service.rechercher(
-                q["texte"], top_k=top_k, seuil_min=0.0, attente_max_s=None,
-                collection=collection,
-            )
+            # Le limiteur Voyage est propre au processus : si un autre script
+            # vient de consommer la minute (ex. réindexation), on reçoit un 429.
+            # On attend alors la fenêtre suivante plutôt que d'abandonner.
+            for essai in range(1, 4):
+                debut = time.perf_counter()
+                try:
+                    resultats = await recherche_service.rechercher(
+                        q["texte"], top_k=top_k, seuil_min=0.0, attente_max_s=None,
+                        collection=collection,
+                    )
+                    break
+                except EmbeddingProviderError as e:
+                    if essai == 3:
+                        raise
+                    print(f"   ⏳ {e} — nouvel essai dans 65 s ({essai}/2)")
+                    await asyncio.sleep(65)
             latences.append((time.perf_counter() - debut) * 1000)
 
             meilleur_score = resultats[0].score if resultats else 0.0
@@ -66,10 +78,22 @@ async def evaluer_pour_modele(questions, modele_requete: str, top_k: int = 5):
                 # Sinon (formation_code=null — ex. aide_plateforme), tout
                 # résultat retourné de la bonne collection compte comme trouvé.
                 fc_attendu = q.get("formation_code")
+                # Si page_attendue est renseignée, le passage doit aussi
+                # couvrir cette page (sinon un seul support indexé suffit
+                # à rendre le rappel trivialement égal à 1).
+                page = q.get("page_attendue")
                 if fc_attendu is not None:
-                    trouve = any(r.formation_code == fc_attendu for r in resultats)
+                    trouve = any(
+                        r.formation_code == fc_attendu
+                        and (page is None or (r.page_debut or 0) <= page <= (r.page_fin or 0))
+                        for r in resultats
+                    )
                 else:
-                    trouve = len(resultats) > 0
+                    guide = q.get("guide_attendu")
+                    trouve = any(
+                        guide is None or guide in (r.fichier or "")
+                        for r in resultats
+                    )
                 if trouve:
                     trouvees += 1
                     scores_corrects.append(meilleur_score)
@@ -130,7 +154,7 @@ async def main(chemin_questions: Path, modeles_requete):
     for r in resultats:
         print(
             f"{r['modele']:<20} {r['recall@5']:<10} {r['score_moyen_bonnes_reponses']:<12} "
-            f"{r['score_max_hors_sujet']:<16} {str(r['seuil_propose']):<15} {r['latence_moyenne_ms']}"
+            f"{r['score_max_hors_sujet']:<16} {r['seuil_propose']!s:<15} {r['latence_moyenne_ms']}"
         )
 
     print("\nℹ️ Le seuil proposé n'est PAS appliqué automatiquement. Choisissez-le")

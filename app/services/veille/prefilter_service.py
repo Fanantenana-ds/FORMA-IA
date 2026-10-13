@@ -283,10 +283,22 @@ TENDER_TERMS = (
 )
 
 
+# Avis de résultats / d'attribution : marché déjà attribué, trop tard pour y répondre.
+# Expressions précises seulement ("résultats" seul apparaît dans tout TDR).
+_AVIS_RESULTATS_REGEX = re.compile(
+    r"avis\s+de\s+publication\s+de\s+r[ée]sultats?|publication\s+des\s+r[ée]sultats|"
+    r"avis\s+d'attribution|attribution\s+(?:d[ée]finitive|provisoire)|"
+    r"march[ée]\s+attribu[ée]|proc[èe]s[- ]verbal\s+d'ouverture|contract\s+award",
+    re.IGNORECASE,
+)
+
+
 def _is_low_value(result: dict[str, Any]) -> bool:
-    """Listing vide ou page CV : jamais une opportunité, inutile d'appeler le LLM."""
+    """Listing vide, page CV ou avis de résultats : jamais une opportunité."""
     content = str(result.get("content", "") or result.get("snippet", ""))
     if _EMPTY_LISTING_REGEX.search(content):
+        return True
+    if _AVIS_RESULTATS_REGEX.search(f"{result.get('title', '')} {content[:400]}"):
         return True
     return bool(_CV_URL_REGEX.search(str(result.get("url", ""))))
 
@@ -363,7 +375,7 @@ def rank_results(
             continue
 
         if _is_low_value(result):
-            logger.info("🚫 Rejet dur (listing vide / CV) : %s", title[:70])
+            logger.info("🚫 Rejet dur (listing vide / CV / résultats) : %s", title[:70])
             continue
 
         survivors.append(result)

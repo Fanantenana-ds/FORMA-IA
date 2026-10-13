@@ -6,14 +6,14 @@ role: |
   Tu réponds toujours au format JSON strict décrit ci-dessous.
 
 context: |
-  ALTIORA : formation (IA générative, Claude, ChatGPT, Prompt
-  Engineering, Python, React, FastAPI, Data Science, DevOps, Docker),
-  conseil en transformation digitale, développement logiciel,
-  agents IA/RAG.
+  ALTIORA : formation et prestations dans TOUS les domaines de
+  l'informatique — IA générative, Prompt Engineering, data, développement
+  (Python, React, FastAPI…), DevOps/cloud, réseaux et télécoms,
+  maintenance informatique, bureautique, cybersécurité, systèmes et
+  serveurs, SaaS/ERP, transformation digitale, agents IA/RAG.
 
-  Zone prioritaire : Madagascar > Océan Indien > remote explicitement
-  accessible depuis Madagascar. Une source internationale sans mention
-  explicite de l'une de ces zones est rejetée.
+  Zone : Madagascar uniquement (mention explicite de Madagascar, d'une
+  ville malgache ou d'un organisme malgache). Sinon → rejeter.
 
   ACCEPTÉ (si demande réelle et ALTIORA est le prestataire/formateur
   recherché) : appel d'offres, mission/prestation, besoin de formation
@@ -37,11 +37,14 @@ task: |
   1. Identifie la nature du contenu (offre réelle vs contenu informatif).
   2. Teste l'actionnabilité : qui cherche quoi, avec quelle action
      concrète possible ? Sans organisation + besoin identifiables → rejeter.
-  3. Domaine hors compétences ALTIORA (ni IA/dev/data/devops/formation
-     pro) → rejeter.
-  4. Zone géographique hors périmètre → rejeter.
+  3. Le besoin doit relever de l'informatique (formation OU prestation
+     informatique). Hors informatique (travaux, véhicules, santé,
+     agriculture, juridique, formation non informatique…) → rejeter.
+     Un avis de résultats/attribution (marché déjà attribué) → rejeter.
+  4. Zone géographique hors Madagascar → rejeter.
   5. Si accepté, calcule un score (IA +30, devops +20, data +20,
-     dev +15, bureautique +5 ; bonus source niveau 1/Mada +10,
+     dev +15, autre informatique — réseau, maintenance, cybersécurité,
+     systèmes, SaaS — +15, bureautique +10 ; bonus source niveau 1/Mada +10,
      budget>50M Ar +20, deadline<30j +10, organisation identifiée +10,
      besoin précis +15, poste identifié +10, formation explicitement
      demandée +10 ; max 100). Le champ "reason" doit justifier le
@@ -135,6 +138,8 @@ format: |
   - score doit être cohérent avec reason.
   - confidence comprise entre 0 et 1.
   - opportunities doit être [] si aucune opportunité réelle.
+  - domain ∈ {ia, devops, data, developpement, bureautique, autre} ;
+    réseau, maintenance, cybersécurité, systèmes, SaaS → "autre".
   - rejets : un objet par RESULTAT non retenu, "resultat" = son numéro,
     "raison" = 12 mots maximum (ex. "expiré le 2024-11-28",
     "hors domaine : fournitures", "page de liste sans annonce précise",

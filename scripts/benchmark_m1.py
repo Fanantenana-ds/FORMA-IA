@@ -22,6 +22,13 @@
 #                     la fin) -- pour un grand corpus, lancer par tranches
 #                     avec --limit puis --reprendre entre chaque tranche.
 # --pause SECONDES    Délai après CHAQUE document (courtoisie API/quota).
+# --tranche N         Traite les documents par lots de N et ENREGISTRE le
+#                     rapport fusionné après chaque lot (une interruption ne
+#                     perd au plus qu'un lot). Si un lot contient un repli LLM
+#                     ou une erreur modèle (signe probable d'un quota Groq
+#                     épuisé), il est ÉCARTÉ et le run s'arrête : relancer
+#                     plus tard avec --reprendre. 0 = un seul lot (ancien
+#                     comportement).
 #
 # Estimation puis CONFIRMATION INTERACTIVE avant tout appel réel (aucun
 # appel Groq sans accord explicite). Résultats JSON + CSV horodatés dans
@@ -38,7 +45,7 @@ import json
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 RACINE = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(RACINE))
@@ -51,7 +58,7 @@ from app.services.benchmark.benchmark_runner import BenchmarkRunner, fusionner_r
 RESULTS_DIR = RACINE / "data" / "benchmark" / "results"
 
 
-def _filtrer_par_split(entries: List[Dict[str, Any]], split: Optional[str]) -> List[Dict[str, Any]]:
+def _filtrer_par_split(entries: list[dict[str, Any]], split: str | None) -> list[dict[str, Any]]:
     if split is None:
         return entries
     avec_split = [e for e in entries if "split" in e]
@@ -66,14 +73,19 @@ def _filtrer_par_split(entries: List[Dict[str, Any]], split: Optional[str]) -> L
     return filtrees
 
 
-def _trouver_dernier_resultat(corpus_stem: str, split: Optional[str]) -> Optional[Path]:
+def _trouver_dernier_resultat(corpus_stem: str, split: str | None) -> Path | None:
     suffixe = f"_{split}" if split else ""
     motif = f"benchmark_m1_{corpus_stem}{suffixe}_*.json"
     candidats = sorted(RESULTS_DIR.glob(motif)) if RESULTS_DIR.exists() else []
+    if not split:
+        # Sans --split, ne reprendre QUE un rapport global : le motif
+        # "..._*.json" attrape aussi "..._dev_*" et "..._test_*" (constat du 13/10).
+        candidats = [c for c in candidats if not c.stem.startswith(
+            (f"benchmark_m1_{corpus_stem}_dev_", f"benchmark_m1_{corpus_stem}_test_"))]
     return candidats[-1] if candidats else None
 
 
-def _afficher_resume(r: Dict[str, Any]) -> None:
+def _afficher_resume(r: dict[str, Any]) -> None:
     print("\n" + "=" * 70)
     print("📊 RÉSUMÉ DU BENCHMARK M1")
     print("=" * 70)
@@ -102,11 +114,14 @@ def _afficher_resume(r: Dict[str, Any]) -> None:
     print("=" * 70)
 
 
-def _ecrire_resultats(rapport: Dict[str, Any], corpus_stem: str, split: Optional[str]) -> None:
-    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+def _nom_resultat(corpus_stem: str, split: str | None) -> str:
     horodatage = datetime.now().strftime("%Y%m%d_%H%M%S")
     suffixe = f"_{split}" if split else ""
-    base_nom = f"benchmark_m1_{corpus_stem}{suffixe}_{horodatage}"
+    return f"benchmark_m1_{corpus_stem}{suffixe}_{horodatage}"
+
+
+def _ecrire_resultats(rapport: dict[str, Any], base_nom: str) -> None:
+    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
     chemin_json = RESULTS_DIR / f"{base_nom}.json"
     chemin_json.write_text(json.dumps(rapport, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -138,6 +153,8 @@ async def main() -> bool:
     parser.add_argument("--limit", type=int, default=20)
     parser.add_argument("--reprendre", action="store_true")
     parser.add_argument("--pause", type=float, default=0.0, help="Secondes entre chaque document")
+    parser.add_argument("--tranche", type=int, default=10,
+                        help="Documents par lot, rapport enregistré après chaque lot (0 = un seul lot)")
     parser.add_argument("--corpus", default=None, help="Chemin corpus (sinon data/corpus_veille/corpus_v1.jsonl)")
     args = parser.parse_args()
 
@@ -154,7 +171,7 @@ async def main() -> bool:
 
     entries = _filtrer_par_split(toutes_entrees, args.split)
 
-    rapport_precedent: Optional[Dict[str, Any]] = None
+    rapport_precedent: dict[str, Any] | None = None
     if args.reprendre:
         chemin_precedent = _trouver_dernier_resultat(runner.corpus_path.stem, args.split)
         if chemin_precedent:
@@ -183,6 +200,7 @@ async def main() -> bool:
     print(f"   Documents à traiter  : {len(entries)}")
     print(f"   Appels LLM estimés   : ~{len(entries)} (davantage si repli par lots sur certains documents)")
     print(f"   Pause entre documents: {args.pause}s")
+    print(f"   Taille des lots      : {args.tranche or len(entries)} (sauvegarde après chaque lot)")
     print("=" * 70)
 
     try:
@@ -195,15 +213,33 @@ async def main() -> bool:
         print("❌ Benchmark annulé par l'utilisateur.")
         return False
 
-    print(f"\n⏳ Exécution sur {len(entries)} document(s)...")
-    rapport_nouveau = await runner.run(limit=len(entries), entries=entries, pause_secondes=args.pause)
+    taille = args.tranche if args.tranche > 0 else len(entries)
+    base_nom = _nom_resultat(runner.corpus_path.stem, args.split)
+    rapport_final = rapport_precedent
+    arret_anticipe = False
 
-    rapport_final = (
-        fusionner_rapports([rapport_precedent, rapport_nouveau]) if rapport_precedent else rapport_nouveau
-    )
+    for debut in range(0, len(entries), taille):
+        lot = entries[debut:debut + taille]
+        print(f"\n>> Lot {debut // taille + 1} : documents {debut + 1} à {debut + len(lot)} sur {len(entries)}...")
+        rapport_lot = await runner.run(limit=len(lot), entries=lot, pause_secondes=args.pause)
 
-    _ecrire_resultats(rapport_final, runner.corpus_path.stem, args.split)
-    _afficher_resume(rapport_final)
+        if rapport_lot["llm_fallback_count"] or rapport_lot["model_error_count"]:
+            print(
+                f"\n⛔ Lot écarté : {rapport_lot['llm_fallback_count']} repli(s) LLM, "
+                f"{rapport_lot['model_error_count']} erreur(s) modèle — quota Groq probablement épuisé. "
+                f"Ces documents ne sont PAS comptés. Relancez plus tard avec --reprendre."
+            )
+            arret_anticipe = True
+            break
+
+        rapport_final = fusionner_rapports([rapport_final, rapport_lot]) if rapport_final else rapport_lot
+        _ecrire_resultats(rapport_final, base_nom)
+        print(f"   ✅ Progression enregistrée : {rapport_final['corpus_size_tested']} document(s) au total.")
+
+    if rapport_final:
+        _afficher_resume(rapport_final)
+    if arret_anticipe:
+        return False
 
     return True
 

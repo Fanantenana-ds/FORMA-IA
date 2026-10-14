@@ -86,6 +86,15 @@ exemples: |
   → is_actionable=false, reason="recrutement interne d'une autre
   organisation, ALTIORA n'est pas sollicitée comme prestataire".
 
+  REJETÉ : "offres d'emploi gratuit a Madagascar — Formateur
+  informatique. Exécutant des prestations de formation aux zones
+  ruraux de la ville d'Ambilobe au nom de GIZ Madagascar.
+  2022-04-01 - 2022-06-01." (URL: portaljob-madagascar.com/candidats/…)
+  → is_actionable=false, reason="page de profil d'un candidat
+  (portail emploi) listant ses expériences passées, pas une demande
+  de prestation adressée à ALTIORA ; les dates 2022 sont son historique
+  de travail, pas des échéances".
+
 security: |
   Ne jamais inventer organisation, URL, budget, deadline, localisation
   ou compatibilité remote. Ne jamais transformer un article, une

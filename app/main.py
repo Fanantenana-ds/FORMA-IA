@@ -29,7 +29,6 @@ from app.api.v1.routes_veille import (
 )
 from app.config.settings import settings
 from app.database import Base, engine
-from app.models.historique_analyse import HistoriqueAnalyse
 from app.models.opportunite import Opportunite
 from app.models.revoked_token import RevokedToken
 
@@ -60,7 +59,7 @@ def vlog(msg: str, level: str = "info") -> None:
 # =============================================================================
 # DATABASE
 # =============================================================================
-Base.metadata.create_all(bind=engine)
+# Base.metadata.create_all(bind=engine)
 
 
 # =============================================================================

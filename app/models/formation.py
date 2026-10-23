@@ -50,7 +50,7 @@ class Participant(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     nom = Column(String(50), nullable=False)
-    email = Column(String(30), nullable=True)
+    email = Column(String(255), nullable=True)
     entreprise = Column(String(30), nullable=True)
 
     presences = relationship("Presence", back_populates="participant", cascade="all, delete-orphan")

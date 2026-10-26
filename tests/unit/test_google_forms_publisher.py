@@ -167,9 +167,14 @@ class TestBuildBatchRequests:
 # Tests d'intégration — APPELS GOOGLE RÉELS
 # ──────────────────────────────────────────────
 
+def _identifiants_google_disponibles() -> bool:
+    from app.services.formations.google_forms_publisher_service import OAUTH_CLIENT_PATH
+    return bool(os.getenv("GOOGLE_REFRESH_TOKEN")) and OAUTH_CLIENT_PATH.exists()
+
+
 INTEGRATION = pytest.mark.skipif(
-    not os.getenv("GOOGLE_REFRESH_TOKEN"),
-    reason="GOOGLE_REFRESH_TOKEN absent — test d'intégration ignoré",
+    not _identifiants_google_disponibles(),
+    reason="GOOGLE_REFRESH_TOKEN ou fichier client OAuth absent — test d'intégration ignoré",
 )
 
 

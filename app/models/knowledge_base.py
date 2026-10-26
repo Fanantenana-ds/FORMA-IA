@@ -61,10 +61,7 @@ class KnowledgeBase(Base):
     annee = Column(Integer, nullable=True)
     type_support = Column(String(20), nullable=True)  # pdf, docx, pptx, xlsx
 
-    # ═══ POSITION DANS LE DOCUMENT ═══
-    # PDF/DOCX/XLSX : page_debut peut différer de page_fin si le chunk
-    # chevauche une limite de page. PPTX : plage de diapositives groupées
-    # (3 à 5 par chunk, voir chunking_service.chunk_pptx_slides).
+    # ═══ POSITION DANS LE DOCUMENT ═══.
     page_debut = Column(Integer, nullable=True)
     page_fin = Column(Integer, nullable=True)
     chunk_index = Column(Integer, nullable=True)

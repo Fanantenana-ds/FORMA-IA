@@ -1,1 +1,92 @@
 @import "tailwindcss";
+
+/* ------------------------------------------------------------------ */
+/* Thème de la page d'accueil FORMA-IA (couleurs, animations)          */
+/* ------------------------------------------------------------------ */
+@theme {
+  --color-brand-navy: #0B1F4D;
+  --color-brand-darkNavy: #06132F;
+  --color-brand-gold: #D4AF37;
+  --color-brand-goldDark: #B88A1A;
+  --color-brand-goldLight: #F3E5AB;
+  --color-brand-accent: #38BDF8;
+  --color-brand-neutralGray: #5D5D5D;
+
+  --animate-float-slow: floatSlow 6s ease-in-out infinite;
+  --animate-float-med: floatMed 4.5s ease-in-out infinite;
+  --animate-pulse-glow: pulseGlow 3s ease-in-out infinite;
+  --animate-spin-slow: rotateDisc 24s linear infinite;
+
+  @keyframes floatSlow {
+    0%, 100% { transform: translateY(0px); }
+    50% { transform: translateY(-12px); }
+  }
+  @keyframes floatMed {
+    0%, 100% { transform: translateY(0px); }
+    50% { transform: translateY(-8px); }
+  }
+  @keyframes pulseGlow {
+    0%, 100% { opacity: 0.6; transform: scale(1); }
+    50% { opacity: 1; transform: scale(1.05); }
+  }
+  @keyframes rotateDisc {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+/* Typographie propre à la landing (n'affecte pas le tableau de bord) */
+.forma-landing {
+  font-family: 'Inter', 'Roboto', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  background-color: #FFFFFF;
+  color: #1F2937;
+  overflow-x: hidden;
+}
+
+.forma-landing .text-gold-gradient {
+  background: linear-gradient(135deg, #F59E0B 0%, #D4AF37 50%, #FDE68A 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.forma-landing .text-gold-solid-gradient {
+  background: linear-gradient(135deg, #D4AF37 0%, #B88A1A 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.forma-landing .border-gold-glow {
+  border: 1px solid rgba(212, 175, 55, 0.4);
+  box-shadow: 0 0 25px rgba(212, 175, 55, 0.15);
+}
+
+.forma-landing .nav-link {
+  position: relative;
+  transition: color 0.3s ease;
+}
+.forma-landing .nav-link::after {
+  content: '';
+  position: absolute;
+  width: 0%;
+  height: 2px;
+  bottom: -4px;
+  left: 0;
+  background-color: #D4AF37;
+  transition: width 0.3s ease;
+}
+.forma-landing .nav-link:hover::after {
+  width: 100%;
+}
+
+.forma-landing .grid-bg-pattern {
+  background-size: 32px 32px;
+  background-image:
+    linear-gradient(to right, rgba(11, 31, 77, 0.05) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(11, 31, 77, 0.05) 1px, transparent 1px);
+}

@@ -1,15 +1,18 @@
 import React, { useState } from 'react';
-import { Mail, Lock, LogIn, UserPlus, Sparkles, CheckCircle2, ShieldCheck, Zap, ReceiptText, Users, ArrowRight } from 'lucide-react';
+import { Mail, Lock, LogIn, UserPlus, Sparkles, CheckCircle2, ShieldCheck, Zap, ReceiptText, Users, ArrowRight, ArrowLeft } from 'lucide-react';
 import { AuthUser, UserRole } from '../types';
 
 interface AuthPageProps {
   onLoginSuccess: (user: AuthUser) => void;
   initialMode?: 'login' | 'register';
+  /** Retour vers la page d'accueil publique (optionnel). */
+  onBackToHome?: () => void;
 }
 
 export const AuthPage: React.FC<AuthPageProps> = ({
   onLoginSuccess,
-  initialMode = 'login'
+  initialMode = 'login',
+  onBackToHome
 }) => {
   const [mode, setMode] = useState<'login' | 'register'>(initialMode);
 
@@ -193,6 +196,16 @@ export const AuthPage: React.FC<AuthPageProps> = ({
 
       {/* RIGHT COLUMN: LOGIN / REGISTER CARD */}
       <div className="w-full lg:w-1/2 flex items-center justify-center p-6 sm:p-12 relative z-10">
+        {onBackToHome && (
+          <button
+            type="button"
+            onClick={onBackToHome}
+            className="absolute top-5 left-5 sm:top-6 sm:left-6 inline-flex items-center gap-2 text-xs font-semibold text-slate-300 hover:text-white bg-white/5 hover:bg-white/10 border border-white/10 px-3 py-2 rounded-lg transition"
+          >
+            <ArrowLeft size={14} />
+            Retour à l'accueil
+          </button>
+        )}
         <div className="bg-white rounded-3xl p-8 sm:p-10 shadow-2xl max-w-md w-full border border-slate-100">
           
           {/* Mobile Brand Logo Header */}

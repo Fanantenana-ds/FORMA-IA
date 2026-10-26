@@ -7,6 +7,7 @@ import React, { useState, useEffect } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
 import { AuthPage } from './components/AuthPage';
+import { LandingPage } from './components/landing/LandingPage';
 import { ViewRouter } from './components/views/ViewRouter';
 import { ModalManager } from './components/modals/ModalManager';
 
@@ -44,17 +45,22 @@ export default function App() {
 
   const [authModalMode, setAuthModalMode] = useState<'login' | 'register'>('login');
 
+  // Page d'accueil publique : visible tant que l'utilisateur n'a pas demandé l'écran de connexion
+  const [showAuthPage, setShowAuthPage] = useState<boolean>(false);
+
   // Navigation & Role State
   const [currentSection, setCurrentSection] = useState<MenuSection>('tableau_de_bord');
   const [currentRole, setCurrentRole] = useState<UserRole>(authUser ? authUser.role : 'Dir.');
 
   const handleOpenAuthModal = (mode: 'login' | 'register' = 'login') => {
     setAuthModalMode(mode);
+    setShowAuthPage(true);
     setAuthUser(null); // Return to auth screen
   };
 
   const handleLoginSuccess = (user: AuthUser) => {
     setAuthUser(user);
+    setShowAuthPage(false);
     setCurrentRole(user.role);
     if (typeof window !== 'undefined') {
       localStorage.setItem('forma_ia_auth_user', JSON.stringify(user));
@@ -64,6 +70,7 @@ export default function App() {
 
   const handleLogout = () => {
     setAuthUser(null);
+    setShowAuthPage(false); // retour à la page d'accueil
     if (typeof window !== 'undefined') {
       localStorage.removeItem('forma_ia_auth_user');
     }
@@ -262,7 +269,16 @@ export default function App() {
   };
 
   if (!authUser) {
-    return <AuthPage onLoginSuccess={handleLoginSuccess} initialMode={authModalMode} />;
+    if (!showAuthPage) {
+      return <LandingPage onLogin={() => handleOpenAuthModal('login')} />;
+    }
+    return (
+      <AuthPage
+        onLoginSuccess={handleLoginSuccess}
+        initialMode={authModalMode}
+        onBackToHome={() => setShowAuthPage(false)}
+      />
+    );
   }
 
   return (

@@ -123,6 +123,6 @@ async def rechercher(
         ))
 
     if not resultats:
-        logger.info(f"ℹ️ Aucun support pertinent pour la requête (seuil={seuil_min}).")
+        logger.info(f"Aucun support pertinent pour la requête (seuil={seuil_min}).")
 
     return resultats

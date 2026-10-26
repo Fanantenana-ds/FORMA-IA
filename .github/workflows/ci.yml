@@ -12,7 +12,7 @@ jobs:
     services:
       postgres:
         # pgvector requis : la table knowledge_base (C3/RAG) a une colonne VECTOR(1024)
-        image: pgvector/pgvector:pg15
+        image: pgvector/pgvector:pg17
         env:
           POSTGRES_USER: forma_user
           POSTGRES_PASSWORD: forma_pass

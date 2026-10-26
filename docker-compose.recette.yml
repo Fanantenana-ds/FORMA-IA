@@ -1,6 +1,6 @@
 services:
   db:
-    image: postgres:15
+    image: pgvector/pgvector:pg17
     restart: always
     environment:
       POSTGRES_USER: forma_user
@@ -9,7 +9,7 @@ services:
     ports:
       - "5433:5432"
     volumes:
-      - pgdata_recette:/var/lib/postgresql/data
+      - pgdata_recette17:/var/lib/postgresql/data
   backend:
     build: .
     ports:
@@ -29,5 +29,5 @@ services:
     depends_on:
       - backend
 volumes:
-  pgdata_recette:
+  pgdata_recette17:
   generated_files_recette:

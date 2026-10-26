@@ -61,8 +61,8 @@ def setup_pgvector():
             print("   Relancez ce script après le premier démarrage.")
             return False
         
-        # 4. Créer l'index HNSW
-        print("\n2️⃣ Création de l'index HNSW...")
+        # Créer l'index HNSW
+        print("\n Création de l'index HNSW...")
         try:
             conn.execute(text("""
                 CREATE INDEX IF NOT EXISTS idx_kb_embedding_hnsw
@@ -71,9 +71,9 @@ def setup_pgvector():
                 WITH (m = 16, ef_construction = 64);
             """))
             conn.commit()
-            print("   ✅ Index HNSW créé")
+            print("Index HNSW créé")
         except Exception as exc:
-            print(f"   ⚠️ Index HNSW : {exc}")
+            print(f"Index HNSW : {exc}")
 
         # 4 bis. Unicité d'un passage par fichier et collection (anti-doublon)
         try:

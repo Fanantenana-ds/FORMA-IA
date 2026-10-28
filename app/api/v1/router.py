@@ -18,6 +18,7 @@ from app.api.v1.endpoints import (
     rag_ia,
     rh,
     rh_ia,
+    vocal_ia,
 )
 
 api_router = APIRouter()
@@ -36,6 +37,7 @@ api_router.include_router(preparation_ia.router)
 api_router.include_router(facture_ia.router)
 api_router.include_router(rag_ia.router)
 api_router.include_router(rh_ia.router)
+api_router.include_router(vocal_ia.router)
 api_router.include_router(rh.router)
 api_router.include_router(export.router)
 api_router.include_router(offre.router)

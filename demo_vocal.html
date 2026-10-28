@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FORMA-IA — Démo vocale</title>
+<style>
+  :root{--bg:#fff;--card:#f4fbf6;--line:#cfe8d8;--accent:#2f9e63;--txt:#1d2625;--sub:#5f6b68;--warn:#b45309}
+  *{box-sizing:border-box}
+  body{margin:0;font:16px/1.5 Calibri,Segoe UI,Arial,sans-serif;color:var(--txt);background:var(--bg)}
+  header{padding:14px 24px;border-bottom:2px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+  header h1{font-size:20px;margin:0}
+  header small{color:var(--sub)}
+  .badge{background:#fff7e6;color:var(--warn);border:1px solid #f3d9a4;border-radius:6px;padding:2px 8px;font-size:13px}
+  main{display:grid;grid-template-columns:1fr 1fr;gap:16px;padding:16px 24px}
+  @media(max-width:900px){main{grid-template-columns:1fr}}
+  section{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+  h2{font-size:15px;margin:0 0 10px;color:var(--accent);text-transform:uppercase;letter-spacing:.04em}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  input[type=text],input[type=password]{flex:1;min-width:140px;padding:8px 10px;border:1px solid var(--line);border-radius:6px;font:inherit;background:#fff}
+  button{font:inherit;border:0;border-radius:8px;padding:9px 14px;cursor:pointer;background:var(--accent);color:#fff}
+  button.sec{background:#fff;color:var(--accent);border:1px solid var(--accent)}
+  button:disabled{opacity:.5;cursor:not-allowed}
+  #mic{width:64px;height:64px;border-radius:50%;font-size:26px;padding:0}
+  #mic.on{background:#c0392b;animation:p 1s infinite}
+  @keyframes p{50%{transform:scale(1.08)}}
+  #heard{min-height:28px;font-size:18px;margin:10px 0;color:var(--txt)}
+  #reply{background:#fff;border:1px solid var(--line);border-radius:8px;padding:10px 12px;min-height:44px}
+  table{width:100%;border-collapse:collapse;margin-top:10px;font-size:14px;background:#fff}
+  td,th{border:1px solid var(--line);padding:5px 8px;text-align:left;vertical-align:top}
+  th{background:#e8f6ee;width:34%}
+  #log{max-height:300px;overflow:auto;background:#fff;border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:13px/1.45 Consolas,monospace}
+  #log div{padding:2px 0;border-bottom:1px dotted #e2efe7}
+  .ev-opportunite{color:var(--accent);font-weight:bold}
+  .ev-rejet,.ev-rejet_info{color:var(--sub)}
+  .ev-plan_b{color:var(--warn)}
+  .ev-fin{font-weight:bold}
+  .win{position:fixed;background:#fff;border:2px solid var(--accent);border-radius:10px;width:min(420px,92vw);box-shadow:0 10px 30px rgba(0,0,0,.18);z-index:10}
+  .win h3{margin:0;padding:8px 12px;background:var(--accent);color:#fff;border-radius:8px 8px 0 0;font-size:15px;display:flex;justify-content:space-between;cursor:move}
+  .win h3 span{cursor:pointer}
+  .win .body{padding:12px}
+  .win label{display:block;font-size:13px;color:var(--sub);margin-top:8px}
+  .win .hitl{margin-top:12px;padding:8px;background:#fff7e6;border:1px solid #f3d9a4;border-radius:6px;font-size:13px}
+  footer{padding:0 24px 18px;color:var(--sub);font-size:13px}
+</style>
+</head>
+<body>
+<header>
+  <div><h1>FORMA-IA — Assistant vocal</h1><small>L'IA propose, l'humain vérifie et décide</small></div>
+  <div><span class="badge" id="modeBadge">Mode : à vérifier</span></div>
+</header>
+
+<main>
+  <section>
+    <h2>1 · Connexion au backend</h2>
+    <div class="row">
+      <input type="text" id="base" value="http://localhost:8000" title="URL du backend">
+      <input type="text" id="hdr" value="X-API-Key" style="max-width:130px" title="Nom de l'en-tête de la clé">
+      <input type="password" id="key" placeholder="Clé API (non enregistrée)">
+    </div>
+    <div class="row" style="margin-top:8px">
+      <button class="sec" id="btnHealth">Tester la connexion</button>
+      <span id="healthOut" style="color:var(--sub)"></span>
+    </div>
+  </section>
+
+  <section>
+    <h2>2 · Commande vocale</h2>
+    <div class="row">
+      <button id="mic" title="Parler">🎤</button>
+      <div style="flex:1">
+        <div class="row">
+          <input type="text" id="txt" placeholder="Ou taper la commande (secours sans micro)…">
+          <button id="btnSend">Envoyer</button>
+        </div>
+        <small style="color:var(--sub)">Exemples : « Lance la veille marché » · « Génère les termes de référence » · « Crée une séance »</small>
+      </div>
+    </div>
+    <div id="heard"></div>
+    <div id="reply">La réponse vocale de l'agent s'affichera ici.</div>
+    <table id="detail" hidden></table>
+  </section>
+
+  <section style="grid-column:1/-1">
+    <h2>3 · Veille marché en direct (flux SSE)</h2>
+    <div class="row" style="margin-bottom:8px">
+      <button id="btnVeille">Lancer la veille</button>
+      <button class="sec" id="btnStop" disabled>Arrêter</button>
+      <span id="veilleState" style="color:var(--sub)"></span>
+    </div>
+    <div id="log"></div>
+  </section>
+</main>
+<footer>Page de démonstration autonome (aucune dépendance). La reconnaissance vocale utilise Chrome (Web Speech API, fr-FR) et nécessite une connexion Internet.</footer>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const base = () => $("base").value.replace(/\/+$/,"");
+function headers(extra){
+  const h = Object.assign({}, extra||{});
+  const k = $("key").value.trim();
+  if(k) h[$("hdr").value.trim()||"X-API-Key"] = k;
+  return h;
+}
+
+/* ---------- 1. Connexion ---------- */
+$("btnHealth").onclick = async () => {
+  $("healthOut").textContent = "…";
+  try{
+    const r = await fetch(base()+"/ia/vocal/health",{headers:headers()});
+    const j = await r.json().catch(()=>({}));
+    $("healthOut").textContent = r.ok ? "✔ Connecté ("+(j.status||"ok")+")" : "✖ Erreur HTTP "+r.status+(r.status===401||r.status===403?" (clé ?)":"");
+    $("healthOut").style.color = r.ok ? "var(--accent)" : "#c0392b";
+  }catch(e){
+    $("healthOut").textContent = "✖ Injoignable (backend arrêté ? CORS ?)";
+    $("healthOut").style.color = "#c0392b";
+  }
+};
+
+/* ---------- 2. Voix ---------- */
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let rec = null;
+if(SR){
+  rec = new SR(); rec.lang = "fr-FR"; rec.interimResults = true; rec.maxAlternatives = 1;
+  rec.onresult = ev => {
+    let t = ""; for(const r of ev.results) t += r[0].transcript;
+    $("heard").textContent = "🗣 « "+t+" »";
+    $("txt").value = t;
+    if(ev.results[ev.results.length-1].isFinal) envoyer(t);
+  };
+  rec.onend = () => $("mic").classList.remove("on");
+  rec.onerror = e => { $("mic").classList.remove("on"); $("heard").textContent = "Micro : "+e.error+" — utilisez la saisie au clavier."; };
+}else{
+  $("mic").disabled = true; $("mic").title = "Reconnaissance vocale indisponible (utiliser Chrome)";
+}
+$("mic").onclick = () => { if(!rec) return; try{ rec.start(); $("mic").classList.add("on"); }catch(e){} };
+$("btnSend").onclick = () => envoyer($("txt").value);
+$("txt").addEventListener("keydown", e => { if(e.key==="Enter") envoyer($("txt").value); });
+
+function parler(t){
+  try{ if(!t) return; speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(t); u.lang = "fr-FR"; speechSynthesis.speak(u);
+  }catch(e){}
+}
+
+async function envoyer(texte){
+  texte = (texte||"").trim(); if(!texte) return;
+  $("heard").textContent = "🗣 « "+texte+" »";
+  $("reply").textContent = "Analyse en cours…";
+  const t0 = performance.now();
+  try{
+    const r = await fetch(base()+"/ia/vocal/commande",{
+      method:"POST", headers:headers({"Content-Type":"application/json"}),
+      body: JSON.stringify({texte:texte, formations_disponibles:[]})
+    });
+    if(!r.ok) throw new Error("HTTP "+r.status);
+    const j = await r.json();
+    const ms = Math.round(performance.now()-t0);
+    $("reply").textContent = j.reponse_vocale || "(pas de réponse)";
+    parler(j.reponse_vocale);
+    afficherDetail(j, ms);
+    executerAction(j);
+  }catch(e){
+    $("reply").textContent = "Erreur : "+e.message+" (backend, clé API ou CORS).";
+  }
+}
+
+function afficherDetail(j, ms){
+  const t = $("detail"); t.hidden = false;
+  const ligne = (k,v) => "<tr><th>"+k+"</th><td>"+esc(typeof v==="string"?v:JSON.stringify(v))+"</td></tr>";
+  t.innerHTML = ligne("Intention", j.intention)+ligne("Confiance", j.confiance)
+    +ligne("Action interface", j.action_frontend)+ligne("Paramètres", j.parametres||{})
+    +ligne("Manquants", j.parametres_manquants||[])+ligne("Latence (réseau + LLM)", ms+" ms");
+}
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+/* ---------- « Ouvrir d'autres fenêtres » ---------- */
+let zTop = 20, nWin = 0;
+const TITRES = {
+  ouvrir_formulaire_tdr:"Termes de référence (TDR)", ouvrir_formulaire_seance:"Nouvelle séance de formation",
+  ouvrir_formulaire_offre:"Offre technique et financière", ouvrir_formulaire_attestation:"Attestations",
+  ouvrir_formulaire_relance:"Relance de facture", ouvrir_chat_rag:"Assistant documentaire (RAG)",
+  afficher_opportunites:"Opportunités détectées", afficher_sessions:"Sessions de formation",
+  afficher_validations:"Validations en attente (HITL)"
+};
+function executerAction(j){
+  const a = j.action_frontend;
+  if(!a || a==="aucune" || a==="none") return;
+  if(a==="lancer_veille"){ lancerVeille(); return; }
+  ouvrirFenetre(a, j.prefill || j.parametres || {}, j.parametres_manquants || []);
+}
+function ouvrirFenetre(action, prefill, manquants){
+  const w = document.createElement("div"); w.className = "win";
+  w.style.top = (90+nWin*28)+"px"; w.style.left = "calc(50% - 210px + "+(nWin*28)+"px)"; w.style.zIndex = ++zTop; nWin++;
+  const titre = TITRES[action] || action;
+  const champs = Object.keys(prefill).map(k =>
+    "<label>"+esc(k)+"</label><input type='text' value='"+esc(typeof prefill[k]==="object"?JSON.stringify(prefill[k]):prefill[k])+"'>").join("");
+  const miss = manquants.map(k => "<label style='color:#b45309'>"+esc(k)+" (à compléter)</label><input type='text'>").join("");
+  const form = action.startsWith("ouvrir_formulaire");
+  w.innerHTML = "<h3><b>"+esc(titre)+"</b><span title='Fermer'>✕</span></h3><div class='body'>"
+    + (champs||miss ? champs+miss : "<i style='color:var(--sub)'>Écran ouvert par commande vocale.</i>")
+    + (form ? "<div class='hitl'>🔒 Le contenu généré sera soumis à validation humaine avant tout envoi.</div><div class='row' style='margin-top:10px'><button>Soumettre à validation</button></div>" : "")
+    + "</div>";
+  w.querySelector("span").onclick = () => w.remove();
+  w.onmousedown = () => w.style.zIndex = ++zTop;
+  const h = w.querySelector("h3"); let dx,dy,drag=false;
+  h.onmousedown = e => { drag=true; dx=e.clientX-w.offsetLeft; dy=e.clientY-w.offsetTop; e.preventDefault(); };
+  document.addEventListener("mousemove", e => { if(drag){ w.style.left=(e.clientX-dx)+"px"; w.style.top=(e.clientY-dy)+"px"; }});
+  document.addEventListener("mouseup", () => drag=false);
+  document.body.appendChild(w);
+}
+
+/* ---------- 3. Veille SSE (fetch streaming pour pouvoir envoyer la clé) ---------- */
+let ctrl = null;
+function logLine(ev, data){
+  const d = document.createElement("div"); d.className = "ev-"+ev;
+  let txt;
+  if(data && typeof data==="object"){
+    const lib = data.titre||data.title||data.message||data.requete||data.query||data.organisation||data.motif||data.raison;
+    txt = lib ? lib+(data.organisation&&lib!==data.organisation?" — "+data.organisation:"") : JSON.stringify(data);
+  }else txt = String(data||"");
+  d.textContent = "["+ev+"] "+txt;
+  $("log").appendChild(d); $("log").scrollTop = $("log").scrollHeight;
+}
+$("btnVeille").onclick = lancerVeille;
+$("btnStop").onclick = () => ctrl && ctrl.abort();
+async function lancerVeille(){
+  if(ctrl) return;
+  $("log").innerHTML = ""; $("veilleState").textContent = "Veille en cours…";
+  $("btnVeille").disabled = true; $("btnStop").disabled = false;
+  ctrl = new AbortController();
+  try{
+    const r = await fetch(base()+"/ia/veille/detecter/stream",{headers:headers({"Accept":"text/event-stream"}),signal:ctrl.signal});
+    if(!r.ok) throw new Error("HTTP "+r.status);
+    const rd = r.body.getReader(), dec = new TextDecoder(); let buf = "";
+    for(;;){
+      const {done,value} = await rd.read(); if(done) break;
+      buf += dec.decode(value,{stream:true});
+      let i; while((i = buf.indexOf("\n\n")) >= 0){
+        const bloc = buf.slice(0,i); buf = buf.slice(i+2);
+        let ev = "message", dataTxt = "";
+        for(const l of bloc.split("\n")){
+          if(l.startsWith("event:")) ev = l.slice(6).trim();
+          else if(l.startsWith("data:")) dataTxt += l.slice(5).trim();
+        }
+        let data = dataTxt; try{ data = JSON.parse(dataTxt); }catch(e){}
+        logLine(ev, data);
+        if(ev==="plan_b" || (data && data.demo===true)) $("modeBadge").textContent = "Mode : DÉMO (opportunités fictives)";
+      }
+    }
+    $("veilleState").textContent = "Terminé.";
+  }catch(e){
+    $("veilleState").textContent = e.name==="AbortError" ? "Arrêté." : "Erreur : "+e.message;
+  }finally{
+    ctrl = null; $("btnVeille").disabled = false; $("btnStop").disabled = true;
+  }
+}
+</script>
+</body>
+</html>

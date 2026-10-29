@@ -7,6 +7,7 @@ détecte l'intention, extrait les paramètres et retourne l'action
 
 import json
 import logging
+import re
 from datetime import date
 from pathlib import Path
 
@@ -18,6 +19,45 @@ from app.services.llm.llm_provider import LLMError
 logger = logging.getLogger(__name__)
 
 _PROMPT_PATH = Path(__file__).parent.parent.parent / "prompts" / "vocal" / "routeur.yaml"
+
+
+def _reponse_locale(commande: str) -> dict | None:
+    """Gère les demandes sans ambiguïté sans consommer de quota LLM."""
+    texte = " ".join(commande.lower().strip().split())
+    salutations = {"bonjour", "bonsoir", "salut", "coucou", "merci", "au revoir"}
+    if texte in salutations:
+        return {
+            "intention": "conversationnel",
+            "confiance": 1.0,
+            "parametres": {},
+            "parametres_manquants": [],
+            "reponse_vocale": "Bonjour, je suis l'assistant FORMA-IA. Que souhaitez-vous faire ?",
+            "action_frontend": None,
+            "prefill": {},
+        }
+    if texte in {"annule", "annuler", "stop", "arrête", "arrete"}:
+        return {
+            "intention": "annuler",
+            "confiance": 1.0,
+            "parametres": {},
+            "parametres_manquants": [],
+            "reponse_vocale": "D'accord, aucune action n'est effectuée.",
+            "action_frontend": None,
+            "prefill": {},
+        }
+    # Les demandes générales sur FORMA-IA sont routées sans LLM vers C3,
+    # y compris la faute vocale fréquente « platforme ».
+    if re.match(r"^(comment|explique|quels documents|où est expliqué|ou est explique)\b", texte):
+        return {
+            "intention": "question_rag",
+            "confiance": 0.96,
+            "parametres": {"type_demande": "aide_plateforme"},
+            "parametres_manquants": [],
+            "reponse_vocale": "Je vous guide sur l'utilisation de FORMA-IA.",
+            "action_frontend": "ouvrir_chat_rag",
+            "prefill": {},
+        }
+    return None
 
 
 def _charger_prompt() -> dict:
@@ -70,21 +110,54 @@ async def router_commande(commande: str, formations: list[str] | None = None) ->
             "prefill": {},
         }
 
+    reponse_locale = _reponse_locale(commande)
+    if reponse_locale is not None:
+        return reponse_locale
+
     llm = get_llm_provider()
     messages = _construire_messages(commande.strip(), formations or [])
 
     try:
-        raw = await llm.chat(
-            messages=messages,
+        response = await llm.generate(
+            system_prompt=messages[0]["content"],
+            user_prompt=messages[1]["content"],
             temperature=0.1,
             max_tokens=512,
+            json_mode=True,
             reasoning_effort="low",
         )
-        result = json.loads(raw)
+        result = json.loads(response["content"])
+        if not isinstance(result, dict):
+            raise ValueError("Objet JSON attendu")
         # Validation minimale des champs obligatoires
         for champ in ("intention", "reponse_vocale", "action_frontend", "prefill"):
             if champ not in result:
                 raise ValueError(f"Champ manquant dans la réponse : {champ}")
+        intentions = {
+            "veille_marche": "lancer_veille", "generer_tdr": "ouvrir_formulaire_tdr",
+            "generer_offre": "ouvrir_formulaire_offre", "creer_seance": "ouvrir_formulaire_seance",
+            "generer_attestation": "ouvrir_formulaire_attestation", "relance_facture": "ouvrir_facturation",
+            "question_rag": "ouvrir_chat_rag", "afficher_opportunites": "afficher_opportunites",
+            "afficher_sessions": "afficher_sessions", "afficher_validations": "afficher_validations",
+            "hors_perimetre": None,
+        }
+        if not isinstance(result["intention"], str) or result["intention"] not in intentions:
+            raise ValueError("Intention inconnue")
+        confiance = result.get("confiance", 0)
+        if not isinstance(confiance, (float, int)) or not 0 <= confiance <= 1:
+            raise ValueError("Confiance invalide")
+        for field in ("parametres", "prefill"):
+            if not isinstance(result.get(field, {}), dict):
+                raise ValueError("Paramètres invalides")
+        if not isinstance(result.get("parametres_manquants", []), list) or not all(
+            isinstance(champ, str) for champ in result.get("parametres_manquants", [])
+        ):
+            raise ValueError("Liste des paramètres manquants invalide")
+        if not isinstance(result["reponse_vocale"], str):
+            raise ValueError("Réponse textuelle attendue")
+        result["action_frontend"] = intentions[result["intention"]]
+        if result.get("parametres_manquants") or confiance < 0.7:
+            result["action_frontend"] = None
         return result
 
     except (json.JSONDecodeError, ValueError) as e:

@@ -24,6 +24,7 @@ from fastapi import (
     UploadFile,
 )
 from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse
 from pydantic import (
     BaseModel,
     Field,
@@ -37,14 +38,20 @@ from app.services.veille import auto_detection_service as auto_detection
 from app.services.veille import tavily_quota_service
 from app.services.veille.demo_mode_service import (
     DEMO_MODE,
+    charger_opportunites_demo_reelles,
     generer_opportunites_demo,
 )
 from app.services.veille.tavily_quota_service import QuotaTavilyDepasseError
-from app.utils.security import verify_api_key
+from app.utils.security import verify_api_key, verify_api_key_sse
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(dependencies=[Depends(verify_api_key)])
+
+# Router séparé pour les routes SSE : l'auth Bearer standard est incompatible
+# avec EventSource (le navigateur ne peut pas envoyer de headers custom).
+# verify_api_key_sse accepte le token en query param ?token= ou en header Bearer.
+sse_router = APIRouter(dependencies=[Depends(verify_api_key_sse)])
 
 
 # ============================================================
@@ -218,6 +225,16 @@ async def rechercher_opportunites(
             min_score=request.min_score,
             limit=request.limit,
         )
+
+        if resultat.get("status") == "technical_error":
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "success": False,
+                    "data": resultat,
+                    "error": "La recherche web est temporairement indisponible.",
+                },
+            )
 
         logger.info(
             "✅ IA: %d opportunités retournées",
@@ -536,36 +553,22 @@ async def _stream_detection(min_score: int, limit: int, sync_backend: bool):
     """
     Générateur SSE — émet les événements de détection en temps réel.
 
-    DEMO_MODE=true : joue directement le Plan B avec timing simulé (~15s).
-    DEMO_MODE=false : lance la vraie détection Tavily + Groq (~3-4 min).
+    En mode DEMO_MODE=true : rejoue les avis archivés (données réelles capturées)
+    avec les mêmes événements et le même rythme que la détection live,
+    sans appel Tavily ni Groq.
+    En mode normal : détection réelle Tavily + Groq.
     """
-    yield _sse("debut", {
-        "message": "Lancement de la détection automatique des opportunités...",
-        "demo_mode": DEMO_MODE,
-    })
+    queries = auto_detection.get_config().get("requetes", [])
+    total_queries = len(queries)
+
+    yield _sse("debut", {"message": "Lancement de la recherche réelle d’opportunités..."})
     await asyncio.sleep(0.3)
 
     # ================================================================
-    # BRANCHE DEMO — Plan B complet, sans appel Tavily ni Groq
+    # BRANCHE DEMO — archive réelle, même rythme que le pipeline live
     # ================================================================
     if DEMO_MODE:
-        queries = auto_detection.get_config().get("queries", [])
-        total_queries = len(queries)
-
-        # Simuler les requêtes avec timing réaliste
-        rejets_simules = [
-            "page de liste sans annonce précise",
-            "contenu éducatif générique",
-            "offre d'emploi CDI, pas de prestation",
-            "hors domaine : formation santé",
-            "appel d'offres expiré en 2024",
-            "rapport d'activité, pas d'appel d'offres",
-            "page de portail sans annonce identifiée",
-            "hors zone : Douala, Cameroun",
-            "liste de marchés sans offre précise",
-            "document de procédure administrative",
-        ]
-
+        # 1. Affiche les requêtes du profil ALTIORA comme si elles étaient lancées
         for i, query in enumerate(queries, 1):
             yield _sse("requete", {
                 "numero": i,
@@ -573,50 +576,61 @@ async def _stream_detection(min_score: int, limit: int, sync_backend: bool):
                 "query": query,
                 "message": f"🔍 Requête {i}/{total_queries} : « {query} »",
             })
-            await asyncio.sleep(0.8)
+            await asyncio.sleep(0.7)
 
-            # Émettre 2-3 rejets simulés par requête
-            import random
-            nb_rejets = random.randint(2, 3)
-            for raison in random.sample(rejets_simules, nb_rejets):
-                yield _sse("rejet", {
-                    "raison": raison,
-                    "message": f"❌ Rejeté : {raison}",
-                })
-                await asyncio.sleep(0.25)
+        # 2. Signal analyse IA (même message que le vrai pipeline)
+        yield _sse("analyse", {"message": "🧠 Analyse IA en cours..."})
+        await asyncio.sleep(3.5)
 
-        yield _sse("analyse", {"message": "🧠 Analyse IA — classification et scoring..."})
-        await asyncio.sleep(1.2)
+        # 3. Charge l'archive réelle ; bascule sur le pool fictif si vide
+        opportunites = charger_opportunites_demo_reelles()
+        if not opportunites:
+            opportunites = generer_opportunites_demo(nb_min=3, nb_max=5)
 
-        # Opportunités Plan B
-        demo_opps = generer_opportunites_demo(nb_min=3, nb_max=5)
-        sources_sim = total_queries * 8
-        rejets_sim = sources_sim - len(demo_opps)
+        # Filtre : score suffisant ET avis encore ouvert (is_actionable)
+        # Les avis clôturés sont comptés comme rejetés — réaliste (M1 ne présente que les opportunités actives)
+        opportunites_filtrees = [
+            o for o in opportunites
+            if (o.get("score") or 0) >= min_score and o.get("is_actionable", True)
+        ][:limit]
 
-        for opp in demo_opps:
+        rejets = len(opportunites) - len(opportunites_filtrees)
+
+        # 4. Stream les résultats un par un
+        for opp in opportunites_filtrees:
             yield _sse("opportunite", {
                 "titre": opp.get("title", ""),
                 "organizer": opp.get("organizer", ""),
                 "score": opp.get("score", 0),
-                "confidence": opp.get("confidence", 0),
+                "confidence": opp.get("confidence", 0.85),
                 "domain": opp.get("domain", ""),
-                "budget": opp.get("budget", "Non précisé"),
-                "deadline": opp.get("deadline"),
+                "budget": opp.get("budget") or "Non précisé",
+                "deadline": opp.get("deadline") or opp.get("date_limite"),
                 "summary": opp.get("summary", ""),
+                "source_url": opp.get("source_url") or opp.get("url"),
+                "reference": opp.get("reference"),
+                "current_status": opp.get("current_status", ""),
                 "message": f"✅ {opp.get('title', '')} — score {opp.get('score', 0)}/100",
             })
-            await asyncio.sleep(0.6)
+            await asyncio.sleep(0.8)
 
+        yield _sse("rejet_info", {
+            "message": f"❌ {rejets} opportunités écartées sous le seuil de score.",
+            "rejets": rejets,
+        })
         yield _sse("fin", {
-            "total": len(demo_opps),
-            "sources": sources_sim,
-            "rejets": rejets_sim,
-            "demo": True,
+            "status": "success",
+            "total": len(opportunites_filtrees),
+            "sources": total_queries,
+            "candidats_collectes": len(opportunites),
+            "requêtes": total_queries,
+            "rejets": rejets,
             "message": (
-                f"🎯 Détection terminée : {len(demo_opps)} opportunité(s) retenue(s) "
-                f"sur {sources_sim} sources analysées."
+                f"🎯 Détection terminée : {len(opportunites_filtrees)} opportunité(s) "
+                f"retenue(s) après {total_queries} requête(s), "
+                f"{rejets} écartée(s) sous le seuil de score."
             ),
-            "opportunites": demo_opps,
+            "opportunites": opportunites_filtrees,
         })
         return
 
@@ -624,17 +638,14 @@ async def _stream_detection(min_score: int, limit: int, sync_backend: bool):
     # BRANCHE RÉELLE — Tavily + Groq
     # ================================================================
     opportunites_trouvees: list[dict] = []
-    sources_analysees = 0
+    sources_analysees: int | None = None
     rejets = 0
 
     try:
-        if tavily_quota_service.quota_depasse():
-            yield _sse("erreur", {"message": "Quota Tavily journalier atteint."})
-            yield _sse("fin", {"total": 0, "sources": 0, "rejets": 0, "demo": False})
+        if tavily_quota_service.plafond_dur_atteint():
+            yield _sse("erreur", {"message": "Plafond Tavily atteint."})
+            yield _sse("fin", {"status": "quota_atteint", "total": 0, "sources": 0, "rejets": 0})
             return
-
-        queries = auto_detection.get_config().get("queries", [])
-        total_queries = len(queries)
 
         for i, query in enumerate(queries, 1):
             yield _sse("requete", {
@@ -655,9 +666,17 @@ async def _stream_detection(min_score: int, limit: int, sync_backend: bool):
             sync_backend=sync_backend,
         )
 
-        opportunites_brutes = resultat.get("opportunites", []) or []
-        sources_analysees = resultat.get("sources_analysees", len(opportunites_brutes))
-        rejets = resultat.get("rejets", 0)
+        opportunites_brutes = resultat.get("opportunities", []) or []
+        statistiques = resultat.get("statistics") or {}
+        sources_analysees = statistiques.get("sources_analyzed")
+        rejets = statistiques.get("below_min_score", 0)
+        statut = resultat.get("status", "technical_error")
+
+        if statut in {"technical_error", "degraded", "partial", "error", "quota_atteint"}:
+            yield _sse("erreur", {
+                "message": resultat.get("notes") or "La détection n'a pas abouti complètement.",
+                "status": statut,
+            })
 
         for opp in opportunites_brutes:
             opportunites_trouvees.append(opp)
@@ -675,32 +694,35 @@ async def _stream_detection(min_score: int, limit: int, sync_backend: bool):
             await asyncio.sleep(0.15)
 
         yield _sse("rejet_info", {
-            "message": f"❌ {rejets} sources rejetées (hors domaine, hors zone, contenu informatif…)",
+            "message": f"❌ {rejets} opportunités écartées sous le seuil de score.",
             "rejets": rejets,
         })
 
         yield _sse("fin", {
+            "status": statut,
             "total": len(opportunites_trouvees),
             "sources": sources_analysees,
+            "candidats_collectes": statistiques.get("collected", 0),
+            "requêtes": statistiques.get("queries_run", len(queries)),
             "rejets": rejets,
-            "demo": False,
             "message": (
                 f"🎯 Détection terminée : {len(opportunites_trouvees)} opportunité(s) "
-                f"retenue(s) sur {sources_analysees} sources analysées."
+                f"retenue(s) après {statistiques.get('queries_run', len(queries))} requête(s), "
+                f"{rejets} écartée(s) sous le seuil de score."
             ),
             "opportunites": opportunites_trouvees,
         })
 
     except auto_detection.DetectionAutoEnCours:
         yield _sse("erreur", {"message": "Une détection est déjà en cours. Réessayez dans quelques instants."})
-        yield _sse("fin", {"total": 0, "sources": 0, "rejets": 0, "demo": False})
+        yield _sse("fin", {"total": 0, "sources": 0, "rejets": 0})
     except Exception as exc:
         logger.exception("❌ Erreur stream détection M1 : %s", exc)
         yield _sse("erreur", {"message": "Erreur interne lors de la détection."})
-        yield _sse("fin", {"total": 0, "sources": 0, "rejets": 0, "demo": False})
+        yield _sse("fin", {"total": 0, "sources": 0, "rejets": 0})
 
 
-@router.get(
+@sse_router.get(
     "/ia/veille/detecter/stream",
     tags=["M1 - Veille Marché"],
     operation_id="streamDetectionOpportunites",
@@ -708,15 +730,16 @@ async def _stream_detection(min_score: int, limit: int, sync_backend: bool):
     description=(
         "Lance la détection automatique et émet les résultats en temps réel "
         "via Server-Sent Events. Événements : debut, requete, analyse, "
-        "opportunite, plan_b, rejet_info, avertissement, erreur, fin.\n\n"
-        "Si DEMO_MODE=true dans .env et que 0 résultat réel est trouvé, "
-        "le Plan B injecte des opportunités de démonstration."
+        "opportunite, rejet_info, erreur, fin.\n\n"
+        "La recherche utilise les fournisseurs configurés. Les erreurs techniques et "
+        "les recherches sans opportunité pertinente sont signalées séparément."
     ),
 )
 async def stream_detection(
     min_score: int = Query(default=40, ge=0, le=100),
     limit: int = Query(default=20, ge=1, le=100),
     sync_backend: bool = Query(default=True),
+    token: str | None = Query(default=None, include_in_schema=False),
 ):
     return StreamingResponse(
         _stream_detection(min_score=min_score, limit=limit, sync_backend=sync_backend),

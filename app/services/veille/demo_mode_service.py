@@ -1,20 +1,49 @@
-"""Plan B démo M1 — Pool de 20 opportunités fictives crédibles.
+"""Chargement des avis réels archivés et Plan B synthétique pour M1.
 
-Activé uniquement si DEMO_MODE=true dans .env ET si la détection réelle
-retourne 0 opportunité. Chaque appel tire aléatoirement 3 à 5 opportunités
-parmi le pool, avec une graine basée sur l'heure courante pour varier
-les résultats entre chaque lancement pendant la soutenance.
-
-IMPORTANT : Ces opportunités sont fictives. Les organisations nommées
-n'existent pas ou ne publient pas ce type d'offre publiquement.
-À retirer après la soutenance (DEMO_MODE=false ou supprimer la variable).
+DEMO_MODE=true rejoue d'abord les avis publics archivés dans
+``opportunites_demo_reelles.json``. Chaque fiche conserve séparément les
+dates de publication, de capture et de clôture. Le pool synthétique reste
+disponible uniquement si l'archive réelle est vide ou illisible et chaque
+fiche de ce pool est explicitement marquée comme fictive.
 """
 
+import json
+import logging
 import os
 import random
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
+from pathlib import Path
 
-DEMO_MODE = os.getenv("DEMO_MODE", "false").lower() == "true"
+from app.services.veille.scoring_service import ScoringService
+
+logger = logging.getLogger(__name__)
+
+ARCHIVE_REELLE_PATH = Path(__file__).with_name("opportunites_demo_reelles.json")
+
+
+def _charger_demo_mode() -> bool:
+    """Lit DEMO_MODE depuis l'environnement, puis depuis le .env du projet."""
+    valeur = os.getenv("DEMO_MODE")
+    if valeur is None:
+        fichier_env = Path(__file__).resolve().parents[3] / ".env"
+        try:
+            for ligne in fichier_env.read_text(encoding="utf-8-sig").splitlines():
+                ligne = ligne.strip()
+                if ligne.startswith("export "):
+                    ligne = ligne[7:].strip()
+                nom, separateur, contenu = ligne.partition("=")
+                if separateur and nom.strip() == "DEMO_MODE":
+                    valeur = contenu.strip().strip("\"'")
+                    break
+        except OSError:
+            valeur = None
+
+    return (valeur or "false").strip().strip("\"'").lower() in {
+        "1", "true", "yes", "on",
+    }
+
+
+DEMO_MODE = _charger_demo_mode()
 
 # ──────────────────────────────────────────────────────────────
 # Pool de 20 opportunités fictives — organisations non vérifiables
@@ -363,11 +392,97 @@ _POOL: list[dict] = [
 ]
 
 
+def charger_opportunites_demo_reelles() -> list[dict]:
+    """Charge et score les avis publics archivés pour la démonstration.
+
+    Le score est calculé par le ScoringService M1 avec la date de capture,
+    afin que la même archive conserve le même score après la clôture des avis.
+    ``current_status`` est, lui, actualisé à chaque chargement.
+    """
+    try:
+        with ARCHIVE_REELLE_PATH.open(encoding="utf-8") as fichier:
+            donnees = json.load(fichier)
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        logger.warning("Archive réelle de démonstration indisponible : %s", exc)
+        return []
+
+    if not isinstance(donnees, list):
+        logger.warning("Archive réelle de démonstration invalide : une liste était attendue.")
+        return []
+
+    try:
+        scoring = ScoringService()
+    except Exception as exc:
+        logger.warning("Scoring M1 indisponible pour l'archive de démonstration : %s", exc)
+        scoring = None
+    aujourd_hui = date.today()
+    opportunites: list[dict] = []
+
+    for fiche in donnees:
+        if not isinstance(fiche, dict):
+            logger.warning("Fiche d'avis ignorée : format invalide.")
+            continue
+
+        opportunite = dict(fiche)
+        try:
+            date_capture = date.fromisoformat(opportunite["date_capture"])
+            date_limite = date.fromisoformat(opportunite["date_limite"])
+        except (KeyError, TypeError, ValueError):
+            logger.warning(
+                "Fiche d'avis ignorée : date_capture ou date_limite invalide (%s).",
+                opportunite.get("reference", opportunite.get("title", "sans titre")),
+            )
+            continue
+
+        date_heure_limite = opportunite.get("date_heure_limite")
+        if date_heure_limite:
+            try:
+                echeance = datetime.fromisoformat(date_heure_limite)
+                maintenant = datetime.now(echeance.tzinfo) if echeance.tzinfo else datetime.now()
+                if maintenant >= echeance:
+                    statut_actuel = "clôturée"
+                elif maintenant.date() == echeance.date():
+                    statut_actuel = "échéance aujourd’hui"
+                else:
+                    statut_actuel = "ouverte"
+            except ValueError:
+                logger.warning("Date/heure limite invalide : %s", date_heure_limite)
+                statut_actuel = "à vérifier"
+        elif date_limite < aujourd_hui:
+            statut_actuel = "clôturée"
+        elif date_limite == aujourd_hui:
+            statut_actuel = "échéance aujourd’hui"
+        else:
+            statut_actuel = "ouverte"
+
+        opportunite.update({
+            "deadline": opportunite["date_limite"],
+            "current_status": statut_actuel,
+            "is_actionable": statut_actuel == "ouverte",
+            "is_synthetic": False,
+            "demo_data_type": "archive_reelle",
+            "score_reference_date": date_capture.isoformat(),
+            "score_source": "ScoringService M1 déterministe",
+        })
+
+        if scoring is not None:
+            try:
+                reference_score = datetime.combine(date_capture, datetime.min.time())
+                opportunite.update(scoring.score(opportunite, date_reference=reference_score))
+            except Exception as exc:
+                logger.warning(
+                    "Score M1 non calculé pour %s : %s",
+                    opportunite.get("reference", opportunite.get("title", "sans titre")),
+                    exc,
+                )
+
+        opportunites.append(opportunite)
+
+    return opportunites
+
+
 def generer_opportunites_demo(nb_min: int = 3, nb_max: int = 5) -> list[dict]:
-    """
-    Tire aléatoirement nb_min à nb_max opportunités du pool.
-    La graine change toutes les 10 minutes pour varier entre lancements.
-    """
+    """Tire des exemples fictifs lorsque l'archive réelle est indisponible."""
     import time
     graine = int(time.time() // 600)  # change toutes les 10 min
     rng = random.Random(graine)
@@ -379,7 +494,19 @@ def generer_opportunites_demo(nb_min: int = 3, nb_max: int = 5) -> list[dict]:
     for i, opp in enumerate(selection):
         opp = dict(opp)  # copie pour ne pas modifier le pool
         jours = rng.randint(5, 28)
-        opp["deadline"] = (aujourd_hui + timedelta(days=jours)).isoformat()
+        deadline = (aujourd_hui + timedelta(days=jours)).isoformat()
+        opp.update({
+            "deadline": deadline,
+            "date_limite": deadline,
+            "date_capture": None,
+            "date_publication": None,
+            "source_url": None,
+            "status_at_capture": "ouverte",
+            "current_status": "ouverte",
+            "is_actionable": True,
+            "demo_data_type": "synthetic_fallback",
+            "is_synthetic": True,
+        })
         selection[i] = opp
 
     return selection

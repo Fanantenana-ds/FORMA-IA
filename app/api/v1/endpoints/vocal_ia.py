@@ -13,7 +13,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from app.services.vocal.routeur_vocal import router_commande
+from app.services.vocal.assistant_vocal_service import get_assistant_vocal_service
 from app.utils.security import verify_api_key
 
 logger = logging.getLogger(__name__)
@@ -35,6 +35,9 @@ class CommandeVocaleRequest(BaseModel):
         default_factory=list,
         description="Liste des noms de formations disponibles (contexte optionnel)",
     )
+    conversation_id: str | None = Field(
+        None, description="Identifiant de la conversation RAG vocale précédente"
+    )
 
 
 class CommandeVocaleResponse(BaseModel):
@@ -46,6 +49,13 @@ class CommandeVocaleResponse(BaseModel):
     action_frontend: str | None
     prefill: dict[str, Any]
     duree_ms: int
+    conversation_id: str | None = None
+    sources: list[dict[str, Any]] = []
+    suggestions: list[str] = []
+    texte_affiche: str = ""
+    texte_a_lire: str = ""
+    etat: str = "pret_a_verifier"
+    niveau_preuve: str = "non_applicable"
 
 
 # ──────────────────────────────────────────────────────────────
@@ -67,9 +77,10 @@ async def analyser_commande(req: CommandeVocaleRequest) -> CommandeVocaleRespons
     logger.info("🎤 Commande vocale reçue : '%s'", req.texte[:80])
 
     try:
-        result = await router_commande(
-            commande=req.texte,
+        result = await get_assistant_vocal_service().traiter(
+            texte=req.texte,
             formations=req.formations_disponibles,
+            conversation_id=req.conversation_id,
         )
     except Exception as e:
         logger.error("Erreur routeur vocal : %s", e)
@@ -88,10 +99,17 @@ async def analyser_commande(req: CommandeVocaleRequest) -> CommandeVocaleRespons
         confiance=result.get("confiance", 0.0),
         parametres=result.get("parametres", {}),
         parametres_manquants=result.get("parametres_manquants", []),
-        reponse_vocale=result.get("reponse_vocale", ""),
+        reponse_vocale=result.get("texte_a_lire", result.get("reponse_vocale", "")),
         action_frontend=result.get("action_frontend"),
         prefill=result.get("prefill", {}),
         duree_ms=duree,
+        conversation_id=result.get("conversation_id"),
+        sources=result.get("sources", []),
+        suggestions=result.get("suggestions", []),
+        texte_affiche=result.get("texte_affiche", result.get("reponse_vocale", "")),
+        texte_a_lire=result.get("texte_a_lire", result.get("reponse_vocale", "")),
+        etat=result.get("etat", "pret_a_verifier"),
+        niveau_preuve=result.get("niveau_preuve", "non_applicable"),
     )
 
 

@@ -26,6 +26,7 @@ from app.api.v1.routes_veille import (
 # ─────────────────────────────────────────────────────────────
 from app.api.v1.routes_veille import (
     router as veille_router,
+    sse_router as veille_sse_router,
 )
 from app.config.settings import settings
 from app.database import Base, engine
@@ -224,6 +225,7 @@ async def health_ia():
 
 # --- M1 : Veille Marché ---
 app.include_router(veille_router, prefix="/api/v1")
+app.include_router(veille_sse_router, prefix="/api/v1")
 logger.info("✅ M1 — Veille marché chargé")
 
 # --- M2 : TDR ---

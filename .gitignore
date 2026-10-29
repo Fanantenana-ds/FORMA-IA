@@ -142,8 +142,13 @@ yarn-error.log*
 # ─────────────────────────────────────────────────────────────
 # 🤖 FICHIERS DE TRAVAIL CLAUDE CODE (internes, jamais partagés)
 # ─────────────────────────────────────────────────────────────
+CLAUDE.md
 claude.md
+AGENTS.md
 trace-claude.ps1
+trace-claude-ia.ps1
+trace-codex-ia.ps1
+01_plan.md
 
 # ─────────────────────────────────────────────────────────────
 # 📝 TEMPORAIRES

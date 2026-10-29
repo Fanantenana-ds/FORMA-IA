@@ -72,3 +72,37 @@ async def verify_api_key(
             detail="Clé API invalide.",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+
+async def verify_api_key_sse(
+    token: str | None = None,
+    credentials: HTTPAuthorizationCredentials | None = Depends(
+        HTTPBearer(auto_error=False)
+    ),
+) -> None:
+    """Variante SSE : accepte le token en query param ?token= ou en header Bearer.
+
+    EventSource (navigateur) ne peut pas envoyer de headers — le token
+    doit donc pouvoir transiter par l'URL pour les routes SSE.
+    """
+    if not SHARED_INTERNAL_TOKEN:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="SHARED_INTERNAL_TOKEN non configurée côté serveur.",
+        )
+
+    raw = token or (credentials.credentials if credentials else None)
+
+    if not raw:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentification requise : token manquant (header Bearer ou ?token=).",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    if not secrets.compare_digest(raw, SHARED_INTERNAL_TOKEN):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Clé API invalide.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )

@@ -5,7 +5,9 @@
 # (routes_veille.orchestrator) et les services associés sont doublés.
 # ============================================================
 
+import asyncio
 import io
+import json
 
 import pytest
 from fastapi import FastAPI
@@ -76,6 +78,36 @@ def test_rechercher_exception_renvoie_500(client, monkeypatch):
     monkeypatch.setattr(routes_veille.orchestrator, "analyser_opportunites", echoue)
     resp = client.post("/ia/veille/rechercher", json={"query": "formation IA"})
     assert resp.status_code == 500
+
+
+def test_rechercher_erreur_technique_restitue_un_503(client, monkeypatch):
+    resultat = {**RESULTAT_VIDE, "status": "technical_error"}
+    monkeypatch.setattr(routes_veille.orchestrator, "analyser_opportunites", _async(lambda query: resultat))
+    resp = client.post("/ia/veille/rechercher", json={"query": "formation IA"})
+    assert resp.status_code == 503
+    assert resp.json()["success"] is False
+
+
+def test_stream_utilise_la_detection_reelle_et_ne_marque_pas_de_mode_demo(monkeypatch):
+    async def faux_detecter(*args, **kwargs):
+        return {
+            "status": "no_results", "opportunities": [],
+            "statistics": {"queries_run": 1, "collected": 0, "below_min_score": 0},
+        }
+
+    async def collecter():
+        messages = []
+        async for event in routes_veille._stream_detection(40, 20, False):
+            messages.append(json.loads(event.split("data: ", 1)[1]))
+        return messages
+
+    monkeypatch.setattr(routes_veille, "DEMO_MODE", False)
+    monkeypatch.setattr(routes_veille.auto_detection, "executer_detection", faux_detecter)
+    monkeypatch.setattr(routes_veille.tavily_quota_service, "plafond_dur_atteint", lambda: False)
+    messages = asyncio.run(collecter())
+    assert messages[0]["message"] == "Lancement de la recherche réelle d’opportunités..."
+    assert messages[-1]["status"] == "no_results"
+    assert all("demo" not in message for message in messages)
 
 
 # ---- POST /ia/veille/detecter ----

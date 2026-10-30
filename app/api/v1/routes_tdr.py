@@ -7,7 +7,7 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
@@ -25,7 +25,9 @@ from app.services.backend_sync.opportunity_fetcher import (
 )
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+from app.services.veille.access_service import verify_api_key
+
+router = APIRouter(dependencies=[Depends(verify_api_key)])
 orchestrator = TdrOrchestrator()
 
 BASE_DIR = Path(__file__).resolve().parents[3]
@@ -45,6 +47,20 @@ class SynchroniserTDRRequest(BaseModel):
         default=False,
         description="Renvoyer même si déjà synchronisé (crée un DOUBLON côté Backend)",
     )
+
+
+class ValidationTDRRequest(BaseModel):
+    reviewer_note: str = Field(..., min_length=3)
+
+
+@router.post("/ia/tdr/reviews/{review_id}/approve", tags=["M2 - TDR"])
+async def approuver_tdr(review_id: str, payload: ValidationTDRRequest):
+    from app.services.hitl import approve_review, get_review
+
+    review = get_review(review_id)
+    if not review or review.get("agent_id") != "agent_m2_tdr":
+        raise HTTPException(404, "Validation TDR introuvable")
+    return {"success": True, "review": approve_review(review_id, payload.reviewer_note)}
 
 
 # ============================================================

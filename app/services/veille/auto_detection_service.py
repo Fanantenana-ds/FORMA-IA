@@ -1,33 +1,5 @@
 # app/services/veille/auto_detection_service.py
-# ============================================================
-# M1 — DÉTECTION AUTOMATIQUE D'OPPORTUNITÉS (sans requête saisie)
-# ============================================================
-# Deux façons d'obtenir des opportunités en M1 :
-#
-#   MODE 1 — RECHERCHE       POST /ia/veille/rechercher
-#            L'utilisateur saisit une requête (existant).
-#
-#   MODE 2 — DÉTECTION AUTO  POST /ia/veille/detecter
-#            Aucune requête : le système lance lui-même les requêtes du
-#            profil ALTIORA (ci-dessous), à la demande OU par
-#            planification (désactivée par défaut).
-#
-# Ce module porte : le profil de requêtes, le verrou anti-chevauchement,
-# l'état de la dernière exécution (data/veille_auto_state.json) et la
-# planification. La logique de détection elle-même est dans
-# VeilleOrchestrator.detecter_automatiquement.
-#
-# Chaque passage consomme du quota Tavily + Groq (1 recherche + 1 à 2 appels
-# LLM par requête) : la planification est donc OFF tant qu'on ne l'active pas.
-#
-# Variables d'environnement :
-#   VEILLE_AUTO_ENABLED         "false"  active la planification
-#   VEILLE_AUTO_INTERVAL_HOURS  "24"     délai entre deux passages (min 1)
-#   VEILLE_AUTO_QUERIES         ""       requêtes séparées par ";" (sinon défaut)
-#   VEILLE_AUTO_MAX_QUERIES     "5"      nombre max de requêtes par passage
-#   VEILLE_AUTO_MIN_SCORE       "40"     score minimal conservé (0-100)
-#   VEILLE_AUTO_LIMIT           "20"     nombre max d'opportunités par passage
-# ============================================================
+
 
 import asyncio
 import json
@@ -202,6 +174,7 @@ async def executer_detection(
             min_score=score_minimum() if min_score is None else min_score,
             limit=limite() if limit is None else limit,
             sync_backend=sync_backend,
+            collect_first=True,
         )
         sync = (resultat.get("statistics") or {}).get("backend_sync") or {}
         etat.update({

@@ -61,6 +61,7 @@ class GroqProvider(LLMProvider):
         self.base_url = os.getenv(
             "GROQ_BASE_URL", "https://api.groq.com/openai/v1"
         ).strip()
+        self.max_retries = max(0, int(os.getenv("GROQ_CLIENT_MAX_RETRIES", "0")))
 
         if not self.api_key:
             logger.warning(
@@ -72,6 +73,10 @@ class GroqProvider(LLMProvider):
             self.client = AsyncOpenAI(
                 api_key=self.api_key,
                 base_url=self.base_url,
+                # Les retries sont pilotés par LLMProvider, avec un budget
+                # M1 explicite. Le client OpenAI ne doit pas doubler les
+                # appels et saturer le quota Groq.
+                max_retries=self.max_retries,
             )
             vlog(
                 f"✅ GroqProvider initialisé "

@@ -24,6 +24,7 @@ from app.services.veille import tavily_quota_service as quota
 from app.services.veille import tavily_service as tavily_module
 from app.services.veille.tavily_quota_service import QuotaTavilyDepasseError
 from app.services.veille.tavily_service import TavilyService
+from app.services.veille.tavily_service import TavilySearchError
 
 
 @pytest.fixture(autouse=True)
@@ -81,6 +82,13 @@ def installer_faux_client(monkeypatch, reponses):
 
 
 RESULTAT_PROPRE = {"title": "Titre", "url": "https://asako.mg/offre", "content": "texte propre"}
+
+
+def test_dns_ou_timeout_ne_devient_pas_une_liste_vide(monkeypatch):
+    monkeypatch.setattr(tavily_module, "RETRY_MAX_ATTEMPTS", 1)
+    installer_faux_client(monkeypatch, [httpx.ConnectError("DNS"), httpx.ConnectError("DNS")])
+    with pytest.raises(TavilySearchError):
+        asyncio.run(TavilyService().search("formation IA", categorie="manuel"))
 
 
 def test_recherche_reussie_du_premier_coup_compte_un_seul_appel(monkeypatch):

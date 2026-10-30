@@ -31,6 +31,33 @@ logger = logging.getLogger(__name__)
 _DOSSIER_PROMPTS = Path(__file__).resolve().parents[1] / "prompts" / "rag"
 MENTION_FIXE = "\n\n*Réponse générée à partir des documents indexés.*"
 ATTENTE_MAX_CHAT_S = 5.0
+GUIDE_DEMARRAGE_PLATEFORME = (
+    "FORMA-IA vous accompagne de la détection d'une opportunité jusqu'au suivi d'une formation. "
+    "Commencez par le module **Veille marché** pour consulter les opportunités, puis préparez un **TDR** "
+    "et une **offre technique et financière**. Dans **Sessions et groupes**, créez et planifiez la session, "
+    "puis suivez les présences et les évaluations. La **Base documentaire RAG** permet de poser des questions "
+    "sur les supports indexés et d'afficher les sources. Enfin, chaque contenu généré doit être relu et validé "
+    "par un humain avant son utilisation. Dites-moi quel module vous souhaitez découvrir en détail."
+)
+
+
+def _est_demande_generale_plateforme(message: str) -> bool:
+    """Distingue l'accueil générique d'une question métier qui mérite C3/LLM.
+
+    Le guide local répond seulement à « comment utiliser la plateforme ? ».
+    Une procédure concrète (TDR, validation, session, offre, etc.) reste traitée
+    par l'agent C3, ses documents indexés et le LLM de synthèse.
+    """
+    normalise = " ".join(message.lower().strip().split())
+    termes_metier = (
+        "veille", "tdr", "termes de reference", "offre", "session", "seance",
+        "formation", "validation", "valider", "hitl", "facture", "relance",
+        "document", "support", "rag", "source", "index", "presence", "evaluation",
+    )
+    return (
+        ("platform" in normalise or "plateforme" in normalise or "plate-forme" in normalise or "forma-ia" in normalise or "forma ia" in normalise)
+        and not any(terme in normalise for terme in termes_metier)
+    )
 
 
 def _charger_prompt(nom_fichier: str) -> str:
@@ -176,7 +203,7 @@ class ChatOrchestrator:
                                       "développé", "developpé", "développe", "construit", "fait par")):
             texte = (
                 "Je suis **FORMA-IA**, l'assistant documentaire intelligent de la plateforme ALTIORA. "
-                "J'ai été conçu et développé par l'équipe ALTIORA pour aider les directeurs, "
+                "Mon rôle est d'aider les directeurs, "
                 "formateurs et assistants à accéder rapidement aux contenus de formation, "
                 "aux supports indexés et aux informations de la plateforme. "
                 "Comment puis-je vous aider aujourd'hui ?"
@@ -184,7 +211,7 @@ class ChatOrchestrator:
         # Questions sur les capacités / ce que l'assistant peut faire
         elif any(mot in msg for mot in ("peux-tu", "peuxtu", "peux tu", "capable", "fonctionnalité",
                                         "fonctionnalite", "que sais-tu", "que fais-tu", "comment tu",
-                                        "à quoi", "a quoi")):
+                                        "à quoi", "a quoi", "rôle", "role")):
             texte = (
                 "Je peux vous aider sur plusieurs sujets :\n\n"
                 "- **Catalogue des formations** : lister toutes les formations ALTIORA disponibles\n"
@@ -409,6 +436,11 @@ class ChatOrchestrator:
         return texte, sources, provider.modele_requete, cache_avant
 
     async def _repondre_aide_plateforme(self, message):
+        # Guide déterministe pour la question d'accueil : aucune dépendance
+        # externe, donc réponse fiable même sans clé LLM/embeddings.
+        if _est_demande_generale_plateforme(message):
+            return GUIDE_DEMARRAGE_PLATEFORME, [], None, False
+
         cache_avant = await self._cache_utilise_pour(message)
         provider = get_embedding_provider()
 

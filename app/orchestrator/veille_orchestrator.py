@@ -4,10 +4,13 @@ import logging
 import os
 import re
 import time
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
+from urllib.parse import urlparse
 
 import pypdf
+from pydantic import ValidationError
+from app.schemas.veille import OpportunityResult
 from app.orchestrator.base_orchestrator import BaseOrchestrator
 from app.orchestrator.base_orchestrator import _vlog as vlog
 from app.services.backend_sync import base_sync
@@ -23,9 +26,15 @@ from app.services.veille.llm_analysis_service import (
     MAX_SOURCE_CHARS_TOTAL,
     LLMAnalysisService,
 )
-from app.services.veille.prefilter_service import rank_results
+from app.services.veille.prefilter_service import _TECH_TITLE, diversify_sources, navigation_reason, rank_results, source_domain
+from app.utils.url_utils import normalize_url
 from app.services.veille.scoring_service import ScoringService
-from app.services.veille.tavily_service import TavilyService
+from app.services.veille.tavily_service import SearchResults, TavilySearchError, TavilyService
+from app.services.veille.notice_resolution_service import deduplicate_notices
+from app.services.veille.progress_service import emit_progress
+from app.services.veille.evidence_service import MADAGASCAR, qualify_candidate, source_need
+from app.services.veille.source_registry import SEARCH_GROUP, load_registry
+from app.services.veille.tavily_quota_service import QuotaTavilyDepasseError
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +73,22 @@ def echeance_depassee(deadline: Any, reference: datetime | None = None) -> bool:
     except ValueError:
         return False
     return echeance < (reference or datetime.now()).date()
+
+
+def statut_fraicheur(deadline: Any, reference: datetime | None = None) -> str:
+    """Classe une opportunité sans laisser le LLM décider de sa fraîcheur."""
+    if not deadline:
+        return "date_inconnue"
+    try:
+        limite = datetime.fromisoformat(str(deadline).strip()[:10]).date()
+    except ValueError:
+        return "date_inconnue"
+    jours = (limite - (reference or datetime.now()).date()).days
+    if jours < 0:
+        return "expirée"
+    if jours <= 7:
+        return "bientôt_clôturée"
+    return "ouverte"
 
 
 def mentionne_madagascar(opportunity: dict[str, Any]) -> bool:
@@ -119,7 +144,8 @@ class VeilleOrchestrator(BaseOrchestrator):
     # ========================================================
 
     async def analyser_opportunites(
-        self, query: str, sync_backend: bool = True, categorie: str = "manuel"
+        self, query: str, sync_backend: bool = True, categorie: str = "manuel",
+        collected_sources: list | None = None,
     ) -> dict[str, Any]:
         """
         Pipeline complet : recherche web → analyse → opportunités.
@@ -134,6 +160,10 @@ class VeilleOrchestrator(BaseOrchestrator):
 
         query = str(query or "").strip()
         start_total = time.perf_counter()
+        timings = {"source_retrieval_seconds": 0.0, "prefilter_seconds": 0.0,
+                   "llm_analysis_seconds": 0.0, "post_processing_seconds": 0.0}
+        to_review_candidates: list[dict[str, Any]] = []
+        collection_diagnostics = {}
 
         if not query:
             return self._empty_response(status="error", notes="Requête vide.")
@@ -150,28 +180,135 @@ class VeilleOrchestrator(BaseOrchestrator):
 
         # ── 1. TAVILY (recherche web) ──
         vlog("🌐 [1] Recherche Tavily...")
-        raw_results = await self.tavily_service.search(query, categorie=categorie)
+        if self.tavily_service is None:
+            return self._empty_response(status="technical_error", notes="Collecteur M1 indisponible : vérifier la configuration des sources.")
+        source_started = time.perf_counter()
+        try:
+            raw_results = collected_sources if collected_sources is not None else await self.tavily_service.search(query, categorie=categorie)
+        except QuotaTavilyDepasseError:
+            return self._empty_response(status="quota_atteint", notes="Quota ou limite de débit Tavily atteint.")
+        except TavilySearchError as exc:
+            timings["source_retrieval_seconds"] = round(time.perf_counter() - source_started, 3)
+            return self._empty_response(
+                status="technical_error",
+                notes="La recherche web n'a pas abouti. Aucun résultat n'est disponible.",
+                elapsed=time.perf_counter() - start_total,
+                timings=timings,
+                technical_reason=str(exc),
+                collection_diagnostics=getattr(exc, "diagnostics", {}),
+            )
+        timings["source_retrieval_seconds"] = round(time.perf_counter() - source_started, 3)
+        collection_diagnostics = getattr(raw_results, "diagnostics", {})
 
         if not raw_results:
             return self._empty_response(
                 status="no_results",
                 notes="Aucun résultat Tavily.",
                 elapsed=time.perf_counter() - start_total,
+                timings=timings,
+                collection_diagnostics=collection_diagnostics,
             )
         vlog(f"   ✅ {len(raw_results)} résultats bruts")
+        source_domains: dict[str, int] = {}
+        for raw in raw_results:
+            hostname = urlparse(str(raw.get("url", ""))).hostname or "inconnu"
+            source_domains[hostname.lower()] = source_domains.get(hostname.lower(), 0) + 1
 
         # ── 2. CLASSEMENT (préfiltre) ──
         vlog("🏆 [2] Classement (préfiltre)...")
-        ranked_results = rank_results(raw_results, query)
+        prefilter_started = time.perf_counter()
+        navigation_sources = [{"title": s.get("title"), "url": s.get("url"), "reason": navigation_reason(s)}
+                              for s in raw_results if navigation_reason(s)]
+        ranked_results = diversify_sources(rank_results([s for s in raw_results if not navigation_reason(s)], query))
+        # Une demande effectivement lue passe avant un post riche en hashtags.
+        # Le score métier n'est pas modifié ; seul l'ordre d'analyse l'est.
+        def analysis_priority(source):
+            if source_need(source):
+                return 0
+            title, path = str(source.get("title", "")), urlparse(str(source.get("url", ""))).path
+            if _TECH_TITLE.search(title) and re.search(r"/annonces/|/jobs/view/|/Public/[Nn]otice/", path):
+                return 1
+            return 2
+        ranked_results.sort(key=analysis_priority)
+        await emit_progress("analyse", "prefilter", f"Classement : {len(ranked_results)} sources à analyser, {len(navigation_sources)} pages générales mises à part.",
+                            selected=len(ranked_results), navigation=len(navigation_sources))
+        timings["prefilter_seconds"] = round(time.perf_counter() - prefilter_started, 3)
 
         if not ranked_results:
-            return self._empty_response(
+            empty = self._empty_response(
                 status="no_results",
                 notes="Aucun résultat après préfiltrage.",
                 elapsed=time.perf_counter() - start_total,
                 raw_count=len(raw_results),
+                timings=timings,
+                collection_diagnostics=collection_diagnostics,
             )
+            empty["navigation_sources"] = navigation_sources
+            if navigation_sources:
+                empty.update(status="partial", notes="Pages de navigation collectées, aucune annonce individuelle qualifiable. Aucun appel Groq nécessaire.")
+            return empty
         vlog(f"   ✅ {len(ranked_results)} résultats après préfiltre")
+        source_records = [
+            {"title": str(item.get("title", "")), "url": str(item.get("url", "")),
+             "domain": source_domain(str(item.get("url", ""))),
+             "prefilter_score": item.get("prefilter_score"),
+             "analysis_status": "pending", "reason": None, "reason_origin": None,
+             "final_status": "not_evaluated", "final_reason": None}
+            for item in ranked_results
+        ]
+
+        def attach_source_diagnostics(result):
+            """Rend les preuves consultables sans promouvoir des candidats."""
+            result["analyzed_sources"] = [
+                item for item in source_records
+                if item["analysis_status"] in {"rejected", "proposed", "undecided"}
+            ]
+            result["pending_sources"] = [
+                item for item in source_records
+                if item["analysis_status"] in {"pending", "failed", "quota_atteint"}
+            ]
+            from app.services.veille.pending_service import save
+            pending_urls = {item["url"] for item in result["pending_sources"]}
+            result["continuation_id"] = save([s for s in ranked_results if s.get("url") in pending_urls], query)
+            stats = result.setdefault("statistics", {})
+            stats["sources_analyzed"] = len(result["analyzed_sources"])
+            stats["sources_unanalyzed"] = len(result["pending_sources"])
+            stats["sources_sent_to_llm"] = sources_attempted
+            result["to_review_candidates"] = to_review_candidates
+            stats["candidates_to_review"] = len(to_review_candidates)
+            stats["llm_candidates_proposed"] = proposed_count
+            stats["documented_candidates"] = len(groq_opportunities)
+            stats["confirmed_opportunities"] = result.get("total", 0)
+            stats["groq_results"] = proposed_count
+            result["collection_diagnostics"] = collection_diagnostics
+            result["navigation_sources"] = navigation_sources
+            stats["navigation_pages_skipped"] = len(navigation_sources)
+            stats["llm_batches_attempted"] = len(batch_reports)
+            result["analysis_batches"] = batch_reports
+            incomplete_domains = [d for d in collection_diagnostics.get("domain_coverage", [])
+                                  if d.get("status") in {"failed", "not_searched"}]
+            if incomplete_domains and result.get("status") in {"success", "no_results"}:
+                result["status"] = "partial"
+            for record in result["analyzed_sources"]:
+                candidate = next((c for c in to_review_candidates if normalize_url(c.get("url")) == normalize_url(record["url"])), None)
+                if candidate:
+                    record.update(final_status="to_review", final_reason=candidate["ai_recommendation"])
+                elif record["analysis_status"] == "rejected":
+                    record.update(final_status="rejected", final_reason=record["reason"])
+            result["search_group"] = SEARCH_GROUP.get() or "institutionnel"
+            result["next_step"] = "verify_source" if to_review_candidates else (
+                "analyze_pending" if result["pending_sources"] else "review_results")
+            if to_review_candidates and result.get("status") == "no_results":
+                result["status"] = "partial"
+            if result.get("status") == "partial":
+                result["notes"] = (
+                    f"Analyse incomplète : {stats['sources_analyzed']} source(s) analysée(s), "
+                    f"{stats['sources_unanalyzed']} source(s) non analysée(s), "
+                    f"{len(to_review_candidates)} candidat(s) à vérifier. "
+                    f"{result.get('total', 0)} opportunité(s) confirmée(s). "
+                    f"{len(incomplete_domains)} site(s) avec recherche ciblée non aboutie."
+                )
+            return result
 
         # ── 3/4. ANALYSE LLM PAR LOTS ──
         vlog(f"🤖 [3] Analyse LLM (max {MAX_FALLBACK_BATCHES} lot(s))...")
@@ -180,7 +317,13 @@ class VeilleOrchestrator(BaseOrchestrator):
         filtered_results: list[dict[str, Any]] = []
         last_notes = None
         any_groq_success = False
+        failed_batches = 0
+        sources_analyzed = 0
+        sources_attempted = 0
+        grounded_by_url: dict[str, dict[str, Any]] = {}
         batch_index = 0
+        proposed_count = 0
+        batch_reports = []
 
         for batch_index in range(MAX_FALLBACK_BATCHES):
             start_idx = batch_index * MAX_RESULTS_AI
@@ -196,27 +339,103 @@ class VeilleOrchestrator(BaseOrchestrator):
             )
 
             await self._respecter_pause_llm()
-            batch_response = await self.llm_service.analyze(query, batch)
+            llm_started = time.perf_counter()
+            await emit_progress("analyse", "llm_analysis", f"Analyse IA du lot {batch_index + 1} : {len(batch)} source(s).",
+                                batch=batch_index + 1, sources=len(batch))
+            batch_response = await self.llm_service.analyze(query, batch, compact=True)
+            await emit_progress("analyse", "verification", "Contrôle des preuves, de la fraîcheur et du score métier.")
+            batch_reports.append({"sources": len(batch), "status": (batch_response or {}).get("status", "success" if batch_response else "failed"),
+                                  "prompt_characters": (batch_response or {}).get("prompt_characters"),
+                                  "usage": (batch_response or {}).get("llm_usage", {})})
+            sources_attempted += len(batch)
+            timings["llm_analysis_seconds"] += round(time.perf_counter() - llm_started, 3)
             filtered_results = batch
 
             if batch_response is None:
+                failed_batches += 1
+                for record in source_records[start_idx:end_idx]:
+                    record.update(analysis_status="failed", reason="Analyse indisponible ; à réessayer.",
+                                  reason_origin="system")
                 logger.warning(
                     f"⚠️ Lot {batch_index + 1} : analyse Groq échouée, "
                     f"passage au lot suivant"
                 )
                 continue
 
+            if batch_response.get("status") == "quota_atteint":
+                for record in source_records[start_idx:end_idx]:
+                    record.update(analysis_status="quota_atteint", reason="Quota Groq atteint.",
+                                  reason_origin="system")
+                return attach_source_diagnostics({"opportunities": [], "total": 0, "status": "quota_atteint",
+                        "notes": batch_response.get("notes"),
+                        "statistics": {"sources_analyzed": sources_analyzed,
+                                       "sources_attempted": sources_attempted,
+                                       "raw_results": len(raw_results), **timings}})
+
             any_groq_success = True
+            submitted_count = batch_response.get("sources_submitted", len(batch))
+            if type(submitted_count) is not int or not 0 <= submitted_count <= len(batch):
+                submitted_count = 0
+            sources_attempted -= len(batch) - submitted_count
+            sources_analyzed += submitted_count
+            rejected = {}
+            for rejection in batch_response.get("rejets", []) or []:
+                if not isinstance(rejection, dict):
+                    continue
+                number = rejection.get("resultat")
+                reason = rejection.get("raison")
+                if type(number) is int and 1 <= number <= submitted_count and isinstance(reason, str):
+                    rejected[number] = reason
+            proposed_urls = {
+                normalize_url(item.get("url")) for item in batch_response.get("opportunities", [])
+                if isinstance(item, dict) and item.get("url")
+            }
+            for number, record in enumerate(source_records[start_idx:start_idx + submitted_count], 1):
+                record["reason_origin"] = "groq"
+                if normalize_url(record["url"]) in proposed_urls:
+                    record.update(analysis_status="proposed",
+                                  reason="Candidat proposé par Groq ; soumis aux validations Python.")
+                elif number in rejected:
+                    record.update(analysis_status="rejected", reason=rejected[number])
+                    reason = rejected[number]
+                    unsupported = re.search(r"hors\s+(?:l['’])?ia\b|non li[ée].*\bia\b|pas d.appel d.offres officiel", reason, re.I)
+                    other_ground = re.search(r"expir|hors madagascar|publicit|emploi salari|\bcdi\b|\bcdd\b", reason, re.I)
+                    source = batch[number - 1]
+                    if unsupported and not other_ground and _TECH_TITLE.search(str(source.get("title", "")) + " " + str(source.get("content", ""))):
+                        message = "Motif de rejet insuffisant : ALTIORA couvre l'informatique au-delà de l'IA et les demandes privées de prestation. Vérifier le besoin client, la localisation, l'échéance et le statut externe."
+                        to_review_candidates.append({"title": source.get("title"), "url": source.get("url"),
+                            "status": "to_review", "verification_status": "to_review", "review_reason": "unsupported_rejection",
+                            "is_actionable": False, "score": 0, "score_evaluated": False, "score_label": "Non évalué",
+                            "ai_recommendation": message, "ai_points_to_verify": [reason, "Demande de prestation externe et conditions à vérifier"],
+                            "next_step": "verify_source"})
+                else:
+                    record.update(analysis_status="undecided",
+                                  reason="Groq n'a pas fourni de décision explicite pour cette source.")
             groq_response = batch_response
             last_notes = batch_response.get("notes")
             batch_opportunities = batch_response.get("opportunities", [])
+            proposed_count += sum(isinstance(item, dict) for item in batch_opportunities)
+            qualified = []
+            for proposal in batch_opportunities:
+                if not isinstance(proposal, dict):
+                    continue
+                grounded, gaps = qualify_candidate(proposal, batch[:submitted_count])
+                grounded_by_url[normalize_url(grounded.get("url"))] = grounded
+                if gaps:
+                    to_review_candidates.append(grounded)
+                else:
+                    qualified.append(grounded)
+            batch_opportunities = qualified
 
             if batch_opportunities:
+                groq_opportunities.extend(batch_opportunities)
+                if all(echeance_depassee(item.get("deadline")) for item in batch_opportunities):
+                    vlog(f"ℹ️ Lot {batch_index + 1} : candidats expirés ; examen du lot suivant")
+                    continue
                 vlog(
                     f"✅ Lot {batch_index + 1} : "
                     f"{len(batch_opportunities)} opportunité(s) — arrêt"
                 )
-                groq_opportunities = batch_opportunities
                 break
 
             vlog(f"ℹ️ Lot {batch_index + 1} : aucune opportunité éligible")
@@ -226,8 +445,10 @@ class VeilleOrchestrator(BaseOrchestrator):
             result = validation_service.fallback_response(filtered_results)
             elapsed = time.perf_counter() - start_total
             result["statistics"]["processing_time_seconds"] = round(elapsed, 3)
+            result["statistics"].update(timings)
+            result["statistics"].update(raw_results=len(raw_results), filtered=len(ranked_results))
             vlog(f"🏁 M1 FALLBACK — FIN ({elapsed:.3f}s)")
-            return result
+            return attach_source_diagnostics(result)
 
         # ── CAS B : Tous les lots tentés, 0 opportunité ──
         if not groq_opportunities:
@@ -236,13 +457,13 @@ class VeilleOrchestrator(BaseOrchestrator):
                 f"ℹ️ Aucune opportunité éligible après "
                 f"{min(MAX_FALLBACK_BATCHES, batch_index + 1)} lot(s)"
             )
-            return {
+            return attach_source_diagnostics({
                 "opportunities": [],
                 "market_signals": (
                     groq_response.get("market_signals", []) if groq_response else []
                 ),
                 "total": 0,
-                "status": "success",
+                "status": "partial" if failed_batches or sources_analyzed < len(ranked_results) else "no_results",
                 "ai_provider": "groq",
                 "statistics": {
                     "raw_results": len(raw_results),
@@ -252,12 +473,24 @@ class VeilleOrchestrator(BaseOrchestrator):
                     "final": 0,
                     "madagascar": 0,
                     "processing_time_seconds": round(elapsed, 3),
+                    "source_domains": source_domains,
+                    "sources_analyzed": sources_analyzed,
+                    "sources_attempted": sources_attempted,
+                    "sources_unanalyzed": len(ranked_results) - sources_analyzed,
+                    "failed_batches": failed_batches,
+                    **timings,
                 },
-                "notes": last_notes or "Aucune opportunité éligible trouvée.",
-            }
+                "notes": (
+                    "Analyse incomplète : certaines sources restent à analyser ou ont échoué. "
+                    "Aucune opportunité confirmée dans les sources analysées."
+                    if failed_batches or sources_analyzed < len(ranked_results)
+                    else last_notes or "Aucune opportunité éligible trouvée."
+                ),
+            })
 
         # ── 5→9. POST-TRAITEMENT COMMUN ──
-        return await self._finalize_opportunities(
+        post_started = time.perf_counter()
+        result = await self._finalize_opportunities(
             groq_opportunities=groq_opportunities,
             groq_response=groq_response or {},
             start_total=start_total,
@@ -267,13 +500,211 @@ class VeilleOrchestrator(BaseOrchestrator):
                 "sources_analyzed": len(filtered_results),
                 "prefilter_candidates": len(ranked_results),
                 "sources_sent_to_llm": len(filtered_results),
+                "source_domains": source_domains,
             },
-            sync_backend=sync_backend,
+            sync_backend=False,
+            real_evidence=True,
         )
+        # Les critères de preuve et de pertinence du chemin réel sont plus
+        # stricts que les anciens seuils permissifs du traitement commun.
+        confirmed = []
+        for opportunity in result.get("opportunities", []):
+            grounded = grounded_by_url.get(normalize_url(opportunity.get("url")), {})
+            valid_shape = True
+            try:
+                OpportunityResult.model_validate(opportunity)
+            except ValidationError:
+                valid_shape = False
+            if opportunity.get("score", 0) < 40 or not valid_shape:
+                candidate = {**opportunity, **grounded, "status": "to_review", "is_actionable": False,
+                             "score": opportunity.get("score", 0),
+                             "reason": opportunity.get("reason"), "score_evaluated": True,
+                             "ai_risk_level": "élevé", "next_step": "verify_source",
+                             "ai_recommendation": "Vérifier l'adéquation du besoin aux services ALTIORA avant de préparer une offre.",
+                             "ai_points_to_verify": [f"Score métier {opportunity.get('score', 0)}/100 (seuil 40) ; conformité du résultat : {valid_shape}"]}
+                to_review_candidates.append(candidate)
+                continue
+            opportunity.update({key: grounded.get(key) for key in (
+                "evidence", "evidence_origin", "source_title", "published_at", "captured_at", "last_checked_at",
+                "last_verified_at", "verification_method", "verification_status", "next_step",
+                "ai_recommendation", "ai_points_to_verify", "ai_risk_level", "reference")})
+            opportunity.update({key: grounded[key] for key in (
+                "deadline_at", "deadline_precision", "deadline_timezone", "freshness_status", "score_evaluated")
+                if key in grounded})
+            confirmed.append(opportunity)
+        result["opportunities"] = confirmed
+        result["total"] = len(confirmed)
+        result["statistics"]["final"] = len(confirmed)
+        result["statistics"]["final_opportunities"] = len(confirmed)
+        result["statistics"]["madagascar"] = sum(o.get("country_scope") == "Madagascar" for o in confirmed)
+        if sync_backend and confirmed:
+            review_id = create_review(
+                agent_id="agent_m1_veille", data={"opportunities": confirmed},
+                summary=f"M1 réel — {len(confirmed)} opportunité(s) documentée(s)", criticity="medium",
+            )
+            result.update(_review_id=review_id, _review_status="pending_review")
+            result["statistics"]["backend_sync"]["review_id"] = review_id
+        if not confirmed:
+            result["status"] = "no_results"
+        timings["post_processing_seconds"] = round(time.perf_counter() - post_started, 3)
+        result["statistics"].update(timings)
+        result["statistics"].update({
+            "sources_analyzed": sources_analyzed,
+            "sources_attempted": sources_attempted,
+            "sources_unanalyzed": len(ranked_results) - sources_analyzed,
+            "failed_batches": failed_batches,
+        })
+        if failed_batches or sources_analyzed < len(ranked_results):
+            result["status"] = "partial"
+        retained_urls = {normalize_url(item.get("url")) for item in result.get("opportunities", [])}
+        proposals = {normalize_url(item.get("url")): item for item in groq_opportunities
+                     if isinstance(item, dict) and item.get("url")}
+        for record in source_records:
+            if record["analysis_status"] != "proposed":
+                continue
+            url = normalize_url(record["url"])
+            candidate = next((c for c in to_review_candidates if normalize_url(c.get("url")) == url), None)
+            if candidate:
+                record.update(final_status="to_review", final_reason=candidate["ai_recommendation"])
+                continue
+            if url in retained_urls:
+                record.update(final_status="retained", final_reason="Validations Python réussies.")
+            else:
+                proposal = proposals.get(url, {})
+                deadline = proposal.get("deadline")
+                reason = (f"Échéance extraite dépassée ({deadline})." if echeance_depassee(deadline)
+                          else "Candidat non retenu après les validations Python.")
+                record.update(final_status="rejected", final_reason=reason)
+        return attach_source_diagnostics(result)
 
     # ========================================================
     # ENTRÉE 1 bis — DÉTECTION AUTOMATIQUE (sans requête saisie)
     # ========================================================
+
+    async def _detecter_collecte_dabord(self, queries, min_score, limit, sync_backend,
+                                      source_groups, budget_seconds, categorie):
+        """Collecte toutes les familles prévues avant une analyse globale bornée."""
+        if self.tavily_service is None:
+            return self._empty_response("technical_error", "Collecteur M1 indisponible : vérifier le registre des sources.")
+        started = time.perf_counter()
+        registry = load_registry()
+        active = [g.id for g in registry.groups if any(s.enabled for s in g.sources)]
+        if "missions_privees" in active:
+            active.insert(1, active.pop(active.index("missions_privees")))
+        plan = source_groups or [active[i % len(active)] for i in range(len(queries))]
+        if len(plan) != len(queries) or any(group not in active for group in plan):
+            raise ValueError("Une famille active est requise pour chaque requête.")
+        budget = max(1, budget_seconds if budget_seconds is not None else float(os.getenv("M1_DETECTION_BUDGET_S", "90")))
+        reserve = min(25, budget / 3)
+        records, collected = [None] * len(queries), []
+        diagnostics = {"attempts": [], "domain_coverage": [], "notice_resolution": []}
+        quota_stop = asyncio.Event()
+        semaphore = asyncio.Semaphore(2)
+        async def collect(index, query, family):
+            async with semaphore:
+                remaining = budget - reserve - (time.perf_counter() - started)
+                if quota_stop.is_set() or remaining <= 0:
+                    records[index] = {"query": query, "source_group": family,
+                                      "status": "quota_atteint" if quota_stop.is_set() else "technical_error",
+                                      "skipped": True, "error": "quota" if quota_stop.is_set() else "collection_time_budget", "found": 0}
+                    return
+                token = SEARCH_GROUP.set(family)
+                detail = {}
+                try:
+                    await emit_progress("requete", "collection_started", f"Recherche {index + 1}/{len(queries)} — {family} : {query}",
+                                        numero=index + 1, total=len(queries), query=query, family=family)
+                    async with asyncio.timeout(remaining):
+                        sources = await self.tavily_service.search(query, categorie=categorie)
+                    collected.extend(sources)
+                    detail = getattr(sources, "diagnostics", {})
+                    records[index] = {"query": query, "source_group": family, "status": "collected", "found": 0,
+                                      "collection_diagnostics": detail, "statistics": {"raw_results": len(sources)}}
+                    await emit_progress("analyse", "collection_completed", f"{family} : {len(sources)} document(s) collecté(s), qualification à effectuer.",
+                                        family=family, collected=len(sources))
+                    for source in sources:
+                        await emit_progress("analyse", "source_collected", f"Source collectée — {source.get('title', '')}", family=family,
+                                            source={key: source.get(key) for key in ("title", "url", "captured_at", "published_at", "last_verified_at")},
+                                            verification_status="collected_not_qualified")
+                except QuotaTavilyDepasseError:
+                    quota_stop.set()
+                    records[index] = {"query": query, "source_group": family, "status": "quota_atteint", "found": 0}
+                    await emit_progress("analyse", "collection_limited", f"{family} : quota de recherche atteint.", family=family)
+                except (TavilySearchError, TimeoutError) as exc:
+                    detail = getattr(exc, "diagnostics", {})
+                    records[index] = {"query": query, "source_group": family, "status": "technical_error", "found": 0,
+                                      "collection_diagnostics": detail, "error": type(exc).__name__}
+                    await emit_progress("analyse", "collection_failed", f"{family} : collecte incomplète, les autres résultats seront conservés.", family=family)
+                finally:
+                    for key in diagnostics:
+                        diagnostics[key].extend({**item, "family": family} for item in detail.get(key, []))
+                    SEARCH_GROUP.reset(token)
+        await asyncio.gather(*(collect(i, q, f) for i, (q, f) in enumerate(zip(queries, plan))))
+        collection_elapsed = time.perf_counter() - started
+        remaining = budget - collection_elapsed
+        token = SEARCH_GROUP.set("all")
+        try:
+            if remaining <= 0:
+                result = self._empty_response("technical_error", "Budget épuisé avant l'analyse ; collecte conservée dans les diagnostics.")
+            else:
+                async with asyncio.timeout(remaining):
+                    result = await self.analyser_opportunites(
+                        " ; ".join(dict.fromkeys(queries)), sync_backend=False, categorie=categorie,
+                        collected_sources=SearchResults(deduplicate_notices(collected), diagnostics))
+        except TimeoutError:
+            result = self._empty_response("partial", "Analyse interrompue par le budget ; consulter les sources collectées.")
+        finally:
+            SEARCH_GROUP.reset(token)
+        result.setdefault("collection_diagnostics", diagnostics)
+        if result.get("status") in {"technical_error", "partial"} and not result.get("analyzed_sources") and not result.get("pending_sources"):
+            result["pending_sources"] = [{"title": s.get("title"), "url": s.get("url"), "analysis_status": "pending",
+                                          "reason": "Analyse non aboutie dans le budget", "domain": source_domain(s.get("url", ""))}
+                                         for s in collected if not navigation_reason(s)]
+        documented = result.get("opportunities", [])
+        eligible = [o for o in documented if o.get("score", 0) >= min_score]
+        eligible.sort(key=lambda opportunity: opportunity.get("score", 0), reverse=True)
+        final = eligible[:limit]
+        retained_urls = {o.get("url") for o in final}
+        for record in result.get("analyzed_sources", []):
+            candidate = next((o for o in documented if o.get("url") == record.get("url")), None)
+            if candidate and candidate.get("url") not in retained_urls:
+                record.update(final_status="filtered_score" if candidate.get("score", 0) < min_score else "filtered_limit",
+                              final_reason=f"Score {candidate.get('score', 0)}/100 ; seuil demandé {min_score}, limite {limit}.")
+        stats = result.setdefault("statistics", {})
+        stats.update(final=len(final), final_opportunities=len(final), confirmed_opportunities=len(final),
+                     madagascar=sum(o.get("country_scope") == "Madagascar" for o in final),
+                     below_requested_score=len(documented) - len(eligible), omitted_by_limit=len(eligible) - len(final),
+                     collection_concurrency=2,
+                     queries_run=sum(not r.get("skipped") for r in records), queries_planned=len(queries),
+                     collected_documents=len(collected), source_retrieval_seconds=round(collection_elapsed, 3),
+                     processing_time_seconds=round(time.perf_counter() - started, 3))
+        if sync_backend and final:
+            stats["backend_sync"] = await sync_new_opportunities_to_backend(final)
+        else:
+            stats["backend_sync"] = {"enabled": base_sync.is_sync_enabled(), "sent": 0, "failed": 0, "deferred": not sync_backend}
+        incomplete = any(r["status"] != "collected" for r in records)
+        if incomplete and result.get("status") in {"success", "no_results"}:
+            result["status"] = "partial"
+        if not collected and all(r["status"] in {"technical_error", "quota_atteint"} for r in records):
+            result["status"] = "quota_atteint" if quota_stop.is_set() else "technical_error"
+        for record in records:
+            record["found"] = sum(o.get("url") in {
+                s.get("url") for s in collected if s.get("search_group") == record["source_group"]} for o in final)
+        result.update(mode="automatique", opportunities=final, total=len(final), queries=records,
+                      collection_complete=not incomplete, analysis_strategy="collect_then_analyze",
+                      source_groups=[{"family": group, "domains": registry.domains(group), "planned": group in plan,
+                                      "executed": any(r["source_group"] == group and not r.get("skipped") for r in records),
+                                      "statuses": [r["status"] for r in records if r["source_group"] == group]} for group in active])
+        result["notes"] = (f"Collecte : {stats['queries_run']}/{len(queries)} requête(s) exécutée(s). "
+                           f"{len(final)} opportunité(s) confirmée(s), "
+                           f"{len(result.get('to_review_candidates', []))} candidat(s) à vérifier, "
+                           f"{len(result.get('pending_sources', []))} source(s) non analysée(s). "
+                           f"{stats['below_requested_score']} écartée(s) par le seuil demandé de {min_score}. "
+                           f"Statut : {result.get('status')}.")
+        for source in result.get("analyzed_sources", []):
+            await emit_progress("analyse", "source_decision", f"{source.get('title', '')} — {source.get('final_status', '')} : {source.get('final_reason') or source.get('reason') or ''}",
+                                source=source)
+        await emit_progress("analyse", "ranking_completed", f"Classement terminé : {len(final)} opportunité(s) retenue(s), recommandations disponibles.", total=len(final))
+        return result
 
     async def detecter_automatiquement(
         self,
@@ -281,6 +712,10 @@ class VeilleOrchestrator(BaseOrchestrator):
         min_score: int = 40,
         limit: int = 20,
         sync_backend: bool = True,
+        source_groups: list[str] | None = None,
+        budget_seconds: float | None = None,
+        categorie: str = "auto",
+        collect_first: bool = False,
     ) -> dict[str, Any]:
         """
         Détection sans requête utilisateur : exécute la série de requêtes
@@ -299,37 +734,82 @@ class VeilleOrchestrator(BaseOrchestrator):
                 status="error", notes="Aucune requête de détection configurée."
             )
 
+        if collect_first:
+            return await self._detecter_collecte_dabord(
+                queries, min_score, limit, sync_backend, source_groups, budget_seconds, categorie)
+
         vlog("=" * 70)
         vlog(f"🤖 M1 DÉTECTION AUTOMATIQUE — DÉBUT ({len(queries)} requête(s))")
         vlog("=" * 70)
 
         par_requete: list[dict[str, Any]] = []
         collectees: list[dict[str, Any]] = []
+        analyzed_sources: list[dict[str, Any]] = []
+        pending_sources: list[dict[str, Any]] = []
+        to_review_candidates: list[dict[str, Any]] = []
+        registry = load_registry()
+        group_ids = [g.id for g in registry.groups if any(s.enabled for s in g.sources)]
+        if "missions_privees" in group_ids:
+            group_ids.insert(1, group_ids.pop(group_ids.index("missions_privees")))
+        if source_groups:
+            if len(source_groups) != len(queries) or any(g not in group_ids for g in source_groups):
+                raise ValueError("Une famille active est requise pour chaque requête.")
+        planned_groups = source_groups or [group_ids[i % len(group_ids)] for i in range(len(queries))]
+        run_budget = max(1.0, budget_seconds if budget_seconds is not None else float(os.getenv("M1_DETECTION_BUDGET_S", "90")))
+
+        def append_skipped(status, reason):
+            for index in range(len(par_requete), len(queries)):
+                par_requete.append({"query": queries[index], "source_group": planned_groups[index],
+                                    "status": status, "found": 0, "skipped": True, "error": reason})
 
         for query in queries:
+            selected_group = planned_groups[len(par_requete)]
+            token = SEARCH_GROUP.set(selected_group)
             try:
-                resultat = await self.analyser_opportunites(
-                    query, sync_backend=False, categorie="auto"
-                )
+                remaining = run_budget - (time.perf_counter() - start_total)
+                if remaining <= 0:
+                    raise TimeoutError
+                async with asyncio.timeout(remaining):
+                    resultat = await self.analyser_opportunites(
+                        query, sync_backend=False, categorie=categorie
+                    )
+            except QuotaTavilyDepasseError:
+                resultat = {"opportunities": [], "status": "quota_atteint"}
+            except TimeoutError:
+                append_skipped("technical_error", "time_budget_exceeded")
+                break
             except Exception as exc:
                 logger.exception("❌ Détection auto — requête en échec : %s", query)
                 par_requete.append({
                     "query": query, "status": "error",
-                    "found": 0, "error": type(exc).__name__,
+                    "found": 0, "error": type(exc).__name__, "source_group": selected_group,
                 })
                 continue
+            finally:
+                SEARCH_GROUP.reset(token)
 
             trouvees = [
                 o for o in resultat.get("opportunities", []) if isinstance(o, dict)
             ]
+            analyzed_sources.extend({**item, "query": query} for item in resultat.get("analyzed_sources", []))
+            pending_sources.extend({**item, "query": query} for item in resultat.get("pending_sources", []))
+            to_review_candidates.extend(resultat.get("to_review_candidates", []))
             par_requete.append({
                 "query": query,
                 "status": resultat.get("status"),
                 "found": len(trouvees),
+                "source_group": resultat.get("search_group", selected_group),
+                "collection_diagnostics": resultat.get("collection_diagnostics", {}),
+                "statistics": {key: (resultat.get("statistics") or {}).get(key, 0)
+                               for key in ("raw_results", "filtered", "sources_sent_to_llm")},
             })
             for opportunite in trouvees:
                 opportunite["detected_by_query"] = query
             collectees.extend(trouvees)
+            if resultat.get("status") == "quota_atteint":
+                # Ne pas relancer Groq pour les requêtes restantes du même passage.
+                append_skipped("quota_atteint", "quota_atteint")
+                break
 
         # ── FUSION : meilleur score d'abord, puis dédoublonnage URL/titre ──
         collectees.sort(key=lambda o: int(o.get("score", 0) or 0), reverse=True)
@@ -349,13 +829,15 @@ class VeilleOrchestrator(BaseOrchestrator):
                 "deferred": not sync_backend,
             }
 
-        ok = [r for r in par_requete if r["status"] in ("success", "no_results")]
+        ok = [r for r in par_requete if r["status"] in ("success", "no_results", "partial")]
         if not ok:
-            statut = "degraded"
-        elif len(ok) < len(par_requete):
+            statut = "quota_atteint" if any(r["status"] == "quota_atteint" for r in par_requete) else "technical_error"
+        elif len(ok) < len(par_requete) or any(r["status"] == "partial" for r in par_requete):
             statut = "partial"
         else:
             statut = "success"
+        if statut == "success" and not finales:
+            statut = "no_results"
 
         elapsed = time.perf_counter() - start_total
         vlog(
@@ -371,8 +853,21 @@ class VeilleOrchestrator(BaseOrchestrator):
             "status": statut,
             "ai_provider": "groq",
             "queries": par_requete,
+            "source_groups": [{"family": group, "domains": registry.domains(group),
+                               "planned": group in planned_groups,
+                               "executed": any(q.get("source_group") == group and not q.get("skipped") for q in par_requete),
+                               "statuses": [q["status"] for q in par_requete if q.get("source_group") == group]}
+                              for group in group_ids],
+            "analyzed_sources": analyzed_sources,
+            "pending_sources": pending_sources,
+            "to_review_candidates": to_review_candidates,
             "statistics": {
-                "queries_run": len(queries),
+                "sources_analyzed": len(analyzed_sources),
+                "sources_unanalyzed": len(pending_sources),
+                "raw_results": sum(q.get("statistics", {}).get("raw_results", 0) for q in par_requete),
+                "sources_sent_to_llm": sum(q.get("statistics", {}).get("sources_sent_to_llm", 0) for q in par_requete),
+                "queries_run": sum(not q.get("skipped", False) for q in par_requete),
+                "queries_planned": len(queries),
                 "collected": len(collectees),
                 "after_dedup": len(uniques),
                 "below_min_score": len(uniques) - len(retenues),
@@ -584,6 +1079,7 @@ class VeilleOrchestrator(BaseOrchestrator):
         extra_statistics: dict[str, Any] | None = None,
         sync_backend: bool = True,
         date_reference: datetime | None = None,
+        real_evidence: bool = False,
     ) -> dict[str, Any]:
         """Post-traitement : normalisation, qualité, classification, scoring,
         déduplication, validation, sync backend (si sync_backend)."""
@@ -647,7 +1143,11 @@ class VeilleOrchestrator(BaseOrchestrator):
                 continue
 
             # ── ÉTAPE C : CLASSIFICATION + COUNTRY ──
-            cleaned.update(self.classification_service.classify(cleaned))
+            classification = dict(self.classification_service.classify(cleaned))
+            # La confiance du classificateur porte sur le domaine, pas sur
+            # la véracité de l'annonce. Ne pas écraser la confiance d'extraction.
+            classification.pop("confidence", None)
+            cleaned.update(classification)
 
             country_scope = self.classification_service.detect_country(cleaned)
             if country_scope == "Inconnu":
@@ -663,7 +1163,17 @@ class VeilleOrchestrator(BaseOrchestrator):
             cleaned["country_scope"] = country_scope
 
             # ── ÉTAPE D : SCORING ──
-            cleaned.update(self.scoring_service.score(cleaned, date_reference=date_reference))
+            scoring_data, scoring_reference = cleaned, date_reference
+            if real_evidence:
+                # Le scoring historique compare des datetimes naïfs. Pour le
+                # réel, conserver la vraie heure vérifiée dans le fuseau local ;
+                # une date seule n'est pas une clôture à minuit.
+                local_now = datetime.now(UTC).astimezone(MADAGASCAR).replace(tzinfo=None)
+                scoring_reference = local_now.replace(hour=0, minute=0, second=0, microsecond=0)
+                if cleaned.get("deadline_at"):
+                    scoring_data = {**cleaned, "deadline": datetime.fromisoformat(cleaned["deadline_at"]).astimezone(MADAGASCAR).replace(tzinfo=None).isoformat()}
+                    scoring_reference = local_now
+            cleaned.update(self.scoring_service.score(scoring_data, date_reference=scoring_reference))
 
             try:
                 final_score = int(cleaned.get("score", 0))
@@ -700,6 +1210,16 @@ class VeilleOrchestrator(BaseOrchestrator):
 
             cleaned["ai_provider"] = "groq"
             cleaned["is_actionable"] = True
+            verification_time = (date_reference or datetime.now(UTC)).isoformat()
+            cleaned["freshness_status"] = statut_fraicheur(
+                cleaned.get("deadline"), date_reference
+            )
+            cleaned.setdefault("captured_at", verification_time)
+            cleaned["last_verified_at"] = verification_time
+            cleaned.setdefault("ai_summary", cleaned.get("summary"))
+            cleaned.setdefault("ai_relevance", cleaned.get("reason"))
+            cleaned.setdefault("ai_recommendation", cleaned.get("recommendation"))
+            cleaned.setdefault("ai_points_to_verify", [])
 
             normalized.append(cleaned)
             vlog(f"   ✅ [{idx}] AJOUTÉ | score={final_score}, status={cleaned['status']}")
@@ -788,6 +1308,8 @@ class VeilleOrchestrator(BaseOrchestrator):
             "final_opportunities": len(schema_valid),
             "rejected_normalize": stats_rejected["normalize"],
             "rejected_quality_filter": stats_rejected["quality_filter"],
+            "rejected_deadline_expired": stats_rejected["echeance_depassee"],
+            "rejected_outside_madagascar": stats_rejected["hors_madagascar"],
             "rejected_score_bas": stats_rejected["score_trop_bas"],
         }
         if extra_statistics:
@@ -797,7 +1319,7 @@ class VeilleOrchestrator(BaseOrchestrator):
             "opportunities": schema_valid[:20],
             "market_signals": groq_response.get("market_signals", []),
             "total": len(schema_valid),
-            "status": "success",
+            "status": "success" if schema_valid else "no_results",
             "ai_provider": "groq",
             "statistics": statistics,
             "notes": groq_response.get(
@@ -819,8 +1341,11 @@ class VeilleOrchestrator(BaseOrchestrator):
         notes: str,
         elapsed: float = 0.0,
         raw_count: int = 0,
+        timings: dict[str, float] | None = None,
+        technical_reason: str | None = None,
+        collection_diagnostics: dict | None = None,
     ) -> dict[str, Any]:
-        return {
+        result = {
             "opportunities": [],
             "market_signals": [],
             "total": 0,
@@ -833,9 +1358,19 @@ class VeilleOrchestrator(BaseOrchestrator):
                 "final": 0,
                 "madagascar": 0,
                 "processing_time_seconds": round(elapsed, 3),
+                **(timings or {}),
             },
             "notes": notes,
         }
+        if technical_reason:
+            result["technical_reason"] = technical_reason
+        if collection_diagnostics is not None:
+            result["collection_diagnostics"] = collection_diagnostics
+            if status == "no_results" and any(d.get("status") in {"failed", "not_searched"}
+                                               for d in collection_diagnostics.get("domain_coverage", [])):
+                result["status"] = "partial"
+                result["notes"] = "Collecte incomplète : certains sites n'ont pas pu être recherchés. Aucune absence globale d'opportunités ne peut être conclue."
+        return result
 
     # ========================================================
     # SYNCHRONISATION BACKEND — APRÈS APPROBATION HITL

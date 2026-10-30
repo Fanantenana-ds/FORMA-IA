@@ -59,6 +59,12 @@ class OrchestrateurSimule(VeilleOrchestrator):
         self.reponses = reponses          # {requête: dict | Exception}
         self.appels = []
 
+    async def detecter_automatiquement(self, *args, **kwargs):
+        # Ces tests isolent la planification et l'ancien parcours par requête.
+        # Le parcours collecte globale est testé séparément sans réseau.
+        kwargs["collect_first"] = False
+        return await super().detecter_automatiquement(*args, **kwargs)
+
     async def analyser_opportunites(self, query, sync_backend=True, categorie="manuel"):
         self.appels.append((query, sync_backend, categorie))
         reponse = self.reponses[query]
@@ -182,7 +188,7 @@ def test_toutes_les_requetes_en_echec_donne_degraded_sans_sync(espion_sync):
 
     resultat = run(orch.detecter_automatiquement(["q1", "q2"]))
 
-    assert resultat["status"] == "degraded"
+    assert resultat["status"] == "technical_error"
     assert resultat["total"] == 0
     assert espion_sync == []                                  # rien à envoyer
 
@@ -192,7 +198,7 @@ def test_aucun_resultat_n_est_pas_une_erreur(espion_sync):
 
     resultat = run(orch.detecter_automatiquement(["q1"]))
 
-    assert resultat["status"] == "success"
+    assert resultat["status"] == "no_results"
     assert resultat["total"] == 0
 
 
@@ -443,6 +449,7 @@ def test_les_parametres_explicites_priment_sur_la_configuration(monkeypatch):
 
     assert (recu["min_score"], recu["limit"], recu["sync_backend"]) == (10, 3, False)
     assert recu["queries"] == auto.get_queries()
+    assert recu["collect_first"] is True
 
 
 # ============================================================
@@ -545,9 +552,9 @@ def api(monkeypatch):
     app.include_router(routes_veille.router, prefix="/api/v1")
     recu = {}
 
-    async def faux_detecter(queries, min_score, limit, sync_backend):
+    async def faux_detecter(queries, min_score, limit, sync_backend, collect_first=False):
         recu.update(queries=queries, min_score=min_score,
-                    limit=limit, sync_backend=sync_backend)
+                    limit=limit, sync_backend=sync_backend, collect_first=collect_first)
         return {"mode": "automatique", "status": "success", "total": 1,
                 "opportunities": [opp("A", "https://a.mg", 80)],
                 "queries": [], "statistics": {"backend_sync": {"sent": 1}}}

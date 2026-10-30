@@ -464,7 +464,7 @@ def fallback_response(results: list[dict[str, Any]]) -> dict[str, Any]:
             "Analyse IA indisponible. Aucune opportunité brute "
             "n'est promue automatiquement."
         ),
-        "status": "degraded",
+        "status": "technical_error",
         "ai_provider": "fallback",
         "statistics": {
             "raw_results": len(results),

@@ -214,6 +214,8 @@ import logging
 import os
 import re
 from typing import Any
+from collections import deque
+from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
 
@@ -292,10 +294,76 @@ _AVIS_RESULTATS_REGEX = re.compile(
     re.IGNORECASE,
 )
 
+_TECH_TITLE = re.compile(
+    r"\b(?:informatique|num[ée]rique|digital|web|pao|python|excel|data|devops|"
+    r"cloud|cybers[ée]curit[ée]|bureautique|logiciel|r[ée]seau|ia|ict|it)\b|"
+    r"intelligence artificielle|syst[èe]me.*information", re.IGNORECASE,
+)
+_FOREIGN_LOCATION = re.compile(
+    r"\b(?:s[ée]n[ée]gal|burundi|egypt|egypte|[ée]gypte|b[ée]nin|douala|"
+    r"cameroun|addis|[ée]thiopie|guin[ée]e|liban|maroc|boulogne-billancourt)\b", re.IGNORECASE,
+)
+
+
+def rejection_reason(result: dict[str, Any]) -> str | None:
+    """Rejets prouvables ; une information manquante reste à analyser."""
+    title = str(result.get("title", ""))
+    content = str(result.get("content", "") or result.get("snippet", ""))
+    text = f"{title} {content}"
+    local = re.search(r"madagascar|malgache|malagasy|antananarivo|menabe", text, re.IGNORECASE)
+    if _FOREIGN_LOCATION.search(title) and not local:
+        return "localisation étrangère explicite"
+    if not _TECH_TITLE.search(title) and re.search(
+        r"kits solaires|gestion.*for[êe]ts|conservation.*biodiversit[ée]|"
+        r"water resources|macro[ée]valuation|evaluability assessment|"
+        r"impression des documents|^é?ditorial|croissance et r[ée]formes|"
+        r"production.*tomate|transformation des produits|packaging|r[èe]gles d.origine.*cedeao|"
+        r"restauration.*p[âa]tisserie|motorcycles|mat[ée]riels roulants",
+        title, re.IGNORECASE,
+    ):
+        return "objet explicitement hors prestation informatique"
+    # Une date de publication ancienne ne suffit pas à prouver l'expiration.
+    deadline = result.get("deadline")
+    if deadline:
+        from datetime import date
+        try:
+            if date.fromisoformat(str(deadline)[:10]) < date.today():
+                return "échéance explicite dépassée"
+        except ValueError:
+            pass
+    return None
+
+
+def navigation_reason(result):
+    """Ces pages servent à découvrir des liens, pas à qualifier un marché."""
+    parsed = urlparse(str(result.get("url") or ""))
+    path = parsed.path.lower().rstrip("/")
+    if "/blog/" in path or re.search(r"document d.enregistrement universel|^rapport annuel|^l.afrique en communs", str(result.get("title") or ""), re.I):
+        return "Contenu informatif : aucune annonce individuelle de prestation identifiée"
+    if (path in {"", "/appels-doffres", "/appels-a-manifestations-dinterets", "/emploi",
+                 "/offres-emploi-aujourdhui", "/offres-emploi", "/offres-emploi-semaine"}
+            or "/category/" in path or "/company/" in path
+            or "adminshowbuyer" in path or path.endswith("list.do")
+            or re.search(r"/emploi/(?:s-|m-|teletravail)|/jobs/search|/jobs/[^/]*emplois|/author/|/fr/recherche", path)):
+        return "Page de navigation : retrouver une annonce individuelle avant l'analyse IA"
+    return None
+
 
 def _is_low_value(result: dict[str, Any]) -> bool:
     """Listing vide, page CV ou avis de résultats : jamais une opportunité."""
+    title = str(result.get("title", ""))
     content = str(result.get("content", "") or result.get("snippet", ""))
+    header = f"{title} {content[:500]}"
+    if re.search(r"\bcancelled\b|\bannul[ée]\b|\bwithdrawn\b", header, re.IGNORECASE):
+        return True
+    if re.search(
+        r"appels? d['’]offres? et passations de marchés|"
+        r"^rapport\b|^r[ée]publique de madagascar$|"
+        r"^madagascar\s*\|\s*afd",
+        title.strip(),
+        re.IGNORECASE,
+    ):
+        return True
     if _EMPTY_LISTING_REGEX.search(content):
         return True
     if _AVIS_RESULTATS_REGEX.search(f"{result.get('title', '')} {content[:400]}"):
@@ -312,7 +380,7 @@ def _dedupe(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
         content = str(result.get("content", "") or result.get("snippet", ""))
         signature = (
             str(result.get("title", "")).strip().lower()
-            + "|" + re.sub(r"\s+", " ", content[:200]).strip().lower()
+            + "|" + re.sub(r"\s+", " ", content).strip().lower()
         )
         if (url and url in seen) or signature in seen:
             continue
@@ -369,6 +437,11 @@ def rank_results(
 
         title = str(result.get("title", ""))
         url = str(result.get("url", ""))
+
+        reason = rejection_reason(result)
+        if reason:
+            logger.info("🚫 Préfiltre : %s — %s", reason, title[:70])
+            continue
 
         if _is_hard_rejected(title, url):
             logger.info("🚫 Rejet dur (article/profil) : %s", title[:70])
@@ -454,6 +527,17 @@ def rank_results(
             score += 2
 
         result["prefilter_score"] = score
+        if result.get("source_preferred"):
+            result["prefilter_score"] += 4
+        # Une annonce individuelle doit passer avant sa page de catégorie,
+        # même si cette dernière répète davantage de mots de la requête.
+        path = urlparse(str(result.get("url", ""))).path.lower()
+        if path.rstrip("/") in {"/appels-doffres", "/appels-a-manifestations-dinterets"} or any(
+            p in path for p in ("/category/", "adminshowbuyer", "/tenders/list.do")
+        ):
+            result["prefilter_score"] -= 20
+        elif re.search(r"intelligence-artificielle|analyse-de-donnees|formation-informatique|devops|bureautique|cybersecurite", path):
+            result["prefilter_score"] += 12
 
     # ------------------------------------------------------------
     # ÉTAPE 2 — TRI
@@ -470,6 +554,32 @@ def rank_results(
         )
 
     return results
+
+
+def source_domain(url: str) -> str:
+    """Domaine de provenance ; regroupe www et les portails dgMarket."""
+    hostname = (urlparse(url).hostname or "inconnu").lower().removeprefix("www.")
+    if hostname == "dgmarket.com" or hostname.endswith(".dgmarket.com"):
+        return "dgmarket.com"
+    return hostname
+
+
+def diversify_sources(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Alterne les domaines en conservant le classement dans chaque domaine.
+
+    Cette sélection porte sur les pages déjà collectées ; elle ne prouve pas
+    qu'un site a répondu directement et n'ajoute aucun appel réseau.
+    """
+    groups: dict[str, deque] = {}
+    for result in results:
+        groups.setdefault(source_domain(str(result.get("url", ""))), deque()).append(result)
+    selected = []
+    while groups:
+        for domain in list(groups):
+            selected.append(groups[domain].popleft())
+            if not groups[domain]:
+                del groups[domain]
+    return selected
 
 
 def prefilter_results(

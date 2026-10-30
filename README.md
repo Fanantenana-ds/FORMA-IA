@@ -247,6 +247,12 @@ Corpus `data/corpus_veille/corpus_v1.jsonl` : 105 textes annotés (84 `dev`, 21 
 
 Objectifs CDC : précision > 85 % ✅ · extraction > 90 % ❌ (organisme jamais extrait) · latence < 3 s ❌. Mesure sur les 105 textes à faire : `python scripts/benchmark_m1.py --limit 105 --pause 15` (lots de 10 sauvegardés, arrêt propre si quota Groq épuisé, reprise avec `--reprendre`).
 
+### Démonstration M1 (`DEMO_MODE=true`)
+
+Le fichier `app/services/veille/opportunites_demo_reelles.json` contient 10 avis publics archivés et vérifiés, capturés le **28/10/2026**. Chaque fiche sépare la date de publication, la date de capture et la date limite, avec la référence et le lien vers l’avis source. Le statut à la capture reste conservé ; le statut courant est recalculé au lancement.
+
+Avec `DEMO_MODE=true`, `GET /api/v1/ia/veille/detecter/stream` rejoue l’archive en environ 8 à 10 secondes, sans interroger Tavily ou Groq. Le score M1 est calculé par le service déterministe avec la date de capture. Le jeu fictif historique n’est utilisé qu’en secours si l’archive réelle ne peut pas être chargée, et le flux le signale explicitement.
+
 Corrections critiques notables : seuil de 80 % non revérifié (M6), TDR envoyé sans HITL (M2), benchmark M1 qui polluait la base, route `/documents` non montée (404 partout), `parse_budget('5M Ar')` → 5 au lieu de 5 000 000, champ `date` qui masquait son propre type dans deux schémas (PATCH de date toujours refusé), doublon des modèles `projets/salles/edt_sessions/budgets_formation`, chunks RAG indexés en double (12/10).
 
 ---

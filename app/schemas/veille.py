@@ -40,6 +40,15 @@ class OpportunityResult(BaseModel):
     ai_provider: str | None = None
     reason: str | None = None
     flags: list[str] = Field(default_factory=list)
+    freshness_status: str = "date_inconnue"
+    published_at: str | None = None
+    captured_at: str | None = None
+    last_verified_at: str | None = None
+    ai_summary: str | None = None
+    ai_relevance: str | None = None
+    ai_recommendation: str | None = None
+    ai_points_to_verify: list[str] = Field(default_factory=list)
+    ai_risk_level: str | None = None
 
 
 class VeilleResponse(BaseModel):

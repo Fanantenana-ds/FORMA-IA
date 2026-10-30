@@ -18,9 +18,11 @@
 # prompt métier.
 # ============================================================
 
+import asyncio
 import json
 import logging
 import os
+import re
 import time
 from datetime import datetime
 from pathlib import Path
@@ -29,9 +31,11 @@ from typing import Any
 from app.services.llm import (
     LLMError,
     LLMNotAvailableError,
+    LLMRateLimitError,
     get_llm_provider,
 )
 from app.utils.url_utils import normalize_url
+from app.services.veille.evidence_service import MADAGASCAR, source_need
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +43,7 @@ BASE_DIR = Path(__file__).resolve().parents[3]
 PROMPTS_DIR = BASE_DIR / "app" / "prompts" / "m1"
 VEILLE_YAML_PATH = PROMPTS_DIR / "veille.yaml"
 
-GROQ_TIMEOUT = float(os.getenv("GROQ_TIMEOUT", "20"))
+GROQ_TIMEOUT = float(os.getenv("GROQ_TIMEOUT", "12"))
 # 1200 était trop juste pour openai/gpt-oss-120b avec reasoning
 # activé, même en "low" : le JSON de sortie (jusqu'à 4 sources,
 # champs reason/summary/flags) peut dépasser ce budget.
@@ -49,7 +53,7 @@ MAX_PROMPT_CHARS = int(os.getenv("MAX_PROMPT_CHARS", "18000"))
 MAX_SOURCE_CHARS_TOTAL = int(os.getenv("MAX_SOURCE_CHARS_TOTAL", "4500"))
 MAX_SOURCE_CHARS_EACH = int(os.getenv("MAX_SOURCE_CHARS_EACH", "1000"))
 
-RETRY_MAX_ATTEMPTS = int(os.getenv("RETRY_MAX_ATTEMPTS", "3"))
+M1_ANALYSIS_BUDGET_S = max(1.0, float(os.getenv("M1_ANALYSIS_BUDGET_S", "20")))
 
 # Ce texte est ajouté UNIQUEMENT si le mot "json" est absent du
 # prompt final (donc en principe jamais si veille.yaml est à jour,
@@ -73,6 +77,7 @@ class LLMAnalysisService:
             logger.warning("⚠️ Aucun provider LLM disponible")
 
         self.veille_yaml_text = self._load_raw_yaml(VEILLE_YAML_PATH)
+        self.compact_yaml_text = self._load_raw_yaml(PROMPTS_DIR / "analyse_compacte.yaml")
         logger.info("✅ Prompt veille.yaml chargé")
 
         if "json" not in self.veille_yaml_text.lower():
@@ -106,6 +111,52 @@ class LLMAnalysisService:
     # --------------------------------------------------------
     # CONSTRUCTION DU PROMPT
     # --------------------------------------------------------
+
+    def _prepare_compact_prompt(self, query, results, date_reference=None):
+        sources = [r for r in results if isinstance(r, dict)]
+        while True:
+            blocks = []
+            for index, source in enumerate(sources, 1):
+                text = str(source.get("content") or "")
+                windows = [text[:450]]
+                for match in list(re.finditer(r"cl[ôo]ture|deadline|date limite|au plus tard", text, re.I))[:3]:
+                    excerpt = text[max(0, match.start() - 30):match.start() + 260]
+                    if excerpt not in windows:
+                        windows.append(excerpt)
+                blocks.append(f"RESULTAT {index}\nTITRE: {source.get('title', '')}\nURL: {source.get('url', '')}\n"
+                              f"BESOIN LU: {source_need(source) or 'Non extrait'}\n"
+                              f"CONTENU: {' […] '.join(windows)[:1300]}")
+            today = (date_reference or datetime.now(MADAGASCAR)).strftime("%Y-%m-%d")
+            prompt = self._replace_placeholders(self.compact_yaml_text, query, today, "\n\n".join(blocks))
+            if len(prompt) <= MAX_PROMPT_CHARS or len(sources) <= 1:
+                return self._ensure_json_keyword(prompt), sources
+            sources.pop()
+
+    @staticmethod
+    def _retry_delay(error):
+        """Une attente courte indiquée par le fournisseur ; aucun retry aveugle."""
+        response = getattr(error.__cause__, "response", None)
+        headers = getattr(response, "headers", {})
+        try:
+            delay = float(headers.get("retry-after"))
+            return delay if 0 <= delay <= 2 else None
+        except (TypeError, ValueError):
+            match = re.search(r"try again in\s+(\d+(?:\.\d+)?)\s*(ms|s)\b", str(error), re.I)
+            if match:
+                delay = float(match.group(1)) / (1000 if match.group(2).lower() == "ms" else 1)
+                return delay if 0 <= delay <= 2 else None
+        return None
+
+    async def _generate_once_or_short_retry(self, **kwargs):
+        try:
+            return await self.llm.generate(**kwargs)
+        except LLMRateLimitError as exc:
+            delay = self._retry_delay(exc)
+            if delay is None:
+                raise
+            await asyncio.sleep(delay + 0.15)
+            # Une seconde erreur remonte ; le budget extérieur inclut l'attente.
+            return await self.llm.generate(**kwargs)
 
     @staticmethod
     def _replace_placeholders(
@@ -148,6 +199,8 @@ class LLMAnalysisService:
                 f"===== RESULTAT {index} =====\n"
                 f"TITRE: {title}\n"
                 f"URL: {url}\n"
+                f"PUBLICATION SOURCE: {result.get('published_at') or 'Non précisée'}\n"
+                f"CAPTURE SOURCE: {result.get('captured_at') or 'Non précisée'}\n"
                 f"CONTENU:\n{content}\n"
             )
 
@@ -233,12 +286,18 @@ class LLMAnalysisService:
         results: list[dict[str, Any]],
         date_reference: datetime | None = None,
     ) -> str:
+        return self._prepare_prompt(query, results, date_reference)[0]
+
+    def _prepare_prompt(
+        self, query: str, results: list[dict[str, Any]],
+        date_reference: datetime | None = None,
+    ) -> tuple[str, list[dict[str, Any]]]:
         """Conserve le YAML complet, réduit uniquement les sources si besoin."""
 
         prompt = self._build_prompt(query, results, date_reference=date_reference)
 
         if len(prompt) <= MAX_PROMPT_CHARS:
-            return self._ensure_json_keyword(prompt)
+            return self._ensure_json_keyword(prompt), results
 
         logger.warning(
             "⚠️ Prompt trop grand : %d caractères. Réduction des sources.",
@@ -259,7 +318,7 @@ class LLMAnalysisService:
             len(reduced_results),
         )
 
-        return self._ensure_json_keyword(prompt)
+        return self._ensure_json_keyword(prompt), reduced_results
 
     # --------------------------------------------------------
     # APPEL LLM (retry/backoff géré par la Provider Abstraction)
@@ -270,6 +329,7 @@ class LLMAnalysisService:
         query: str,
         results: list[dict[str, Any]],
         date_reference: datetime | None = None,
+        compact: bool = False,
     ) -> dict[str, Any] | None:
         """
         Construit le prompt et interroge le LLM. Retourne le JSON
@@ -283,10 +343,11 @@ class LLMAnalysisService:
             logger.warning("⚠️ Aucun provider LLM disponible")
             return None
 
-        prompt = self.build_prompt_with_budget(query, results, date_reference=date_reference)
+        prepare = self._prepare_compact_prompt if compact else self._prepare_prompt
+        prompt, submitted = prepare(query, results, date_reference=date_reference)
 
-        logger.info("📤 Envoi à GROQ : %d sources", len(results))
-        for i, r in enumerate(results, start=1):
+        logger.info("📤 Envoi à GROQ : %d sources", len(submitted))
+        for i, r in enumerate(submitted, start=1):
             content_preview = str(
                 r.get("content", "") or r.get("snippet", "")
             )[:150]
@@ -300,11 +361,13 @@ class LLMAnalysisService:
         start = time.perf_counter()
 
         try:
-            response = await self.llm.generate_with_retry(
+            # Une seule tentative M1 : le 429 doit remonter immédiatement.
+            # Le budget inclut aussi un éventuel retry interne du SDK.
+            response = await asyncio.wait_for(self._generate_once_or_short_retry(
                 system_prompt="",
                 user_prompt=prompt,
                 temperature=0.1,
-                max_tokens=GROQ_MAX_OUTPUT_TOKENS,
+                max_tokens=min(1800, GROQ_MAX_OUTPUT_TOKENS) if compact else GROQ_MAX_OUTPUT_TOKENS,
                 json_mode=True,
                 # IMPORTANT : openai/gpt-oss-120b est un modèle de
                 # raisonnement sur Groq. Par défaut (reasoning_effort=
@@ -315,8 +378,7 @@ class LLMAnalysisService:
                 # "low" laisse plus de marge pour la réponse elle-même.
                 reasoning_effort="low",
                 timeout=GROQ_TIMEOUT,
-                max_retries=RETRY_MAX_ATTEMPTS,
-            )
+            ), timeout=M1_ANALYSIS_BUDGET_S)
 
             elapsed = time.perf_counter() - start
             logger.info("⏱️ Groq : %.3fs", elapsed)
@@ -349,11 +411,23 @@ class LLMAnalysisService:
                 "✅ GROQ : réponse JSON valide — %d opportunités",
                 len(data["opportunities"]),
             )
-            self._log_rejets(data, results)
+            self._log_rejets(data, submitted)
+            # Le consommateur doit savoir quelles sources sont réellement
+            # entrées dans le prompt après réduction de son budget.
+            data["sources_submitted"] = len(submitted)
+            data["llm_usage"] = response.get("usage", {})
+            data["prompt_characters"] = len(prompt)
             logger.info(f"🔍 Réponse GROQ: {data}")
 
             return data
 
+        except LLMRateLimitError:
+            logger.warning("Quota Groq atteint : arrêt des appels M1 pour ce passage.")
+            return {"opportunities": [], "status": "quota_atteint",
+                    "notes": "Quota Groq atteint. Réessayez après le renouvellement du quota."}
+        except TimeoutError:
+            logger.warning("Budget d'analyse M1 dépassé (%.1f s).", M1_ANALYSIS_BUDGET_S)
+            return None
         except LLMNotAvailableError as exc:
             logger.error("❌ Provider LLM indisponible : %s", exc)
             return None
@@ -369,4 +443,4 @@ class LLMAnalysisService:
         except Exception as exc:
             logger.exception("❌ LLM [%s] : %s", self.llm.get_model_name(), exc)
             return None
-        
+

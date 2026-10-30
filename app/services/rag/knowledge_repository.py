@@ -10,7 +10,7 @@
 import logging
 from typing import Any, Dict, List, Optional, Tuple
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, func
 
 from app.database import SessionLocal
 from app.models.knowledge_base import KnowledgeBase
@@ -20,6 +20,21 @@ logger = logging.getLogger(__name__)
 
 class KnowledgeRepository:
     """Implémentation réelle (PostgreSQL, via SessionLocal)."""
+
+    def lister_chunks_document(self, doc_hash: str, offset: int = 0, limit: int = 20, collection: str | None = None) -> dict:
+        """Inspecte les extraits persistés, sans lire/transmettre les vecteurs."""
+        db = SessionLocal()
+        try:
+            filters = [KnowledgeBase.doc_hash == doc_hash]
+            if collection:
+                filters.append(KnowledgeBase.collection == collection)
+            total = db.execute(select(func.count()).select_from(KnowledgeBase).where(*filters)).scalar_one()
+            query = select(KnowledgeBase.chunk_index, KnowledgeBase.contenu, KnowledgeBase.fichier,
+                           KnowledgeBase.collection, KnowledgeBase.page_debut, KnowledgeBase.page_fin,
+                           KnowledgeBase.modele_embed).where(*filters).order_by(KnowledgeBase.collection, KnowledgeBase.chunk_index).offset(offset).limit(limit)
+            return {"total": total, "offset": offset, "limit": limit, "data": [dict(row._mapping) for row in db.execute(query).all()]}
+        finally:
+            db.close()
 
     def modeles_presents(self, collection: str | None = None) -> list[str]:
         db = SessionLocal()

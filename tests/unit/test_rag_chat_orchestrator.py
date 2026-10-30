@@ -35,6 +35,13 @@ def run(coro):
     return asyncio.run(coro)
 
 
+def test_accueil_plateforme_local_mais_question_metier_confiee_a_c3():
+    assert chat_module._est_demande_generale_plateforme("Comment utiliser cette platforme ?") is True
+    assert chat_module._est_demande_generale_plateforme(
+        "Comment valider un TDR dans la plateforme FORMA-IA ?"
+    ) is False
+
+
 class Ligne:
     def __init__(self, contenu, fichier="doc.pdf", formation_code="IA_FONDAMENTAUX",
                  formation_titre="IA", collection="support", page_debut=3, page_fin=3, type_support="pdf"):

@@ -21,6 +21,7 @@ import pytest
 from fastapi import FastAPI as _FastAPI
 
 from app.utils.security import verify_api_key as _verify_api_key
+from app.services.veille.access_service import verify_api_key as _verify_m1_access
 
 _orig_include_router = _FastAPI.include_router
 
@@ -32,6 +33,7 @@ async def _noop():
 def _include_router_with_override(self, router, **kwargs):
     _orig_include_router(self, router, **kwargs)
     self.dependency_overrides[_verify_api_key] = _noop
+    self.dependency_overrides[_verify_m1_access] = _noop
 
 
 # Patch immédiat sur la classe FastAPI — affecte toutes les instances créées

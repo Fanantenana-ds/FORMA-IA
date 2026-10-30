@@ -10,11 +10,11 @@ import logging
 import time
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
 from app.services.vocal.assistant_vocal_service import get_assistant_vocal_service
-from app.utils.security import verify_api_key
+from app.services.veille.access_service import verify_api_key
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +23,18 @@ router = APIRouter(
     tags=["Vocal — Agent vocal FORMA-IA"],
     dependencies=[Depends(verify_api_key)],
 )
+
+
+@router.post("/transcrire", summary="Transcrire une courte dictée française")
+async def transcrire_vocal(audio: UploadFile):
+    from app.services.vocal.transcription_service import MAX_AUDIO_BYTES, transcribe_audio
+
+    try:
+        content = await audio.read(MAX_AUDIO_BYTES + 1)
+        text = await transcribe_audio(content, audio.content_type or "")
+        return {"texte": text, "provider": "groq", "language": "fr"}
+    finally:
+        await audio.close()
 
 
 # ──────────────────────────────────────────────────────────────
@@ -38,6 +50,9 @@ class CommandeVocaleRequest(BaseModel):
     conversation_id: str | None = Field(
         None, description="Identifiant de la conversation RAG vocale précédente"
     )
+    contexte_action: list[str] = Field(default_factory=list, max_length=8)
+    ecran_actuel: str | None = Field(default=None, max_length=64)
+    formation_code: str | None = Field(default=None, max_length=100)
 
 
 class CommandeVocaleResponse(BaseModel):
@@ -56,6 +71,7 @@ class CommandeVocaleResponse(BaseModel):
     texte_a_lire: str = ""
     etat: str = "pret_a_verifier"
     niveau_preuve: str = "non_applicable"
+    execution_demandee: bool = False
 
 
 # ──────────────────────────────────────────────────────────────
@@ -72,7 +88,7 @@ class CommandeVocaleResponse(BaseModel):
         "l'action à exécuter sur le frontend et la réponse à lire à voix haute."
     ),
 )
-async def analyser_commande(req: CommandeVocaleRequest) -> CommandeVocaleResponse:
+async def analyser_commande(req: CommandeVocaleRequest, principal=Depends(verify_api_key)) -> CommandeVocaleResponse:
     debut = time.time()
     logger.info("🎤 Commande vocale reçue : '%s'", req.texte[:80])
 
@@ -81,6 +97,10 @@ async def analyser_commande(req: CommandeVocaleRequest) -> CommandeVocaleRespons
             texte=req.texte,
             formations=req.formations_disponibles,
             conversation_id=req.conversation_id,
+            **({"contexte_action": [text[:500] for text in req.contexte_action]} if req.contexte_action else {}),
+            **({"owner": str(principal.id)} if getattr(principal, "id", None) is not None else {}),
+            **({"ecran_actuel": req.ecran_actuel} if req.ecran_actuel else {}),
+            **({"formation_code": req.formation_code} if req.formation_code else {}),
         )
     except Exception as e:
         logger.error("Erreur routeur vocal : %s", e)
@@ -110,6 +130,7 @@ async def analyser_commande(req: CommandeVocaleRequest) -> CommandeVocaleRespons
         texte_a_lire=result.get("texte_a_lire", result.get("reponse_vocale", "")),
         etat=result.get("etat", "pret_a_verifier"),
         niveau_preuve=result.get("niveau_preuve", "non_applicable"),
+        execution_demandee=result.get("execution_demandee", False),
     )
 
 

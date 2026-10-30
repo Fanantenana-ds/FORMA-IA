@@ -31,7 +31,7 @@
   th{background:#e8f6ee;width:34%}
   #log{max-height:300px;overflow:auto;background:#fff;border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:13px/1.45 Consolas,monospace}
   #log div{padding:2px 0;border-bottom:1px dotted #e2efe7}
-  .ev-opportunite{color:var(--accent);font-weight:bold}
+  .ev-opportunite{color:var(--accent);font-weight:bold;white-space:pre-wrap}
   .ev-rejet,.ev-rejet_info{color:var(--sub)}
   .ev-plan_b{color:var(--warn)}
   .ev-fin{font-weight:bold}
@@ -55,8 +55,8 @@
     <h2>1 · Connexion au backend</h2>
     <div class="row">
       <input type="text" id="base" value="http://localhost:8000" title="URL du backend">
-      <input type="text" id="hdr" value="X-API-Key" style="max-width:130px" title="Nom de l'en-tête de la clé">
-      <input type="password" id="key" placeholder="Clé API (non enregistrée)">
+      <input type="text" id="hdr" value="Authorization" style="max-width:150px" title="Nom de l'en-tête d'authentification">
+      <input type="password" id="key" placeholder="Jeton API (Bearer ajouté automatiquement)">
     </div>
     <div class="row" style="margin-top:8px">
       <button class="sec" id="btnHealth">Tester la connexion</button>
@@ -76,6 +76,10 @@
         <small style="color:var(--sub)">Exemples : « Lance la veille marché » · « Génère les termes de référence » · « Crée une séance »</small>
       </div>
     </div>
+    <div class="row" style="margin-top:8px">
+      <label for="voice" style="color:var(--sub);font-size:13px">Voix de l’agent :</label>
+      <select id="voice" title="Voix utilisée pour lire la réponse" style="flex:1"></select>
+    </div>
     <div id="heard"></div>
     <div id="reply">La réponse vocale de l'agent s'affichera ici.</div>
     <table id="detail" hidden></table>
@@ -91,24 +95,56 @@
     <div id="log"></div>
   </section>
 </main>
-<footer>Page de démonstration autonome (aucune dépendance). La reconnaissance vocale utilise Chrome (Web Speech API, fr-FR) et nécessite une connexion Internet.</footer>
+<footer>Les avis de démonstration sont des archives datées : publication, capture et échéance sont affichées séparément. Le statut actuel est recalculé à l’ouverture. La reconnaissance vocale utilise Chrome (Web Speech API, fr-FR).</footer>
 
 <script>
 "use strict";
 const $ = id => document.getElementById(id);
 const base = () => $("base").value.replace(/\/+$/,"");
+function api(path){
+  const root = base();
+  const prefix = "/api/v1";
+  return (root.endsWith(prefix) ? root : root+prefix)+path;
+}
 function headers(extra){
   const h = Object.assign({}, extra||{});
   const k = $("key").value.trim();
-  if(k) h[$("hdr").value.trim()||"X-API-Key"] = k;
+  if(k){
+    const name = $("hdr").value.trim()||"Authorization";
+    h[name] = name.toLowerCase()==="authorization" && !/^Bearer\s+/i.test(k) ? "Bearer "+k : k;
+  }
   return h;
+}
+
+/* ---------- Voix de synthèse (locale au navigateur) ---------- */
+let synthVoices = [];
+const maleVoiceHint = /henri|thomas|paul|antoine|fran[cç]ois|male|homme|guy|microsoft.*(fr|french)/i;
+function chargerVoix(){
+  synthVoices = speechSynthesis.getVoices().filter(v => /^fr([_-]|$)/i.test(v.lang));
+  const select = $("voice");
+  const previous = select.value;
+  select.innerHTML = "";
+  if(!synthVoices.length){
+    select.innerHTML = "<option value=''>Voix système française (si disponible)</option>";
+    return;
+  }
+  synthVoices.forEach(v => {
+    const option = document.createElement("option");
+    option.value = v.voiceURI; option.textContent = v.name+" — "+v.lang;
+    select.appendChild(option);
+  });
+  const masculine = synthVoices.find(v => maleVoiceHint.test(v.name));
+  select.value = synthVoices.some(v => v.voiceURI===previous) ? previous : (masculine || synthVoices[0]).voiceURI;
+}
+if("speechSynthesis" in window){
+  chargerVoix(); speechSynthesis.onvoiceschanged = chargerVoix;
 }
 
 /* ---------- 1. Connexion ---------- */
 $("btnHealth").onclick = async () => {
   $("healthOut").textContent = "…";
   try{
-    const r = await fetch(base()+"/ia/vocal/health",{headers:headers()});
+    const r = await fetch(api("/ia/vocal/health"),{headers:headers()});
     const j = await r.json().catch(()=>({}));
     $("healthOut").textContent = r.ok ? "✔ Connecté ("+(j.status||"ok")+")" : "✖ Erreur HTTP "+r.status+(r.status===401||r.status===403?" (clé ?)":"");
     $("healthOut").style.color = r.ok ? "var(--accent)" : "#c0392b";
@@ -140,27 +176,33 @@ $("txt").addEventListener("keydown", e => { if(e.key==="Enter") envoyer($("txt")
 
 function parler(t){
   try{ if(!t) return; speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance(t); u.lang = "fr-FR"; speechSynthesis.speak(u);
+    const u = new SpeechSynthesisUtterance(t); u.lang = "fr-FR"; u.rate = 1.12;
+    const choisie = synthVoices.find(v => v.voiceURI === $("voice").value);
+    if(choisie) u.voice = choisie;
+    speechSynthesis.speak(u);
   }catch(e){}
 }
 
+let conversationVocale = null;
 async function envoyer(texte){
   texte = (texte||"").trim(); if(!texte) return;
   $("heard").textContent = "🗣 « "+texte+" »";
   $("reply").textContent = "Analyse en cours…";
   const t0 = performance.now();
   try{
-    const r = await fetch(base()+"/ia/vocal/commande",{
+    const r = await fetch(api("/ia/vocal/commande"),{
       method:"POST", headers:headers({"Content-Type":"application/json"}),
-      body: JSON.stringify({texte:texte, formations_disponibles:[]})
+      body: JSON.stringify({texte:texte, formations_disponibles:[], conversation_id:conversationVocale})
     });
     if(!r.ok) throw new Error("HTTP "+r.status);
     const j = await r.json();
     const ms = Math.round(performance.now()-t0);
-    $("reply").textContent = j.reponse_vocale || "(pas de réponse)";
-    parler(j.reponse_vocale);
+    conversationVocale = j.conversation_id || conversationVocale;
+    const sources = (j.sources || []).map(s => (s.fichier || s.formation || 'Support') + (s.page ? ' — page ' + s.page : '')).join('\n');
+    $("reply").textContent = (j.texte_affiche || j.reponse_vocale || "(pas de réponse)") + (sources ? '\nSources :\n' + sources : '');
+    parler(j.texte_a_lire || j.reponse_vocale);
     afficherDetail(j, ms);
-    executerAction(j);
+    if(j.action_frontend !== 'ouvrir_chat_rag') executerAction(j);
   }catch(e){
     $("reply").textContent = "Erreur : "+e.message+" (backend, clé API ou CORS).";
   }
@@ -218,9 +260,46 @@ function logLine(ev, data){
   let txt;
   if(data && typeof data==="object"){
     const lib = data.titre||data.title||data.message||data.requete||data.query||data.organisation||data.motif||data.raison;
-    txt = lib ? lib+(data.organisation&&lib!==data.organisation?" — "+data.organisation:"") : JSON.stringify(data);
+    if(ev==="opportunite"){
+      const nature = data.is_synthetic ? "EXEMPLE FICTIF — " : "AVIS RÉEL ARCHIVÉ — ";
+      txt = nature+(data.titre||data.title||"Avis sans titre");
+    }else{
+      txt = lib ? lib+(data.organisation&&lib!==data.organisation?" — "+data.organisation:"") : JSON.stringify(data);
+    }
   }else txt = String(data||"");
   d.textContent = "["+ev+"] "+txt;
+  if(ev==="opportunite" && data && typeof data==="object"){
+    const details = [
+      data.opportunity_type ? "Type : "+data.opportunity_type : null,
+      data.reference ? "Réf. : "+data.reference : null,
+      data.source ? "Source : "+data.source : null,
+      data.date_publication ? "Publication : "+data.date_publication : null,
+      data.date_capture ? "Capture : "+data.date_capture : null,
+      data.date_limite ? "Échéance : "+data.date_limite+(data.heure_limite?" à "+data.heure_limite:"") : null,
+      data.fuseau_horaire ? "Fuseau : "+data.fuseau_horaire : null,
+      data.status_at_capture ? "Statut à la capture : "+data.status_at_capture : null,
+      data.current_status ? "Statut actuel : "+data.current_status : null,
+      data.summary ? "Résumé : "+data.summary : null,
+      data.fit_notes ? "Pertinence : "+data.fit_notes : null,
+      Array.isArray(data.eligibility_requirements) && data.eligibility_requirements.length
+        ? "Critères : "+data.eligibility_requirements.join(" | ") : null,
+      data.score_source && data.score!==null && data.score!==undefined
+        ? "Score M1 déterministe : "+data.score+"/100 (référence "+(data.score_reference_date||data.date_capture)+")" : null,
+      data.capture_note ? "Note de capture : "+data.capture_note : null
+    ].filter(Boolean);
+    if(details.length) d.appendChild(document.createTextNode("\n"+details.join(" · ")));
+    if(data.source_url){
+      try{
+        const source = new URL(data.source_url);
+        if(source.protocol==="https:"){
+          const link = document.createElement("a");
+          link.href = source.href; link.target = "_blank"; link.rel = "noopener noreferrer";
+          link.textContent = "\nOuvrir l’avis source";
+          d.appendChild(link);
+        }
+      }catch(e){}
+    }
+  }
   $("log").appendChild(d); $("log").scrollTop = $("log").scrollHeight;
 }
 $("btnVeille").onclick = lancerVeille;
@@ -231,7 +310,7 @@ async function lancerVeille(){
   $("btnVeille").disabled = true; $("btnStop").disabled = false;
   ctrl = new AbortController();
   try{
-    const r = await fetch(base()+"/ia/veille/detecter/stream",{headers:headers({"Accept":"text/event-stream"}),signal:ctrl.signal});
+    const r = await fetch(api("/ia/veille/detecter/stream"),{headers:headers({"Accept":"text/event-stream"}),signal:ctrl.signal});
     if(!r.ok) throw new Error("HTTP "+r.status);
     const rd = r.body.getReader(), dec = new TextDecoder(); let buf = "";
     for(;;){
@@ -246,7 +325,11 @@ async function lancerVeille(){
         }
         let data = dataTxt; try{ data = JSON.parse(dataTxt); }catch(e){}
         logLine(ev, data);
-        if(ev==="plan_b" || (data && data.demo===true)) $("modeBadge").textContent = "Mode : DÉMO (opportunités fictives)";
+        if(data && data.demo===true){
+          $("modeBadge").textContent = data.demo_data_type==="archive_reelle"
+            ? "Mode : DÉMO — avis réels archivés"
+            : "Mode : DÉMO — Plan B fictif de secours";
+        }
       }
     }
     $("veilleState").textContent = "Terminé.";

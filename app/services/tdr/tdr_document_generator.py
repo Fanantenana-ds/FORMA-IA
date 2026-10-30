@@ -40,8 +40,7 @@ EXPORTS_DIR = BASE_DIR / "exports" / "tdr"
 # ============================================================
 ALTIORA_COORDONNEES = os.getenv(
     "ALTIORA_COORDONNEES",
-    "ALTIORA SOLUTIONS — Lot II M 85 Antananarivo — "
-    "contact@altiora.mg — +261 34 00 000 00"
+    "ALTIORA PREST — Antananarivo, Madagascar — contact@altioraprest.mg"
 )
 ALTIORA_RESPONSABLE = os.getenv(
     "ALTIORA_RESPONSABLE",
@@ -402,6 +401,7 @@ class TDRDocumentGenerator:
         from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
         from reportlab.lib.units import cm
         from reportlab.platypus import (
+            Image as RLImage,
             PageBreak,
             Paragraph,
             SimpleDocTemplate,
@@ -463,9 +463,15 @@ class TDRDocumentGenerator:
         story = []
 
         # ---------- Page de garde ----------
-        story.append(Paragraph("ALTIORA SOLUTIONS", title_style))
+        _logo_path = Path(__file__).resolve().parents[2] / "templates" / "logo_altiora_prest.png"
+        if _logo_path.exists():
+            _logo = RLImage(str(_logo_path), width=5*cm, height=2*cm, kind="proportional")
+            _logo.hAlign = "CENTER"
+            story.append(_logo)
+            story.append(Spacer(1, 0.3*cm))
+        story.append(Paragraph("ALTIORA PREST", title_style))
         story.append(Paragraph(
-            "Startup Tech — Antananarivo, Madagascar", subtitle_style
+            "Cabinet de conseil et de formation — Antananarivo, Madagascar", subtitle_style
         ))
         story.append(Spacer(1, 2 * cm))
 

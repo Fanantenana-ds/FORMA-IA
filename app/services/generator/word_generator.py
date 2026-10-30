@@ -92,7 +92,7 @@ class WordGenerator:
         # En-tête
         header = doc.sections[0].header
         header_para = header.paragraphs[0]
-        header_para.text = "ALTIORA SOLUTIONS"
+        header_para.text = "ALTIORA PREST"
         header_para.alignment = WD_ALIGN_PARAGRAPH.RIGHT
         run = header_para.runs[0]
         run.bold = True
@@ -200,7 +200,7 @@ class WordGenerator:
         """Ajoute le pied de page"""
         footer = doc.sections[0].footer
         footer_para = footer.paragraphs[0]
-        footer_para.text = f"ALTIORA SOLUTIONS — Document confidentiel — {datetime.now().year}"
+        footer_para.text = f"ALTIORA PREST — Document confidentiel — {datetime.now().year}"
         footer_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
         run = footer_para.runs[0]
         run.font.size = Pt(8)

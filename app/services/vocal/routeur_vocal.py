@@ -8,7 +8,9 @@ détecte l'intention, extrait les paramètres et retourne l'action
 import json
 import logging
 import re
-from datetime import date
+import unicodedata
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from pathlib import Path
 
 import yaml
@@ -24,6 +26,12 @@ _PROMPT_PATH = Path(__file__).parent.parent.parent / "prompts" / "vocal" / "rout
 def _reponse_locale(commande: str) -> dict | None:
     """Gère les demandes sans ambiguïté sans consommer de quota LLM."""
     texte = " ".join(commande.lower().strip().split())
+    simple = "".join(char for char in unicodedata.normalize("NFD", texte) if not unicodedata.combining(char))
+    simple = " ".join(re.sub(r"[^a-z0-9 ]", " ", simple).split())
+    identities = {"qui es tu", "quel est ton role", "quels sont tes roles", "quelles sont tes roles", "quelles ton roles", "ton role", "tes roles", "a quoi tu sers", "tu sers a quoi", "pourquoi as tu ete cree", "tu es cree pourquoi", "tu es creer pourquoi", "tu es creer pouauoi", "tu es cree pour quoi", "tu es creer pour quoi", "presente toi"}
+    if simple in identities:
+        return {"intention": "conversationnel", "confiance": 1.0, "parametres": {}, "parametres_manquants": [], "prefill": {}, "action_frontend": None,
+                "reponse_vocale": "Je suis l’assistant FORMA-IA, conçu pour ALTIORA PREST. Je vous aide à consulter vos documents, expliquer les résultats de veille et exécuter les actions métier raccordées, comme lancer une détection ou créer une séance. S’il manque une information, je vous la demande. Les contenus destinés à un client restent soumis à votre validation."}
     salutations = {"bonjour", "bonsoir", "salut", "coucou", "merci", "au revoir"}
     if texte in salutations:
         return {
@@ -35,13 +43,21 @@ def _reponse_locale(commande: str) -> dict | None:
             "action_frontend": None,
             "prefill": {},
         }
+    launches = {"lance la veille", "lance la veille marché", "lance la veille marche", "lance la détection", "lance la détection des opportunités", "détecte les opportunités", "detecte les opportunites", "démarre la veille", "demarre la veille"}
+    opens = {"ouvre la veille", "ouvre la veille marché", "ouvre la veille marche", "affiche les opportunités", "affiche les opportunites"}
+    if texte.rstrip(".!?") in launches | opens:
+        launch = texte.rstrip(".!?") in launches
+        return {"intention": "veille_marche" if launch else "afficher_opportunites", "confiance": 1.0,
+                "parametres": {}, "parametres_manquants": [], "prefill": {},
+                "action_frontend": "lancer_veille" if launch else "afficher_opportunites",
+                "reponse_vocale": "Je lance la détection." if launch else "J'ouvre la veille marché."}
     if texte in {"annule", "annuler", "stop", "arrête", "arrete"}:
         return {
             "intention": "annuler",
             "confiance": 1.0,
             "parametres": {},
             "parametres_manquants": [],
-            "reponse_vocale": "D'accord, aucune action n'est effectuée.",
+            "reponse_vocale": "D'accord, aucune nouvelle action n'est lancée. Une opération déjà envoyée au serveur n'est pas annulée automatiquement.",
             "action_frontend": None,
             "prefill": {},
         }
@@ -68,7 +84,7 @@ def _charger_prompt() -> dict:
 def _construire_messages(commande: str, formations: list[str]) -> list[dict]:
     p = _charger_prompt()
     formations_str = ", ".join(formations) if formations else "aucune formation disponible"
-    date_str = date.today().strftime("%A %d %B %Y")
+    date_str = datetime.now(ZoneInfo("Indian/Antananarivo")).strftime("%A %d %B %Y")
 
     system = (
         f"{p['role']}\n\n"
@@ -136,10 +152,12 @@ async def router_commande(commande: str, formations: list[str] | None = None) ->
         intentions = {
             "veille_marche": "lancer_veille", "generer_tdr": "ouvrir_formulaire_tdr",
             "generer_offre": "ouvrir_formulaire_offre", "creer_seance": "ouvrir_formulaire_seance",
+            "creer_session": "ouvrir_formulaire_session",
             "generer_attestation": "ouvrir_formulaire_attestation", "relance_facture": "ouvrir_facturation",
             "question_rag": "ouvrir_chat_rag", "afficher_opportunites": "afficher_opportunites",
             "afficher_sessions": "afficher_sessions", "afficher_validations": "afficher_validations",
             "hors_perimetre": None,
+            "conversationnel": None, "annuler": None,
         }
         if not isinstance(result["intention"], str) or result["intention"] not in intentions:
             raise ValueError("Intention inconnue")

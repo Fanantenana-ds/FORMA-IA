@@ -32,6 +32,8 @@ _DOSSIER_PROMPTS = Path(__file__).resolve().parents[2] / "prompts" / "rag"
 # Ne matche que des messages COURTS et PURS (rien d'autre dans le message) :
 # une vraie question après une salutation doit être classée ailleurs.
 _PATTERNS_CONVERSATIONNEL = [
+    r"(quel(le)?s? (est|sont) (ton|tes) roles?|quelles ton roles?|ton role|tes roles)",
+    r"(tu es creer? (pourquoi|pour quoi|pouauoi)|pourquoi as[ -]tu ete cree)",
     r"(bonjour|salut|bonsoir|coucou|hello|hi|bonne journ[ée]e|bonne soir[ée]e)",
     r"(merci( beaucoup| bien)?)",
     r"(au revoir|[àa] bient[ôo]t|bye|[àa] plus)",
@@ -111,6 +113,13 @@ async def detecter_type(message: str) -> str:
     """Point d'entrée : filtre Python -> LLM -> repli par règles."""
     if filtre_conversationnel_evident(message):
         return "conversationnel"
+
+    # Les questions de fonctionnement de FORMA-IA sont fréquentes à l'oral,
+    # parfois transcrites « platforme ». Elles ne nécessitent pas de LLM pour
+    # être orientées vers le guide de la plateforme.
+    normalise = _normaliser(message)
+    if "platform" in normalise or "forma-ia" in normalise or "forma ia" in normalise:
+        return "aide_plateforme"
 
     type_llm = await _detecter_via_llm(message)
     if type_llm:

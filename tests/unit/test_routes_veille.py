@@ -21,6 +21,9 @@ from app.services.veille.auto_detection_service import DetectionAutoEnCours
 def client():
     app = FastAPI()
     app.include_router(routes_veille.router)
+    # Cette suite teste les réponses métier ; l'accès JWT/clé interne est
+    # vérifié séparément dans test_m1_access.py.
+    app.dependency_overrides[routes_veille.verify_api_key] = lambda: None
     return TestClient(app)
 
 
@@ -86,6 +89,33 @@ def test_rechercher_erreur_technique_restitue_un_503(client, monkeypatch):
     resp = client.post("/ia/veille/rechercher", json={"query": "formation IA"})
     assert resp.status_code == 503
     assert resp.json()["success"] is False
+
+
+def test_detecter_quota_renvoie_429_et_conserve_les_donnees(client, monkeypatch):
+    result = {"status": "quota_atteint", "opportunities": [], "to_review_candidates": []}
+    monkeypatch.setattr(routes_veille.auto_detection, "executer_detection", _async(lambda *a, **k: result))
+    resp = client.post("/ia/veille/detecter", json={"sync_backend": False})
+    assert resp.status_code == 429
+    assert resp.json()["data"]["status"] == "quota_atteint"
+
+
+def test_sse_reel_transmet_preuves_et_candidats(monkeypatch):
+    source = {"title": "Formation IA", "url": "https://fid.mg/avis", "verification_status": "documented",
+              "evidence": {"need": "Formation informatique"}, "captured_at": "2026-10-29T10:00:00Z"}
+    candidate = {"title": "À vérifier", "url": "https://x.mg", "is_actionable": False}
+    monkeypatch.setattr(routes_veille, "DEMO_MODE", False)
+    monkeypatch.setattr(routes_veille.tavily_quota_service, "plafond_dur_atteint", lambda: False)
+    monkeypatch.setattr(routes_veille.auto_detection, "executer_detection", _async(lambda *a, **k: {
+        "status": "partial", "opportunities": [source], "to_review_candidates": [candidate],
+        "analyzed_sources": [], "pending_sources": [], "statistics": {},
+    }))
+    async def collect():
+        return [event async for event in routes_veille._stream_detection(40, 20, False)]
+    events = asyncio.run(collect())
+    opp = next(json.loads(e.split("data: ")[1]) for e in events if "event: opportunite\n" in e)
+    assert opp["evidence"] == source["evidence"]
+    assert any("event: candidat_a_verifier" in e for e in events)
+    assert json.loads(events[-1].split("data: ")[1])["to_review_candidates"] == [candidate]
 
 
 def test_stream_utilise_la_detection_reelle_et_ne_marque_pas_de_mode_demo(monkeypatch):

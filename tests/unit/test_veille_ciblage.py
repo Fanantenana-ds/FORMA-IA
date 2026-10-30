@@ -206,18 +206,20 @@ PAGE_DGMARKET = (
 
 def test_page_armp_decoupee_et_avis_anciens_ecartes():
     avis = ts.decouper_liste_avis("Site ARMP", "https://armp.mg/avis", PAGE_ARMP, annee_courante=2026)
-    assert len(avis) == 2                                   # l'avis 2024 est écarté
+    assert len(avis) == 3                                   # ancienne référence conservée, pas déclarée expirée
     assert "METFP" in avis[1]["content"]
     assert avis[0]["url"] != avis[1]["url"]                 # pas fusionnés par le dédoublonnage
 
 
 def test_tableau_dgmarket_decoupe_garde_les_avis_recents():
-    # 10/09/2026 : Sep 02 (8 j) gardé ; Mar 20 (174 j) et Nov 28, 2024 écartés
+    # 10/09/2026 : Sep 02 prioritaire ; les anciennes publications restent consultables.
     avis = ts.decouper_liste_avis(
         "AFD - dgMarket", "https://dgmarket.com/x", PAGE_DGMARKET,
         aujourd_hui=date(2026, 9, 10),
     )
-    assert [a["content"][:12] for a in avis] == ["Sep 02, 2026"]
+    assert [a["content"][:12] for a in avis] == ["Sep 02, 2026", "Nov 28, 2024", "Mar 20, 2026"]
+    assert avis[0]["outside_publication_window"] is False
+    assert avis[1]["outside_publication_window"] is True
     assert "Consultant data" in avis[0]["title"]
 
 
@@ -239,7 +241,7 @@ def test_filtre_tavily_remplace_la_liste_par_ses_avis():
     resultats = service._resultats_page(
         {"raw_content": PAGE_ARMP}, "Site ARMP", "https://armp.mg/avis", "snippet",
     )
-    assert len(resultats) == 2
+    assert len(resultats) == 3
 
 
 def test_avis_de_resultats_rejetes_avant_le_llm():

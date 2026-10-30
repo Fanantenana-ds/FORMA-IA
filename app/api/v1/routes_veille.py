@@ -12,6 +12,7 @@ import asyncio
 import io
 import json
 import logging
+from contextlib import suppress
 
 import pypdf
 from fastapi import (
@@ -36,13 +37,14 @@ from app.orchestrator.veille_orchestrator import (
 from app.services.benchmark.benchmark_runner import BenchmarkRunner
 from app.services.veille import auto_detection_service as auto_detection
 from app.services.veille import tavily_quota_service
+from app.services.veille.progress_service import PROGRESS_CALLBACK
 from app.services.veille.demo_mode_service import (
     DEMO_MODE,
     charger_opportunites_demo_reelles,
     generer_opportunites_demo,
 )
 from app.services.veille.tavily_quota_service import QuotaTavilyDepasseError
-from app.utils.security import verify_api_key, verify_api_key_sse
+from app.services.veille.access_service import verify_api_key, verify_api_key_sse
 
 logger = logging.getLogger(__name__)
 
@@ -226,9 +228,9 @@ async def rechercher_opportunites(
             limit=request.limit,
         )
 
-        if resultat.get("status") == "technical_error":
+        if resultat.get("status") in {"technical_error", "quota_atteint"}:
             return JSONResponse(
-                status_code=503,
+                status_code=429 if resultat["status"] == "quota_atteint" else 503,
                 content={
                     "success": False,
                     "data": resultat,
@@ -296,6 +298,12 @@ async def detecter_opportunites(
             limit=request.limit,
             sync_backend=request.sync_backend,
         )
+        if resultat.get("status") in {"technical_error", "quota_atteint"}:
+            return JSONResponse(
+                status_code=429 if resultat["status"] == "quota_atteint" else 503,
+                content={"success": False, "data": resultat,
+                         "error": resultat.get("notes") or "Détection réelle indisponible."},
+            )
         return {"success": True, "data": resultat, "error": None}
 
     except auto_detection.DetectionAutoEnCours:
@@ -549,7 +557,7 @@ def _sse(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
-async def _stream_detection(min_score: int, limit: int, sync_backend: bool):
+async def _stream_detection(min_score: int, limit: int, sync_backend: bool, owner: str = "internal"):
     """
     Générateur SSE — émet les événements de détection en temps réel.
 
@@ -647,40 +655,73 @@ async def _stream_detection(min_score: int, limit: int, sync_backend: bool):
             yield _sse("fin", {"status": "quota_atteint", "total": 0, "sources": 0, "rejets": 0})
             return
 
-        for i, query in enumerate(queries, 1):
-            yield _sse("requete", {
-                "numero": i,
-                "total": total_queries,
-                "query": query,
-                "message": f"🔍 Requête {i}/{total_queries} : « {query} »",
-            })
-            await asyncio.sleep(0.05)
+        queue = asyncio.Queue(maxsize=128)
+        async def progress(event, data):
+            await queue.put((event, data))
+        async def run_detection():
+            token = PROGRESS_CALLBACK.set(progress)
+            try:
+                return await auto_detection.executer_detection(
+                    orchestrator, declenchement="manuel", min_score=min_score,
+                    limit=limit, sync_backend=sync_backend)
+            finally:
+                PROGRESS_CALLBACK.reset(token)
+        worker = asyncio.create_task(run_detection())
+        received = None
+        try:
+            while not worker.done() or not queue.empty():
+                if not queue.empty():
+                    event, data = queue.get_nowait()
+                    yield _sse(event, data)
+                    continue
+                received = asyncio.create_task(queue.get())
+                ready, _ = await asyncio.wait({worker, received}, timeout=10, return_when=asyncio.FIRST_COMPLETED)
+                if received in ready:
+                    event, data = received.result()
+                    yield _sse(event, data)
+                else:
+                    received.cancel()
+                    with suppress(asyncio.CancelledError):
+                        await received
+                    if not worker.done():
+                        yield ": keep-alive\n\n"
+                received = None
+            resultat = await worker
+        finally:
+            if received is not None and not received.done():
+                received.cancel()
+                with suppress(asyncio.CancelledError):
+                    await received
+            if not worker.done():
+                worker.cancel()
+            with suppress(asyncio.CancelledError):
+                await worker
 
-        yield _sse("analyse", {"message": "🧠 Analyse IA en cours (peut durer 2-3 minutes)..."})
-
-        resultat = await auto_detection.executer_detection(
-            orchestrator,
-            declenchement="manuel",
-            min_score=min_score,
-            limit=limit,
-            sync_backend=sync_backend,
-        )
-
-        opportunites_brutes = resultat.get("opportunities", []) or []
+        from app.services.veille.pending_service import bind
+        bind(resultat.get("continuation_id"), owner, min_score)
+        from app.services.veille.result_context_service import remember
+        remember(owner, resultat)
+        opportunites_brutes = sorted(resultat.get("opportunities", []) or [], key=lambda o: o.get("score", 0), reverse=True)
         statistiques = resultat.get("statistics") or {}
         sources_analysees = statistiques.get("sources_analyzed")
         rejets = statistiques.get("below_min_score", 0)
         statut = resultat.get("status", "technical_error")
 
-        if statut in {"technical_error", "degraded", "partial", "error", "quota_atteint"}:
+        if statut == "partial":
+            yield _sse("analyse", {"stage": "partial_completion", "message": resultat.get("notes") or "Résultats disponibles ; analyse partielle.", "status": statut})
+        if statut in {"technical_error", "degraded", "error", "quota_atteint"}:
             yield _sse("erreur", {
                 "message": resultat.get("notes") or "La détection n'a pas abouti complètement.",
                 "status": statut,
             })
 
-        for opp in opportunites_brutes:
-            opportunites_trouvees.append(opp)
+        opportunites_trouvees.extend(opportunites_brutes)
+        # Le frontend existant ajoute chaque carte en tête : le meilleur arrive
+        # en dernier pour être affiché en premier. Le paquet fin reste décroissant.
+        for opp in reversed(opportunites_brutes):
             yield _sse("opportunite", {
+                **opp,
+                "rank": opportunites_brutes.index(opp) + 1,
                 "titre": opp.get("title", ""),
                 "organizer": opp.get("organizer", ""),
                 "score": opp.get("score", 0),
@@ -693,6 +734,9 @@ async def _stream_detection(min_score: int, limit: int, sync_backend: bool):
             })
             await asyncio.sleep(0.15)
 
+        for candidate in resultat.get("to_review_candidates", []):
+            yield _sse("candidat_a_verifier", candidate)
+
         yield _sse("rejet_info", {
             "message": f"❌ {rejets} opportunités écartées sous le seuil de score.",
             "rejets": rejets,
@@ -702,7 +746,7 @@ async def _stream_detection(min_score: int, limit: int, sync_backend: bool):
             "status": statut,
             "total": len(opportunites_trouvees),
             "sources": sources_analysees,
-            "candidats_collectes": statistiques.get("collected", 0),
+            "candidats_collectes": statistiques.get("raw_results", statistiques.get("collected", 0)),
             "requêtes": statistiques.get("queries_run", len(queries)),
             "rejets": rejets,
             "message": (
@@ -711,15 +755,27 @@ async def _stream_detection(min_score: int, limit: int, sync_backend: bool):
                 f"{rejets} écartée(s) sous le seuil de score."
             ),
             "opportunites": opportunites_trouvees,
+            "to_review_candidates": resultat.get("to_review_candidates", []),
+            "analyzed_sources": resultat.get("analyzed_sources", []),
+            "pending_sources": resultat.get("pending_sources", []),
+            "continuation_id": resultat.get("continuation_id"),
+            "source_groups": resultat.get("source_groups", []),
+            "queries": resultat.get("queries", []),
+            "analysis_strategy": resultat.get("analysis_strategy"),
+            "collection_complete": resultat.get("collection_complete"),
+            "collection_diagnostics": resultat.get("collection_diagnostics", {}),
+            "navigation_sources": resultat.get("navigation_sources", []),
+            "analysis_batches": resultat.get("analysis_batches", []),
+            "statistics": statistiques,
         })
 
     except auto_detection.DetectionAutoEnCours:
         yield _sse("erreur", {"message": "Une détection est déjà en cours. Réessayez dans quelques instants."})
-        yield _sse("fin", {"total": 0, "sources": 0, "rejets": 0})
+        yield _sse("fin", {"status": "in_progress", "total": 0, "sources": 0, "rejets": 0})
     except Exception as exc:
         logger.exception("❌ Erreur stream détection M1 : %s", exc)
         yield _sse("erreur", {"message": "Erreur interne lors de la détection."})
-        yield _sse("fin", {"total": 0, "sources": 0, "rejets": 0})
+        yield _sse("fin", {"status": "technical_error", "total": 0, "sources": 0, "rejets": 0})
 
 
 @sse_router.get(
@@ -740,12 +796,46 @@ async def stream_detection(
     limit: int = Query(default=20, ge=1, le=100),
     sync_backend: bool = Query(default=True),
     token: str | None = Query(default=None, include_in_schema=False),
+    principal=Depends(verify_api_key_sse),
 ):
     return StreamingResponse(
-        _stream_detection(min_score=min_score, limit=limit, sync_backend=sync_backend),
+        _stream_detection(min_score=min_score, limit=limit, sync_backend=sync_backend, owner=str(getattr(principal, "id", "internal"))),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
             "X-Accel-Buffering": "no",
         },
     )
+
+
+class ReprendreSourcesRequest(BaseModel):
+    continuation_id: str = Field(..., min_length=20, max_length=100)
+
+
+@router.post("/ia/veille/sources/reprendre", tags=["M1 - Veille Marché"])
+async def reprendre_sources(payload: ReprendreSourcesRequest, principal=Depends(verify_api_key)):
+    if DEMO_MODE:
+        raise HTTPException(409, "La reprise des sources est disponible uniquement en mode réel.")
+    from app.services.veille.pending_service import resume
+    owner = str(getattr(principal, "id", "internal"))
+    result = await resume(payload.continuation_id, owner, orchestrator)
+    from app.services.veille.result_context_service import remember, latest
+    previous = latest(owner)
+    if previous:
+        by_url = {item.get("url") or item.get("title"): item for item in previous.get("opportunities", []) or []}
+        by_url.update({item.get("url") or item.get("title"): item for item in result.get("opportunities", [])})
+        merged = {**result, "opportunities": sorted(by_url.values(), key=lambda item: item.get("score", 0), reverse=True)}
+        if previous.get("status") == "partial": merged["status"] = "partial"
+        remember(owner, merged)
+    else:
+        remember(owner, result)
+    return result
+
+
+@router.get("/ia/veille/dernier-resultat", tags=["M1 - Veille Marché"])
+async def dernier_resultat_veille(principal=Depends(verify_api_key)):
+    from app.services.veille.result_context_service import latest
+    result = latest(str(getattr(principal, "id", "internal")))
+    if not result:
+        raise HTTPException(404, "Aucune détection récente accessible pour cette session.")
+    return {"success": True, "data": result}

@@ -12,19 +12,27 @@
 # 7. Timeout adaptatif selon search_depth
 # ============================================================
 
+import asyncio
 import hashlib
 import logging
 import os
 import re
 import time
+from contextvars import ContextVar
+from copy import deepcopy
+from datetime import UTC, datetime
 from datetime import date as datetime_date
 from typing import Any
+from urllib.parse import urljoin, urlparse
 
 import httpx
 from app.services.veille import tavily_quota_service
 from app.services.veille.tavily_quota_service import QuotaTavilyDepasseError
+from app.services.veille.source_registry import SEARCH_GROUP, domain_matches, load_registry
 from app.utils.retry import retry_with_backoff
 from app.utils.url_utils import normalize_url
+from app.services.veille.notice_resolution_service import NoticeResolver, deduplicate_notices
+from app.services.veille.progress_service import emit_progress
 
 logger = logging.getLogger(__name__)
 
@@ -36,11 +44,24 @@ MAX_RESULTS_TAVILY = int(os.getenv("TAVILY_MAX_RESULTS", "15"))
 TAVILY_TIMEOUT = float(os.getenv("TAVILY_TIMEOUT", "12"))
 RETRY_MAX_ATTEMPTS = int(os.getenv("RETRY_MAX_ATTEMPTS", "3"))
 RETRY_BASE_DELAY = float(os.getenv("RETRY_BASE_DELAY", "1.0"))
+# Budget total de la recherche, repli inclus. Il borne la latence sans
+# transformer un échec réseau en faux résultat vide.
+TAVILY_SEARCH_BUDGET_S = float(os.getenv("TAVILY_SEARCH_BUDGET_S", "25"))
+_SEARCH_TRACE = ContextVar("m1_search_trace", default=None)
+
+
+class SearchResults(list):
+    """Compatible liste ; diagnostics liés à cet appel, pas à l'instance partagée."""
+    def __init__(self, items, diagnostics):
+        super().__init__(items)
+        self.diagnostics = diagnostics
 
 # Domaines autorisés (utilisés pour site: ET post-filtrage).
 # Surchargeables par TAVILY_INCLUDE_DOMAINS (liste séparée par des virgules) ;
 # les TAVILY_SITES_MAX premiers servent aux opérateurs site: de la requête.
 _DEFAULT_TRUSTED_DOMAINS = [
+    "app.armp.mg",
+    "armp.mg",
     "asako.mg",
     "job2mada.com",
     "portaljob-madagascar.com",
@@ -204,8 +225,8 @@ def decouper_liste_avis(
     Si `raw` est une page de liste (≥ 2 débuts d'avis reconnus), retourne un
     résultat par avis encore d'actualité ; sinon None (page traitée telle quelle).
 
-    Filtre de fraîcheur : un avis dont toutes les années citées sont
-    antérieures à l'année courante est écarté (avis clos).
+    L'ancienneté est un critère de classement, pas une preuve d'expiration.
+    Une date de tableau n'est appelée publication que si son en-tête le dit.
     """
     texte = " ".join((raw or "").split())
     debuts = [m.start() for m in _DEBUT_AVIS.finditer(texte)]
@@ -218,23 +239,33 @@ def decouper_liste_avis(
     for numero, (debut, fin) in enumerate(zip(debuts, debuts[1:] + [len(texte)]), start=1):
         segment = texte[debut:fin].strip(" |")
         publie_le = date_publication(segment)
+        outside_window = False
         if publie_le is not None:
             if VEILLE_AGE_MAX_JOURS and (aujourd_hui - publie_le).days > VEILLE_AGE_MAX_JOURS:
-                continue
+                outside_window = True
         else:
             annees = [int(a) for a in _ANNEE.findall(segment)]
             if annees and max(annees) < annee_courante:
-                continue
+                outside_window = True
         intitule = " ".join(p.strip() for p in segment.split("|") if p.strip())
+        # Le tableau contient souvent le lien de l'avis. Le conserver évite
+        # d'envoyer une page générale et son pied de page au lieu de l'annonce.
+        lien = re.search(r"\[([^\]]+)\]\(([^\s)]+)\)", segment)
+        notice_url = urljoin(url, lien.group(2)) if lien else f"{url}#avis-{numero}"
+        if urlparse(notice_url).scheme not in {"http", "https"}:
+            notice_url = f"{url}#avis-{numero}"
         avis.append({
-            "title": f"{title} — {intitule[:120]}",
-            "url": f"{url}#avis-{numero}",
+            "title": lien.group(1) if lien else f"{title} — {intitule[:120]}",
+            "url": notice_url,
+            "listing_url": url,
+            "published_at": publie_le.isoformat() if publie_le and publie_le <= aujourd_hui and re.search(r"publi|published", texte[:debuts[0]], re.IGNORECASE) else None,
+            "observed_table_date": publie_le.isoformat() if publie_le else None,
+            "outside_publication_window": outside_window,
             "content": segment[:maximum],
             "score": 0.0,
         })
-        if len(avis) >= TAVILY_AVIS_MAX_PAR_PAGE:
-            break
-    return avis
+    avis.sort(key=lambda item: item["outside_publication_window"])
+    return avis[:TAVILY_AVIS_MAX_PAR_PAGE]
 
 
 def extrait_utile(snippet: str, raw: str | None, maximum: int = TAVILY_EXTRAIT_MAX) -> str:
@@ -261,8 +292,12 @@ def extrait_utile(snippet: str, raw: str | None, maximum: int = TAVILY_EXTRAIT_M
 
 def is_trusted_url(url: str) -> bool:
     """Retourne True si l'URL vient d'un domaine autorisé."""
-    url_lower = url.lower()
-    return any(domain in url_lower for domain in TRUSTED_DOMAINS)
+    hostname = (urlparse(url).hostname or "").lower().rstrip(".")
+    return any(hostname == domain or hostname.endswith(f".{domain}") for domain in TRUSTED_DOMAINS)
+
+
+class TavilySearchError(RuntimeError):
+    """Recherche non aboutie : distincte d'une recherche sans résultat."""
 
 
 class TavilyService:
@@ -273,6 +308,7 @@ class TavilyService:
     _cache_ttl = 300  # 5 minutes
 
     def __init__(self):
+        self.registry = load_registry()
         if TAVILY_API_KEY:
             logger.info("🔎 TAVILY configuré (V3.0 - filtrage robuste)")
         else:
@@ -280,7 +316,10 @@ class TavilyService:
 
     def _cache_key(self, query: str) -> str:
         """Génère une clé de cache pour une query."""
-        return hashlib.md5(query.lower().strip().encode()).hexdigest()
+        registry = getattr(self, "registry", None)
+        config = registry.model_dump_json() if registry else ""
+        key = f"{SEARCH_GROUP.get()}:{config}:{query.lower().strip()}"
+        return hashlib.sha256(key.encode()).hexdigest()
 
     def _get_from_cache(self, query: str) -> list[dict[str, Any]] | None:
         """Récupère depuis le cache si non expiré."""
@@ -289,7 +328,7 @@ class TavilyService:
             data, timestamp = self._cache[key]
             if time.time() - timestamp < self._cache_ttl:
                 logger.info("💾 Cache HIT pour: %s", query[:60])
-                return data
+                return deepcopy(data)
             else:
                 del self._cache[key]
         return None
@@ -297,7 +336,7 @@ class TavilyService:
     def _set_cache(self, query: str, results: list[dict[str, Any]]) -> None:
         """Stocke dans le cache."""
         key = self._cache_key(query)
-        self._cache[key] = (results, time.time())
+        self._cache[key] = (deepcopy(results), time.time())
 
     async def _do_request(
         self, payload: dict[str, Any], categorie: str = "manuel",
@@ -305,17 +344,120 @@ class TavilyService:
         """Un seul essai HTTP — rejouable par retry_with_backoff. Compte
         CET appel (échec/retry compris) — jamais appelé sur un cache hit,
         donc jamais de sur-comptage (correction Étape B)."""
+        if categorie in {"manuel", "collecte"} and tavily_quota_service.plafond_dur_atteint():
+            raise QuotaTavilyDepasseError("Plafond Tavily atteint avant une nouvelle tentative HTTP.")
         tavily_quota_service.enregistrer_appel(categorie)
-        async with httpx.AsyncClient(timeout=TAVILY_TIMEOUT) as client:
-            response = await client.post(
-                "https://api.tavily.com/search",
-                json=payload,
-            )
-            if response.status_code >= 500:
-                response.raise_for_status()
-            return response
+        group = self.registry.group(SEARCH_GROUP.get())
+        started = time.perf_counter()
+        await emit_progress("analyse", "web_search", f"Recherche web — {group.id} : interrogation des sources configurées.", family=group.id)
+        record = {"domains": payload.get("include_domains", []), "status": "pending"}
+        trace = _SEARCH_TRACE.get()
+        if trace is not None:
+            trace.append(record)
+        try:
+            timeout = group.request_timeout_seconds or TAVILY_TIMEOUT
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                # httpx borne chaque phase ; ce plafond borne aussi l'appel entier.
+                async with asyncio.timeout(timeout):
+                    response = await client.post("https://api.tavily.com/search", json=payload)
+                record.update(status="response", http_status=response.status_code)
+                if response.status_code == 200:
+                    data = response.json()
+                    record.update(response_time=data.get("response_time"), request_id=data.get("request_id"),
+                                  raw_results=len(data.get("results", [])))
+                if response.status_code >= 500:
+                    response.raise_for_status()
+                return response
+        except asyncio.CancelledError:
+            record["status"] = "budget_exceeded"
+            raise
+        except TimeoutError as exc:
+            record.update(status="failed", reason="request_timeout")
+            raise httpx.ReadTimeout("Budget de la tentative Tavily dépassé") from exc
+        except httpx.HTTPError as exc:
+            record.update(status="failed", reason=type(exc).__name__)
+            raise
+        finally:
+            record["elapsed_seconds"] = round(time.perf_counter() - started, 3)
 
     async def search(
+        self, query: str, categorie: str = "manuel",
+    ) -> list[dict[str, Any]]:
+        budget = self.registry.group(SEARCH_GROUP.get()).search_budget_seconds or TAVILY_SEARCH_BUDGET_S
+        attempts = []
+        token = _SEARCH_TRACE.set(attempts)
+        coverage = []
+        started = time.perf_counter()
+        try:
+            try:
+                async with asyncio.timeout(budget):
+                    items = await self._search(query, categorie)
+                    if isinstance(items, SearchResults):
+                        cached = deepcopy(items)
+                        cached.diagnostics["cache_hit"] = True
+                        return cached
+                    # Un moteur multi-domaines ne garantit pas un résultat par site.
+                    if SEARCH_GROUP.get() == "missions_privees":
+                        domains = self.registry.domains("missions_privees")
+                        covered = {d for d in domains if any(domain_matches(
+                            urlparse(item.get("url", "")).hostname or "", d) for item in items)}
+                        coverage.extend({"domain": d, "status": "indexed_results"} for d in domains if d in covered)
+                        semaphore = asyncio.Semaphore(2)
+                        quota_stop = asyncio.Event()
+                        async def search_site(domain):
+                            async with semaphore:
+                                remaining = budget - (time.perf_counter() - started)
+                                if remaining < 3 or quota_stop.is_set():
+                                    return [], {"domain": domain, "status": "not_searched", "reason": "quota" if quota_stop.is_set() else "time_budget"}
+                                payload = {"api_key": TAVILY_API_KEY, "query": "formation informatique formateur Madagascar",
+                                           "search_depth": "basic", "max_results": 4, "include_domains": [domain],
+                                           "exclude_domains": self.registry.excluded_domains, "include_raw_content": False,
+                                           "include_answer": False, "include_published_date": True}
+                                try:
+                                    async with asyncio.timeout(min(10, max(0.1, remaining - 0.5))):
+                                        response = await self._do_request(payload, categorie)
+                                    if response.status_code in {429, 432, 433}:
+                                        quota_stop.set()
+                                        return [], {"domain": domain, "status": "quota_atteint"}
+                                    if response.status_code != 200:
+                                        return [], {"domain": domain, "status": "failed", "http_status": response.status_code}
+                                    found = [item for item in self._filter_results(response.json().get("results", []))
+                                             if domain_matches(urlparse(item.get("url", "")).hostname or "", domain)]
+                                    for item in found:
+                                        item["search_strategy"] = "family_site_fallback"
+                                    return found, {"domain": domain, "status": "indexed_results" if found else "no_indexed_result"}
+                                except (httpx.HTTPError, TimeoutError, ValueError) as exc:
+                                    return [], {"domain": domain, "status": "failed", "reason": type(exc).__name__}
+                        for found, record in await asyncio.gather(*(search_site(d) for d in domains if d not in covered)):
+                            items.extend(found)
+                            coverage.append(record)
+                        if quota_stop.is_set():
+                            raise QuotaTavilyDepasseError("Quota Tavily atteint pendant le repli par site.")
+            except TimeoutError as exc:
+                error = TavilySearchError(f"Tavily a dépassé le budget de {budget:g} secondes.")
+                error.diagnostics = {"attempts": attempts, "domain_coverage": coverage}
+                raise error from exc
+            if not coverage:
+                coverage = [{"domain": domain, "status": "indexed_results" if any(domain_matches(
+                    urlparse(item.get("url", "")).hostname or "", domain) for item in items)
+                    else "no_indexed_result_in_group_search"}
+                    for domain in self.registry.domains(SEARCH_GROUP.get() or self.registry.groups[0].id)]
+            resolver = NoticeResolver(self.registry)
+            items = await resolver.resolve(items, query)
+            result = SearchResults(deduplicate_notices(items), {
+                "attempts": attempts, "domain_coverage": coverage, "notice_resolution": resolver.diagnostics,
+                "api_results_received": sum(attempt.get("raw_results", 0) for attempt in attempts),
+                "search_budget_seconds": budget, "resolution_budget_seconds": 14, "cache_hit": False})
+            self._set_cache(query, result)
+            return result
+        except TavilySearchError as exc:
+            if not hasattr(exc, "diagnostics"):
+                exc.diagnostics = {"attempts": attempts, "domain_coverage": coverage}
+            raise
+        finally:
+            _SEARCH_TRACE.reset(token)
+
+    async def _search(
         self, query: str, categorie: str = "manuel",
     ) -> list[dict[str, Any]]:
         """
@@ -333,8 +475,7 @@ class TavilyService:
         """
 
         if not TAVILY_API_KEY:
-            logger.error("❌ TAVILY_API_KEY absente")
-            return []
+            raise TavilySearchError("Tavily n'est pas configuré.")
 
         query = str(query or "").strip()
         if not query:
@@ -365,9 +506,16 @@ class TavilyService:
         base_query = base_query.strip()
 
         # Sites prioritaires (les premiers seulement pour éviter query trop longue)
-        priority_sites = TRUSTED_DOMAINS[:TAVILY_SITES_MAX]
+        registry = self.registry
+        group = registry.group(SEARCH_GROUP.get())
+        raw_content = TAVILY_RAW_CONTENT if group.include_raw_content is None else group.include_raw_content
+        priority_sites = registry.domains(group.id)
+        if len(priority_sites) > TAVILY_SITES_MAX:
+            raise TavilySearchError("Famille trop large : répartir les domaines en familles plus petites ou augmenter TAVILY_SITES_MAX.")
+        if not priority_sites:
+            raise TavilySearchError(f"Aucune source active dans la famille {group.id}.")
         site_operators = " OR ".join([f"site:{s}" for s in priority_sites])
-        enhanced_query = f"{base_query} Madagascar ({site_operators})"
+        enhanced_query = f"{base_query} Madagascar {group.query_hint} ({site_operators})"
 
         logger.info("🌐 Tavily query (with sites): %s", enhanced_query[:150])
 
@@ -376,9 +524,12 @@ class TavilyService:
             "query": enhanced_query,
             "search_depth": "basic",  # Basic = rapide ; advanced = 10-28s
             "max_results": MAX_RESULTS_TAVILY,
-            "include_raw_content": TAVILY_RAW_CONTENT,
+            "include_raw_content": raw_content,
             "include_images": False,
             "include_answer": False,
+            "exclude_domains": registry.excluded_domains,
+            "include_domains": priority_sites,
+            "include_published_date": True,
         }
 
         start = time.perf_counter()
@@ -388,11 +539,15 @@ class TavilyService:
                 self._do_request,
                 payload,
                 categorie,
-                max_retries=RETRY_MAX_ATTEMPTS,
+                max_retries=min(2, RETRY_MAX_ATTEMPTS),
                 base_delay=RETRY_BASE_DELAY,
-                retryable_exceptions=(httpx.TimeoutException, httpx.HTTPError),
+                retryable_exceptions=(httpx.HTTPStatusError,),
                 label="Tavily",
             )
+            if response.status_code in {429, 432, 433}:
+                raise QuotaTavilyDepasseError("Quota ou limite de débit Tavily atteint.")
+            if response.status_code in {401, 403}:
+                raise TavilySearchError("Authentification Tavily refusée ; vérifier la configuration serveur.")
 
             elapsed = time.perf_counter() - start
             logger.info("⏱️ Tavily (with sites) : %.3fs", elapsed)
@@ -408,6 +563,8 @@ class TavilyService:
                 )
 
                 if filtered:
+                    for item in filtered:
+                        item["search_strategy"] = "family"
                     self._set_cache(query, filtered)
                     return filtered
             else:
@@ -416,7 +573,7 @@ class TavilyService:
                     response.status_code
                 )
 
-        except (httpx.TimeoutException, httpx.HTTPError) as exc:
+        except (httpx.TimeoutException, httpx.HTTPError, ValueError) as exc:
             logger.warning("⚠️ Tavily (with sites) échoué: %s", exc)
 
         # ✅ 3. FALLBACK : Retenter SANS site: operators
@@ -428,9 +585,12 @@ class TavilyService:
             "query": fallback_query,
             "search_depth": "basic",
             "max_results": MAX_RESULTS_TAVILY,
-            "include_raw_content": TAVILY_RAW_CONTENT,
+            "include_raw_content": False,
             "include_images": False,
             "include_answer": False,
+            "exclude_domains": registry.excluded_domains,
+            "include_published_date": True,
+            "include_domains": priority_sites,
         }
 
         start = time.perf_counter()
@@ -440,7 +600,7 @@ class TavilyService:
                 self._do_request,
                 fallback_payload,
                 categorie,
-                max_retries=RETRY_MAX_ATTEMPTS,
+                max_retries=1,
                 base_delay=RETRY_BASE_DELAY,
                 retryable_exceptions=(httpx.TimeoutException, httpx.HTTPError),
                 label="Tavily-Fallback",
@@ -449,11 +609,12 @@ class TavilyService:
             elapsed = time.perf_counter() - start
             logger.info("⏱️ Tavily (fallback) : %.3fs", elapsed)
 
+            if response.status_code in {429, 432, 433}:
+                raise QuotaTavilyDepasseError("Quota ou limite de débit Tavily atteint.")
             if response.status_code != 200:
-                logger.error(
-                    "❌ Tavily fallback HTTP %s", response.status_code
+                raise TavilySearchError(
+                    f"Tavily a répondu HTTP {response.status_code} après le repli."
                 )
-                return []
 
             data = response.json()
             raw_results = data.get("results", [])
@@ -467,21 +628,27 @@ class TavilyService:
             # ✅ Si fallback retourne résultats, on accepte MÊME si domaines non-autorisés
             # (car Tavily peut ne pas avoir les sites malgaches indexés)
             if filtered:
+                for item in filtered:
+                    item["search_strategy"] = "family_fallback"
                 self._set_cache(query, filtered)
                 return filtered
 
             # ✅ Si vraiment 0, on garde quelques résultats bruts "propres"
             # (utile pour montrer au LLM qu'il n'y a rien)
             clean_raw = self._filter_minimal(raw_results)
+            for item in clean_raw:
+                item["search_strategy"] = "family_fallback"
             self._set_cache(query, clean_raw)
             return clean_raw
 
-        except (httpx.TimeoutException, httpx.HTTPError) as exc:
+        except (TavilySearchError, QuotaTavilyDepasseError):
+            raise
+        except (httpx.TimeoutException, httpx.HTTPError, ValueError) as exc:
             logger.error("❌ Tavily fallback échoué: %s", exc)
-            return []
+            raise TavilySearchError("Tavily est indisponible ou le délai est dépassé.") from exc
         except Exception as exc:
             logger.exception("❌ Tavily : %s", exc)
-            return []
+            raise TavilySearchError("Tavily a retourné une réponse inexploitable.") from exc
 
     def _filter_results(
         self, raw_results: list[dict[str, Any]]
@@ -505,7 +672,9 @@ class TavilyService:
             ).strip()
 
             # Filtre 1 : URL autorisée
-            if not is_trusted_url(url):
+            registry = getattr(self, "registry", None) or load_registry()
+            hostname = (urlparse(url).hostname or "").lower()
+            if not registry.allowed_url(url) or not any(domain_matches(hostname, d) for d in registry.domains()):
                 logger.debug("   🚫 URL non autorisée: %s", url[:80])
                 continue
 
@@ -515,7 +684,7 @@ class TavilyService:
                 continue
 
             # Filtre 3 : Pas de bruit
-            if contains_noise(title + " " + content):
+            if contains_noise(title + " " + content) or self._configured_noise(title + " " + content):
                 logger.debug("   🚫 Bruit détecté: %s", title[:60])
                 continue
 
@@ -529,6 +698,17 @@ class TavilyService:
     ) -> list[dict[str, Any]]:
         """Page de liste → un résultat par avis récent ; sinon la page seule."""
         url = normalize_url(url)
+        captured_at = datetime.now(UTC).isoformat()
+        registry = load_registry()
+        host = (urlparse(url).hostname or "").lower()
+        source = next((s for g in registry.groups for s in g.sources if s.enabled
+                       and any(domain_matches(host, d) for d in s.domains)), None)
+        metadata = {
+            "source_registered": source is not None,
+            "source_preferred": bool(source and any(urlparse(url).path.lower().startswith(p.lower()) for p in source.preferred_paths)),
+            "employment_signal": any(re.search(r"\b" + re.escape(w) + r"\b", title + " " + content, re.IGNORECASE)
+                                     for w in registry.employment_keywords),
+        }
         avis = decouper_liste_avis(title, url, result.get("raw_content"))
         if avis is not None:
             logger.info(
@@ -536,6 +716,9 @@ class TavilyService:
             )
             for item in avis:
                 item["content"] = clean_scraped_content(item["content"])
+                item["captured_at"] = captured_at
+                item["search_group"] = SEARCH_GROUP.get() or "institutionnel"
+                item.update(metadata)
             return avis
         return [{
             "title": title,
@@ -544,7 +727,16 @@ class TavilyService:
                 extrait_utile(content, result.get("raw_content"))
             ),
             "score": result.get("score", 0.0),
+            "published_at": result.get("published_at") or result.get("published_date"),
+            "captured_at": captured_at,
+            "search_group": SEARCH_GROUP.get() or "institutionnel",
+            **metadata,
         }]
+
+    def _configured_noise(self, text):
+        registry = getattr(self, "registry", None) or load_registry()
+        return any(re.search(r"\b" + re.escape(word) + r"\b", text, re.IGNORECASE)
+                   for word in registry.rejected_keywords)
 
     def _filter_minimal(
         self, raw_results: list[dict[str, Any]]
@@ -566,10 +758,14 @@ class TavilyService:
                 result.get("content", "") or result.get("snippet", "")
             ).strip()
 
+            registry = getattr(self, "registry", None) or load_registry()
+            if not registry.allowed_url(url):
+                continue
+
             if not is_latin_content(title + " " + content):
                 continue
 
-            if contains_noise(title + " " + content):
+            if contains_noise(title + " " + content) or self._configured_noise(title + " " + content):
                 continue
 
             filtered.extend(self._resultats_page(result, title, url, content))

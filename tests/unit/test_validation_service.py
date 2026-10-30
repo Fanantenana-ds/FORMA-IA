@@ -286,7 +286,8 @@ class TestFallbackResponse:
         result = fallback_response([{"a": 1}, {"b": 2}])
         assert result["opportunities"] == []
         assert result["total"] == 0
-        assert result["status"] == "degraded"
+        # Un échec LLM total est une erreur technique, pas une recherche vide.
+        assert result["status"] == "technical_error"
         assert result["statistics"]["raw_results"] == 2
         assert result["statistics"]["final"] == 0
 

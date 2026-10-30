@@ -12,8 +12,9 @@ import logging
 from dataclasses import asdict
 from pathlib import Path
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
+from pydantic import BaseModel, Field
 
 from app.orchestrator.chat_orchestrator import get_chat_orchestrator
 from app.orchestrator.rag_orchestrator import get_rag_orchestrator
@@ -29,7 +30,7 @@ from app.schemas.rag_ia import (
 )
 from app.services.rag import catalogue_service as catalogue
 from app.services.rag import registry_service as registre
-from app.utils.security import verify_api_key
+from app.services.veille.access_service import verify_api_key
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +40,7 @@ router = APIRouter(
     dependencies=[Depends(verify_api_key)],
 )
 
-DOSSIER_FICHIERS_ORIGINAUX = Path(__file__).resolve().parents[3] / "data" / "rag" / "fichiers"
+DOSSIER_FICHIERS_ORIGINAUX = Path(__file__).resolve().parents[4] / "data" / "rag" / "fichiers"
 
 
 @router.post("/chat", response_model=ChatResponse)
@@ -88,6 +89,14 @@ async def lister_formations():
             code=f.code, titre=f.titre, domaine=f.domaine, nb_supports_indexes=nb,
         ))
     return {"success": True, "total": len(resultat), "data": [r.model_dump() for r in resultat]}
+
+
+@router.get("/documents/{doc_hash}/extraits", summary="Inspecter les chunks réellement enregistrés")
+def extraits_document(doc_hash: str, offset: int = Query(0, ge=0), limit: int = Query(20, ge=1, le=100), collection: str | None = Query(None, max_length=30)):
+    if not doc_hash.isalnum() or len(doc_hash) != 64:
+        raise HTTPException(400, "Hash de document invalide.")
+    from app.services.rag.knowledge_repository import KnowledgeRepository
+    return {"success": True, **KnowledgeRepository().lister_chunks_document(doc_hash, offset, limit, collection)}
 
 
 # ============================================================
@@ -222,3 +231,77 @@ async def health_check():
         return {"success": True, **get_package_status()}
     except Exception as e:
         _gerer_erreur(e, "health_check")
+
+
+class ValidationRagRequest(BaseModel):
+    reviewer_note: str = Field(..., min_length=3)
+
+
+@router.post("/reviews/{review_id}/approve", summary="Approuver un portfolio ou syllabus C3")
+async def approuver_contenu_rag(review_id: str, payload: ValidationRagRequest):
+    from app.services.hitl import approve_review, get_review
+    review = get_review(review_id)
+    if not review or review.get("agent_id") not in {"agent_rag_portfolio", "agent_rag_syllabus"}:
+        raise HTTPException(404, "Validation RAG introuvable")
+    return {"success": True, "review": approve_review(review_id, payload.reviewer_note)}
+
+
+@router.get("/reviews", summary="Retrouver les brouillons C3 en attente")
+async def lister_reviews_rag():
+    from app.services.hitl import list_pending
+    return {"success": True, "data": list_pending(agent_id="agent_rag_portfolio") + list_pending(agent_id="agent_rag_syllabus")}
+
+
+@router.get("/reviews/{review_id}", summary="Relire un brouillon C3")
+async def lire_review_rag(review_id: str):
+    from app.services.hitl import get_review
+    review = get_review(review_id)
+    if not review or review.get("agent_id") not in {"agent_rag_portfolio", "agent_rag_syllabus"}:
+        raise HTTPException(404, "Validation RAG introuvable")
+    return {"success": True, "data": review}
+
+
+@router.post("/reviews/{review_id}/reject", summary="Refuser un brouillon C3")
+async def refuser_contenu_rag(review_id: str, payload: ValidationRagRequest):
+    from app.services.hitl import get_review, reject_review
+    review = get_review(review_id)
+    if not review or review.get("agent_id") not in {"agent_rag_portfolio", "agent_rag_syllabus"}:
+        raise HTTPException(404, "Validation RAG introuvable")
+    return {"success": True, "review": reject_review(review_id, payload.reviewer_note)}
+
+
+@router.get("/exports/{filename}", summary="Télécharger un export DOCX C3")
+async def telecharger_export_rag(filename: str):
+    if Path(filename).name != filename or "\\" in filename or not filename.endswith(".docx") or not filename.startswith(("portfolio_", "syllabus_")):
+        raise HTTPException(400, "Nom d'export invalide")
+    path = Path(__file__).resolve().parents[4] / "exports" / "rag" / filename
+    if not path.is_file():
+        raise HTTPException(404, "Export introuvable")
+    return FileResponse(path, filename=filename)
+
+
+class IndexerGuidesRequest(BaseModel):
+    noms: list[str] = Field(default_factory=lambda: ["00_parcours_interface_actuel.md"], min_length=1, max_length=12)
+
+
+@router.get("/guides", summary="Lister les guides de fonctionnement disponibles")
+async def lister_guides():
+    directory = Path(__file__).resolve().parents[4] / "docs" / "guides_plateforme"
+    return {"success": True, "data": [{"nom": path.name} for path in sorted(directory.glob("*.md"))]}
+
+
+@router.post("/guides/indexer", summary="Indexer les guides sélectionnés dans l'aide plateforme")
+async def indexer_guides(payload: IndexerGuidesRequest, background_tasks: BackgroundTasks):
+    directory = Path(__file__).resolve().parents[4] / "docs" / "guides_plateforme"
+    allowed = {path.name: path for path in directory.glob("*.md")}
+    if any(name not in allowed for name in payload.noms):
+        raise HTTPException(400, "Guide inconnu")
+    orchestrator = get_rag_orchestrator()
+    result = []
+    for name in dict.fromkeys(payload.noms):
+        path = allowed[name]
+        info = orchestrator.preparer_indexation(str(path), None, "aide_plateforme")
+        if not info["deja_indexe"]:
+            background_tasks.add_task(orchestrator.ingerer_fichier, str(path), None, "aide_plateforme", info["fichier"])
+        result.append({"fichier": name, "hash": info["hash"], "statut": "deja_indexe" if info["deja_indexe"] else "en_cours"})
+    return {"success": True, "data": result}

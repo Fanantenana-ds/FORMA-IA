@@ -55,7 +55,7 @@ class PDFGenerator:
                 topMargin=72,
                 bottomMargin=72,
                 title=f"TDR - {brief.get('client', 'Client')}",
-                author="ALTIORA SOLUTIONS"
+                author="ALTIORA PREST"
             )
 
             # Styles
@@ -210,7 +210,7 @@ class PDFGenerator:
                 story.append(Spacer(1, 0.1 * inch))
 
             # 6. Pied de page
-            footer_text = f"ALTIORA SOLUTIONS — Document confidentiel — {datetime.now().year}"
+            footer_text = f"ALTIORA PREST — Document confidentiel — {datetime.now().year}"
             footer_style = ParagraphStyle(
                 'CustomFooter',
                 parent=body_style,

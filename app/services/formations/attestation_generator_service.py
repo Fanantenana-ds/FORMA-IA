@@ -512,7 +512,7 @@ class AttestationGeneratorService:
         from reportlab.lib.pagesizes import A4, landscape
         from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
         from reportlab.lib.units import cm
-        from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+        from reportlab.platypus import Image as RLImage, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
         content = result["content"]
         d = content["details"]
@@ -538,8 +538,15 @@ class AttestationGeneratorService:
         small_st = ParagraphStyle("Sm", parent=styles["Normal"], fontSize=11,
                                    alignment=TA_CENTER, spaceAfter=6)
 
-        story = [
-            Paragraph("ALTIORA SOLUTIONS", header_st),
+        _logo_path = Path(__file__).resolve().parents[2] / "templates" / "logo_altiora_prest.png"
+        story = []
+        if _logo_path.exists():
+            _logo = RLImage(str(_logo_path), width=5*cm, height=2*cm, kind="proportional")
+            _logo.hAlign = "CENTER"
+            story.append(_logo)
+            story.append(Spacer(1, 0.2*cm))
+        story += [
+            Paragraph("ALTIORA PREST", header_st),
             Paragraph("Antananarivo, Madagascar", sub_st),
             Spacer(1, 0.5*cm),
             Paragraph(content["titre_attestation"], title_st),
@@ -579,7 +586,7 @@ class AttestationGeneratorService:
         story.append(Paragraph(
             f"Fait à {content['lieu_emission']}, le {content['date_emission']}", sig_st
         ))
-        story.append(Paragraph("<b>Le Directeur<br/>ALTIORA Solutions</b>", sig_st))
+        story.append(Paragraph("<b>Le Directeur<br/>ALTIORA PREST</b>", sig_st))
         story.append(Spacer(1, 0.5*cm))
 
         num_st = ParagraphStyle("N", parent=styles["Normal"], fontSize=9, textColor=colors.grey)

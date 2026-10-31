@@ -78,6 +78,8 @@ def _build_response(result: dict[str, Any], msg_ok: str, elapsed: float) -> "Rou
 # =============================================================================
 
 class GenerateFormsRequest(BaseModel):
+    session_id: str = Field(..., min_length=1, max_length=100,
+                            description="Identifiant unique de la session Backend")
     titre: str = Field(..., min_length=3)
     domaine: str
     niveau_cible: str
@@ -548,6 +550,8 @@ async def publish_forms(
 
 class CreerFormulaireRequest(BaseModel):
     review_id: str = Field(..., description="ID du review APPROUVÉ (agent_1_forms)")
+    session_id: str = Field(..., min_length=1, max_length=100,
+                            description="Identifiant de la session associée à la review")
     session_title: str = Field(default="", description="Titre de la session (préfixe des formulaires)")
 
 
@@ -578,6 +582,7 @@ async def creer_formulaires(
     try:
         result = await orchestrator.creer_formulaires_google(
             review_id=payload.review_id,
+            session_id=payload.session_id,
             session_title=payload.session_title,
         )
         elapsed = round(time.perf_counter() - start, 2)
@@ -606,6 +611,8 @@ class SyncResponsesRequest(BaseModel):
         ...,
         description="ID de la review agent_1_forms contenant les form_id Google",
     )
+    session_id: str = Field(..., min_length=1, max_length=100,
+                            description="Identifiant de la session associée aux formulaires")
     sections: list[str] | None = Field(
         default=None,
         description=(
@@ -645,6 +652,7 @@ async def sync_responses(
     try:
         result = await orchestrator.sync_responses(
             review_id=payload.review_id,
+            session_id=payload.session_id,
             sections=payload.sections,
         )
         elapsed = round(time.perf_counter() - start, 2)
@@ -668,6 +676,8 @@ async def sync_responses(
 
 class SyncPresencesRequest(BaseModel):
     review_id: str = Field(..., description="ID du review APPROUVÉ (agent_4_presences)")
+    session_id: str = Field(..., min_length=1, max_length=100,
+                            description="UUID Backend de la session concernée")
     seance_id: str = Field(..., description="UUID Backend de la séance")
     force: bool = False
 
@@ -689,6 +699,7 @@ async def synchroniser_presences(
     try:
         result = await orchestrator.synchroniser_presences(
             review_id=payload.review_id,
+            session_id=payload.session_id,
             seance_id=payload.seance_id,
             force=payload.force,
         )

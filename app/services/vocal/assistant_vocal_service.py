@@ -8,6 +8,8 @@ remplacent par des doublures locales.
 from __future__ import annotations
 
 import re
+import asyncio
+import os
 from typing import Any
 
 from app.orchestrator.chat_orchestrator import get_chat_orchestrator
@@ -22,6 +24,11 @@ INTENTIONS_MUTABLES = {
     "generer_offre",
     "generer_attestation",
     "relance_facture",
+    "generer_formulaires",
+    "analyser_niveaux",
+    "analyser_satisfaction",
+    "analyser_presences",
+    "preparer_formation",
 }
 
 
@@ -88,7 +95,11 @@ class AssistantVocalService:
             "texte_a_lire": _voix_courte(decision.get("reponse_vocale") or ""),
             "etat": "pret_a_verifier",
             "niveau_preuve": "non_applicable",
+            "execution_plan": None,
         }
+
+        from app.services.vocal.action_plan_service import plan_for
+        resultat["execution_plan"] = plan_for(intention, resultat["parametres"])
 
         # Une faible confiance doit toujours conduire à une clarification,
         # jamais à l'ouverture ou l'exécution d'une action métier.
@@ -106,7 +117,43 @@ class AssistantVocalService:
         if manquants:
             resultat["etat"] = "a_preciser"
             resultat["action_frontend"] = None
+            resultat["execution_plan"] = None
             return resultat
+
+        if intention in {
+            "generer_formulaires", "analyser_niveaux", "analyser_satisfaction",
+            "analyser_presences", "generer_attestation", "preparer_formation",
+        }:
+            from app.services.vocal.prerequisite_service import verifier_action
+
+            parametres = resultat["parametres"]
+            contexte_resultat = {
+                "reponses_disponibles": parametres.get("reponses_disponibles")
+                or parametres.get("responses_disponibles")
+                or False,
+                "projet_id": parametres.get("projet_id"),
+            }
+            prerequis = verifier_action(
+                intention,
+                formation_code=formation_code or parametres.get("formation_code"),
+                session_id=parametres.get("session_id") or parametres.get("id_session"),
+                contexte=contexte_resultat,
+            )
+            if not prerequis.ok:
+                resultat.update(
+                    etat="prerequis_manquant",
+                    action_frontend=prerequis.redirect_action,
+                    execution_demandee=bool(prerequis.redirect_action),
+                    parametres_manquants=prerequis.missing,
+                    texte_affiche=prerequis.message,
+                    texte_a_lire=_voix_courte(prerequis.message),
+                    suggestions=[
+                        "Ouvrir la base documentaire",
+                        "Afficher les sessions disponibles",
+                    ],
+                )
+                resultat["execution_plan"] = None
+                return resultat
 
         if intention == "conversationnel":
             resultat.update(etat="reponse_plateforme", niveau_preuve="connaissance_plateforme")
@@ -137,13 +184,16 @@ class AssistantVocalService:
         # Les actions de création/génération restent préparées : le frontend
         # ouvre l'écran correspondant, puis l'humain valide l'envoi.
         if intention in INTENTIONS_MUTABLES:
-            resultat["etat"] = "integration_requise"
-            resultat["action_frontend"] = None
-            resultat["texte_affiche"] = (
-                "Cette commande n'est pas encore reliée au service métier depuis l'assistant vocal. "
-                "Aucune création ni génération n'a encore été effectuée."
+            resultat.update(
+                etat="action_a_executer",
+                execution_demandee=True,
+                prefill={**resultat["prefill"], **resultat["parametres"]},
+                texte_affiche=(
+                    "Je vérifie les prérequis et j'ouvre l'écran de traitement. "
+                    "La validation humaine restera nécessaire avant toute diffusion."
+                ),
+                texte_a_lire="Je vérifie les prérequis et j'ouvre l'écran de traitement.",
             )
-            resultat["texte_a_lire"] = _voix_courte(resultat["texte_affiche"])
 
         if intention in {"veille_marche", "afficher_opportunites", "afficher_sessions", "afficher_validations"}:
             resultat["texte_affiche"] = (
@@ -160,11 +210,26 @@ class AssistantVocalService:
         return resultat
 
     async def _repondre_rag(self, question: str, resultat: dict[str, Any]) -> dict[str, Any]:
-        reponse = await get_chat_orchestrator().traiter_message(
-            question,
-            conversation_id=resultat["conversation_id"],
-            **({"formation_code": resultat["parametres"]["formation_code"]} if resultat["parametres"].get("formation_code") else {}),
-        )
+        timeout_s = max(5.0, float(os.getenv("VOCAL_RAG_TIMEOUT_S", "18")))
+        try:
+            reponse = await asyncio.wait_for(
+                get_chat_orchestrator().traiter_message(
+                    question,
+                    conversation_id=resultat["conversation_id"],
+                    **({"formation_code": resultat["parametres"]["formation_code"]} if resultat["parametres"].get("formation_code") else {}),
+                ),
+                timeout=timeout_s,
+            )
+        except asyncio.TimeoutError:
+            message = "La recherche documentaire prend trop de temps. Reformulez avec le nom de la formation ou du support."
+            resultat.update(
+                action_frontend="ouvrir_chat_rag",
+                texte_affiche=message,
+                texte_a_lire=message,
+                etat="delai_depasse",
+                niveau_preuve="sans_source",
+            )
+            return resultat
         sources = reponse.get("sources") or []
         texte = reponse.get("reponse") or "Je n'ai pas trouvé de réponse exploitable."
         sourcee = bool(sources)

@@ -13,6 +13,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.api.v1 import routes_tdr
+from app.services.veille.access_service import verify_api_key
 
 
 @pytest.fixture(autouse=True)
@@ -24,6 +25,7 @@ def exports_dir_temporaire(monkeypatch, tmp_path):
 def client():
     app = FastAPI()
     app.include_router(routes_tdr.router)
+    app.dependency_overrides[verify_api_key] = lambda: None
     return TestClient(app)
 
 

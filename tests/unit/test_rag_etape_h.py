@@ -20,6 +20,7 @@ import app.services.rag.recherche_service as recherche_service_module
 import app.services.rag.registry_service as registry_service_module
 from app.api.v1.endpoints import rag_ia
 from app.orchestrator.rag_orchestrator import RagOrchestrator
+from app.services.veille.access_service import verify_api_key
 
 
 def run(coro):
@@ -138,6 +139,7 @@ def test_preparer_indexation_fichier_introuvable():
 def api():
     app = FastAPI()
     app.include_router(rag_ia.router, prefix="/api/v1")
+    app.dependency_overrides[verify_api_key] = lambda: None
     return TestClient(app)
 
 

@@ -6,7 +6,9 @@ détecte l'intention, extrait les paramètres et retourne l'action
 """
 
 import json
+import asyncio
 import logging
+import os
 import re
 import unicodedata
 from datetime import datetime
@@ -28,10 +30,10 @@ def _reponse_locale(commande: str) -> dict | None:
     texte = " ".join(commande.lower().strip().split())
     simple = "".join(char for char in unicodedata.normalize("NFD", texte) if not unicodedata.combining(char))
     simple = " ".join(re.sub(r"[^a-z0-9 ]", " ", simple).split())
-    identities = {"qui es tu", "quel est ton role", "quels sont tes roles", "quelles sont tes roles", "quelles ton roles", "ton role", "tes roles", "a quoi tu sers", "tu sers a quoi", "pourquoi as tu ete cree", "tu es cree pourquoi", "tu es creer pourquoi", "tu es creer pouauoi", "tu es cree pour quoi", "tu es creer pour quoi", "presente toi"}
+    identities = {"qui es tu", "quel est ton role", "quels sont tes roles", "quelles sont tes roles", "quelles ton roles", "ton role", "tes roles", "a quoi tu sers", "tu sers a quoi", "pourquoi as tu ete cree", "tu es cree pourquoi", "tu es creer pourquoi", "tu es creer pouauoi", "tu es cree pour quoi", "tu es creer pour quoi", "pourquoi cette plateforme a ete creee", "pourquoi cette plateforme a ete cree", "a quoi sert cette plateforme", "quel est le but de cette plateforme", "presente toi"}
     if simple in identities:
         return {"intention": "conversationnel", "confiance": 1.0, "parametres": {}, "parametres_manquants": [], "prefill": {}, "action_frontend": None,
-                "reponse_vocale": "Je suis l’assistant FORMA-IA, conçu pour ALTIORA PREST. Je vous aide à consulter vos documents, expliquer les résultats de veille et exécuter les actions métier raccordées, comme lancer une détection ou créer une séance. S’il manque une information, je vous la demande. Les contenus destinés à un client restent soumis à votre validation."}
+                "reponse_vocale": "Je suis l’assistant FORMA-IA, conçu pour ALTIORA PREST. La plateforme a été créée pour transformer une opportunité de formation en un parcours complet : détecter le marché, préparer la réponse, organiser la session, évaluer les participants, certifier et facturer. Je vous aide à comprendre les modules et à exécuter les actions raccordées ; s’il manque une information, je vous la demande, et toute diffusion externe reste soumise à validation humaine."}
     salutations = {"bonjour", "bonsoir", "salut", "coucou", "merci", "au revoir"}
     if texte in salutations:
         return {
@@ -43,7 +45,7 @@ def _reponse_locale(commande: str) -> dict | None:
             "action_frontend": None,
             "prefill": {},
         }
-    launches = {"lance la veille", "lance la veille marché", "lance la veille marche", "lance la détection", "lance la détection des opportunités", "détecte les opportunités", "detecte les opportunites", "démarre la veille", "demarre la veille"}
+    launches = {"lance la veille", "lance la veille marché", "lance la veille marche", "lance la détection", "lance la détection des opportunités", "détecte les opportunités", "detecte les opportunites", "démarre la veille", "demarre la veille", "faire la détection de marché", "faire la detection de marche", "faire la detetection de marche", "fais la détection de marché", "fais la detection de marche", "détection automatique du marché", "detection automatique du marche"}
     opens = {"ouvre la veille", "ouvre la veille marché", "ouvre la veille marche", "affiche les opportunités", "affiche les opportunites"}
     if texte.rstrip(".!?") in launches | opens:
         launch = texte.rstrip(".!?") in launches
@@ -134,13 +136,17 @@ async def router_commande(commande: str, formations: list[str] | None = None) ->
     messages = _construire_messages(commande.strip(), formations or [])
 
     try:
-        response = await llm.generate(
-            system_prompt=messages[0]["content"],
-            user_prompt=messages[1]["content"],
-            temperature=0.1,
-            max_tokens=512,
-            json_mode=True,
-            reasoning_effort="low",
+        timeout_s = max(3.0, float(os.getenv("VOCAL_LLM_TIMEOUT_S", "12")))
+        response = await asyncio.wait_for(
+            llm.generate(
+                system_prompt=messages[0]["content"],
+                user_prompt=messages[1]["content"],
+                temperature=0.1,
+                max_tokens=384,
+                json_mode=True,
+                reasoning_effort="low",
+            ),
+            timeout=timeout_s,
         )
         result = json.loads(response["content"])
         if not isinstance(result, dict):
@@ -153,6 +159,11 @@ async def router_commande(commande: str, formations: list[str] | None = None) ->
             "veille_marche": "lancer_veille", "generer_tdr": "ouvrir_formulaire_tdr",
             "generer_offre": "ouvrir_formulaire_offre", "creer_seance": "ouvrir_formulaire_seance",
             "creer_session": "ouvrir_formulaire_session",
+            "generer_formulaires": "ouvrir_formulaires_session",
+            "analyser_niveaux": "ouvrir_analyse_niveaux",
+            "analyser_satisfaction": "ouvrir_analyse_satisfaction",
+            "analyser_presences": "ouvrir_analyse_presences",
+            "preparer_formation": "ouvrir_preparation",
             "generer_attestation": "ouvrir_formulaire_attestation", "relance_facture": "ouvrir_facturation",
             "question_rag": "ouvrir_chat_rag", "afficher_opportunites": "afficher_opportunites",
             "afficher_sessions": "afficher_sessions", "afficher_validations": "afficher_validations",
@@ -186,6 +197,17 @@ async def router_commande(commande: str, formations: list[str] | None = None) ->
             "parametres": {},
             "parametres_manquants": [],
             "reponse_vocale": "Je n'ai pas pu analyser votre demande. Veuillez réessayer.",
+            "action_frontend": None,
+            "prefill": {},
+        }
+    except asyncio.TimeoutError:
+        logger.warning("Délai dépassé pour le routeur vocal (VOCAL_LLM_TIMEOUT_S)")
+        return {
+            "intention": "hors_perimetre",
+            "confiance": 0.0,
+            "parametres": {},
+            "parametres_manquants": [],
+            "reponse_vocale": "La compréhension prend trop de temps. Reformulez brièvement votre demande.",
             "action_frontend": None,
             "prefill": {},
         }

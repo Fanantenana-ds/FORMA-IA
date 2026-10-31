@@ -21,6 +21,7 @@ from app.services.backend_sync import facture_sync
 from app.services.backend_sync.facture_calculator_service import FactureCalculatorService
 from app.services.facturation.relance_generator_service import RelanceGeneratorService
 from app.services.hitl import hitl_helper
+from app.utils.security import verify_api_key
 
 AUJOURDHUI = date(2026, 9, 22)
 
@@ -288,6 +289,7 @@ def test_agent_indisponible_leve_runtime_error(monkeypatch):
 def api(monkeypatch):
     app = FastAPI()
     app.include_router(facture_ia.router, prefix="/api/v1")
+    app.dependency_overrides[verify_api_key] = lambda: None
     return TestClient(app)
 
 

@@ -84,6 +84,21 @@ def test_question_plateforme_mal_transcrite_va_vers_c3_sans_llm(monkeypatch):
     assert resultat["action_frontend"] == "ouvrir_chat_rag"
 
 
+@pytest.mark.parametrize("commande", [
+    "faire la detetection de marche",
+    "fais la détection de marché",
+    "detection automatique du marche",
+])
+def test_variantes_orales_detection_marche_sont_locales(monkeypatch, commande):
+    def llm_interdit():
+        raise AssertionError("Une commande de veille non ambiguë ne doit pas consommer Groq")
+
+    monkeypatch.setattr(vocal, "get_llm_provider", llm_interdit)
+    resultat = run(vocal.router_commande(commande))
+    assert resultat["intention"] == "veille_marche"
+    assert resultat["action_frontend"] == "lancer_veille"
+
+
 @pytest.mark.parametrize("champ,valeur", [
     ("intention", []), ("intention", "supprimer_base"),
     ("confiance", 2), ("confiance", float("nan")),
@@ -119,3 +134,14 @@ def test_role_assistant_ne_depend_pas_du_llm(monkeypatch,question):
     result=asyncio.run(vocal.router_commande(question))
     assert result["intention"]=="conversationnel"
     assert "FORMA-IA" in result["reponse_vocale"]
+
+
+def test_identite_explique_aussi_la_raison_metier_de_la_plateforme(monkeypatch):
+    def forbidden():
+        raise AssertionError("La présentation métier locale ne doit pas consommer Groq")
+
+    monkeypatch.setattr(vocal, "get_llm_provider", forbidden)
+    result = run(vocal.router_commande("Pourquoi cette plateforme a été créée ?"))
+    assert result["intention"] == "conversationnel"
+    assert "opportunité" in result["reponse_vocale"]
+    assert "factur" in result["reponse_vocale"]

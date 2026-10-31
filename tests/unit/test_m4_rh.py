@@ -19,6 +19,7 @@ from fastapi.testclient import TestClient
 from app.api.v1.endpoints import rh_ia
 from app.orchestrator.rh_orchestrator import RhOrchestrator
 from app.services.hitl import hitl_helper
+from app.utils.security import verify_api_key
 
 
 def run(coro):
@@ -55,6 +56,7 @@ def api(monkeypatch, tmp_path):
     monkeypatch.setattr(orch_mod, "_rh_orchestrator_instance", None)
     app = FastAPI()
     app.include_router(rh_ia.router, prefix="/api/v1")
+    app.dependency_overrides[verify_api_key] = lambda: None
     return TestClient(app)
 
 

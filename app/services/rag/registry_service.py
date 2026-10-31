@@ -59,6 +59,10 @@ class EntreeRegistre:
     # inséré en base avec succès. -1 = rien encore inséré.
     dernier_lot_termine: int = -1
 
+    # Télémétrie additive du pipeline, exposée par GET /ia/rag/statut/{hash}.
+    # Un chunk préparé n'est pas nécessairement vectorisé ni persisté.
+    progression: dict[str, Any] = field(default_factory=dict)
+
 
 def calculer_hash_fichier(chemin: str) -> str:
     """SHA-256 du contenu du fichier (idempotence)."""
@@ -154,6 +158,18 @@ def marquer_lot_termine(hash_fichier: str, numero_lot: int, chemin: Path | None 
     enregistrer_entree(entree, chemin)
 
 
+def marquer_progression(
+    hash_fichier: str, etape: str, chemin: Path | None = None, **compteurs: Any,
+) -> None:
+    """Publie un jalon réellement atteint, sans pourcentage temporel estimé."""
+    entree = obtenir_entree(hash_fichier, chemin)
+    if entree is None:
+        return
+    entree.progression.update(compteurs)
+    entree.progression.update(etape=etape, mise_a_jour=datetime.now().isoformat())
+    enregistrer_entree(entree, chemin)
+
+
 def marquer_termine(
     hash_fichier: str, nb_pages: int, nb_chunks: int, tokens_estimes: int,
     modele_embed: str, chemin: Path | None = None,
@@ -167,6 +183,11 @@ def marquer_termine(
     entree.tokens_estimes = tokens_estimes
     entree.modele_embed = modele_embed
     entree.date_fin = datetime.now().isoformat()
+    entree.message = None
+    entree.progression.update(
+        etape="termine", chunks_prepares=nb_chunks, chunks_indexes=nb_chunks,
+        mise_a_jour=entree.date_fin,
+    )
     enregistrer_entree(entree, chemin)
 
 

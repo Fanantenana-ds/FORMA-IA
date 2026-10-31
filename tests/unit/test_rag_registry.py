@@ -120,3 +120,27 @@ def test_registre_survit_a_un_rechargement(chemin_registre):
 
     assert "h11" in registre_recharge
     assert registre_recharge["h11"].nb_chunks == 4
+
+
+def test_progression_conserve_compteurs_et_lit_ancien_registre(chemin_registre):
+    import json
+
+    chemin_registre.write_text(json.dumps({"h": {"hash": "h", "fichier": "ancien.pdf"}}))
+    assert registre.obtenir_entree("h", chemin_registre).progression == {}
+    registre.marquer_progression("h", "vectorisation", chemin_registre, chunks_prepares=8, chunks_indexes=0)
+    registre.marquer_progression("h", "enregistrement", chemin_registre, lots_total=2)
+    entry = registre.obtenir_entree("h", chemin_registre)
+    assert entry.progression["chunks_prepares"] == 8
+    assert entry.progression["chunks_indexes"] == 0
+    assert entry.nb_chunks is None  # préparer ne signifie pas indexer
+    assert entry.progression["etape"] == "enregistrement"
+
+
+def test_erreur_de_progression_ne_signale_pas_un_succes(chemin_registre):
+    registre.initialiser_entree("h", "doc.pdf", None, chemin=chemin_registre)
+    registre.marquer_progression("h", "enregistrement", chemin_registre, chunks_prepares=8, chunks_indexes=3)
+    registre.marquer_statut_special("h", "doc.pdf", None, "erreur", "Insertion refusée", chemin_registre)
+    entry = registre.obtenir_entree("h", chemin_registre)
+    assert entry.progression["chunks_indexes"] == 3
+    assert entry.statut == "erreur"
+    assert entry.progression["etape"] != "termine"

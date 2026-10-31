@@ -11,7 +11,7 @@ from app.services.veille.prefilter_service import _TECH_TITLE
 from app.services.veille.source_registry import domain_matches
 from app.services.veille.progress_service import emit_progress
 
-_NEED = re.compile(r"formation|formateur|consultant|prestataire|appel|recrutement", re.I)
+_NEED = re.compile(r"formation|formateur|consultant|prestataire|appel|recrutement", re.IGNORECASE)
 
 
 def is_listing(url):
@@ -34,7 +34,7 @@ def deduplicate_notices(sources):
     for source in sorted(sources, key=lambda s: (is_listing(s.get("url")), -len(s.get("content") or ""))):
         url = canonical_url(source.get("url"))
         text = str(source.get("content") or "")
-        reference = re.search(r"(?:N[°º]|Réf(?:érence)?\s*:)\s*([\w][\w./_-]{7,})", text, re.I)
+        reference = re.search(r"(?:N[°º]|Réf(?:érence)?\s*:)\s*([\w][\w./_-]{7,})", text, re.IGNORECASE)
         host = (urlparse(url).hostname or "").removeprefix("www.")
         keys = ["url:" + url]
         if reference and not is_listing(url):
@@ -56,13 +56,13 @@ def parse_notice_page(document, url):
     headings = root.xpath(".//h1") or tree.xpath("//h1")
     title = " ".join(headings[0].itertext()).strip() if headings else ""
     text = " ".join(" ".join(root.itertext()).split())
-    text = re.split(r"ARTICLES? SIMILAIRES\s*:", text, flags=re.I)[0]
+    text = re.split(r"ARTICLES? SIMILAIRES\s*:", text, flags=re.IGNORECASE)[0]
     links = []
     for node in root.xpath(".//a[@href]"):
         label = " ".join(node.itertext()).strip()
         target = urljoin(url, node.get("href"))
         if (_NEED.search(label) and _TECH_TITLE.search(label) and not is_listing(target)
-                and not re.search(r"\.(pdf|docx?|xlsx?)(?:$|\?)", target, re.I)):
+                and not re.search(r"\.(pdf|docx?|xlsx?)(?:$|\?)", target, re.IGNORECASE)):
             links.append({"title": label, "url": target})
     published = tree.xpath("//meta[@property='article:published_time']/@content|//time[@datetime]/@datetime")
     return {"title": title, "content": text[:14000], "links": links,
@@ -130,7 +130,7 @@ class NoticeResolver:
             async with asyncio.timeout(14):
                 direct = [s for s in sources if not is_listing(s.get("url")) and self.allowed(s.get("url"))
                           and _TECH_TITLE.search(s.get("title", "")) and _NEED.search(s.get("title", ""))
-                          and not re.search(r"\.(pdf|docx?|xlsx?)(?:$|\?)", s.get("url", ""), re.I)]
+                          and not re.search(r"\.(pdf|docx?|xlsx?)(?:$|\?)", s.get("url", ""), re.IGNORECASE)]
                 direct.sort(key=lambda s: -sum(word in s.get("title", "").casefold() for word in terms))
                 listings = sorted([s for s in sources if is_listing(s.get("url")) and self.allowed(s.get("url"))],
                                   key=lambda s: (bool(urlparse(s["url"]).query), "/category/" in s["url"]))[:2]

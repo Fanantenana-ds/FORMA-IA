@@ -119,7 +119,7 @@ class LLMAnalysisService:
             for index, source in enumerate(sources, 1):
                 text = str(source.get("content") or "")
                 windows = [text[:450]]
-                for match in list(re.finditer(r"cl[ôo]ture|deadline|date limite|au plus tard", text, re.I))[:3]:
+                for match in list(re.finditer(r"cl[ôo]ture|deadline|date limite|au plus tard", text, re.IGNORECASE))[:3]:
                     excerpt = text[max(0, match.start() - 30):match.start() + 260]
                     if excerpt not in windows:
                         windows.append(excerpt)
@@ -141,7 +141,7 @@ class LLMAnalysisService:
             delay = float(headers.get("retry-after"))
             return delay if 0 <= delay <= 2 else None
         except (TypeError, ValueError):
-            match = re.search(r"try again in\s+(\d+(?:\.\d+)?)\s*(ms|s)\b", str(error), re.I)
+            match = re.search(r"try again in\s+(\d+(?:\.\d+)?)\s*(ms|s)\b", str(error), re.IGNORECASE)
             if match:
                 delay = float(match.group(1)) / (1000 if match.group(2).lower() == "ms" else 1)
                 return delay if 0 <= delay <= 2 else None

@@ -1,6 +1,6 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-import app.models.historique_analyse  # noqa: F401 — enregistre la relation Backend si ses modèles sont chargés par une autre suite.
+import app.models.historique_analyse
 
 from app.models.knowledge_base import KnowledgeBase
 from app.services.rag import knowledge_repository as repository

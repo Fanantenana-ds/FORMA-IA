@@ -61,7 +61,7 @@ def source_need(source):
     title = str(source.get("title") or "").strip()
     body = str(source.get("content") or "")
     if (len(title) >= 20 and compact(title) in compact(body) and _TECH_TITLE.search(title)
-            and re.search(r"recrutement|recherche|cherche|appel.*offre|manifestation.*int[ée]r[êe]t|mission|request for", title, re.I)):
+            and re.search(r"recrutement|recherche|cherche|appel.*offre|manifestation.*int[ée]r[êe]t|mission|request for", title, re.IGNORECASE)):
         return title
     return None
 
@@ -72,7 +72,7 @@ def source_literal(proposed, body):
         return None
     pattern = "".join(r"\s+" if char.isspace() else "['’‘]" if char in "'’‘" else re.escape(char)
                       for char in proposed.strip())
-    match = re.search(pattern, body, re.I)
+    match = re.search(pattern, body, re.IGNORECASE)
     return match.group() if match else None
 
 
@@ -81,7 +81,7 @@ def source_closing_date(source):
     months = "|".join(_MONTHS)
     dates = rf"\d{{4}}-\d{{2}}-\d{{2}}|\d{{1,2}}[/-]\d{{1,2}}[/-]\d{{4}}|\d{{1,2}}\s+(?:{months})\s+\d{{4}}"
     matches = re.finditer(rf"(?:cl[ôo]ture|date limite|deadline|au plus tard)[^.;\n]{{0,100}}?(?P<day>{dates})",
-                          str(source.get("content") or ""), re.I)
+                          str(source.get("content") or ""), re.IGNORECASE)
     found = {}
     for match in matches:
         value = match.group("day")

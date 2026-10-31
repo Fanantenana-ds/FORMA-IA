@@ -220,7 +220,7 @@ class AssistantVocalService:
                 ),
                 timeout=timeout_s,
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             message = "La recherche documentaire prend trop de temps. Reformulez avec le nom de la formation ou du support."
             resultat.update(
                 action_frontend="ouvrir_chat_rag",

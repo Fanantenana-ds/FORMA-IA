@@ -23,6 +23,7 @@ from app.orchestrator.preparation_orchestrator import PreparationOrchestrator
 from app.services.backend_sync import base_sync, review_sync
 from app.services.hitl import hitl_helper
 from app.services.llm import LLMNotAvailableError
+from app.utils.security import verify_api_key
 from app.services.offres import offre_financiere_service, offre_technique_service
 from app.services.preparation import edt_generator_service
 
@@ -406,6 +407,7 @@ def api():
     app.include_router(preparation_ia.router, prefix="/api/v1")
     app.dependency_overrides[offre_ia.get_offre_orchestrator] = lambda: offre_orch
     app.dependency_overrides[preparation_ia.get_preparation_orchestrator] = lambda: prep_orch
+    app.dependency_overrides[verify_api_key] = lambda: None
     return TestClient(app), offre_orch, prep_orch
 
 

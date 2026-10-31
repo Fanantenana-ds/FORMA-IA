@@ -88,8 +88,30 @@ class FormationOrchestrator(BaseOrchestrator):
     # AGENT 1 — GÉNÉRATION DES FORMULAIRES
     # ========================================================
 
+    @staticmethod
+    def _attach_session_context(
+        result: dict[str, Any], session_info: dict[str, Any], expected_agent: str,
+    ) -> dict[str, Any]:
+        """Associe une review IA à la session opérationnelle concernée."""
+        session_id = session_info.get("session_id") or session_info.get("id")
+        review_id = result.get("_review_id") if isinstance(result, dict) else None
+        if not session_id or not review_id:
+            return result
+        from app.services.hitl import get_review, patch_review
+        review = get_review(review_id)
+        if review and review.get("agent_id") == expected_agent:
+            patch_review(review_id, {
+                "session_id": str(session_id),
+                "formation_code": session_info.get("formation_code"),
+                "session_title": session_info.get("titre", ""),
+            })
+        return result
+
     async def generate_forms(self, session_info: dict[str, Any]) -> dict[str, Any]:
         """Génère les 4 formulaires Google Forms d'une session."""
+        session_id = session_info.get("session_id") or session_info.get("id")
+        if session_id in (None, ""):
+            raise ValueError("session_id est obligatoire pour générer les formulaires d'une session.")
         start = self._log_start(
             "generate_forms",
             **{"📋 Session": session_info.get("titre", "N/A"),
@@ -115,6 +137,17 @@ class FormationOrchestrator(BaseOrchestrator):
                     logger.warning(f"⚠️ [FormationOrchestrator] RAG non disponible pour generate_forms : {exc}")
 
             result = await self.form_generator.generate(session_info)
+            review_id = result.get("_review_id") if isinstance(result, dict) else None
+            if review_id:
+                # Le contenu pédagogique reste réutilisable par formation_code,
+                # mais la génération opérationnelle est strictement rattachée à
+                # une session afin d'éviter tout mélange entre groupes parallèles.
+                from app.services.hitl import patch_review
+                patch_review(review_id, {
+                    "session_id": str(session_id),
+                    "formation_code": session_info.get("formation_code"),
+                    "session_title": session_info.get("titre", ""),
+                })
             self._log_end(
                 "generate_forms", start,
                 **{"📊 Inscription": f"{len(result.get('inscription', {}).get('questions', []))} q",
@@ -147,6 +180,7 @@ class FormationOrchestrator(BaseOrchestrator):
 
         try:
             result = await self.level_analyzer.analyze(session_info, participants, corrige)
+            self._attach_session_context(result, session_info, "agent_2_levels")
             self._log_end(
                 "analyze_levels", start,
                 **{"📊 Progression": f"{result['statistiques']['progression_absolue']:+.1f} points",
@@ -176,6 +210,7 @@ class FormationOrchestrator(BaseOrchestrator):
 
         try:
             result = await self.satisfaction_analyzer.analyze(session_info, responses)
+            self._attach_session_context(result, session_info, "agent_3_satisfaction")
             self._log_end(
                 "analyze_satisfaction", start,
                 **{"📊 Note globale": f"{result['statistiques']['notes']['note_globale']}/5",
@@ -207,6 +242,7 @@ class FormationOrchestrator(BaseOrchestrator):
 
         try:
             result = self.presence_analyzer.analyze(session_info, participants, presences)
+            self._attach_session_context(result, session_info, "agent_4_presences")
             self._log_end(
                 "analyze_presences", start,
                 **{"📊 Taux global": result["statistiques"]["taux_presence_global"],
@@ -253,6 +289,7 @@ class FormationOrchestrator(BaseOrchestrator):
             result = await self.attestation_generator.generate_batch_with_pdf(
                 session_data, eligible_participants
             )
+            self._attach_session_context(result, session_data, "agent_5_attestations")
             self._log_end(
                 "generate_attestations", start,
                 **{"📊 Générées": f"{result.get('total_generated', 0)}/{result.get('total_eligible', 0)}",
@@ -278,6 +315,7 @@ class FormationOrchestrator(BaseOrchestrator):
 
         try:
             result = await self.report_generator.generate(session_data)
+            self._attach_session_context(result, session_data, "agent_6_report")
             self._log_end(
                 "generate_report", start,
                 **{"💡 Recommandations": len(result.get("recommandations", [])),
@@ -314,7 +352,7 @@ class FormationOrchestrator(BaseOrchestrator):
     # ========================================================
 
     async def creer_formulaires_google(
-        self, review_id: str, session_title: str = ""
+        self, review_id: str, session_id: str, session_title: str = ""
     ) -> dict[str, Any]:
         """Publie les 4 Google Forms réels après approbation HITL."""
         start = self._log_start("creer_formulaires_google", Review_ID=review_id)
@@ -334,6 +372,17 @@ class FormationOrchestrator(BaseOrchestrator):
             )
 
         approved_data = review.get("data") or {}
+        review_session_id = (review.get("meta") or {}).get("session_id")
+        if not review_session_id:
+            raise ValueError(
+                f"La review '{review_id}' n'est pas rattachée à une session. "
+                "Régénérez les formulaires avec session_id."
+            )
+        if str(review_session_id) != str(session_id):
+            raise ValueError(
+                f"La review '{review_id}' appartient à la session '{review_session_id}', "
+                f"pas à '{session_id}'. Aucun formulaire n'a été créé."
+            )
         try:
             gfs = GoogleFormsService()
             result = await gfs.create_forms(
@@ -369,6 +418,7 @@ class FormationOrchestrator(BaseOrchestrator):
     async def sync_responses(
         self,
         review_id: str,
+        session_id: str,
         sections: list[str] | None = None,
     ) -> dict[str, Any]:
         """
@@ -414,6 +464,16 @@ class FormationOrchestrator(BaseOrchestrator):
             )
 
         meta = review.get("meta") or {}
+        review_session_id = meta.get("session_id")
+        if not review_session_id:
+            raise ValueError(
+                f"La review '{review_id}' n'est pas rattachée à une session."
+            )
+        if str(review_session_id) != str(session_id):
+            raise ValueError(
+                f"La review '{review_id}' appartient à la session '{review_session_id}', "
+                f"pas à '{session_id}'."
+            )
         form_ids: dict[str, str] = meta.get("google_form_ids") or {}
 
         if not form_ids:
@@ -457,6 +517,7 @@ class FormationOrchestrator(BaseOrchestrator):
     async def synchroniser_presences(
         self,
         review_id: str,
+        session_id: str,
         seance_id: str,
         force: bool = False,
     ) -> dict[str, Any]:
@@ -479,6 +540,12 @@ class FormationOrchestrator(BaseOrchestrator):
         review = review_sync.load_approved_review(
             review_id, agent_ids=("agent_4_presences",)
         )
+        review_session_id = (review.get("meta") or {}).get("session_id")
+        if not review_session_id or str(review_session_id) != str(session_id):
+            raise ValueError(
+                f"La review '{review_id}' n'est pas rattachée à la session '{session_id}'. "
+                "Aucune présence n'a été synchronisée."
+            )
         data = review.get("data") or {}
         presences = data.get("presences_brutes") or data.get("presences") or []
 
@@ -519,9 +586,15 @@ class FormationOrchestrator(BaseOrchestrator):
             **{"🔍 Review": review_id, "📋 Session": session_id},
         )
 
-        review_sync.load_approved_review(
+        review = review_sync.load_approved_review(
             review_id, agent_ids=("agent_5_attestations",)
         )
+        review_session_id = (review.get("meta") or {}).get("session_id")
+        if not review_session_id or str(review_session_id) != str(session_id):
+            raise ValueError(
+                f"La review '{review_id}' n'appartient pas à la session '{session_id}'. "
+                "Aucune attestation n'a été synchronisée."
+            )
 
         async def _envoyer() -> dict[str, Any]:
             return await formation_sync.sync_attestations_to_backend(session_id)

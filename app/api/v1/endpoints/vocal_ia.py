@@ -72,6 +72,23 @@ class CommandeVocaleResponse(BaseModel):
     etat: str = "pret_a_verifier"
     niveau_preuve: str = "non_applicable"
     execution_demandee: bool = False
+    execution_plan: dict[str, Any] | None = None
+
+
+class ExecutionVocaleRequest(BaseModel):
+    """Demande d'exécution après confirmation explicite dans l'interface."""
+    action: str = Field(..., min_length=1, max_length=80)
+    confirmer: bool = Field(False, description="Confirmation explicite de l'utilisateur")
+    session_info: dict[str, Any] = Field(default_factory=dict)
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class ExecutionVocaleResponse(BaseModel):
+    success: bool
+    action: str
+    etat: str
+    message: str
+    data: dict[str, Any] | None = None
 
 
 # ──────────────────────────────────────────────────────────────
@@ -131,7 +148,113 @@ async def analyser_commande(req: CommandeVocaleRequest, principal=Depends(verify
         etat=result.get("etat", "pret_a_verifier"),
         niveau_preuve=result.get("niveau_preuve", "non_applicable"),
         execution_demandee=result.get("execution_demandee", False),
+        execution_plan=result.get("execution_plan"),
     )
+
+
+@router.post(
+    "/executer",
+    response_model=ExecutionVocaleResponse,
+    summary="Exécuter une action vocale confirmée",
+    description=(
+        "Exécute une action métier préparée par /commande après confirmation "
+        "explicite. Les contenus externes restent soumis au HITL."
+    ),
+)
+async def executer_commande_vocale(
+    req: ExecutionVocaleRequest,
+    principal=Depends(verify_api_key),
+) -> ExecutionVocaleResponse:
+    if not req.confirmer:
+        return ExecutionVocaleResponse(
+            success=False, action=req.action, etat="confirmation_requise",
+            message="Confirmez l'action dans l'interface avant de l'exécuter.",
+        )
+
+    action = req.action
+    try:
+        from app.services.vocal.prerequisite_service import verifier_action
+        intention_for_check = action
+        check_context = {
+            "reponses_disponibles": bool(req.payload.get("responses")),
+            "projet_id": req.payload.get("projet_info", {}).get("id")
+            if isinstance(req.payload.get("projet_info"), dict) else None,
+        }
+        prerequis = verifier_action(
+            intention_for_check,
+            formation_code=req.session_info.get("formation_code") or req.payload.get("formation_code"),
+            session_id=req.session_info.get("session_id") or req.payload.get("session_id"),
+            contexte=check_context,
+        )
+        if not prerequis.ok:
+            return ExecutionVocaleResponse(
+                success=False, action=action, etat="prerequis_manquant",
+                message=prerequis.message,
+            )
+        from app.orchestrator.formation_orchestrator import get_formation_orchestrator
+        if action == "generer_formulaires":
+            session_info = {**req.session_info, **req.payload}
+            result = await get_formation_orchestrator().generate_forms(session_info)
+        elif action == "analyser_niveaux":
+            result = await get_formation_orchestrator().analyze_levels(
+                req.session_info,
+                req.payload.get("participants", []),
+                req.payload.get("corrige", {}),
+            )
+        elif action == "analyser_satisfaction":
+            result = await get_formation_orchestrator().analyze_satisfaction(
+                req.session_info, req.payload.get("responses", [])
+            )
+        elif action == "analyser_presences":
+            result = await get_formation_orchestrator().analyze_presences(
+                req.session_info,
+                req.payload.get("participants", []),
+                req.payload.get("presences", []),
+            )
+        elif action == "generer_attestation":
+            result = await get_formation_orchestrator().generate_attestations(
+                req.session_info, req.payload.get("eligible_participants", [])
+            )
+        elif action == "preparer_formation":
+            from app.orchestrator.preparation_orchestrator import get_preparation_orchestrator
+            result = await get_preparation_orchestrator().generate_complete(
+                offre_data=req.payload.get("offre_data", {}),
+                projet_info=req.payload.get("projet_info", {}),
+                ressources=req.payload.get("ressources", {}),
+                options=req.payload.get("options", {}),
+            )
+        elif action == "relance_facture":
+            from app.orchestrator.facturation_orchestrator import get_facturation_orchestrator
+            result = await get_facturation_orchestrator().generer_relance(
+                str(req.payload.get("facture_id", ""))
+            )
+        else:
+            return ExecutionVocaleResponse(
+                success=False, action=action, etat="action_inconnue",
+                message="Cette action vocale n'est pas encore raccordée à un service métier.",
+            )
+        return ExecutionVocaleResponse(
+            success=True, action=action,
+            etat="en_attente_validation" if result.get("_review_status") == "pending_review" else "termine",
+            message=(
+                "Résultat généré et envoyé à la validation humaine."
+                if result.get("_review_status") == "pending_review"
+                else "Action exécutée et résultat vérifié."
+            ),
+            data=result,
+        )
+    except (ValueError, RuntimeError) as exc:
+        logger.warning("Action vocale bloquée (%s) : %s", action, exc)
+        return ExecutionVocaleResponse(
+            success=False, action=action, etat="bloquee",
+            message=str(exc),
+        )
+    except Exception:
+        logger.exception("Erreur d'exécution vocale (%s)", action)
+        return ExecutionVocaleResponse(
+            success=False, action=action, etat="erreur",
+            message="Le service métier n'a pas confirmé l'exécution. Aucun succès n'est annoncé.",
+        )
 
 
 @router.get(

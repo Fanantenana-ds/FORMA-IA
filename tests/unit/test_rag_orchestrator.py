@@ -211,6 +211,42 @@ def test_echec_groq_document_indexe_quand_meme(orchestrateur, tmp_path):
 # REPRISE APRÈS INTERRUPTION
 # ============================================================
 
+
+def test_progression_chunks_n_est_confirmee_qu_apres_insertion(orchestrateur, tmp_path):
+    chemin = _docx_simple(tmp_path)
+    doc_hash = registre.calculer_hash_fichier(str(chemin))
+    original_insert = orchestrateur.repository.inserer_chunks
+    observations = []
+
+    def insert(lignes):
+        progression = registre.obtenir_entree(doc_hash).progression.copy()
+        observations.append(progression)
+        assert progression["etape"] == "enregistrement"
+        assert progression["chunks_indexes"] == len(orchestrateur.repository.chunks)
+        original_insert(lignes)
+
+    orchestrateur.repository.inserer_chunks = insert
+    resultat = run(orchestrateur.ingerer_fichier(str(chemin), None))
+    progression = registre.obtenir_entree(doc_hash).progression
+    assert observations
+    assert resultat["statut"] == "indexe"
+    assert progression["etape"] == "termine"
+    assert progression["chunks_indexes"] == len(orchestrateur.repository.chunks)
+    assert progression["chunks_prepares"] == resultat["nb_chunks"]
+
+
+def test_echec_insertion_ne_compte_pas_les_chunks_prepares(orchestrateur, tmp_path):
+    chemin = _docx_simple(tmp_path)
+    def refuse(_):
+        raise RuntimeError("Base indisponible")
+    orchestrateur.repository.inserer_chunks = refuse
+    resultat = run(orchestrateur.ingerer_fichier(str(chemin), None))
+    entree = registre.obtenir_entree(resultat["hash"])
+    assert resultat["statut"] == "erreur"
+    assert entree.progression["chunks_prepares"] > 0
+    assert entree.progression["chunks_indexes"] == 0
+    assert entree.progression["etape"] != "termine"
+
 def test_reprise_apres_interruption_ne_refait_pas_les_lots_termines(orchestrateur, tmp_path):
     # TPM très bas : chaque chunk (~700 tokens) dépasse déjà le budget d'un
     # lot -> 1 chunk = 1 lot, donc plusieurs lots pour un document à

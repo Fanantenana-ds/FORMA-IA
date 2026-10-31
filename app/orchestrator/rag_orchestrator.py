@@ -166,6 +166,7 @@ class RagOrchestrator:
             return {"fichier": nom_original, "hash": hash_fichier, "statut": "erreur", "message": message}
 
         # ── Extraction ──
+        registre.marquer_progression(hash_fichier, "extraction")
         try:
             segments = extract_segments(chemin_fichier, type_fichier)
         except Exception as exc:
@@ -198,6 +199,7 @@ class RagOrchestrator:
             return {"fichier": nom_original, "hash": hash_fichier, "statut": "erreur", "message": message}
 
         # ── Nettoyage ──
+        registre.marquer_progression(hash_fichier, "decoupage", nb_pages=nb_pages)
         segments_propres = [Segment(numero=s.numero, texte=clean_text(s.texte)) for s in segments]
 
         # ── Découpage ──
@@ -229,6 +231,12 @@ class RagOrchestrator:
         lots_indices = self._decouper_indices_par_lots(textes_chunks)
 
         lot_depart = entree.dernier_lot_termine + 1
+        chunks_deja_indexes = sum(len(lot) for lot in lots_indices[:lot_depart])
+        registre.marquer_progression(
+            hash_fichier, "vectorisation", chunks_prepares=len(chunks),
+            chunks_indexes=chunks_deja_indexes, lots_total=len(lots_indices),
+            lots_indexes=lot_depart, modele_embed=self.embedding_provider.modele_document,
+        )
         if lot_depart > 0:
             logger.info(f"🔁 Reprise après interruption : lot {lot_depart}/{len(lots_indices)}")
 
@@ -238,6 +246,7 @@ class RagOrchestrator:
                 lot_chunks = [chunks[i] for i in indices]
                 lot_textes = [c.texte for c in lot_chunks]
 
+                registre.marquer_progression(hash_fichier, "vectorisation", lot_en_cours=numero_lot + 1)
                 vecteurs = await self.embedding_provider.embed_documents(lot_textes)
 
                 lignes = [
@@ -259,9 +268,15 @@ class RagOrchestrator:
                     )
                     for chunk, vecteur in zip(lot_chunks, vecteurs)
                 ]
+                registre.marquer_progression(hash_fichier, "enregistrement")
                 self.repository.inserer_chunks(lignes)
 
                 registre.marquer_lot_termine(hash_fichier, numero_lot)
+                chunks_deja_indexes += len(lot_chunks)
+                registre.marquer_progression(
+                    hash_fichier, "vectorisation", chunks_indexes=chunks_deja_indexes,
+                    lots_indexes=numero_lot + 1,
+                )
         except Exception as exc:
             message = f"Échec pendant l'indexation : {type(exc).__name__} — {exc}"
             registre.marquer_statut_special(
@@ -327,6 +342,9 @@ class RagOrchestrator:
 
         entree = registre.initialiser_entree(hash_fichier, nom_original, formation_code, collection)
         entree.statut = "en_cours"
+        entree.message = None
+        entree.date_fin = None
+        entree.progression = {"etape": "verification", "mise_a_jour": datetime.now().isoformat()}
         registre.enregistrer_entree(entree)
         return {"hash": hash_fichier, "fichier": nom_original, "deja_indexe": False}
 

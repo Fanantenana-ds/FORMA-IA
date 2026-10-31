@@ -24,6 +24,7 @@ from app.orchestrator.veille_orchestrator import VeilleOrchestrator
 from app.services.backend_sync import base_sync, opportunity_sync
 from app.services.veille import auto_detection_service as auto
 from app.services.veille import tavily_quota_service as quota
+from app.services.veille.access_service import verify_api_key, verify_api_key_sse
 
 VARIABLES_AUTO = (
     "VEILLE_AUTO_ENABLED", "VEILLE_AUTO_INTERVAL_HOURS", "VEILLE_AUTO_QUERIES",
@@ -550,6 +551,8 @@ def test_la_boucle_lance_un_passage_quand_il_est_du(monkeypatch):
 def api(monkeypatch):
     app = FastAPI()
     app.include_router(routes_veille.router, prefix="/api/v1")
+    app.dependency_overrides[verify_api_key] = lambda: None
+    app.dependency_overrides[verify_api_key_sse] = lambda: None
     recu = {}
 
     async def faux_detecter(queries, min_score, limit, sync_backend, collect_first=False):
@@ -632,6 +635,7 @@ def test_route_rechercher_429_si_quota_depasse(monkeypatch):
     un 500 générique."""
     app = FastAPI()
     app.include_router(routes_veille.router, prefix="/api/v1")
+    app.dependency_overrides[verify_api_key] = lambda: None
     client = TestClient(app)
 
     from app.services.veille.tavily_quota_service import QuotaTavilyDepasseError
@@ -650,6 +654,7 @@ def test_route_rechercher_429_si_quota_depasse(monkeypatch):
 def test_route_quota_tavily(monkeypatch):
     app = FastAPI()
     app.include_router(routes_veille.router, prefix="/api/v1")
+    app.dependency_overrides[verify_api_key] = lambda: None
     client = TestClient(app)
 
     quota.enregistrer_appel("auto")

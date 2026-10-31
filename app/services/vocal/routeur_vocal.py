@@ -200,7 +200,7 @@ async def router_commande(commande: str, formations: list[str] | None = None) ->
             "action_frontend": None,
             "prefill": {},
         }
-    except asyncio.TimeoutError:
+    except TimeoutError:
         logger.warning("Délai dépassé pour le routeur vocal (VOCAL_LLM_TIMEOUT_S)")
         return {
             "intention": "hors_perimetre",

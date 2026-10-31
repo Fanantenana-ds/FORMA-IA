@@ -338,7 +338,7 @@ def navigation_reason(result):
     """Ces pages servent à découvrir des liens, pas à qualifier un marché."""
     parsed = urlparse(str(result.get("url") or ""))
     path = parsed.path.lower().rstrip("/")
-    if "/blog/" in path or re.search(r"document d.enregistrement universel|^rapport annuel|^l.afrique en communs", str(result.get("title") or ""), re.I):
+    if "/blog/" in path or re.search(r"document d.enregistrement universel|^rapport annuel|^l.afrique en communs", str(result.get("title") or ""), re.IGNORECASE):
         return "Contenu informatif : aucune annonce individuelle de prestation identifiée"
     if (path in {"", "/appels-doffres", "/appels-a-manifestations-dinterets", "/emploi",
                  "/offres-emploi-aujourdhui", "/offres-emploi", "/offres-emploi-semaine"}

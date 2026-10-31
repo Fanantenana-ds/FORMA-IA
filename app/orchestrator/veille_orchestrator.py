@@ -398,8 +398,8 @@ class VeilleOrchestrator(BaseOrchestrator):
                 elif number in rejected:
                     record.update(analysis_status="rejected", reason=rejected[number])
                     reason = rejected[number]
-                    unsupported = re.search(r"hors\s+(?:l['’])?ia\b|non li[ée].*\bia\b|pas d.appel d.offres officiel", reason, re.I)
-                    other_ground = re.search(r"expir|hors madagascar|publicit|emploi salari|\bcdi\b|\bcdd\b", reason, re.I)
+                    unsupported = re.search(r"hors\s+(?:l['’])?ia\b|non li[ée].*\bia\b|pas d.appel d.offres officiel", reason, re.IGNORECASE)
+                    other_ground = re.search(r"expir|hors madagascar|publicit|emploi salari|\bcdi\b|\bcdd\b", reason, re.IGNORECASE)
                     source = batch[number - 1]
                     if unsupported and not other_ground and _TECH_TITLE.search(str(source.get("title", "")) + " " + str(source.get("content", ""))):
                         message = "Motif de rejet insuffisant : ALTIORA couvre l'informatique au-delà de l'IA et les demandes privées de prestation. Vérifier le besoin client, la localisation, l'échéance et le statut externe."
@@ -635,8 +635,8 @@ class VeilleOrchestrator(BaseOrchestrator):
                                       "collection_diagnostics": detail, "error": type(exc).__name__}
                     await emit_progress("analyse", "collection_failed", f"{family} : collecte incomplète, les autres résultats seront conservés.", family=family)
                 finally:
-                    for key in diagnostics:
-                        diagnostics[key].extend({**item, "family": family} for item in detail.get(key, []))
+                    for key, values in diagnostics.items():
+                        values.extend({**item, "family": family} for item in detail.get(key, []))
                     SEARCH_GROUP.reset(token)
         await asyncio.gather(*(collect(i, q, f) for i, (q, f) in enumerate(zip(queries, plan))))
         collection_elapsed = time.perf_counter() - started

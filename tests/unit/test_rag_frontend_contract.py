@@ -65,7 +65,12 @@ def test_indexation_guides_n_accepte_pas_de_chemin_arbitraire():
     assert error.value.status_code==400
 
 
-def test_indexation_guide_utilise_orchestrateur_et_background_existant(monkeypatch):
+def test_indexation_guide_utilise_orchestrateur_et_background_existant(monkeypatch, tmp_path):
+    # Le test doit fonctionner sur un clone propre sans guides locaux non suivis.
+    monkeypatch.setattr(rag_ia, '__file__', str(tmp_path / 'app' / 'api' / 'v1' / 'endpoints' / 'rag_ia.py'))
+    guides = tmp_path / 'docs' / 'guides_plateforme'
+    guides.mkdir(parents=True)
+    (guides / '00_parcours_interface_actuel.md').write_text('# Guide de test FORMA-IA', encoding='utf-8')
     prepare=Mock(return_value={'hash':'a'*64,'fichier':'guide.md','deja_indexe':False})
     ingest=AsyncMock()
     fake=type('Orchestrator',(),{'preparer_indexation':prepare,'ingerer_fichier':ingest})()

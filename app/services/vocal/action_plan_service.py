@@ -78,5 +78,6 @@ def plan_for(intention: str, parameters: dict[str, Any] | None = None) -> dict[s
     if not plan:
         return None
     result = dict(plan)
+    result["intention"] = intention
     result["parameters"] = dict(parameters or {})
     return result

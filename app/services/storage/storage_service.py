@@ -60,11 +60,19 @@ class LocalStorageService(AbstractStorageService):
 
     def __init__(self) -> None:
         self._dossier = Path(__file__).resolve().parents[4] / "data" / "rag" / "fichiers"
+        from app.core.tenant_context import get_tenant_id
+        tenant_id = get_tenant_id()
+        if tenant_id is not None:
+            self._dossier = self._dossier / "tenants" / str(tenant_id)
         self._dossier.mkdir(parents=True, exist_ok=True)
         logger.info(f"[Storage] LOCAL — dossier : {self._dossier}")
 
     def _chemin(self, doc_hash: str, ext: str) -> Path:
         return self._dossier / f"{doc_hash}{ext}"
+
+    def chemin_local(self, doc_hash: str, ext: str) -> Path:
+        """Resolve a file only inside the active company's storage folder."""
+        return self._chemin(doc_hash, ext)
 
     def _verifier_espace_disque(self) -> None:
         """Bloque l'upload si le disque est presque plein."""
@@ -137,6 +145,10 @@ class GCSStorageService(AbstractStorageService):
         client = storage.Client(credentials=creds)
         self._bucket = client.bucket(bucket_name)
         self._prefix = "rag/fichiers"
+        from app.core.tenant_context import get_tenant_id
+        tenant_id = get_tenant_id()
+        if tenant_id is not None:
+            self._prefix = f"{self._prefix}/tenants/{tenant_id}"
         logger.info(f"[Storage] GCS — bucket : gs://{bucket_name}/{self._prefix}/")
 
     def _blob_name(self, doc_hash: str, ext: str) -> str:

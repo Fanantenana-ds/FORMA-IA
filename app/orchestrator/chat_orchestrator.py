@@ -10,7 +10,7 @@
 import logging
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 import yaml
 
@@ -68,7 +68,8 @@ def _charger_prompt(nom_fichier: str) -> str:
 
 
 async def _appeler_llm_json(
-    nom_prompt: str, contenu: str, temperature: float = 0.3
+    nom_prompt: str, contenu: str, temperature: float = 0.3,
+    consigne_additionnelle: str | None = None,
 ) -> dict[str, Any] | None:
     import json
     try:
@@ -77,7 +78,12 @@ async def _appeler_llm_json(
         return None
     try:
         reponse = await llm.generate_with_retry(
-            system_prompt=_charger_prompt(nom_prompt),
+            system_prompt=(
+                _charger_prompt(nom_prompt)
+                + "\n\nRÈGLE DE FIABILITÉ : utilise uniquement les informations présentes dans le contexte fourni. "
+                "N'ajoute aucun fait issu de connaissances générales. Si le contexte ne suffit pas, indique clairement la limite."
+                + (f"\n\n{consigne_additionnelle}" if consigne_additionnelle else "")
+            ),
             user_prompt=contenu,
             temperature=temperature, max_tokens=2000, json_mode=True, max_retries=2,
             # Modèle de raisonnement Groq : voir resume_service.py pour le détail.
@@ -90,12 +96,10 @@ async def _appeler_llm_json(
 
 
 def _reponse_mode_strict(suggestion_texte: str = "") -> str:
-    formations = catalogue.charger_catalogue()
-    liste = "\n".join(f"- {f.titre}" for f in formations) or "(aucune formation au catalogue)"
     base = "Aucun support ALTIORA ne traite ce sujet."
     if suggestion_texte:
         base += f" {suggestion_texte}"
-    return f"{base}\n\nFormations disponibles :\n{liste}"
+    return base
 
 
 class ChatOrchestrator:
@@ -109,35 +113,59 @@ class ChatOrchestrator:
     async def traiter_message(
         self, message: str, conversation_id: str | None = None,
         formation_code: str | None = None,
+        session_id: str | None = None,
+        module: str | None = None,
+        allowed_formation_codes: set[str] | None = None,
+        allowed_session_ids: set[str] | None = None,
+        hide_references: bool = False,
+        on_progress: Callable[[str, str], Awaitable[None]] | None = None,
     ) -> dict[str, Any]:
+        async def progress(stage: str, label: str) -> None:
+            if on_progress:
+                await on_progress(stage, label)
+
         debut = time.perf_counter()
         conversation_id = conversation_id or memoire.nouveau_id()
         conv = memoire.charger_conversation(conversation_id)
 
+        await progress("status", "Analyse de votre question…")
         type_detecte = await detecter_type(message)
+        await progress("status", f"Question reconnue : {type_detecte.replace('_', ' ')}. Préparation de la recherche…")
 
         modele_requete = None
         cache_utilise = None
         formation_resolue: str | None = None
         statut = "ok"
 
+        if type_detecte in {"synthese_thematique", "localisation", "question_fond", "aide_plateforme", "contenu_formation"}:
+            await progress("status", "Recherche des passages pertinents dans les supports indexés…")
+        elif type_detecte == "catalogue":
+            await progress("status", "Vérification des formations qui possèdent des supports indexés…")
+        elif type_detecte == "inventaire":
+            await progress("status", "Comptage des supports réellement indexés…")
+
         try:
             if type_detecte == "catalogue":
-                texte, sources = await self._repondre_catalogue()
+                texte, sources = await self._repondre_catalogue(allowed_formation_codes, allowed_session_ids)
             elif type_detecte == "inventaire":
-                texte, sources = await self._repondre_inventaire()
+                texte, sources = await self._repondre_inventaire(allowed_formation_codes, allowed_session_ids, None, hide_references)
             elif type_detecte == "contenu_formation":
-                texte, sources, formation_resolue = await self._repondre_contenu_formation(message, formation_code, conv)
+                texte, sources, formation_resolue = await self._repondre_contenu_formation(message, formation_code, session_id, module, conv, hide_references)
             elif type_detecte == "synthese_thematique":
-                texte, sources, modele_requete, cache_utilise = await self._repondre_synthese_thematique(message, conv)
+                if allowed_session_ids is None:
+                    texte, sources, modele_requete, cache_utilise = await self._repondre_synthese_thematique(message, conv, None, None, None, None, hide_references)
+                else:
+                    texte, sources, modele_requete, cache_utilise = await self._repondre_synthese_thematique(message, conv, formation_code, session_id, module, allowed_session_ids, hide_references)
             elif type_detecte == "localisation":
-                texte, sources, modele_requete, cache_utilise = await self._repondre_localisation(message)
+                # Les formateurs ne reçoivent pas les références de fichiers/pages.
+                # Leur recherche reste strictement limitée à la session affectée.
+                texte, sources, modele_requete, cache_utilise = await self._repondre_localisation(message, formation_code, session_id, module, hide_references)
             elif type_detecte == "question_fond":
-                texte, sources, modele_requete, cache_utilise = await self._repondre_question_fond(message, conv)
+                texte, sources, modele_requete, cache_utilise = await self._repondre_question_fond(message, conv, formation_code, session_id, module, hide_references)
             elif type_detecte == "aide_plateforme":
-                texte, sources, modele_requete, cache_utilise = await self._repondre_aide_plateforme(message)
+                texte, sources, modele_requete, cache_utilise = await self._repondre_aide_plateforme(message, hide_references)
             elif type_detecte == "conversationnel":
-                texte, sources = self._repondre_conversationnel(message)
+                texte, sources = await self._repondre_conversationnel(message)
             else:  # hors_sujet
                 texte, sources = _reponse_mode_strict(), []
         except DelaiDepasseError as exc:
@@ -145,11 +173,17 @@ class ChatOrchestrator:
             sources = []
             statut = "limite_debit"
 
-        if type_detecte != "hors_sujet" and sources:
+        await progress("status", "Structuration de la réponse…")
+
+        if type_detecte != "hors_sujet" and sources and not hide_references:
             texte += MENTION_FIXE
+        if hide_references:
+            sources = []
 
         duree_ms = (time.perf_counter() - debut) * 1000
 
+        if formation_code:
+            formation_resolue = formation_code
         conv = memoire.ajouter_echange(conv, "utilisateur", message)
         conv = memoire.ajouter_echange(conv, "assistant", texte, formation_code=formation_resolue)
         memoire.sauvegarder_conversation(conv)
@@ -161,6 +195,7 @@ class ChatOrchestrator:
             cache_utilise=bool(cache_utilise), duree_ms=duree_ms, statut=statut,
         )
 
+        await progress("status", "Réponse préparée à partir des supports autorisés…")
         suggestions = await self._suggestions_dynamiques(type_detecte, message, texte)
 
         return {
@@ -177,25 +212,49 @@ class ChatOrchestrator:
     # HANDLERS — sans Voyage, sans LLM
     # ========================================================
 
-    async def _repondre_catalogue(self):
-        formations = catalogue.charger_catalogue()
-        if not formations:
-            return "Aucune formation au catalogue pour l'instant.", []
-        lignes = [
-            f"- **{f.titre}** ({f.code}) — {f.duree_jours or '?'} jour(s), domaine : {f.domaine or 'non précisé'}"
-            for f in formations
-        ]
-        return "Voici les formations disponibles :\n\n" + "\n".join(lignes), []
-
-    async def _repondre_inventaire(self):
+    def _entrees_indexees(self, allowed_formation_codes: set[str] | None = None, allowed_session_ids: set[str] | None = None, session_id: str | None = None):
         entrees = list(registre.charger_registre().values())
-        indexees = [e for e in entrees if e.statut == "indexe"]
-        if not indexees:
-            return "Aucun document indexé pour l'instant.", []
-        lignes = [f"- {e.fichier} ({e.formation_code or 'sans formation'}) — {e.nb_chunks} chunk(s)" for e in indexees]
-        return f"{len(indexees)} document(s) indexé(s) :\n\n" + "\n".join(lignes), []
+        return [
+            e for e in entrees
+            if e.statut == "indexe" and e.collection == "support" and e.formation_code
+            and (allowed_formation_codes is None or e.formation_code in allowed_formation_codes)
+            and (allowed_session_ids is None or str(e.session_id or "") in allowed_session_ids)
+            and (session_id is None or str(e.session_id or "") == str(session_id))
+        ]
 
-    def _repondre_conversationnel(self, message: str = ""):
+    async def _repondre_catalogue(self, allowed_formation_codes: set[str] | None = None, allowed_session_ids: set[str] | None = None, session_id: str | None = None):
+        indexees = self._entrees_indexees(allowed_formation_codes, allowed_session_ids, session_id)
+        codes = sorted({e.formation_code for e in indexees if e.formation_code})
+        if not codes:
+            return "Aucune formation ne dispose actuellement d’un support indexé et exploitable.", []
+        catalogue_par_code = {f.code: f for f in catalogue.charger_catalogue()}
+        lignes = []
+        for code in codes:
+            formation = catalogue_par_code.get(code)
+            titre = formation.titre if formation else code
+            domaine = f" — domaine : {formation.domaine}" if formation and formation.domaine else ""
+            nb = sum(1 for entree in indexees if entree.formation_code == code)
+            lignes.append(f"- **{titre}** ({code}) — {nb} support(s) indexé(s){domaine}")
+        return "Voici les formations pour lesquelles un support est effectivement indexé :\n\n" + "\n".join(lignes), []
+
+    async def _repondre_inventaire(self, allowed_formation_codes: set[str] | None = None, allowed_session_ids: set[str] | None = None, session_id: str | None = None, hide_references: bool = False):
+        indexees = self._entrees_indexees(allowed_formation_codes, allowed_session_ids, session_id)
+        if not indexees:
+            return "Aucun support de formation n’est actuellement indexé dans votre périmètre.", []
+        par_formation: dict[str, list] = {}
+        for entree in indexees:
+            par_formation.setdefault(entree.formation_code or "", []).append(entree)
+        titres = {f.code: f.titre for f in catalogue.charger_catalogue()}
+        lignes = []
+        for code, documents in sorted(par_formation.items()):
+            chunks = sum(entree.nb_chunks or 0 for entree in documents)
+            titre = titres.get(code, code)
+            details = "" if hide_references else ": " + ", ".join(e.fichier for e in documents)
+            lignes.append(f"- **{titre}** ({code}) : {len(documents)} support(s), {chunks} extrait(s) indexé(s){details}")
+        total_chunks = sum(e.nb_chunks or 0 for e in indexees)
+        return f"Inventaire des supports indexés : **{len(indexees)} support(s)** réparti(s) sur **{len(par_formation)} formation(s)**, soit **{total_chunks} extrait(s)**.\n\n" + "\n".join(lignes), []
+
+    def _reponse_conversationnelle_locale(self, message: str = ""):
         msg = message.lower()
         # Questions d'identité → réponse spécifique FORMA-IA / ALTIORA
         if any(mot in msg for mot in ("créé", "cree", "crée", "créateur", "qui es-tu", "qui es tu",
@@ -233,16 +292,48 @@ class ChatOrchestrator:
             )
         return texte, []
 
+    async def _repondre_conversationnel(self, message: str = ""):
+        fallback, sources = self._reponse_conversationnelle_locale(message)
+        try:
+            llm = get_llm_provider()
+            reponse = await llm.generate_with_retry(
+                system_prompt=(
+                    "Tu es l'assistant conversationnel FORMA-IA d'ALTIORA PREST. "
+                    "Réponds en français, avec un ton professionnel et cordial, en une à trois phrases. "
+                    "Tu connais seulement le cadre général suivant : FORMA-IA accompagne la veille marché, "
+                    "la préparation TDR et offres, les sessions de formation, les présences, les évaluations, "
+                    "la base documentaire RAG et la facturation. N'invente ni données, ni résultats, ni fonction. "
+                    'Retourne uniquement un objet JSON de forme {"reponse":"..."}.'
+                ),
+                user_prompt=f"Message : {message}\nRéponse de référence autorisée : {fallback}",
+                temperature=0.25, max_tokens=300, json_mode=True, max_retries=1,
+                reasoning_effort="low",
+            )
+            import json
+            texte = json.loads(reponse["content"]).get("reponse")
+            if isinstance(texte, str) and texte.strip():
+                return texte.strip(), sources
+        except Exception as exc:
+            logger.debug("Réponse conversationnelle locale utilisée : %s", type(exc).__name__)
+        return fallback, sources
+
     # ========================================================
     # HANDLERS — avec formation résolue (mémoire, sans Voyage, LLM oui)
     # ========================================================
 
-    async def _repondre_contenu_formation(self, message, formation_code_force, conv):
+    async def _repondre_contenu_formation(self, message, formation_code_force, session_id, module, conv, hide_references=False):
+        if not session_id:
+            return "Sélectionnez la session concernée pour afficher le contenu sans mélanger les supports d’autres sessions.", [], formation_code_force
         resolution = None
         if formation_code_force:
             resolution_formation = catalogue.obtenir_formation(formation_code_force)
             if resolution_formation:
                 resolution = type("R", (), {"statut": "trouvee", "formation": resolution_formation})()
+            else:
+                # Les formations créées dans les sessions peuvent utiliser un
+                # code propre au tenant, hors du catalogue RAG YAML global.
+                cible = type("FormationCible", (), {"code": formation_code_force, "titre": formation_code_force})()
+                resolution = type("R", (), {"statut": "trouvee", "formation": cible})()
 
         if resolution is None:
             resolution = resoudre_formation(message)
@@ -261,25 +352,29 @@ class ChatOrchestrator:
             return f"Je ne reconnais pas cette formation. Formations disponibles : {liste}.", [], None
 
         formation = resolution.formation
-        entrees = [e for e in registre.entrees_pour_formation(formation.code) if e.statut == "indexe"]
+        entrees = [e for e in registre.entrees_pour_session(session_id) if e.statut == "indexe" and e.formation_code == formation.code and (not module or e.module == module)]
 
         if not entrees:
             return f"Aucun support indexé pour la formation « {formation.titre} » pour l'instant.", [], formation.code
 
         contexte = "\n\n".join(
-            f"Support : {e.fichier}\nRésumé : {e.resume or 'non disponible'}\nPlan : {e.plan or 'non disponible'}"
+            (f"Résumé : {e.resume or 'non disponible'}\nPlan : {e.plan or 'non disponible'}"
+             if hide_references else f"Support : {e.fichier}\nRésumé : {e.resume or 'non disponible'}\nPlan : {e.plan or 'non disponible'}")
             for e in entrees
         )
-        resultat = await _appeler_llm_json("reponse_contenu_formation.yaml", f"Formation : {formation.titre}\n\n{contexte}")
+        resultat = await _appeler_llm_json(
+            "reponse_contenu_formation.yaml", f"Formation : {formation.titre}\n\n{contexte}",
+            consigne_additionnelle=("Ne cite aucun nom de fichier, page ou identifiant de document." if hide_references else None),
+        )
 
         if resultat and resultat.get("reponse"):
             texte = resultat["reponse"]
         else:
-            texte = f"La formation **{formation.titre}** comprend {len(entrees)} support(s) :\n\n" + "\n".join(
-                f"- {e.fichier} : {e.resume or 'résumé non disponible'}" for e in entrees
+            texte = f"La formation **{formation.titre}** comprend {len(entrees)} support(s) indexé(s) :\n\n" + "\n".join(
+                f"- {('Support : ' + e.fichier + ' — ') if not hide_references else ''}{e.resume or 'résumé non disponible'}" for e in entrees
             )
 
-        sources = [{"fichier": e.fichier, "formation": formation.titre, "page": None, "score": None} for e in entrees]
+        sources = [] if hide_references else [{"fichier": e.fichier, "formation": formation.titre, "page": None, "score": None} for e in entrees]
         return texte, sources, formation.code
 
     # ========================================================
@@ -291,65 +386,66 @@ class ChatOrchestrator:
         provider = get_embedding_provider()
         return depuis_cache(texte, provider.modele_requete) is not None
 
-    async def _repondre_synthese_thematique(self, message, conv=None):
+    async def _repondre_synthese_thematique(self, message, conv=None, formation_code=None, session_id=None, module=None, allowed_session_ids=None, hide_references=False):
         cache_avant = await self._cache_utilise_pour(message)
         provider = get_embedding_provider()
 
+        # Les synthèses multi-formations s'appuient sur les résumés dédiés.
+        # Pour un module d'une session, chercher les chunks de cette session :
+        # les résumés de session n'ont pas de module et ne doivent pas mélanger
+        # les séances entre elles.
+        collection = "support" if session_id and module else "resume_formation"
         resultats = await recherche.rechercher(
-            message, collection="resume_formation", top_k=5,
+            message, collection=collection, top_k=8 if collection == "support" else 5,
+            formation_code=formation_code,
+            session_id=session_id,
+            module=module,
             attente_max_s=ATTENTE_MAX_CHAT_S, repository=self.repository,
         )
 
         if not resultats:
-            historique = ""
-            if conv and hasattr(conv, "echanges") and conv.echanges:
-                historique = "\n".join(
-                    f"{getattr(e, 'role', '')}: {getattr(e, 'texte', '')}"
-                    for e in conv.echanges[-10:]
-                )
-            import json as _json
-            prompt_sys = (
-                "Tu es FORMA-IA, l'assistant documentaire d'ALTIORA. "
-                "Réponds à la question de synthèse thématique en t'appuyant sur le contexte "
-                "de la conversation et ta connaissance des formations ALTIORA (IA, management, "
-                "gestion de projet, compétences numériques). "
-                "Zéro route HTTP. Retourne UNIQUEMENT {\"reponse\": \"...\"}."
-            )
-            user_msg = (f"Historique :\n{historique}\n\nQuestion : {message}"
-                        if historique else f"Question : {message}")
-            try:
-                llm = get_llm_provider()
-                rep = await llm.generate_with_retry(
-                    system_prompt=prompt_sys,
-                    user_prompt=user_msg,
-                    temperature=0.5, max_tokens=600, json_mode=True, max_retries=1,
-                    reasoning_effort="low",
-                )
-                data = _json.loads(rep["content"])
-                texte = data.get("reponse", "")
-            except Exception:
-                texte = ""
-            if not texte:
-                return _reponse_mode_strict(), [], provider.modele_requete, cache_avant
-            return texte, [], provider.modele_requete, cache_avant
+            if formation_code:
+                formation = catalogue.obtenir_formation(formation_code)
+                titre = formation.titre if formation else formation_code
+                return f"Aucun résumé indexé ne correspond à la formation « {titre} ». Indexez ses supports ou résumés pour obtenir une réponse ciblée.", [], provider.modele_requete, cache_avant
+            return "Aucun résumé indexé ne permet une synthèse fiable sur ce sujet.", [], provider.modele_requete, cache_avant
 
-        contexte = "\n\n".join(f"Formation : {r.formation_titre}\nRésumé : {r.contenu}" for r in resultats)
-        resultat = await _appeler_llm_json("reponse_synthese_thematique.yaml", contexte, temperature=0.5)
+        contexte = "\n\n".join(
+            (f"Formation : {r.formation_titre or formation_code or 'Session sélectionnée'}\n"
+             f"Module : {r.module or module or 'Général'}\nContenu : {r.contenu}")
+            if collection == "support" else f"Formation : {r.formation_titre}\nRésumé : {r.contenu}"
+            for r in resultats
+        )
+        resultat = await _appeler_llm_json(
+            "reponse_synthese_thematique.yaml",
+            f"THÈME DEMANDÉ : {message}\n\nCONTEXTE INDEXÉ :\n{contexte}",
+            temperature=0.5,
+            consigne_additionnelle=("Ne cite aucun nom de fichier, page ou identifiant de document." if hide_references else None),
+        )
 
         texte = resultat["reponse"] if resultat and resultat.get("reponse") else _reponse_mode_strict()
-        sources = [{"fichier": None, "formation": r.formation_titre, "page": None, "score": r.score} for r in resultats]
-        return texte, sources, provider.modele_requete, cache_avant
+        sources = [{"fichier": None if collection == "resume_formation" else r.fichier, "formation": r.formation_titre, "page": None, "score": r.score} for r in resultats]
+        return texte, ([] if hide_references else sources), provider.modele_requete, cache_avant
 
-    async def _repondre_localisation(self, message):
+    async def _repondre_localisation(self, message, formation_code=None, session_id=None, module=None, hide_references=False):
+        if not session_id:
+            return "Sélectionnez la session concernée pour localiser le passage dans ses supports.", [], None, False
         cache_avant = await self._cache_utilise_pour(message)
         provider = get_embedding_provider()
 
         resultats = await recherche.rechercher(
             message, collection="support", top_k=8,
+            formation_code=formation_code,
+            session_id=session_id,
+            module=module,
             attente_max_s=ATTENTE_MAX_CHAT_S, repository=self.repository,
         )
 
         if not resultats:
+            if formation_code:
+                formation = catalogue.obtenir_formation(formation_code)
+                titre = formation.titre if formation else formation_code
+                return f"Aucun support indexé ne correspond à la formation « {titre} ».", [], provider.modele_requete, cache_avant
             return _reponse_mode_strict(), [], provider.modele_requete, cache_avant
 
         # Groupé par fichier (mission §"localisation")
@@ -363,69 +459,50 @@ class ChatOrchestrator:
             meilleur = max(occurrences, key=lambda r: r.score)
             pages = sorted({o.page_debut for o in occurrences if o.page_debut})
             plage = f"{min(pages)} à {max(pages)}" if len(pages) > 1 else (str(pages[0]) if pages else "?")
-            lignes.append(f"- **{fichier}** — {meilleur.formation_titre or ''} — pages {plage} : « {meilleur.contenu[:150]}… »")
+            if hide_references:
+                lignes.append(f"- Extrait pertinent : « {meilleur.contenu[:250]}… »")
+            else:
+                lignes.append(f"- **{fichier}** — {meilleur.formation_titre or ''} — pages {plage} : « {meilleur.contenu[:150]}… »")
             sources.append({
                 "fichier": fichier, "formation": meilleur.formation_titre,
                 "page": meilleur.page_debut, "score": meilleur.score,
             })
 
-        texte = "Voici où ce sujet est expliqué :\n\n" + "\n".join(lignes)
-        return texte, sources, provider.modele_requete, cache_avant
+        texte = ("Voici les passages pertinents dans les supports de votre formation :\n\n" if hide_references else "Voici où ce sujet est expliqué :\n\n") + "\n".join(lignes)
+        return texte, ([] if hide_references else sources), provider.modele_requete, cache_avant
 
-    async def _repondre_question_fond(self, message, conv=None):
+    async def _repondre_question_fond(self, message, conv=None, formation_code=None, session_id=None, module=None, hide_references=False):
+        if not session_id:
+            return "Je réponds uniquement à partir des supports indexés. Sélectionnez une session pour vérifier cette question sans mélanger les formations.", [], None, False
         cache_avant = await self._cache_utilise_pour(message)
         provider = get_embedding_provider()
 
         resultats = await recherche.rechercher(
             message, collection="support", top_k=8,
+            formation_code=formation_code,
+            session_id=session_id,
+            module=module,
             attente_max_s=ATTENTE_MAX_CHAT_S, repository=self.repository,
         )
 
         if not resultats:
-            # Aucun résultat RAG → LLM avec contexte de conversation
-            # (gère les références anaphoriques : "cette support", "expliquer ça", etc.)
-            historique = ""
-            if conv and hasattr(conv, "echanges") and conv.echanges:
-                historique = "\n".join(
-                    f"{getattr(e, 'role', '')}: {getattr(e, 'texte', '')}"
-                    for e in conv.echanges[-10:]
-                )
-            import json as _json
-            prompt_sys = (
-                "Tu es FORMA-IA, l'assistant documentaire d'ALTIORA Solutions. "
-                "Réponds à la question en te basant sur le contexte de la conversation fourni. "
-                "Si la question fait référence à des documents ou supports listés juste avant, "
-                "explique leur contenu global (guides de la plateforme : Veille marché, TDR, "
-                "Offres, Préparation, Formations M5, Attestations, Facturation, Validation HITL, "
-                "Base de connaissances). "
-                "Zéro route HTTP, zéro code technique. "
-                'Retourne UNIQUEMENT {"reponse": "..."}.'
-            )
-            user_msg = (f"Historique de la conversation :\n{historique}\n\nQuestion : {message}"
-                        if historique else f"Question : {message}")
-            try:
-                llm = get_llm_provider()
-                rep = await llm.generate_with_retry(
-                    system_prompt=prompt_sys,
-                    user_prompt=user_msg,
-                    temperature=0.5, max_tokens=600, json_mode=True, max_retries=1,
-                    reasoning_effort="low",
-                )
-                data = _json.loads(rep["content"])
-                texte = data.get("reponse", "")
-            except Exception:
-                texte = ""
-            if not texte:
-                return _reponse_mode_strict(), [], provider.modele_requete, cache_avant
-            return texte, [], provider.modele_requete, cache_avant
+            if formation_code:
+                formation = catalogue.obtenir_formation(formation_code)
+                titre = formation.titre if formation else formation_code
+                return f"Je n’ai trouvé aucun extrait indexé pour « {titre} ». Ajoutez des supports spécifiques à cette formation pour permettre une réponse fondée sur ses documents.", [], provider.modele_requete, cache_avant
+            return "Aucun extrait indexé ne permet de répondre à cette question de façon fiable.", [], provider.modele_requete, cache_avant
 
         contexte = "\n\n".join(
-            f"[{r.fichier}, p. {r.page_debut}]\n{r.contenu}" for r in resultats
+            (r.contenu if hide_references else f"[{r.fichier}, p. {r.page_debut}]\n{r.contenu}")
+            for r in resultats
         )
+        if hide_references:
+            contexte = f"{contexte}\n\nConsigne de confidentialité : ne cite pas de nom de document, de page ni de référence de source."
         resultat = await _appeler_llm_json(
             "reponse_question_fond.yaml",
             f"QUESTION : {message}\n\nEXTRAITS :\n{contexte}",
             temperature=0.5,
+            consigne_additionnelle=("Ne cite aucun nom de fichier, page ou identifiant de document." if hide_references else None),
         )
 
         texte = resultat["reponse"] if resultat and resultat.get("reponse") else _reponse_mode_strict()
@@ -435,12 +512,7 @@ class ChatOrchestrator:
         ]
         return texte, sources, provider.modele_requete, cache_avant
 
-    async def _repondre_aide_plateforme(self, message):
-        # Guide déterministe pour la question d'accueil : aucune dépendance
-        # externe, donc réponse fiable même sans clé LLM/embeddings.
-        if _est_demande_generale_plateforme(message):
-            return GUIDE_DEMARRAGE_PLATEFORME, [], None, False
-
+    async def _repondre_aide_plateforme(self, message, hide_references=False):
         cache_avant = await self._cache_utilise_pour(message)
         provider = get_embedding_provider()
 
@@ -452,42 +524,14 @@ class ChatOrchestrator:
         )
 
         if not resultats:
-            # Pas de résultat RAG → le LLM répond à partir de sa connaissance
-            # de la plateforme (modules, workflow) sans inventer de procédure.
-            prompt_fallback = (
-                "Tu es FORMA-IA, l'assistant de la plateforme ALTIORA. "
-                "Réponds à la question sur l'utilisation de la plateforme en décrivant "
-                "les modules concernés (Veille marché, Termes de référence, Offres M3, "
-                "Préparation, Gestion des formations M5, Base de connaissances RAG). "
-                "Utilise un langage naturel adapté à un directeur ou formateur. "
-                "Zéro route HTTP, zéro code technique. "
-                'Retourne UNIQUEMENT {"reponse": "..."}.'
-            )
-            import json as _json
-            try:
-                llm = get_llm_provider()
-                rep = await llm.generate_with_retry(
-                    system_prompt=prompt_fallback,
-                    user_prompt=f"Question : {message}",
-                    temperature=0.5, max_tokens=600, json_mode=True, max_retries=1,
-                    reasoning_effort="low",
-                )
-                data = _json.loads(rep["content"])
-                texte = data.get("reponse", "")
-            except Exception:
-                texte = ""
-            if not texte:
-                texte = (
-                    "La plateforme **FORMA-IA** comporte plusieurs modules : "
-                    "Veille marché, Termes de référence, Offres commerciales, "
-                    "Préparation, Gestion des formations et Base de connaissances. "
-                    "Posez-moi une question précise sur l'un de ces modules et je vous guiderai."
-                )
-            return texte, [], provider.modele_requete, cache_avant
+            return "Aucun guide de la plateforme indexé ne permet de répondre à cette question de manière fiable.", [], provider.modele_requete, cache_avant
 
         # RAG + LLM : on synthétise les extraits avec une température plus haute
         # pour une prose plus fluide et naturelle.
-        contexte = "\n\n".join(f"[{r.fichier}]\n{r.contenu}" for r in resultats)
+        contexte = "\n\n".join(
+            r.contenu if hide_references else f"[{r.fichier}]\n{r.contenu}"
+            for r in resultats
+        )
         resultat = await _appeler_llm_json(
             "reponse_aide_plateforme.yaml",
             f"QUESTION : {message}\n\nEXTRAITS DU GUIDE :\n{contexte}",
@@ -498,11 +542,14 @@ class ChatOrchestrator:
             texte = resultat["reponse"]
         else:
             # Fallback lisible si le LLM échoue : résumé des extraits trouvés
-            lignes = [f"**{r.fichier}** : {r.contenu[:200]}…" for r in resultats[:3]]
+            lignes = [
+                (r.contenu[:250] if hide_references else f"**{r.fichier}** : {r.contenu[:200]}…")
+                for r in resultats[:3]
+            ]
             texte = "Voici ce que j'ai trouvé dans le guide :\n\n" + "\n\n".join(lignes)
 
         sources = [{"fichier": r.fichier, "formation": None, "page": r.page_debut, "score": r.score} for r in resultats]
-        return texte, sources, provider.modele_requete, cache_avant
+        return texte, ([] if hide_references else sources), provider.modele_requete, cache_avant
 
     # ========================================================
     # SUGGESTIONS DE RELANCE — dynamiques (LLM) + gabarit statique

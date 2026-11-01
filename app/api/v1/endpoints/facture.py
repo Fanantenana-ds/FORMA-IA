@@ -20,7 +20,7 @@
 from typing import List, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy.orm import Session
 
 from app.core.dependencies import get_current_user, require_role
@@ -37,6 +37,7 @@ from app.schemas.facture import (
     RelanceResponse,
 )
 from app.services.facture_service import FactureService
+from app.services.facture_document_service import generate_invoice_pdf
 
 router = APIRouter(prefix="/factures", tags=["Facturation"])
 
@@ -73,6 +74,27 @@ def get_facture(
     current_user: User = Depends(get_current_user)
 ):
     return service.get_facture(facture_id)
+
+
+@router.get(
+    "/{facture_id}/pdf",
+    summary="Télécharger une facture professionnelle en PDF",
+    response_class=Response,
+    responses={200: {"content": {"application/pdf": {}}}},
+)
+def telecharger_facture_pdf(
+    facture_id: UUID,
+    service: FactureService = Depends(get_facture_service),
+    current_user: User = Depends(get_current_user),
+):
+    facture = service.get_facture(facture_id)
+    contenu = generate_invoice_pdf(facture)
+    filename = f"facture_{facture.numero}.pdf"
+    return Response(
+        content=contenu,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.patch(

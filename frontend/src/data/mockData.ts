@@ -5,7 +5,6 @@ import {
   ActiviteRecente,
   Session,
   OpportuniteCRM,
-  Formateur,
   PresenceRecord,
   DevisFacture,
   VeilleMarche
@@ -209,7 +208,7 @@ export const initialOpportunites: OpportuniteCRM[] = [
   }
 ];
 
-export const initialFormateurs: Formateur[] = [
+export const initialFormateurs = [
   {
     id: 'form-1',
     nom: 'Dr. Alex Moreau',

@@ -3,37 +3,35 @@ import {
   Search,
   Bell,
   Plus,
-  Server,
-  Sparkles,
   User,
-  CheckCircle,
-  AlertTriangle,
   LogIn,
   UserPlus,
   LogOut,
-  ShieldCheck
 } from 'lucide-react';
-import { UserRole, ApiConfig, AuthUser } from '../types';
+import { UserRole, AuthUser, ROLE_LABELS } from '../types';
+
+/** Initiales (2 max) à partir du nom complet. */
+const getInitials = (name: string): string =>
+  name
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part.charAt(0).toUpperCase())
+    .join('');
 
 interface HeaderProps {
-  currentRole: UserRole;
-  apiConfig: ApiConfig;
   authUser: AuthUser | null;
   onOpenAuthModal: (mode?: 'login' | 'register') => void;
   onLogout: () => void;
-  onOpenApiModal: () => void;
   onQuickNewSession: () => void;
   onQuickNewOpportunity: () => void;
   onQuickNewInvoice: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
-  currentRole,
-  apiConfig,
   authUser,
   onOpenAuthModal,
   onLogout,
-  onOpenApiModal,
   onQuickNewSession,
   onQuickNewOpportunity,
   onQuickNewInvoice
@@ -82,31 +80,6 @@ export const Header: React.FC<HeaderProps> = ({
 
         <div className="h-6 w-px bg-slate-200 mx-1"></div>
 
-        {/* API REST Status Badge */}
-        <button
-          onClick={onOpenApiModal}
-          className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-all ${
-            apiConfig.isConnected
-              ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
-              : 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100'
-          }`}
-          title="Cliquez pour configurer ou tester l'API REST http://127.0.0.1:8000"
-        >
-          <Server size={14} className={apiConfig.isConnected ? 'text-emerald-600' : 'text-amber-600'} />
-          <span className="hidden sm:inline font-mono">127.0.0.1:8000</span>
-          {apiConfig.isConnected ? (
-            <span className="flex items-center gap-1 text-[11px] font-bold">
-              <CheckCircle size={12} className="text-emerald-600" />
-              Live
-            </span>
-          ) : (
-            <span className="flex items-center gap-1 text-[11px] font-semibold">
-              <AlertTriangle size={12} className="text-amber-600" />
-              Simulé
-            </span>
-          )}
-        </button>
-
         {/* Notifications */}
         <button className="relative p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors">
           <Bell size={18} />
@@ -121,22 +94,14 @@ export const Header: React.FC<HeaderProps> = ({
                 onClick={() => setShowUserMenu(!showUserMenu)}
                 className="flex items-center gap-2.5 hover:opacity-80 transition-opacity p-1 rounded-xl hover:bg-slate-50"
               >
-                {authUser.avatarUrl ? (
-                  <img
-                    src={authUser.avatarUrl}
-                    alt={authUser.nom}
-                    className="w-8 h-8 rounded-full object-cover border border-slate-300"
-                  />
-                ) : (
-                  <div className="w-8 h-8 rounded-full bg-[#1B8F6E] text-white font-extrabold text-xs flex items-center justify-center border border-white shadow-xs">
-                    {authUser.prenom.substring(0, 1)}{authUser.nom.substring(0, 1)}
-                  </div>
-                )}
+                <div className="w-8 h-8 rounded-full bg-[#1B8F6E] text-white font-extrabold text-xs flex items-center justify-center border border-white shadow-xs">
+                  {getInitials(authUser.nom)}
+                </div>
                 <div className="hidden md:block text-left">
                   <div className="text-xs font-bold text-slate-800 leading-none flex items-center gap-1">
-                    <span>{authUser.prenom} {authUser.nom}</span>
+                    <span>{authUser.nom}</span>
                     <span className="text-[10px] px-1.5 py-0.2 bg-[#1B8F6E]/10 text-[#1B8F6E] font-extrabold rounded">
-                      {authUser.role}
+                      {ROLE_LABELS[authUser.role]}
                     </span>
                   </div>
                   <div className="text-[10px] text-slate-500 mt-0.5 truncate max-w-[130px]">
@@ -149,9 +114,9 @@ export const Header: React.FC<HeaderProps> = ({
               {showUserMenu && (
                 <div className="absolute right-0 mt-2 w-56 bg-white rounded-2xl shadow-xl border border-slate-200 p-2 z-50 animate-in fade-in duration-150">
                   <div className="p-2 border-b border-slate-100">
-                    <div className="font-bold text-xs text-[#11162A]">{authUser.prenom} {authUser.nom}</div>
+                    <div className="font-bold text-xs text-[#11162A]">{authUser.nom}</div>
                     <div className="text-[11px] text-slate-500">{authUser.email}</div>
-                    <div className="text-[10px] text-[#1B8F6E] font-bold mt-1">{authUser.organisation}</div>
+                    <div className="text-[10px] text-[#1B8F6E] font-bold mt-1">{ROLE_LABELS[authUser.role]}</div>
                   </div>
 
                   <button

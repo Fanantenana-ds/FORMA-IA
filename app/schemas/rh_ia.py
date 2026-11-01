@@ -4,6 +4,7 @@
 # ============================================================
 
 from typing import Any, Dict, List, Optional
+from uuid import UUID
 
 from pydantic import BaseModel, Field
 
@@ -128,5 +129,6 @@ class DonneesSessionM5(BaseModel):
 
 class EvaluationFormateurRequest(BaseModel):
     formateur: str = Field(..., min_length=2, description="Nom du formateur")
+    formateur_id: UUID | None = Field(default=None, description="ID du dossier formateur backend")
     session: str = Field(..., min_length=2, description="Titre de la session")
     donnees_session: DonneesSessionM5

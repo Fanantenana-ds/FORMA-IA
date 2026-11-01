@@ -8,10 +8,15 @@ from app.models.facture import StatutFacture
 
 
 class FactureCreate(BaseModel):
-    client: str = Field(..., min_length=1)
+    client: str | None = Field(default=None, min_length=1)
+    client_adresse: str | None = Field(default=None, max_length=300)
+    client_siret: str | None = Field(default=None, max_length=32)
+    client_rcs: str | None = Field(default=None, max_length=120)
+    client_tva: str | None = Field(default=None, max_length=32)
     montant: float = Field(...,gt=0)
     tva_taux: float = Field(default=20.0, ge=0)
     date_echeance: date | None = None
+    session_id: UUID | None = None
 
 
 class PaiementCreate(BaseModel):
@@ -33,12 +38,17 @@ class FactureResponse(BaseModel):
     id: UUID
     numero: str
     client: str
+    client_adresse: str | None = None
+    client_siret: str | None = None
+    client_rcs: str | None = None
+    client_tva: str | None = None
     montant: float
     tva_taux: float
     montant_ttc: float
     statut: StatutFacture
     date_emission: datetime
     date_echeance: date | None = None
+    session_id: UUID | None = None
     paiements: list[PaiementResponse] = []
 
     model_config = {"from_attributes": True}
@@ -47,6 +57,10 @@ class FactureResponse(BaseModel):
 class FactureUpdate(BaseModel):
     """Mise à jour partielle d'une facture (tous les champs sont optionnels)."""
     client: str | None = Field(default=None, min_length=1)
+    client_adresse: str | None = Field(default=None, max_length=300)
+    client_siret: str | None = Field(default=None, max_length=32)
+    client_rcs: str | None = Field(default=None, max_length=120)
+    client_tva: str | None = Field(default=None, max_length=32)
     date_echeance: date | None = None
     statut: StatutFacture | None = None
 

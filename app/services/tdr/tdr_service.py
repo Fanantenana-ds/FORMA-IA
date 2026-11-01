@@ -80,6 +80,14 @@ class TDRService:
         for placeholder, value in replacements.items():
             prompt = prompt.replace(placeholder, value)
 
+        feedback = str(brief.get("feedback") or "").strip()
+        if feedback:
+            prompt += (
+                "\n\n=== RECTIFICATIONS DEMANDÉES PAR LE RÉVISEUR ===\n"
+                f"{feedback}\n"
+                "Révise le TDR en appliquant précisément ces demandes. Conserve les informations déjà validées qui ne sont pas concernées."
+            )
+
         return prompt
 
     async def generate(self, brief: dict[str, Any]) -> dict[str, Any] | None:

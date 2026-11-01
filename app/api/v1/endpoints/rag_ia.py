@@ -8,13 +8,21 @@
 # /ia/rag/rechercher, GET /ia/rag/statut/{hash}, GET /ia/rag/health.
 # ============================================================
 
+import asyncio
+import json
 import logging
 from dataclasses import asdict
 from pathlib import Path
+from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
+from app.core.dependencies import get_current_tenant_user
+from app.database import get_db
+from app.models.formation import Session as TrainingSession
+from app.models.user import User
 
 from app.orchestrator.chat_orchestrator import get_chat_orchestrator
 from app.orchestrator.rag_orchestrator import get_rag_orchestrator
@@ -31,26 +39,43 @@ from app.schemas.rag_ia import (
 from app.services.rag import catalogue_service as catalogue
 from app.services.rag import registry_service as registre
 from app.services.veille.access_service import verify_api_key
+from app.services.storage import get_storage
+from app.services.storage.storage_service import LocalStorageService
+from app.services.rag.trainer_access import assigned_formation_codes, assigned_session_ids, get_accessible_session, is_trainer
+from app.core.dependencies import require_role
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/ia/rag",
     tags=["C3 — IA RAG"],
-    dependencies=[Depends(verify_api_key)],
+    dependencies=[Depends(verify_api_key), Depends(get_current_tenant_user)],
 )
 
 DOSSIER_FICHIERS_ORIGINAUX = Path(__file__).resolve().parents[4] / "data" / "rag" / "fichiers"
 
 
+def _session_scope(db: Session, user: User, session_id: str | None):
+    if is_trainer(user) and not session_id:
+        raise HTTPException(status_code=422, detail="Sélectionnez une session qui vous est affectée.")
+    return get_accessible_session(db, user, session_id) if session_id else None
+
+
 @router.post("/chat", response_model=ChatResponse)
-async def chat(request: ChatRequest):
+async def chat(request: ChatRequest, current_user: User = Depends(get_current_tenant_user), db: Session = Depends(get_db)):
     """Assistant documentaire — route unique pour les 9 types de message
     (voir chat_orchestrator.py). Aucun HITL (usage interne)."""
+    session = _session_scope(db, current_user, str(request.session_id) if request.session_id else None)
+    formation_code = session.formation_code if session else request.formation_code
+    allowed_codes = assigned_formation_codes(db, current_user) if is_trainer(current_user) else None
+    allowed_sessions = assigned_session_ids(db, current_user) if is_trainer(current_user) else None
     try:
         orchestrateur = get_chat_orchestrator()
         resultat = await orchestrateur.traiter_message(
-            request.message, request.conversation_id, request.formation_code,
+            request.message, request.conversation_id, formation_code,
+            session_id=str(session.id) if session else None, module=request.module,
+            allowed_formation_codes=allowed_codes, allowed_session_ids=allowed_sessions,
+            hide_references=is_trainer(current_user),
         )
         return resultat
     except Exception as exc:
@@ -58,8 +83,71 @@ async def chat(request: ChatRequest):
         raise HTTPException(status_code=500, detail=f"Erreur interne du chat : {type(exc).__name__}")
 
 
+@router.post("/chat/stream", summary="Chat documentaire avec progression en temps réel")
+async def chat_stream(payload: ChatRequest, request: Request, current_user: User = Depends(get_current_tenant_user), db: Session = Depends(get_db)):
+    session = _session_scope(db, current_user, str(payload.session_id) if payload.session_id else None)
+    formation_code = session.formation_code if session else payload.formation_code
+    allowed_codes = assigned_formation_codes(db, current_user) if is_trainer(current_user) else None
+    allowed_sessions = assigned_session_ids(db, current_user) if is_trainer(current_user) else None
+    orchestrateur = get_chat_orchestrator()
+
+    async def produire():
+        queue: asyncio.Queue[dict] = asyncio.Queue()
+
+        async def progress(stage: str, label: str):
+            await queue.put({"type": stage, "message": label})
+
+        async def envoyer(data: dict):
+            return "data: " + json.dumps(data, ensure_ascii=False) + "\n\n"
+
+        async def executer():
+            return await orchestrateur.traiter_message(
+                payload.message, payload.conversation_id, formation_code,
+                session_id=str(session.id) if session else None, module=payload.module,
+                allowed_formation_codes=allowed_codes, allowed_session_ids=allowed_sessions,
+                hide_references=is_trainer(current_user),
+                on_progress=progress,
+            )
+
+        task = asyncio.create_task(executer())
+        try:
+            while not task.done() or not queue.empty():
+                if await request.is_disconnected():
+                    task.cancel()
+                    return
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=0.2)
+                    yield await envoyer(event)
+                except asyncio.TimeoutError:
+                    continue
+
+            resultat = await task
+            if is_trainer(current_user):
+                resultat["sources"] = []
+            yield await envoyer({"type": "status", "message": "Réponse prête. Affichage du résultat…"})
+            texte = resultat.get("reponse", "")
+            for debut in range(0, len(texte), 48):
+                if await request.is_disconnected():
+                    return
+                yield await envoyer({"type": "token", "text": texte[debut:debut + 48]})
+                await asyncio.sleep(0.015)
+            yield await envoyer({"type": "meta", "data": {k: resultat.get(k) for k in ("conversation_id", "type_reponse", "sources", "formation_resolue", "suggestions", "duree_ms")}})
+            yield await envoyer({"type": "done"})
+        except asyncio.CancelledError:
+            task.cancel()
+            raise
+        except Exception as exc:
+            logger.exception("Erreur pendant le chat RAG en flux : %s", exc)
+            yield await envoyer({"type": "error", "message": "Une erreur est survenue pendant la préparation de la réponse."})
+
+    return StreamingResponse(
+        produire(), media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no", "Connection": "keep-alive"},
+    )
+
+
 @router.get("/documents/{doc_hash}/fichier")
-async def telecharger_document(doc_hash: str):
+async def telecharger_document(doc_hash: str, current_user: User = Depends(get_current_tenant_user), db: Session = Depends(get_db)):
     """Télécharge le fichier original d'un document indexé (par son hash).
     Pour un PDF, l'appelant peut ajouter #page=N à l'URL retournée."""
     if not doc_hash.isalnum() or len(doc_hash) != 64:
@@ -68,20 +156,40 @@ async def telecharger_document(doc_hash: str):
     entree = registre.obtenir_entree(doc_hash)
     if entree is None:
         raise HTTPException(status_code=404, detail="Document introuvable dans le registre.")
+    if entree.session_id:
+        _session_scope(db, current_user, entree.session_id)
+    elif is_trainer(current_user):
+        raise HTTPException(status_code=404, detail="Ce support n’est pas classé dans une session accessible.")
 
-    candidats = list(DOSSIER_FICHIERS_ORIGINAUX.glob(f"{doc_hash}.*"))
-    if not candidats:
+    storage = get_storage()
+    if not isinstance(storage, LocalStorageService):
+        raise HTTPException(status_code=501, detail="Le téléchargement direct de fichiers n’est disponible qu’avec le stockage local.")
+    chemin = storage.chemin_local(doc_hash, Path(entree.fichier).suffix.lower())
+    if not chemin.is_file():
         raise HTTPException(status_code=404, detail="Fichier original introuvable sur disque.")
 
-    return FileResponse(path=str(candidats[0]), filename=entree.fichier)
+    return FileResponse(path=str(chemin), filename=entree.fichier)
 
 
 @router.get("/formations")
-async def lister_formations():
-    """Formations du catalogue avec leur nombre de supports indexés."""
+async def lister_formations(db: Session = Depends(get_db), current_user: User = Depends(get_current_tenant_user)):
+    """Catalogue RAG + codes des formations déjà utilisées dans les sessions du tenant."""
     formations = catalogue.charger_catalogue()
+    par_code = {formation.code: formation for formation in formations}
+    sessions = db.query(TrainingSession.formation_code, TrainingSession.titre).filter(
+        TrainingSession.formation_code.isnot(None),
+        TrainingSession.formation_code != "",
+    ).all()
+    for code, titre in sessions:
+        if code not in par_code:
+            par_code[code] = type("FormationSession", (), {"code": code, "titre": titre, "domaine": None})()
+
+    if is_trainer(current_user):
+        codes_autorises = assigned_formation_codes(db, current_user)
+        par_code = {code: formation for code, formation in par_code.items() if code in codes_autorises}
+
     resultat = []
-    for f in formations:
+    for f in par_code.values():
         nb = sum(
             1 for e in registre.entrees_pour_formation(f.code) if e.statut == "indexe"
         )
@@ -91,10 +199,47 @@ async def lister_formations():
     return {"success": True, "total": len(resultat), "data": [r.model_dump() for r in resultat]}
 
 
+@router.get("/sessions", summary="Sessions accessibles pour classer les supports RAG")
+async def lister_sessions_rag(db: Session = Depends(get_db), current_user: User = Depends(get_current_tenant_user)):
+    query = db.query(TrainingSession)
+    if is_trainer(current_user):
+        ids = assigned_session_ids(db, current_user)
+        if not ids:
+            return {"success": True, "total": 0, "data": []}
+        query = query.filter(TrainingSession.id.in_([UUID(value) for value in ids]))
+    sessions = query.order_by(TrainingSession.date_debut.desc()).all()
+    supports = list(registre.charger_registre().values())
+    data = []
+    for session in sessions:
+        docs = [e for e in supports if e.statut == "indexe" and e.session_id == str(session.id)]
+        # Une session comprend plusieurs séances/modules. Les thèmes déjà
+        # planifiés sont proposés comme classement, en plus des modules
+        # utilisés par les supports déjà indexés.
+        seance_modules = [seance.theme for seance in (session.seances or []) if seance.theme]
+        data.append({
+            "id": str(session.id), "session_id": str(session.id), "titre": session.titre,
+            "formation_code": session.formation_code, "date_debut": str(session.date_debut),
+            "date_fin": str(session.date_fin), "nb_supports_indexes": len(docs),
+            "modules": sorted({*seance_modules, *(e.module for e in docs if e.module)}),
+            "seances": [
+                {"id": str(seance.id), "date": str(seance.date), "theme": seance.theme}
+                for seance in sorted(session.seances or [], key=lambda item: (item.date, item.heure_debut or ""))
+            ],
+        })
+    return {"success": True, "total": len(data), "data": data}
+
+
 @router.get("/documents/{doc_hash}/extraits", summary="Inspecter les chunks réellement enregistrés")
-def extraits_document(doc_hash: str, offset: int = Query(0, ge=0), limit: int = Query(20, ge=1, le=100), collection: str | None = Query(None, max_length=30)):
+def extraits_document(doc_hash: str, offset: int = Query(0, ge=0), limit: int = Query(20, ge=1, le=100), collection: str | None = Query(None, max_length=30), current_user: User = Depends(get_current_tenant_user), db: Session = Depends(get_db)):
     if not doc_hash.isalnum() or len(doc_hash) != 64:
         raise HTTPException(400, "Hash de document invalide.")
+    entree = registre.obtenir_entree(doc_hash)
+    if entree is None:
+        raise HTTPException(404, "Document introuvable dans le registre.")
+    if entree.session_id:
+        _session_scope(db, current_user, entree.session_id)
+    elif is_trainer(current_user):
+        raise HTTPException(status_code=404, detail="Ce support n’est pas classé dans une session accessible.")
     from app.services.rag.knowledge_repository import KnowledgeRepository
     return {"success": True, **KnowledgeRepository().lister_chunks_document(doc_hash, offset, limit, collection)}
 
@@ -168,7 +313,7 @@ async def generer_questions(request: GenererQuestionsRequest):
     "/indexer-document",
     summary="[C3] Indexer un document (arrière-plan) — réponse immédiate",
 )
-async def indexer_document(request: IndexerDocumentRequest, background_tasks: BackgroundTasks):
+async def indexer_document(request: IndexerDocumentRequest, background_tasks: BackgroundTasks, current_user: User = Depends(get_current_tenant_user), db: Session = Depends(get_db)):
     """
     Calcule le hash et vérifie l'idempotence SYNCHRONEMENT (rapide), puis
     répond IMMÉDIATEMENT (statut='en_cours' ou 'deja_indexe'). L'appel
@@ -176,15 +321,29 @@ async def indexer_document(request: IndexerDocumentRequest, background_tasks: Ba
     arrière-plan via BackgroundTasks — suivre la progression avec
     GET /ia/rag/statut/{hash}.
     """
+    session = _session_scope(db, current_user, str(request.session_id))
+    if session and request.formation_code and request.formation_code != session.formation_code:
+        raise HTTPException(status_code=422, detail="Le code formation ne correspond pas à la session choisie.")
+    request.formation_code = session.formation_code if session else request.formation_code
+    if is_trainer(current_user):
+        try:
+            doc_hash = registre.calculer_hash_fichier(request.chemin_fichier)
+        except (OSError, ValueError):
+            raise HTTPException(status_code=404, detail="Fichier de support introuvable.")
+        entree = registre.obtenir_entree(doc_hash)
+        if entree is None or entree.formation_code != request.formation_code or entree.session_id != str(session.id):
+            raise HTTPException(status_code=403, detail="Un formateur ne peut indexer que les fichiers déposés pour la session qui lui est affectée.")
     try:
         orchestrateur = get_rag_orchestrator()
         info = orchestrateur.preparer_indexation(
             request.chemin_fichier, request.formation_code, request.collection,
+            session_id=str(session.id) if session else str(request.session_id), module=request.module,
         )
         if not info["deja_indexe"]:
             background_tasks.add_task(
                 orchestrateur.ingerer_fichier,
                 request.chemin_fichier, request.formation_code, request.collection, info["fichier"],
+                session_id=str(session.id) if session else str(request.session_id), module=request.module,
             )
         return {
             "success": True, "hash": info["hash"], "fichier": info["fichier"],
@@ -195,7 +354,9 @@ async def indexer_document(request: IndexerDocumentRequest, background_tasks: Ba
 
 
 @router.post("/rechercher", summary="[C3] Recherche vectorielle dans les supports indexés")
-async def rechercher(request: RechercherRequest):
+async def rechercher(request: RechercherRequest, current_user: User = Depends(get_current_tenant_user), db: Session = Depends(get_db)):
+    session = _session_scope(db, current_user, str(request.session_id) if request.session_id else None)
+    formation_code = session.formation_code if session else request.formation_code
     try:
         from app.services.rag import recherche_service as recherche
         kwargs = {}
@@ -204,22 +365,33 @@ async def rechercher(request: RechercherRequest):
         if request.seuil_min is not None:
             kwargs["seuil_min"] = request.seuil_min
         resultats = await recherche.rechercher(
-            request.requete, collection=request.collection, formation_code=request.formation_code,
+            request.requete, collection=request.collection, formation_code=formation_code,
+            session_id=str(session.id) if session else None, module=request.module,
             domaine=request.domaine, annee=request.annee, type_support=request.type_support, **kwargs,
         )
-        return {"success": True, "total": len(resultats), "data": [vars(r) for r in resultats]}
+        data = [vars(r) for r in resultats]
+        if is_trainer(current_user):
+            for result in data:
+                result.pop("fichier", None)
+                result.pop("page_debut", None)
+                result.pop("page_fin", None)
+        return {"success": True, "total": len(data), "data": data}
     except Exception as e:
         _gerer_erreur(e, "rechercher")
 
 
 @router.get("/statut/{doc_hash}", summary="[C3] Statut d'indexation d'un document (par hash)")
-async def statut_indexation(doc_hash: str):
+async def statut_indexation(doc_hash: str, current_user: User = Depends(get_current_tenant_user), db: Session = Depends(get_db)):
     if not doc_hash.isalnum() or len(doc_hash) != 64:
         raise HTTPException(status_code=400, detail="Hash de document invalide.")
 
     entree = registre.obtenir_entree(doc_hash)
     if entree is None:
         raise HTTPException(status_code=404, detail="Document introuvable dans le registre.")
+    if entree.session_id:
+        _session_scope(db, current_user, entree.session_id)
+    elif is_trainer(current_user):
+        raise HTTPException(status_code=404, detail="Ce support n’est pas classé dans une session accessible.")
 
     return {"success": True, "data": asdict(entree)}
 
@@ -234,7 +406,7 @@ async def health_check():
 
 
 class ValidationRagRequest(BaseModel):
-    reviewer_note: str = Field(..., min_length=3)
+    reviewer_note: str = Field(..., min_length=2, max_length=1000)
 
 
 @router.post("/reviews/{review_id}/approve", summary="Approuver un portfolio ou syllabus C3")
@@ -261,6 +433,20 @@ async def lire_review_rag(review_id: str):
     return {"success": True, "data": review}
 
 
+@router.delete("/reviews/{review_id}", summary="Supprimer un brouillon C3 encore en attente")
+async def supprimer_review_rag(review_id: str, _current_user=Depends(require_role("DIRECTION", "ADMIN", "ASSISTANT"))):
+    from app.services.hitl import delete_pending_review, get_review
+    review = get_review(review_id)
+    if not review or review.get("agent_id") not in {"agent_rag_portfolio", "agent_rag_syllabus"}:
+        raise HTTPException(404, "Validation RAG introuvable")
+    result = delete_pending_review(review_id)
+    if result is False:
+        raise HTTPException(409, "Cette validation a déjà été traitée et ne peut plus être supprimée.")
+    if result is None:
+        raise HTTPException(404, "Validation RAG introuvable")
+    return {"success": True, "message": "Validation RAG en attente supprimée.", "review_id": review_id}
+
+
 @router.post("/reviews/{review_id}/reject", summary="Refuser un brouillon C3")
 async def refuser_contenu_rag(review_id: str, payload: ValidationRagRequest):
     from app.services.hitl import get_review, reject_review
@@ -274,7 +460,8 @@ async def refuser_contenu_rag(review_id: str, payload: ValidationRagRequest):
 async def telecharger_export_rag(filename: str):
     if Path(filename).name != filename or "\\" in filename or not filename.endswith(".docx") or not filename.startswith(("portfolio_", "syllabus_")):
         raise HTTPException(400, "Nom d'export invalide")
-    path = Path(__file__).resolve().parents[4] / "exports" / "rag" / filename
+    from app.services.rag.rag_document_generator import get_tenant_exports_dir
+    path = get_tenant_exports_dir() / filename
     if not path.is_file():
         raise HTTPException(404, "Export introuvable")
     return FileResponse(path, filename=filename)

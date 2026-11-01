@@ -1,20 +1,23 @@
 /**
  * FORMA-IA Frontend Application
- * Communicates with REST API at http://127.0.0.1:8000
+ * Communique avec le backend REST défini par VITE_API_URL (voir .env).
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
 import { AuthPage } from './components/AuthPage';
 import { LandingPage } from './components/landing/LandingPage';
+import { PublicRegistrationPage } from './components/PublicRegistrationPage';
 import { ViewRouter } from './components/views/ViewRouter';
 import { ModalManager } from './components/modals/ModalManager';
+import { VocalAssistant } from './components/VocalAssistant';
 
 import {
   MenuSection,
   UserRole,
-  ApiConfig,
+  canAccessSection,
+  ROLE_LABELS,
   AuthUser,
   KPIStats,
   DomainOpportunity,
@@ -25,69 +28,43 @@ import {
   Formateur,
   PresenceRecord,
   DevisFacture,
-  VeilleMarche,
-  EvaluationFormateur
+  VeilleMarche
 } from './types';
 
-import { apiService } from './services/api';
+import { apiService, tokenStore, ApiError } from './services/api';
+import { veilleCache } from './services/veilleCache';
+import { IS_API_CONFIGURED } from './config/env';
+
+const EMPTY_KPIS: KPIStats = {
+  sessionsRealisees: 0,
+  participantsFormes: 0,
+  tauxPresenceMoyen: 0,
+  opportunitesDetectees: 0
+};
+
+const errorMessage = (err: unknown): string =>
+  err instanceof ApiError || err instanceof Error ? err.message : 'Une erreur est survenue.';
 
 export default function App() {
-  // Auth State (unauthenticated by default when opening platform or when logged out)
-  const [authUser, setAuthUser] = useState<AuthUser | null>(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('forma_ia_auth_user');
-      if (saved) {
-        try { return JSON.parse(saved); } catch (e) { return null; }
-      }
-    }
-    return null;
-  });
-
+  // Auth : l'utilisateur est toujours relu depuis le backend (GET /auth/me), jamais stocké en local.
+  const [authUser, setAuthUser] = useState<AuthUser | null>(null);
+  const [isCheckingSession, setIsCheckingSession] = useState<boolean>(() => tokenStore.get() !== null);
   const [authModalMode, setAuthModalMode] = useState<'login' | 'register'>('login');
 
   // Page d'accueil publique : visible tant que l'utilisateur n'a pas demandé l'écran de connexion
   const [showAuthPage, setShowAuthPage] = useState<boolean>(false);
 
-  // Navigation & Role State
+  // Navigation
   const [currentSection, setCurrentSection] = useState<MenuSection>('tableau_de_bord');
-  const [currentRole, setCurrentRole] = useState<UserRole>(authUser ? authUser.role : 'Dir.');
+  const currentRole: UserRole = authUser?.role ?? 'Dir.';
 
-  const handleOpenAuthModal = (mode: 'login' | 'register' = 'login') => {
-    setAuthModalMode(mode);
-    setShowAuthPage(true);
-    setAuthUser(null); // Return to auth screen
-  };
-
-  const handleLoginSuccess = (user: AuthUser) => {
-    setAuthUser(user);
-    setShowAuthPage(false);
-    setCurrentRole(user.role);
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('forma_ia_auth_user', JSON.stringify(user));
-    }
-    showToast(`Bienvenue ${user.prenom} ${user.nom} (${user.role === 'Dir.' ? 'Directeur' : user.role === 'Form.' ? 'Formateur' : 'Assistant'}) !`);
-  };
-
-  const handleLogout = () => {
-    setAuthUser(null);
-    setShowAuthPage(false); // retour à la page d'accueil
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem('forma_ia_auth_user');
-    }
-    showToast('Déconnexion effectuée avec succès.');
-  };
-
-  // API Config State
-  const [apiConfig, setApiConfig] = useState<ApiConfig>(apiService.getConfig());
-  const [isApiModalOpen, setIsApiModalOpen] = useState<boolean>(false);
+  useEffect(() => {
+    if (!authUser || canAccessSection(authUser.role, currentSection)) return;
+    setCurrentSection(authUser.role === 'Form.' ? 'sessions_groupes' : authUser.role === 'Assis.' ? 'opportunites_crm' : 'tableau_de_bord');
+  }, [authUser, currentSection]);
 
   // Data States
-  const [kpis, setKpis] = useState<KPIStats>({
-    sessionsRealisees: 37,
-    participantsFormes: 412,
-    tauxPresenceMoyen: 91,
-    opportunitesDetectees: 54
-  });
+  const [kpis, setKpis] = useState<KPIStats>(EMPTY_KPIS);
   const [domainOpportunities, setDomainOpportunities] = useState<DomainOpportunity[]>([]);
   const [facturationStatuts, setFacturationStatuts] = useState<FacturationStatut[]>([]);
   const [activites, setActivites] = useState<ActiviteRecente[]>([]);
@@ -97,6 +74,8 @@ export default function App() {
   const [presences, setPresences] = useState<PresenceRecord[]>([]);
   const [factures, setFactures] = useState<DevisFacture[]>([]);
   const [veilles, setVeilles] = useState<VeilleMarche[]>([]);
+  const [dashboardLoading, setDashboardLoading] = useState<boolean>(false);
+  const [dashboardNotice, setDashboardNotice] = useState<string | null>(null);
 
   // Modals state
   const [isNewOppModalOpen, setIsNewOppModalOpen] = useState<boolean>(false);
@@ -105,168 +84,242 @@ export default function App() {
 
   // Toast feedback
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [pendingReviewCount, setPendingReviewCount] = useState(0);
 
-  const showToast = (msg: string) => {
+  const showToast = useCallback((msg: string) => {
     setToastMessage(msg);
     setTimeout(() => {
       setToastMessage(null);
     }, 4000);
-  };
-
-  // Subscribe to API config changes & check connection health
-  useEffect(() => {
-    const unsubscribe = apiService.subscribe((cfg) => {
-      setApiConfig(cfg);
-    });
-
-    // Check backend health on initial load
-    apiService.checkHealth();
-
-    return () => unsubscribe();
   }, []);
 
-  // Fetch initial data from REST API (with mock fallback)
-  const loadAllData = async () => {
-    try {
-      const [
-        kpiData,
-        domainsData,
-        factData,
-        actData,
-        sessData,
-        oppData,
-        trainData,
-        presData,
-        facData,
-        vData
-      ] = await Promise.all([
-        apiService.getKPIs(),
-        apiService.getDomainOpportunities(),
-        apiService.getFacturationStatuts(),
-        apiService.getRecentActivities(),
-        apiService.getSessions(),
-        apiService.getOpportunites(),
-        apiService.getFormateurs(),
-        apiService.getPresences(),
-        apiService.getFactures(),
-        apiService.getVeilles()
-      ]);
+  const resetData = useCallback(() => {
+    setKpis(EMPTY_KPIS);
+    setDomainOpportunities([]);
+    setFacturationStatuts([]);
+    setActivites([]);
+    setSessions([]);
+    setOpportunites([]);
+    setFormateurs([]);
+    setPresences([]);
+    setFactures([]);
+    setVeilles([]);
+    setDashboardNotice(null);
+  }, []);
 
-      setKpis(kpiData);
-      setDomainOpportunities(domainsData);
-      setFacturationStatuts(factData);
-      setActivites(actData);
-      setSessions(sessData);
-      setOpportunites(oppData);
-      setFormateurs(trainData);
-      setPresences(presData);
-      setFactures(facData);
-      setVeilles(vData);
-    } catch (err) {
-      console.error('Erreur chargement données FORMA-IA:', err);
+  // Fin de session locale (déconnexion, jeton expiré...)
+  const endSession = useCallback(() => {
+    veilleCache.clear();
+    setAuthUser(null);
+    setShowAuthPage(false);
+    setCurrentSection('tableau_de_bord');
+    resetData();
+  }, [resetData]);
+
+  const handleOpenAuthModal = async (mode: 'login' | 'register' = 'login') => {
+    setAuthModalMode(mode);
+    if (authUser) {
+      // « Changer de compte » : on révoque d'abord la session en cours
+      try { await apiService.logout(); } catch { tokenStore.clear(); }
+      endSession();
     }
+    setShowAuthPage(true);
   };
 
+  const handleLoginSuccess = (user: AuthUser) => {
+    setAuthUser(user);
+    setShowAuthPage(false);
+    setCurrentSection('tableau_de_bord');
+    showToast(`Bienvenue ${user.nom} (${ROLE_LABELS[user.role]}) !`);
+  };
+
+  const handleLogout = async () => {
+    try { await apiService.logout(); } catch { /* la session locale se termine même si l'API est indisponible */ }
+    finally { tokenStore.clear(); endSession(); showToast('Déconnexion effectuée avec succès.'); }
+  };
+
+  // Jeton rejeté par le backend (expiré, révoqué, invalide) -> retour à l'accueil
   useEffect(() => {
-    loadAllData();
+    const unsubscribe = apiService.onUnauthorized(() => {
+      tokenStore.clear();
+      endSession();
+      showToast('Votre session a expiré. Veuillez vous reconnecter.');
+    });
+    return () => unsubscribe();
+  }, [endSession, showToast]);
+
+  // Restauration de la session au chargement : on interroge GET /auth/me
+  useEffect(() => {
+    // Nettoyage des anciennes clés de la version « démo »
+    try {
+      localStorage.removeItem('forma_ia_auth_user');
+      localStorage.removeItem('forma_ia_api_url');
+    } catch {
+      /* stockage indisponible */
+    }
+
+    if (!IS_API_CONFIGURED || !tokenStore.get()) {
+      setIsCheckingSession(false);
+      return;
+    }
+
+    let cancelled = false;
+    apiService
+      .fetchCurrentUser()
+      .then((user) => {
+        if (!cancelled) setAuthUser(user);
+      })
+      .catch((err) => {
+        // 401 : déjà géré par onUnauthorized. Autre erreur (serveur injoignable...) : on informe.
+        if (!cancelled && !(err instanceof ApiError && err.status === 401)) {
+          showToast(errorMessage(err));
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setIsCheckingSession(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [showToast]);
+
+  // Chargement des données depuis l'API (uniquement une fois connecté).
+  // Un échec sur une ressource laisse simplement son état vide.
+  const userRole = authUser?.role;
+
+  const loadDashboard = useCallback(async (role: UserRole) => {
+    setDashboardLoading(true);
+    try {
+      const data = await apiService.getDashboard(role);
+      setKpis(data.kpis);
+      setDomainOpportunities(data.domainOpportunities);
+      setFacturationStatuts(data.facturationStatuts);
+      setActivites(data.activites);
+      setDashboardNotice(
+        data.partial
+          ? "Certaines données n'ont pas pu être chargées : les indicateurs affichés peuvent être incomplets."
+          : null
+      );
+    } catch (err) {
+      setDashboardNotice(`Impossible de charger le tableau de bord : ${errorMessage(err)}`);
+    } finally {
+      setDashboardLoading(false);
+    }
   }, []);
+
+  const loadAllData = useCallback(async () => {
+    const isTrainer = userRole === 'Form.';
+    const dashboardPromise = userRole && userRole !== 'Assis.' && userRole !== 'Form.' ? loadDashboard(userRole) : Promise.resolve();
+    const resources = await Promise.allSettled([
+      isTrainer ? Promise.resolve([]) : apiService.getFormateurs(),
+      userRole === 'Dir.' ? apiService.getVeilles() : Promise.resolve([]),
+      apiService.getSessions(),
+      isTrainer ? Promise.resolve([]) : apiService.getOpportunites(),
+      isTrainer ? Promise.resolve([]) : apiService.getFactures()
+    ]);
+    const [trainR, veilleR, sessionsR, opportunitiesR, invoicesR] = resources;
+    if (trainR.status === 'fulfilled') setFormateurs(trainR.value as Formateur[]);
+    if (veilleR.status === 'fulfilled') setVeilles(veilleR.value as VeilleMarche[]);
+    if (sessionsR.status === 'fulfilled') setSessions(sessionsR.value);
+    if (opportunitiesR.status === 'fulfilled') setOpportunites(opportunitiesR.value as OpportuniteCRM[]);
+    if (invoicesR.status === 'fulfilled') setFactures(invoicesR.value as DevisFacture[]);
+    const failedResources = resources.filter(result => result.status === 'rejected');
+    if (failedResources.length) showToast(`${failedResources.length} ressource(s) n'ont pas pu être chargées. Vérifiez les droits et la connexion API.`);
+
+    await dashboardPromise;
+  }, [userRole, loadDashboard, showToast]);
+
+  useEffect(() => {
+    if (authUser) {
+      loadAllData();
+    }
+  }, [authUser, loadAllData]);
+
+  useEffect(() => {
+    if (!authUser || authUser.role === 'Form.' || authUser.role === 'Assis.') { setPendingReviewCount(0); return; }
+    let active = true;
+    const refreshCount = async () => {
+      const [backend, rag] = await Promise.allSettled([apiService.getPendingReviews(), apiService.getRagReviews()]);
+      if (!active) return;
+      const ids = new Set<string>();
+      if (backend.status === 'fulfilled') (backend.value.reviews ?? []).forEach((r: any) => ids.add(String(r.review_id ?? r.id)));
+      if (rag.status === 'fulfilled') (Array.isArray(rag.value.data) ? rag.value.data : []).forEach((r: any) => ids.add(String(r.review_id ?? r.id)));
+      setPendingReviewCount(ids.size);
+    };
+    void refreshCount();
+    const timer = window.setInterval(() => void refreshCount(), 45000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [authUser]);
 
   // Form submission handlers via REST API
   const handleCreateOpportunity = async (oppData: Partial<OpportuniteCRM>) => {
-    const newOpp = await apiService.createOpportunite(oppData);
-    setOpportunites(prev => [newOpp, ...prev]);
-    setKpis(prev => ({
-      ...prev,
-      opportunitesDetectees: prev.opportunitesDetectees + 1
-    }));
-    
-    // Add activity log
-    const newAct: ActiviteRecente = {
-      id: `act-${Date.now()}`,
-      titre: `Nouvelle opportunité : ${newOpp.entreprise}`,
-      description: `Créée pour le domaine ${newOpp.domaineIA} - Budget estimé : ${newOpp.montantEstime.toLocaleString()} Ar`,
-      horodateur: "À l'instant",
-      type: 'opportunite',
-      statutTag: 'Nouveau',
-      utilisateur: `${currentRole === 'Dir.' ? 'Directeur' : 'Utilisateur'}`
-    };
-    setActivites(prev => [newAct, ...prev]);
-    showToast(`Opportunité pour ${newOpp.entreprise} enregistrée via REST API !`);
+    try {
+      const newOpp = await apiService.createOpportunite(oppData);
+      setOpportunites((prev) => [newOpp, ...prev]);
+      await loadDashboard(currentRole);
+      showToast(`Opportunité pour ${newOpp.entreprise} enregistrée !`);
+    } catch (err) {
+      showToast(`Échec de l'enregistrement de l'opportunité : ${errorMessage(err)}`);
+      throw err;
+    }
   };
 
   const handleCreateSession = async (sessData: Partial<Session>) => {
-    const newSess = await apiService.createSession(sessData);
-    setSessions(prev => [newSess, ...prev]);
-    setKpis(prev => ({
-      ...prev,
-      sessionsRealisees: prev.sessionsRealisees + 1
-    }));
-
-    const newAct: ActiviteRecente = {
-      id: `act-${Date.now()}`,
-      titre: `Nouvelle session créée : ${newSess.intitule}`,
-      description: `Format ${newSess.lieu} - Formateur : ${newSess.formateur}`,
-      horodateur: "À l'instant",
-      type: 'session',
-      statutTag: 'Planifiée',
-      utilisateur: `${currentRole === 'Dir.' ? 'Directeur' : 'Utilisateur'}`
-    };
-    setActivites(prev => [newAct, ...prev]);
-    showToast(`Session "${newSess.intitule}" créée avec succès !`);
+    try {
+      const newSess = await apiService.createSession(sessData);
+      setSessions((prev) => [newSess, ...prev]);
+      await loadDashboard(currentRole);
+      showToast(`Session "${newSess.intitule}" créée avec succès !`);
+    } catch (err) {
+      showToast(`Échec de la création de la session : ${errorMessage(err)}`);
+      throw err;
+    }
   };
 
   const handleCreateInvoice = async (facData: Partial<DevisFacture>) => {
-    const newFac = await apiService.createFacture(facData);
-    setFactures(prev => [newFac, ...prev]);
-
-    const newAct: ActiviteRecente = {
-      id: `act-${Date.now()}`,
-      titre: `${newFac.type} ${newFac.numero} émis`,
-      description: `Client : ${newFac.client} - Montant : ${newFac.montantTTC.toLocaleString()} Ar TTC`,
-      horodateur: "À l'instant",
-      type: 'facture',
-      statutTag: newFac.statut,
-      utilisateur: `${currentRole === 'Dir.' ? 'Directeur' : 'Utilisateur'}`
-    };
-    setActivites(prev => [newAct, ...prev]);
-    showToast(`${newFac.type} ${newFac.numero} généré (${newFac.montantTTC.toLocaleString()} Ar TTC) !`);
+    try {
+      const newFac = await apiService.createFacture(facData);
+      setFactures((prev) => [newFac, ...prev]);
+      await loadDashboard(currentRole);
+      showToast(`${newFac.type} ${newFac.numero} généré (${newFac.montantTTC.toLocaleString()} Ar TTC) !`);
+    } catch (err) {
+      showToast(`Échec de l'émission du document : ${errorMessage(err)}`);
+      throw err;
+    }
   };
 
-  const handleAddFormateur = (newFormateur: Formateur) => {
-    setFormateurs(prev => [newFormateur, ...prev]);
-    const newAct: ActiviteRecente = {
-      id: `act-${Date.now()}`,
-      titre: `Nouveau formateur ajouté`,
-      description: `${newFormateur.nom} - ${newFormateur.specialites.join(', ')}`,
-      horodateur: "À l'instant",
-      type: 'session',
-      statutTag: newFormateur.statut,
-      utilisateur: `${currentRole === 'Dir.' ? 'Directeur' : 'Utilisateur'}`
-    };
-    setActivites(prev => [newAct, ...prev]);
-    showToast(`Formateur "${newFormateur.nom}" ajouté avec succès !`);
-  };
-
-  const handleAddEvaluation = (newEval: EvaluationFormateur) => {
-    setFormateurs(prev =>
-      prev.map(f => {
-        if (f.id === newEval.formateurId) {
-          const currentEvals = f.evaluations || [];
-          const updatedEvals = [newEval, ...currentEvals];
-          const newAvgSatisfaction = Number(
-            (updatedEvals.reduce((acc, e) => acc + e.noteMoyenne, 0) / updatedEvals.length).toFixed(2)
-          );
-          return {
-            ...f,
-            tauxSatisfaction: newAvgSatisfaction,
-            evaluations: updatedEvals
-          };
-        }
-        return f;
-      })
+  // En production, VITE_API_URL doit être renseigné ; en développement, le proxy Vite utilise localhost.
+  if (!IS_API_CONFIGURED) {
+    return (
+      <div className="min-h-screen bg-[#11162A] flex items-center justify-center p-6 font-sans">
+        <div className="bg-white rounded-2xl max-w-lg w-full p-8 shadow-2xl border border-slate-100">
+          <h1 className="text-xl font-extrabold text-[#11162A] mb-2">Configuration manquante</h1>
+          <p className="text-sm text-slate-600 leading-relaxed">
+            L'adresse du backend n'est pas définie. Créez un fichier <code className="bg-slate-100 px-1.5 py-0.5 rounded font-mono text-xs">.env</code> à la
+            racine du projet (modèle : <code className="bg-slate-100 px-1.5 py-0.5 rounded font-mono text-xs">.env.example</code>) avec :
+          </p>
+          <pre className="mt-3 p-3 bg-slate-900 text-emerald-300 rounded-xl text-xs font-mono overflow-x-auto">VITE_API_URL=http://127.0.0.1:8000</pre>
+          <p className="text-xs text-slate-500 mt-3">Puis redémarrez le serveur de développement.</p>
+        </div>
+      </div>
     );
-    showToast(`Évaluation ajoutée avec succès (${newEval.noteMoyenne}/5) !`);
-  };
+  }
+
+  const publicRegistrationToken = window.location.pathname.match(/^\/inscription-publique\/([^/]+)\/?$/)?.[1];
+  if (publicRegistrationToken) return <PublicRegistrationPage token={decodeURIComponent(publicRegistrationToken)} />;
+
+  // Vérification de la session en cours (évite un flash de la page d'accueil)
+  if (isCheckingSession) {
+    return (
+      <div className="min-h-screen bg-[#11162A] flex items-center justify-center font-sans">
+        <div className="flex items-center gap-3 text-slate-200 text-sm font-semibold">
+          <span className="w-3 h-3 rounded-full bg-[#1B8F6E] animate-ping"></span>
+          Vérification de la session…
+        </div>
+      </div>
+    );
+  }
 
   if (!authUser) {
     if (!showAuthPage) {
@@ -296,32 +349,24 @@ export default function App() {
         currentSection={currentSection}
         onSelectSection={setCurrentSection}
         currentRole={currentRole}
-        onChangeRole={(role) => {
-          setCurrentRole(role);
-          showToast(`Rôle basculé sur : ${role === 'Dir.' ? 'Directeur' : role === 'Form.' ? 'Formateur' : 'Assistant'}`);
-        }}
-        apiConfig={apiConfig}
-        onOpenApiModal={() => setIsApiModalOpen(true)}
         authUser={authUser}
         onOpenAuthModal={handleOpenAuthModal}
         onLogout={handleLogout}
+        pendingReviewCount={pendingReviewCount}
       />
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0">
         <Header
-          currentRole={currentRole}
-          apiConfig={apiConfig}
           authUser={authUser}
           onOpenAuthModal={handleOpenAuthModal}
           onLogout={handleLogout}
-          onOpenApiModal={() => setIsApiModalOpen(true)}
           onQuickNewOpportunity={() => setIsNewOppModalOpen(true)}
           onQuickNewSession={() => setIsNewSessionModalOpen(true)}
           onQuickNewInvoice={() => setIsNewInvoiceModalOpen(true)}
         />
 
-        <main className="flex-1 p-6 lg:p-8 max-w-7xl w-full mx-auto overflow-y-auto">
+        <main className="flex-1 w-full max-w-[1600px] 2xl:max-w-[1760px] mx-auto p-5 sm:p-6 lg:p-7 2xl:px-9 overflow-y-auto">
           <ViewRouter
             currentSection={currentSection}
             currentRole={currentRole}
@@ -336,30 +381,38 @@ export default function App() {
             presences={presences}
             factures={factures}
             onRefreshData={loadAllData}
+            dashboardLoading={dashboardLoading}
+            dashboardNotice={dashboardNotice}
             onNavigateTo={setCurrentSection}
             onOpenNewOpportunity={() => setIsNewOppModalOpen(true)}
             onOpenNewSession={() => setIsNewSessionModalOpen(true)}
             onOpenNewInvoice={() => setIsNewInvoiceModalOpen(true)}
-            onAddFormateur={handleAddFormateur}
-            onAddEvaluation={handleAddEvaluation}
+            canManageFormateurs={currentRole === 'Dir.'}
           />
         </main>
       </div>
 
       {/* Global Modals Manager */}
       <ModalManager
-        apiConfig={apiConfig}
-        isApiModalOpen={isApiModalOpen}
-        onCloseApiModal={() => setIsApiModalOpen(false)}
         isNewOppModalOpen={isNewOppModalOpen}
         onCloseNewOppModal={() => setIsNewOppModalOpen(false)}
         onCreateOpportunity={handleCreateOpportunity}
         isNewSessionModalOpen={isNewSessionModalOpen}
         onCloseNewSessionModal={() => setIsNewSessionModalOpen(false)}
         onCreateSession={handleCreateSession}
+        acceptedMarkets={veilles}
+        formateurs={formateurs}
         isNewInvoiceModalOpen={isNewInvoiceModalOpen}
         onCloseNewInvoiceModal={() => setIsNewInvoiceModalOpen(false)}
         onCreateInvoice={handleCreateInvoice}
+        sessions={sessions}
+      />
+      <VocalAssistant
+        currentSection={currentSection}
+        onNavigate={setCurrentSection}
+        onCreateSession={() => setIsNewSessionModalOpen(true)}
+        onCreateOpportunity={() => setIsNewOppModalOpen(true)}
+        onCreateInvoice={() => setIsNewInvoiceModalOpen(true)}
       />
     </div>
   );

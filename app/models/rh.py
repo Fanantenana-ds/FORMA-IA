@@ -8,6 +8,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
 from app.database import Base
+from app.models.tenant import TenantOwned
 
 
 class StatutFormateur(str, Enum):
@@ -38,10 +39,11 @@ class RecommandationEvaluation(str, Enum):
 # FORMATEUR — prestataire externe récurrent
 # ============================================================
 
-class Formateur(Base):
+class Formateur(TenantOwned, Base):
     __tablename__ = "formateurs"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, unique=True, index=True)
     nom = Column(String(100), nullable=False)
     prenom = Column(String(100), nullable=True)
     email = Column(String(200), nullable=True)
@@ -78,13 +80,19 @@ class Formateur(Base):
 # CANDIDAT — dossier de présélection (A1) et entretien (A2)
 # ============================================================
 
-class Candidat(Base):
+class Candidat(TenantOwned, Base):
     __tablename__ = "candidats"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     nom = Column(String(200), nullable=False)
+    prenom = Column(String(100), nullable=True)
+    email = Column(String(200), nullable=True)
+    telephone = Column(String(30), nullable=True)
     poste_vise = Column(String(200), nullable=False)
     cv_texte = Column(Text, nullable=True)
+    cv_filename = Column(String(255), nullable=True)
+    cv_path = Column(String(500), nullable=True)
+    session_id = Column(UUID(as_uuid=True), ForeignKey("sessions.id", ondelete="SET NULL"), nullable=True)
     score_preselection = Column(Float, nullable=True)
     decision_preselection = Column(
         SqlEnum(DecisionPreselection),
@@ -99,6 +107,7 @@ class Candidat(Base):
         nullable=True,
     )
     formateur = relationship("Formateur", back_populates="candidatures")
+    session = relationship("Session")
 
     date_creation = Column(
         DateTime(timezone=True),
@@ -115,7 +124,7 @@ class Candidat(Base):
 # ENTRETIEN — CR structuré (A2) + brouillon email (A3)
 # ============================================================
 
-class Entretien(Base):
+class Entretien(TenantOwned, Base):
     __tablename__ = "entretiens"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)

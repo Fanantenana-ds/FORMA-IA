@@ -29,15 +29,20 @@
 #   Écriture → DIRECTION, ADMIN
 # ============================================================
 
+import secrets
 from typing import List, Optional
+from pathlib import Path
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.core.dependencies import get_current_user, require_role
+from app.core.security import hash_password
 from app.database import get_db
-from app.models.user import User
+from app.models.user import RoleEnum, User
+from app.models.rh import Candidat, DecisionPreselection, Formateur, StatutFormateur
 from app.schemas.rh import (
     CandidatCreate,
     CandidatResponse,
@@ -102,6 +107,9 @@ def lister_formateurs(
     service: RhService = Depends(get_rh_service),
     current_user: User = Depends(get_current_user),
 ):
+    if current_user.role == RoleEnum.FORMATEUR:
+        trainer = service.db.query(Formateur).filter(Formateur.user_id == current_user.id).first()
+        return [trainer] if trainer else []
     return service.lister_formateurs(specialite=specialite, statut=statut)
 
 
@@ -120,7 +128,10 @@ def get_formateur(
     service: RhService = Depends(get_rh_service),
     current_user: User = Depends(get_current_user),
 ):
-    return service.get_formateur(formateur_id)
+    trainer = service.get_formateur(formateur_id)
+    if current_user.role == RoleEnum.FORMATEUR and trainer.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Formateur introuvable.")
+    return trainer
 
 
 @router.patch(
@@ -254,6 +265,83 @@ def mettre_a_jour_candidat(
     current_user: User = Depends(require_role("DIRECTION", "ADMIN")),
 ):
     return service.mettre_a_jour_candidat(candidat_id, data)
+
+
+@router.post("/candidats/{candidat_id}/decision")
+def decider_candidature(
+    candidat_id: UUID,
+    decision: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("DIRECTION", "ADMIN")),
+):
+    candidat = db.query(Candidat).filter(Candidat.id == candidat_id).first()
+    if not candidat:
+        raise HTTPException(404, "Candidature introuvable.")
+    if decision not in {"ACCEPTER", "REFUSER"}:
+        raise HTTPException(422, "decision doit valoir ACCEPTER ou REFUSER.")
+    if decision == "REFUSER":
+        candidat.decision_preselection = DecisionPreselection.NON_RETENU
+        db.commit()
+        return {"success": True, "decision": decision, "formateur_id": None}
+    candidat.decision_preselection = DecisionPreselection.RETENU
+    session = None
+    if candidat.session_id:
+        from app.models.formation import Session as FormationSession
+        session = db.query(FormationSession).filter(FormationSession.id == candidat.session_id).first()
+        if not session:
+            raise HTTPException(404, "La session associée à cette candidature n’existe plus.")
+    trainer = candidat.formateur
+    if trainer is None:
+        trainer = Formateur(nom=candidat.nom, prenom=candidat.prenom, email=candidat.email,
+                            telephone=candidat.telephone, specialite=candidat.poste_vise,
+                            statut=StatutFormateur.DISPONIBLE, notes_internes=f"CV reçu : {candidat.cv_filename or 'fichier'}")
+        db.add(trainer)
+        db.flush()
+        candidat.formateur_id = trainer.id
+    temporary_password = None
+    if trainer.user_id is None and candidat.email:
+        account = db.query(User).filter(User.email == candidat.email).first()
+        tenant_id = current_user.owner_id or current_user.id
+        if account and (account.owner_id != tenant_id or account.role != RoleEnum.FORMATEUR):
+            raise HTTPException(409, "Cet email est déjà utilisé par un compte d’une autre entreprise ou d’un autre rôle.")
+        if account is None:
+            temporary_password = secrets.token_urlsafe(12)
+            account = User(
+                nom=" ".join(filter(None, [candidat.prenom, candidat.nom])),
+                email=candidat.email,
+                password=hash_password(temporary_password),
+                role=RoleEnum.FORMATEUR,
+                owner_id=tenant_id,
+            )
+            db.add(account)
+            db.flush()
+        trainer.user_id = account.id
+    if session:
+        session.formateur_id = trainer.id
+    db.commit()
+    result = {"success": True, "decision": decision, "formateur_id": str(trainer.id), "user_id": str(trainer.user_id) if trainer.user_id else None}
+    if temporary_password:
+        result["compte_formateur"] = {"email": candidat.email, "mot_de_passe_initial": temporary_password}
+    return result
+
+
+@router.get("/candidats/{candidat_id}/cv")
+def lire_cv_candidat(candidat_id: UUID, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    candidat = db.query(Candidat).filter(Candidat.id == candidat_id).first()
+    if not candidat:
+        raise HTTPException(404, "Candidature introuvable.")
+    return {"nom": candidat.nom, "prenom": candidat.prenom, "fichier": candidat.cv_filename, "cv_texte": candidat.cv_texte or ""}
+
+
+@router.get("/candidats/{candidat_id}/cv-fichier")
+def telecharger_cv_candidat(candidat_id: UUID, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    candidat = db.query(Candidat).filter(Candidat.id == candidat_id).first()
+    if not candidat:
+        raise HTTPException(404, "Candidature introuvable.")
+    path = Path(candidat.cv_path or "")
+    if not candidat.cv_path or not path.is_file():
+        raise HTTPException(404, "Le fichier CV n’est plus disponible.")
+    return FileResponse(path, filename=candidat.cv_filename or "cv_candidat")
 
 
 @router.delete(

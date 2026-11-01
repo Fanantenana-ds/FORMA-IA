@@ -31,6 +31,8 @@ tache: |
     même précédée d'un "bonjour").
   - hors_sujet : sujet clairement SANS RAPPORT avec les formations ALTIORA
     ou FORMA-IA (blockchain, cuisine, sport, politique, etc.).
+    Les demandes de météo, d'actualité générale, de recettes ou de résultats
+    sportifs sont toujours hors_sujet, même si un support pédagogique existe.
 
   ═══════════════════════════════════════════════════════════════
   RÈGLE CRITIQUE — DISTINGUER aide_plateforme DE question_fond
@@ -116,3 +118,4 @@ exemples: |
   "qu'est-ce que la blockchain ?" -> {"type": "hors_sujet"}
   "comment cuisiner une pizza ?" -> {"type": "hors_sujet"}
   "qui a gagné la Coupe du monde 2022 ?" -> {"type": "hors_sujet"}
+  "Quelle est la météo à Antananarivo ?" -> {"type": "hors_sujet"}

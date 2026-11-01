@@ -1,134 +1,327 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
-  GraduationCap,
   Star,
   Mail,
   Phone,
-  Calendar,
-  CheckCircle2,
-  Clock,
+  MapPin,
   Plus,
   X,
   Search,
   Award,
-  MessageSquare,
-  FileText,
   UserPlus,
-  Building2,
-  ThumbsUp,
-  Sparkles
+  Pencil,
+  Trash2,
+  Loader2,
+  AlertTriangle,
+  Lock,
+  CheckCircle2,
+  Sparkles,
+  FileUp,
+  ClipboardList,
+  FileSignature,
+  CalendarDays
 } from 'lucide-react';
-import { Formateur, EvaluationFormateur } from '../../types';
+import { Formateur, StatutFormateur, Session } from '../../types';
+import { apiService, ApiError } from '../../services/api';
+import {
+  EMPTY_FORMATEUR_FORM,
+  STATUT_LABELS,
+  formValuesFromFormateur,
+  formateurFullName,
+  specialitesList,
+  toCreatePayload,
+  toUpdatePayload
+} from '../../services/formateurMapping';
+import type { FormateurFormValues } from '../../services/formateurMapping';
 
 interface FormateursStaffViewProps {
   formateurs: Formateur[];
-  onAddFormateur?: (formateur: Formateur) => void;
-  onAddEvaluation?: (evaluation: EvaluationFormateur) => void;
+  /** Seule la Direction peut créer, modifier ou supprimer. */
+  canManage: boolean;
+  /** Recharge les données de l'application après une modification. */
+  onRefreshData?: () => Promise<void> | void;
+  sessions: Session[];
 }
+
+const describeError = (err: unknown): string => {
+  if (err instanceof ApiError) {
+    if (err.status === 0) return err.message;
+    if (err.status === 401) return 'Votre session a expiré. Veuillez vous reconnecter.';
+    if (err.status === 403) return "Votre rôle ne permet pas cette action (réservée à la Direction).";
+    if (err.status === 404) return "Ce formateur n'existe plus. La liste va être actualisée.";
+    if (err.status === 422) return `Informations invalides : ${err.message}`;
+    if (err.status >= 500) return `Erreur du serveur : ${err.message}`;
+    return err.message;
+  }
+  return 'Une erreur inattendue est survenue.';
+};
+
+const statutStyle = (statut: StatutFormateur): string =>
+  statut === 'Disponible'
+    ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+    : statut === 'En session'
+    ? 'bg-amber-100 text-amber-800 border border-amber-200'
+    : 'bg-slate-100 text-slate-700 border border-slate-200';
+
+const scoreStyle = (score: number): string =>
+  score >= 75 ? 'text-emerald-700' : score >= 50 ? 'text-amber-700' : 'text-red-600';
+
+const recommandationStyle = (reco: string): string => {
+  const r = reco.toLowerCase();
+  return r === 'oui'
+    ? 'bg-emerald-100 text-emerald-800'
+    : r === 'non'
+    ? 'bg-red-100 text-red-700'
+    : 'bg-amber-100 text-amber-800';
+};
+
+const inputClass =
+  'w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium focus:ring-2 focus:ring-[#1B8F6E] focus:outline-none';
 
 export const FormateursStaffView: React.FC<FormateursStaffViewProps> = ({
   formateurs,
-  onAddFormateur,
-  onAddEvaluation
+  canManage,
+  onRefreshData,
+  sessions
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
-  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [selectedFormateurForEval, setSelectedFormateurForEval] = useState<Formateur | null>(null);
-  const [isEvalModalOpen, setIsEvalModalOpen] = useState(false);
+  const [statutFilter, setStatutFilter] = useState<'Tous' | StatutFormateur>('Tous');
 
-  // New Formateur Form State
-  const [newNom, setNewNom] = useState('');
-  const [newEmail, setNewEmail] = useState('');
-  const [newTel, setNewTel] = useState('');
-  const [newSpecialites, setNewSpecialites] = useState('IA Générative, LangChain, Python');
-  const [newStatut, setNewStatut] = useState<'Disponible' | 'En session' | 'Indisponible'>('Disponible');
-  const [newTarif, setNewTarif] = useState('1500000');
-  const [newAvatar, setNewAvatar] = useState('https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=150');
+  // Formulaire : null = fermé, 'new' = création, sinon le formateur modifié
+  const [editing, setEditing] = useState<'new' | Formateur | null>(null);
+  const [form, setForm] = useState<FormateurFormValues>(EMPTY_FORMATEUR_FORM);
+  const [isSaving, setIsSaving] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
-  // New Evaluation Form State
-  const [evalApprenant, setEvalApprenant] = useState('');
-  const [evalEntreprise, setEvalEntreprise] = useState('');
-  const [evalPedagogie, setEvalPedagogie] = useState(5);
-  const [evalMaitrise, setEvalMaitrise] = useState(5);
-  const [evalSupports, setEvalSupports] = useState(5);
-  const [evalPonctualite, setEvalPonctualite] = useState(5);
-  const [evalCommentaire, setEvalCommentaire] = useState('');
+  const [deleteTarget, setDeleteTarget] = useState<Formateur | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
-  // Preset avatars for quick selection
-  const avatarPresets = [
-    'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=150',
-    'https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&q=80&w=150',
-    'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&q=80&w=150',
-    'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=150',
-    'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&q=80&w=150'
-  ];
+  const [pageError, setPageError] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [candidates, setCandidates] = useState<any[]>([]);
+  const [candidateBusyId, setCandidateBusyId] = useState('');
+  const [candidatePanelError, setCandidatePanelError] = useState('');
+  const [newTrainerAccount, setNewTrainerAccount] = useState<{ email: string; password: string } | null>(null);
+  const [candidateCv, setCandidateCv] = useState<any>(null);
+  const [interviewPack, setInterviewPack] = useState<any>(null);
+  const [interviewBusyId, setInterviewBusyId] = useState('');
+  const [cvFiles, setCvFiles] = useState<File[]>([]);
+  const [cvRole, setCvRole] = useState('Formateur');
+  const [cvDomain, setCvDomain] = useState('');
+  const [cvSkills, setCvSkills] = useState('');
+  const [cvResults, setCvResults] = useState<any[]>([]);
+  const [selectedTrainerId, setSelectedTrainerId] = useState('');
+  const [selectedSessionId, setSelectedSessionId] = useState('');
+  const [contractBusy, setContractBusy] = useState(false);
+  const [contractReview, setContractReview] = useState('');
+  const [evalScore, setEvalScore] = useState('');
+  const [evalAttendance, setEvalAttendance] = useState('');
+  const [evaluationBusy, setEvaluationBusy] = useState(false);
+  const [approvedContracts, setApprovedContracts] = useState<any[]>([]);
+  const [emailBusyId, setEmailBusyId] = useState('');
 
-  const filteredFormateurs = formateurs.filter(
-    (f) =>
-      f.nom.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      f.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      f.specialites.some((s) => s.toLowerCase().includes(searchTerm.toLowerCase()))
-  );
-
-  const handleCreateFormateur = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newNom.trim() || !newEmail.trim()) return;
-
-    const created: Formateur = {
-      id: `form-${Date.now()}`,
-      nom: newNom.trim(),
-      email: newEmail.trim(),
-      telephone: newTel.trim() || '+261 34 00 000 00',
-      specialites: newSpecialites.split(',').map((s) => s.trim()).filter(Boolean),
-      statut: newStatut,
-      tarifJournalier: parseFloat(newTarif) || 1200000,
-      tauxSatisfaction: 5.0,
-      sessionsCompteur: 0,
-      avatarUrl: newAvatar,
-      evaluations: []
-    };
-
-    if (onAddFormateur) {
-      onAddFormateur(created);
+  const refreshCandidates = async () => setCandidates(await apiService.getCandidates());
+  useEffect(() => { if (canManage) void refreshCandidates().catch(e => setCandidatePanelError(e.message)); }, [canManage]);
+  useEffect(() => { if (canManage) void apiService.getApprovedTrainerContracts().then((r:any)=>setApprovedContracts(r.reviews ?? [])).catch(()=>setApprovedContracts([])); }, [canManage, contractReview]);
+  const decideCandidate = async (candidate: any, decision: 'ACCEPTER' | 'REFUSER') => {
+    setCandidateBusyId(String(candidate.id)); setCandidatePanelError('');
+    try {
+      const result: any = await apiService.decideCandidate(String(candidate.id), decision);
+      await refreshCandidates(); await onRefreshData?.();
+      if (decision === 'ACCEPTER' && result.compte_formateur?.mot_de_passe_initial) {
+        setNewTrainerAccount({ email: result.compte_formateur.email, password: result.compte_formateur.mot_de_passe_initial });
+        setSuccessMsg('Candidat accepté, formateur affecté à sa session et compte de connexion créé.');
+      } else setSuccessMsg(decision === 'ACCEPTER' ? 'Candidat accepté et formateur affecté à sa session.' : 'Candidature refusée.');
     }
+    catch (e) { setCandidatePanelError(e instanceof Error ? e.message : 'La décision n’a pas été enregistrée.'); }
+    finally { setCandidateBusyId(''); }
+  };
+  const openCandidateCv = async (id:string) => { try { setCandidateCv(await apiService.getCandidateCv(id)); } catch(e) { setCandidatePanelError(e instanceof Error?e.message:'Lecture du CV impossible.'); } };
+  const openInterviewQuestions = async (candidate: any) => {
+    setInterviewBusyId(String(candidate.id)); setCandidatePanelError('');
+    try {
+      let review: any = null;
+      let reviewId = candidate.review_id_preselection;
+      if (reviewId) {
+        const response = await apiService.getReview(reviewId);
+        review = response.review ?? response;
+      } else {
+        const cv = await apiService.getCandidateCv(String(candidate.id));
+        const cvText = String(cv.cv_texte ?? cv.texte ?? '').trim();
+        if (cvText.length < 50) throw new Error('Le texte du CV est absent ou trop court pour générer les questions.');
+        const generated = await apiService.preselectTrainerCv({ cv_texte: cvText, criteres_poste: { poste: candidate.poste_vise, domaine: candidate.poste_vise, competences: String(candidate.poste_vise ?? '').split(',').map((v:string)=>v.trim()).filter(Boolean) } });
+        const data = generated.data ?? generated;
+        reviewId = generated.review_id ?? data._review_id;
+        await apiService.updateCandidate(String(candidate.id), { score_preselection: data.score_global, review_id_preselection: reviewId });
+        review = { data, review_id: reviewId };
+        await refreshCandidates();
+      }
+      const payload = review?.data ?? review?.review?.data ?? {};
+      const questions = payload.questions_entretien ?? payload.questions ?? [];
+      setInterviewPack({ candidate, reviewId, score: payload.score_global ?? candidate.score_preselection, decision: payload.decision, summary: payload.synthese, questions: Array.isArray(questions) ? questions : [] });
+      if (!questions.length) setCandidatePanelError('Aucune question n’a été renvoyée pour cette présélection. Relancez l’analyse depuis le bouton ci-dessous ou vérifiez le résultat dans Espace IA.');
+    } catch (e) { setCandidatePanelError(e instanceof Error ? e.message : 'Impossible de charger les questions d’entretien.'); }
+    finally { setInterviewBusyId(''); }
+  };
+  const downloadCandidateCv = async (id:string, filename:string) => { try { const blob=await apiService.downloadCandidateCv(id);const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=filename||'cv-candidat';a.click();URL.revokeObjectURL(url); } catch(e) { setCandidatePanelError(e instanceof Error?e.message:'Téléchargement du CV impossible.'); } };
 
-    // Reset Form
-    setNewNom('');
-    setNewEmail('');
-    setNewTel('');
-    setIsAddModalOpen(false);
+  const analyzeCvFiles = async () => {
+    if (!cvFiles.length) { setCandidatePanelError('Sélectionnez un ou plusieurs CV à analyser.'); return; }
+    setCandidateBusyId('bulk'); setCandidatePanelError(''); setCvResults([]);
+    const results: any[] = [];
+    try {
+      for (const file of cvFiles) {
+        try {
+          const response = await apiService.analyzeTrainerCv(file, { poste: cvRole, domaine: cvDomain || cvRole, competences: cvSkills.split(',').map(s => s.trim()).filter(Boolean) });
+          const data = response?.data ?? response;
+          results.push({ filename: file.name, reviewId: response?.review_id ?? data?._review_id, ...data, questions_entretien: data?.questions_entretien ?? data?.questions });
+        } catch (e) { results.push({ filename: file.name, error: e instanceof Error ? e.message : 'Analyse impossible' }); }
+      }
+      setCvResults(results.sort((a,b) => Number(b.score_global ?? b.score ?? 0) - Number(a.score_global ?? a.score ?? 0)));
+      flash(`${results.filter(r => !r.error).length}/${results.length} CV analysé(s). Les fiches sont soumises au HITL dans l’Espace IA.`);
+      setCvFiles([]);
+    } finally { setCandidateBusyId(''); }
   };
 
-  const handleCreateEvaluation = (e: React.FormEvent) => {
+  const createContract = async () => {
+    const trainer = formateurs.find(f => f.id === selectedTrainerId);
+    const session = sessions.find(s => s.id === selectedSessionId);
+    if (!trainer || !session) { setCandidatePanelError('Choisissez un formateur et une session.'); return; }
+    if (!(trainer.tarifJournalier && trainer.tarifJournalier > 0)) { setCandidatePanelError('Renseignez d’abord le tarif journalier du formateur.'); return; }
+    const dates = [session.dateDebut, session.dateFin].filter(Boolean) as string[];
+    if (!dates.length) { setCandidatePanelError('La session doit avoir une date de début pour préparer le contrat.'); return; }
+    const start = new Date(`${dates[0]}T12:00:00`); const end = new Date(`${dates[dates.length - 1]}T12:00:00`);
+    const days = Math.max(1, Math.ceil((end.getTime() - start.getTime()) / 86400000) + 1);
+    setContractBusy(true); setCandidatePanelError('');
+    try {
+      const result = await apiService.generateTrainerContract({ formateur: { nom: formateurFullName(trainer), adresse: trainer.adresse, telephone: trainer.telephone, email: trainer.email, tarif_journalier: trainer.tarifJournalier }, session: { titre: session.intitule, dates, nb_jours: days, lieu: session.lieu || 'Antananarivo', nb_participants: session.participantsInscrits, description: session.domaine } });
+      const reviewId = result.review_id ?? result.data?._review_id;
+      setContractReview(reviewId ?? '');
+      flash(`Contrat généré pour ${formateurFullName(trainer)} — ${session.intitule}. Validation obligatoire dans l’Espace IA${reviewId ? ` (${reviewId})` : ''}.`);
+    } catch (e) { setCandidatePanelError(e instanceof Error ? e.message : 'La génération du contrat a échoué.'); }
+    finally { setContractBusy(false); }
+  };
+
+  const generateEvaluationReport = async () => {
+    const trainer = formateurs.find(f => f.id === selectedTrainerId); const session = sessions.find(s => s.id === selectedSessionId);
+    if (!trainer || !session || !evalScore || !evalAttendance) { setCandidatePanelError('Choisissez un formateur, une session et renseignez les données M5 de satisfaction et de présence.'); return; }
+    setEvaluationBusy(true); setCandidatePanelError('');
+    try {
+      const result = await apiService.analyzeTrainerEvaluation({ formateur: formateurFullName(trainer), formateur_id: trainer.id, session: session.intitule, donnees_session: { satisfaction: { score_moyen: Number(evalScore), points_positifs: [], points_negatifs: [] }, presences: { taux_moyen_pct: Number(evalAttendance), anomalies: false }, rapport: `Synthèse M5 de la session ${session.intitule}` } });
+      const id = result.review_id ?? result.data?._review_id;
+      flash(`Rapport d’évaluation généré${id ? ` (${id})` : ''} et envoyé au circuit HITL. Après approbation, la synthèse sera visible dans Évaluation compétences.`);
+    } catch (e) { setCandidatePanelError(e instanceof Error ? e.message : 'La génération du rapport a échoué.'); }
+    finally { setEvaluationBusy(false); }
+  };
+
+  const prepareHrEmail = async (candidate: any, type: 'CONVOCATION'|'ACCEPTATION'|'REFUS') => {
+    setEmailBusyId(String(candidate.id)); setCandidatePanelError('');
+    try {
+      const name = `${candidate.prenom ?? ''} ${candidate.nom ?? ''}`.trim();
+      const result = await apiService.draftTrainerEmail({ type_email: type, destinataire: name, contexte: { email: candidate.email, poste: candidate.poste_vise, session_id: candidate.session_id, session: sessions.find(s=>s.id===candidate.session_id)?.intitule } });
+      flash(`Brouillon ${type.toLowerCase()} préparé et envoyé à l’Espace IA pour validation${result.review_id ? ` (${result.review_id})` : ''}. Aucun email n’a été envoyé.`);
+    } catch (e) { setCandidatePanelError(e instanceof Error ? e.message : 'Le brouillon RH n’a pas pu être généré.'); }
+    finally { setEmailBusyId(''); }
+  };
+
+  const downloadApprovedContract = async (reviewId: string) => {
+    try { const blob = await apiService.downloadTrainerContract(reviewId); const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = `contrat_formateur_${reviewId}.docx`; link.click(); URL.revokeObjectURL(url); }
+    catch (e) { setCandidatePanelError(e instanceof Error ? e.message : 'Téléchargement du contrat impossible.'); }
+  };
+
+  const filtered = useMemo(() => {
+    const term = searchTerm.trim().toLowerCase();
+    return formateurs.filter((f) => {
+      if (statutFilter !== 'Tous' && f.statut !== statutFilter) return false;
+      if (!term) return true;
+      return (
+        formateurFullName(f).toLowerCase().includes(term) ||
+        (f.email?.toLowerCase().includes(term) ?? false) ||
+        (f.specialite?.toLowerCase().includes(term) ?? false)
+      );
+    });
+  }, [formateurs, searchTerm, statutFilter]);
+
+  const evalues = formateurs.filter((f) => f.scoreMoyen !== undefined);
+  const scoreMoyenGlobal = evalues.length
+    ? evalues.reduce((acc, f) => acc + (f.scoreMoyen ?? 0), 0) / evalues.length
+    : null;
+  const disponibles = formateurs.filter((f) => f.statut === 'Disponible').length;
+
+  const openCreate = () => {
+    setForm(EMPTY_FORMATEUR_FORM);
+    setFormError(null);
+    setEditing('new');
+  };
+
+  const openEdit = (f: Formateur) => {
+    setForm(formValuesFromFormateur(f));
+    setFormError(null);
+    setEditing(f);
+  };
+
+  const closeForm = () => {
+    if (isSaving) return;
+    setEditing(null);
+  };
+
+  const setField = <K extends keyof FormateurFormValues>(key: K, value: FormateurFormValues[K]) =>
+    setForm((prev) => ({ ...prev, [key]: value }));
+
+  const flash = (message: string) => {
+    setSuccessMsg(message);
+    setTimeout(() => setSuccessMsg(null), 4000);
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedFormateurForEval || !evalApprenant.trim() || !evalCommentaire.trim()) return;
+    if (!editing) return;
 
-    const avg = Number(((evalPedagogie + evalMaitrise + evalSupports + evalPonctualite) / 4).toFixed(1));
-
-    const newEval: EvaluationFormateur = {
-      id: `eval-${Date.now()}`,
-      formateurId: selectedFormateurForEval.id,
-      apprenantNom: evalApprenant.trim(),
-      entreprise: evalEntreprise.trim() || 'Entreprise Partenaire',
-      date: new Date().toLocaleDateString('fr-FR'),
-      notePedagogie: evalPedagogie,
-      noteMaitriseTech: evalMaitrise,
-      noteSupports: evalSupports,
-      notePonctualite: evalPonctualite,
-      noteMoyenne: avg,
-      commentaire: evalCommentaire.trim(),
-      recommande: avg >= 4
-    };
-
-    if (onAddEvaluation) {
-      onAddEvaluation(newEval);
+    if (form.nom.trim().length < 2) {
+      setFormError('Le nom doit contenir au moins 2 caractères.');
+      return;
+    }
+    if (form.tarifJournalier.trim() && !(parseFloat(form.tarifJournalier.replace(',', '.')) > 0)) {
+      setFormError('Le tarif journalier doit être un nombre strictement positif.');
+      return;
     }
 
-    // Reset
-    setEvalApprenant('');
-    setEvalEntreprise('');
-    setEvalCommentaire('');
-    setIsEvalModalOpen(false);
+    setIsSaving(true);
+    setFormError(null);
+    try {
+      if (editing === 'new') {
+        const created = await apiService.createFormateur(toCreatePayload(form));
+        flash(`Formateur « ${formateurFullName(created)} » ajouté.`);
+      } else {
+        const updated = await apiService.updateFormateur(editing.id, toUpdatePayload(form));
+        flash(`Formateur « ${formateurFullName(updated)} » mis à jour.`);
+      }
+      setEditing(null);
+      if (onRefreshData) await onRefreshData();
+    } catch (err) {
+      setFormError(describeError(err));
+      if (err instanceof ApiError && err.status === 404 && onRefreshData) await onRefreshData();
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    setIsDeleting(true);
+    setPageError(null);
+    try {
+      await apiService.deleteFormateur(deleteTarget.id);
+      flash(`Formateur « ${formateurFullName(deleteTarget)} » supprimé.`);
+      setDeleteTarget(null);
+      if (onRefreshData) await onRefreshData();
+    } catch (err) {
+      setPageError(describeError(err));
+      setDeleteTarget(null);
+      if (err instanceof ApiError && err.status === 404 && onRefreshData) await onRefreshData();
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   return (
@@ -138,73 +331,125 @@ export const FormateursStaffView: React.FC<FormateursStaffViewProps> = ({
         <div>
           <div className="flex items-center gap-2 mb-1">
             <span className="px-2.5 py-0.5 rounded text-[11px] font-extrabold bg-blue-100 text-blue-800">
-              Ressources Humaines & Experts
+              Ressources Humaines
             </span>
-            <span className="text-xs text-slate-400 font-medium">• Pool d'intervenants certifiés FORMA-IA</span>
+            <span className="text-xs text-slate-400 font-medium">• Formateurs externes</span>
           </div>
           <h1 className="text-2xl font-extrabold text-[#11162A]">Formateurs & Staff</h1>
           <p className="text-slate-600 text-xs mt-1">
-            Gestion du corps professoral, habilitations Qualiopi, tarifs et fiches d'évaluations individuelles.
+            Coordonnées, spécialités, tarifs, disponibilité et résultats d'évaluation des formateurs.
           </p>
         </div>
 
-        {/* Action Button: Ajouter un formateur */}
-        <button
-          onClick={() => setIsAddModalOpen(true)}
-          className="px-4 py-2.5 bg-[#1B8F6E] hover:bg-[#16785c] text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-xs transition-all cursor-pointer shrink-0"
-        >
-          <UserPlus size={16} />
-          <span>Ajouter un formateur</span>
-        </button>
+        {canManage && (
+          <button
+            onClick={openCreate}
+            className="px-4 py-2.5 bg-[#1B8F6E] hover:bg-[#16785c] text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-xs transition-all cursor-pointer shrink-0"
+          >
+            <UserPlus size={16} />
+            <span>Ajouter un formateur</span>
+          </button>
+        )}
       </div>
+
+      {canManage && <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs space-y-5">
+        <div className="flex items-center gap-2"><Sparkles size={18} className="text-[#1B8F6E]"/><div><h2 className="font-extrabold text-[#11162A]">M4 · Recrutement assisté</h2><p className="mt-1 text-xs text-slate-500">Analyse comparative des CV, préparation des entretiens et contrats soumis à validation humaine.</p></div></div>
+        <div className="grid lg:grid-cols-2 gap-4">
+          <div className="rounded-xl border border-slate-200 p-4 space-y-3"><h3 className="font-bold text-sm text-[#11162A] flex items-center gap-2"><FileUp size={15}/>Présélection de plusieurs CV</h3>
+            <label className="block text-[11px] font-bold uppercase text-slate-600">CV PDF, Word ou image<input type="file" multiple accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.txt" onChange={e=>setCvFiles(Array.from(e.target.files ?? []))} className="mt-1 block w-full text-xs normal-case font-normal"/></label>
+            <div className="grid sm:grid-cols-2 gap-2"><label className="text-[11px] font-bold uppercase text-slate-600">Poste ciblé<input value={cvRole} onChange={e=>setCvRole(e.target.value)} className={`${inputClass} mt-1 text-xs normal-case font-normal`}/></label><label className="text-[11px] font-bold uppercase text-slate-600">Domaine<input value={cvDomain} onChange={e=>setCvDomain(e.target.value)} placeholder="Ex. Data, IA…" className={`${inputClass} mt-1 text-xs normal-case font-normal`}/></label></div>
+            <label className="block text-[11px] font-bold uppercase text-slate-600">Compétences recherchées<input value={cvSkills} onChange={e=>setCvSkills(e.target.value)} placeholder="Python, pédagogie, analyse de données" className={`${inputClass} mt-1 text-xs normal-case font-normal`}/></label>
+            <button disabled={!cvFiles.length || !!candidateBusyId} onClick={()=>void analyzeCvFiles()} className="w-full py-2.5 bg-[#1B8F6E] text-white rounded-xl text-xs font-bold flex justify-center items-center gap-2 disabled:opacity-50">{candidateBusyId==='bulk'?<Loader2 size={14} className="animate-spin"/>:<ClipboardList size={14}/>}Analyser et comparer {cvFiles.length || ''} CV</button>
+          </div>
+          <div className="rounded-xl border border-slate-200 p-4"><h3 className="font-bold text-sm text-[#11162A] mb-3">Entretiens et contrats</h3><div className="space-y-2"><select value={selectedTrainerId} onChange={e=>setSelectedTrainerId(e.target.value)} className={inputClass}><option value="">Choisir un formateur enregistré</option>{formateurs.map(t=><option key={t.id} value={t.id}>{formateurFullName(t)} · {t.specialite || 'Spécialité non renseignée'}</option>)}</select><select value={selectedSessionId} onChange={e=>setSelectedSessionId(e.target.value)} className={inputClass}><option value="">Choisir la session liée</option>{sessions.map(s=><option key={s.id} value={s.id}>{s.intitule} · {s.dateDebut || 'date à définir'}</option>)}</select><button disabled={contractBusy || !selectedSessionId || !selectedTrainerId} onClick={()=>void createContract()} className="w-full py-2.5 bg-[#11162A] text-white rounded-xl text-xs font-bold flex justify-center items-center gap-2 disabled:opacity-50">{contractBusy?<Loader2 size={14} className="animate-spin"/>:<FileSignature size={14}/>}Générer le contrat · validation HITL</button>{contractReview&&<p className="text-[11px] text-emerald-800">Contrat {contractReview} en attente dans Espace IA.</p>}</div>
+            <div className="mt-4 border-t pt-3"><h4 className="font-bold text-xs text-slate-700 flex items-center gap-2"><CalendarDays size={14}/>Rapport d’évaluation depuis M5</h4><div className="mt-2 grid grid-cols-2 gap-2"><label className="text-[10px] font-bold uppercase text-slate-500">Satisfaction / 5<input type="number" min="0" max="5" step="0.1" value={evalScore} onChange={e=>setEvalScore(e.target.value)} className={`${inputClass} mt-1 text-xs`}/></label><label className="text-[10px] font-bold uppercase text-slate-500">Présence %<input type="number" min="0" max="100" value={evalAttendance} onChange={e=>setEvalAttendance(e.target.value)} className={`${inputClass} mt-1 text-xs`}/></label></div><button disabled={evaluationBusy} onClick={()=>void generateEvaluationReport()} className="mt-2 w-full py-2 bg-emerald-50 text-emerald-800 rounded-xl text-xs font-bold flex justify-center gap-2 items-center disabled:opacity-50">{evaluationBusy?<Loader2 size={14} className="animate-spin"/>:<Sparkles size={14}/>}Générer le rapport et soumettre au HITL</button></div>
+          </div>
+        </div>
+        {!!cvResults.length&&<div className="overflow-x-auto rounded-xl border border-slate-200"><table className="w-full text-left text-xs"><thead className="bg-slate-50 text-slate-500 uppercase text-[10px]"><tr><th className="p-3">CV</th><th className="p-3">Score</th><th className="p-3">Décision IA</th><th className="p-3">Questions d’entretien</th><th className="p-3">Validation</th></tr></thead><tbody className="divide-y divide-slate-100">{cvResults.map((r,i)=><tr key={`${r.filename}-${i}`} className="align-top"><td className="p-3 font-bold">{r.filename}{r.error&&<p className="text-red-600 font-normal">{r.error}</p>}</td><td className="p-3 font-extrabold text-[#1B8F6E]">{r.score_global ?? r.score ?? '—'}{r.score_global!=null||r.score!=null?'/100':''}</td><td className="p-3">{r.decision ?? r.recommandation ?? 'En analyse'}</td><td className="p-3"><ul className="list-disc pl-4 space-y-1">{Array.isArray(r.questions_entretien)&&r.questions_entretien.slice(0,5).map((q:any,j:number)=><li key={j}>{typeof q==='string'?q:q.question??JSON.stringify(q)}</li>)}</ul></td><td className="p-3 text-amber-700">{r.reviewId ? `À valider · ${r.reviewId}` : 'Consulter Espace IA'}</td></tr>)}</tbody></table></div>}
+        {approvedContracts.length>0&&<div className="border-t border-slate-100 pt-4"><h3 className="font-bold text-sm text-[#11162A]">Contrats approuvés · prêts à télécharger</h3><div className="mt-2 space-y-2">{approvedContracts.map((review:any)=><div key={review.review_id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-200 bg-emerald-50/50 p-3"><span className="text-xs font-semibold text-slate-700">{review.summary ?? `Contrat ${review.review_id}`}</span><button onClick={()=>void downloadApprovedContract(review.review_id)} className="rounded-lg bg-[#1B8F6E] px-3 py-2 text-[11px] font-bold text-white">Télécharger le contrat</button></div>)}</div></div>}
+        {candidatePanelError && <p role="alert" className="text-xs text-red-700">{candidatePanelError}</p>}
+      </section>}
+      {canManage && <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs"><div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="font-extrabold text-[#11162A]">Candidatures formateur</h2><p className="mt-1 text-xs text-slate-500">Les candidatures déposées depuis les liens publics de session apparaissent ici. L’analyse IA prépare les questions à utiliser pendant l’entretien.</p></div></div>{candidatePanelError && <p role="alert" className="mt-3 text-xs text-red-700">{candidatePanelError}</p>}<div className="mt-4 space-y-2">{candidates.filter(c => c.decision_preselection !== 'NON_RETENU' && !c.formateur_id).map(candidate => <div key={candidate.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 p-3"><div><div className="text-sm font-bold text-slate-800">{candidate.prenom} {candidate.nom}</div><div className="text-xs text-slate-500">{candidate.email} · {candidate.telephone} · {candidate.poste_vise}</div><div className="text-[11px] text-slate-500">Formation liée : {candidate.session_id || 'Aucune'} · CV : {candidate.cv_filename || 'CV reçu'} · {candidate.decision_preselection || 'À étudier'}{candidate.score_preselection != null ? ` · Score IA ${Math.round(candidate.score_preselection)}/100` : ''}</div><button onClick={() => void openCandidateCv(candidate.id)} className="mt-1 mr-3 text-[11px] font-bold text-blue-700 underline">Lire le CV</button><button onClick={() => void downloadCandidateCv(candidate.id,candidate.cv_filename)} className="mt-1 mr-3 text-[11px] font-bold text-blue-700 underline">Télécharger le fichier</button><button disabled={interviewBusyId===String(candidate.id)} onClick={() => void openInterviewQuestions(candidate)} className="mt-1 text-[11px] font-bold text-[#1B8F6E] underline disabled:opacity-50">{interviewBusyId===String(candidate.id)?'Préparation…':candidate.review_id_preselection?'Voir les questions d’entretien':'Générer les questions d’entretien'}</button></div><div className="flex flex-wrap gap-2"><button disabled={emailBusyId===String(candidate.id)} onClick={() => void prepareHrEmail(candidate,'CONVOCATION')} className="rounded-lg bg-blue-50 px-3 py-2 text-[11px] font-bold text-blue-700 disabled:opacity-50">Préparer convocation</button><button disabled={emailBusyId===String(candidate.id)} onClick={() => void prepareHrEmail(candidate,'ACCEPTATION')} className="rounded-lg bg-emerald-50 px-3 py-2 text-[11px] font-bold text-emerald-800 disabled:opacity-50">Préparer offre</button><button disabled={emailBusyId===String(candidate.id)} onClick={() => void prepareHrEmail(candidate,'REFUS')} className="rounded-lg bg-slate-100 px-3 py-2 text-[11px] font-bold text-slate-700 disabled:opacity-50">Préparer refus</button><button disabled={!!candidateBusyId} onClick={() => void decideCandidate(candidate,'REFUSER')} className="rounded-lg bg-red-50 px-3 py-2 text-xs font-bold text-red-700 disabled:opacity-50">Refuser</button><button disabled={!!candidateBusyId} onClick={() => void decideCandidate(candidate,'ACCEPTER')} className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-bold text-white disabled:opacity-50">Accepter après entretien</button></div></div>)}{!candidates.filter(c => c.decision_preselection !== 'NON_RETENU' && !c.formateur_id).length && <p className="text-xs text-slate-500">Aucune candidature en attente.</p>}</div>{candidateCv && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"><div className="max-h-[85vh] w-full max-w-2xl overflow-auto rounded-2xl bg-white p-5"><div className="flex justify-between"><h3 className="font-extrabold">CV · {candidateCv.prenom} {candidateCv.nom}</h3><button onClick={()=>setCandidateCv(null)} className="font-bold">Fermer</button></div><p className="mt-1 text-xs text-slate-500">{candidateCv.fichier}</p><pre className="mt-4 whitespace-pre-wrap rounded-xl bg-slate-50 p-4 text-xs">{candidateCv.cv_texte}</pre></div></div>}{interviewPack&&<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"><section className="max-h-[88vh] w-full max-w-2xl overflow-auto rounded-2xl bg-white p-5 shadow-2xl"><div className="flex items-start justify-between gap-4 border-b border-slate-100 pb-3"><div><span className="text-[10px] font-bold uppercase tracking-wider text-[#1B8F6E]">Guide d’entretien · M4</span><h3 className="mt-1 text-lg font-extrabold text-[#11162A]">{interviewPack.candidate.prenom} {interviewPack.candidate.nom}</h3><p className="mt-1 text-xs text-slate-500">{interviewPack.candidate.poste_vise} · {interviewPack.candidate.session_id ? sessions.find(s=>s.id===interviewPack.candidate.session_id)?.intitule ?? 'Formation liée' : 'Candidature RH'}{interviewPack.score!=null?` · Score IA ${Math.round(interviewPack.score)}/100`:''}</p></div><button onClick={()=>setInterviewPack(null)} className="rounded-lg px-2 py-1 text-sm font-bold text-slate-500 hover:bg-slate-100">Fermer</button></div>{interviewPack.summary&&<p className="mt-4 rounded-xl bg-slate-50 p-3 text-xs leading-relaxed text-slate-700">{interviewPack.summary}</p>}<div className="mt-4 space-y-2">{interviewPack.questions.map((q:any,i:number)=><article key={i} className="flex gap-3 rounded-xl border border-slate-200 p-3"><span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-xs font-extrabold text-[#1B8F6E]">{i+1}</span><div><h4 className="text-xs font-bold text-[#11162A]">{typeof q==='string'?q:q.question??q.titre??'Question d’entretien'}</h4>{typeof q==='object'&&q.objectif&&<p className="mt-1 text-[11px] text-slate-500">À évaluer : {q.objectif}</p>}</div></article>)}{!interviewPack.questions.length&&<p className="rounded-xl bg-amber-50 p-3 text-xs text-amber-800">Aucune question n’est enregistrée pour ce candidat.</p>}</div><div className="mt-4 flex flex-wrap justify-between gap-2 border-t pt-3"><span className="self-center text-[10px] text-slate-400">Review IA : {interviewPack.reviewId ?? 'non générée'}</span><button onClick={()=>window.print()} className="rounded-lg bg-[#11162A] px-3 py-2 text-xs font-bold text-white">Imprimer le guide</button></div></section></div>}</section>}
+
+      {!canManage && (
+        <div className="p-3 rounded-xl bg-slate-100 border border-slate-200 text-slate-600 text-xs font-medium flex items-center gap-2">
+          <Lock size={14} className="shrink-0" />
+          Lecture seule : seule la Direction peut ajouter, modifier ou supprimer un formateur.
+        </div>
+      )}
+
+      {successMsg && (
+        <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold flex items-center gap-2">
+          <CheckCircle2 size={14} className="shrink-0" />
+          {successMsg}
+        </div>
+      )}
+
+      {newTrainerAccount && <div role="status" className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-xs text-blue-900"><div className="font-extrabold">Compte formateur créé — transmettez ces accès au formateur</div><div className="mt-2">E-mail : <strong>{newTrainerAccount.email}</strong></div><div className="mt-1">Mot de passe initial : <strong className="select-all font-mono">{newTrainerAccount.password}</strong></div><button onClick={() => { void navigator.clipboard?.writeText('E-mail : ' + newTrainerAccount.email + '\nMot de passe : ' + newTrainerAccount.password); }} className="mt-3 rounded-lg bg-white px-3 py-1.5 font-bold text-blue-800">Copier les accès</button><button onClick={() => setNewTrainerAccount(null)} className="ml-2 rounded-lg bg-blue-100 px-3 py-1.5 font-bold text-blue-800">Masquer</button></div>}
+
+      {pageError && (
+        <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs font-semibold flex items-start gap-2">
+          <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+          <span>{pageError}</span>
+        </div>
+      )}
 
       {/* KPI Stats Bar */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
-          <div className="text-[10px] font-bold text-slate-400 uppercase">Formateurs Actifs</div>
-          <div className="text-2xl font-extrabold text-[#11162A] mt-1">{formateurs.length} Experts</div>
-          <p className="text-xs text-blue-600 font-semibold mt-1">Habilités Qualiopi BPF</p>
+          <div className="text-[10px] font-bold text-slate-400 uppercase">Formateurs</div>
+          <div className="text-2xl font-extrabold text-[#11162A] mt-1">{formateurs.length}</div>
+          <p className="text-xs text-blue-600 font-semibold mt-1">Enregistrés dans la base</p>
         </div>
 
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
-          <div className="text-[10px] font-bold text-slate-400 uppercase">Taux Moy. de Satisfaction</div>
+          <div className="text-[10px] font-bold text-slate-400 uppercase">Score moyen d'évaluation</div>
           <div className="text-2xl font-extrabold text-[#11162A] mt-1 flex items-center gap-1.5">
             <Star size={20} className="fill-amber-400 text-amber-400" />
-            <span>
-              {(
-                formateurs.reduce((acc, f) => acc + f.tauxSatisfaction, 0) / (formateurs.length || 1)
-              ).toFixed(2)}{' '}
-              / 5
-            </span>
+            <span>{scoreMoyenGlobal !== null ? `${Math.round(scoreMoyenGlobal)} / 100` : '—'}</span>
           </div>
-          <p className="text-xs text-emerald-600 font-semibold mt-1">Évaluations à chaud enregistrées</p>
+          <p className="text-xs text-emerald-600 font-semibold mt-1">
+            {evalues.length} formateur(s) évalué(s)
+          </p>
         </div>
 
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
-          <div className="text-[10px] font-bold text-slate-400 uppercase">Disponibilité Immédiate</div>
-          <div className="text-2xl font-extrabold text-[#11162A] mt-1">
-            {formateurs.filter((f) => f.statut === 'Disponible').length} Disponibles
-          </div>
-          <p className="text-xs text-[#1B8F6E] font-semibold mt-1">Prêts pour nouvelles sessions</p>
+          <div className="text-[10px] font-bold text-slate-400 uppercase">Disponibilité immédiate</div>
+          <div className="text-2xl font-extrabold text-[#11162A] mt-1">{disponibles}</div>
+          <p className="text-xs text-[#1B8F6E] font-semibold mt-1">Prêts pour de nouvelles sessions</p>
         </div>
       </div>
 
-      {/* Search Input Bar */}
-      <div className="relative">
-        <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-        <input
-          type="text"
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          placeholder="Filtrer les formateurs par nom, spécialité ou email..."
-          className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#1B8F6E]"
-        />
+      {/* Recherche + filtre de statut */}
+      <div className="flex flex-col md:flex-row gap-3">
+        <div className="relative flex-1">
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+          <input
+            type="text"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            placeholder="Filtrer par nom, spécialité ou email..."
+            className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#1B8F6E]"
+          />
+        </div>
+        <select
+          value={statutFilter}
+          onChange={(e) => setStatutFilter(e.target.value as 'Tous' | StatutFormateur)}
+          className="px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#1B8F6E]"
+        >
+          <option value="Tous">Tous les statuts</option>
+          {STATUT_LABELS.map((s) => (
+            <option key={s} value={s}>
+              {s}
+            </option>
+          ))}
+        </select>
       </div>
 
-      {/* Grid of Formateurs */}
+      {/* Grille des formateurs */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-        {filteredFormateurs.map((f) => {
-          const evals = f.evaluations || [];
+        {filtered.map((f) => {
+          const specs = specialitesList(f);
           return (
             <div
               key={f.id}
@@ -212,238 +457,284 @@ export const FormateursStaffView: React.FC<FormateursStaffViewProps> = ({
             >
               <div>
                 <div className="flex items-start justify-between gap-3 mb-3">
-                  <div className="flex items-center gap-3">
-                    <img
-                      src={f.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=150'}
-                      alt={f.nom}
-                      className="w-12 h-12 rounded-xl object-cover border border-slate-200 shadow-xs"
-                    />
-                    <div>
-                      <h3 className="text-base font-extrabold text-[#11162A]">{f.nom}</h3>
-                      <div className="flex items-center gap-1.5 text-xs text-amber-500 font-bold mt-0.5">
-                        <Star size={14} className="fill-amber-400" />
-                        <span>{f.tauxSatisfaction} / 5</span>
-                        <span className="text-slate-400 font-medium">({f.sessionsCompteur} sessions)</span>
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-12 h-12 rounded-xl bg-[#1B8F6E] text-white flex items-center justify-center text-lg font-extrabold shrink-0">
+                      {formateurFullName(f).charAt(0).toUpperCase()}
+                    </div>
+                    <div className="min-w-0">
+                      <h3 className="text-base font-extrabold text-[#11162A] truncate">{formateurFullName(f)}</h3>
+                      <div className="text-xs text-slate-400 font-medium mt-0.5">
+                        {f.nbSessions !== undefined ? `${f.nbSessions} session(s)` : 'Aucune session renseignée'}
                       </div>
                     </div>
                   </div>
 
-                  <span
-                    className={`px-2.5 py-1 rounded-full text-[11px] font-extrabold ${
-                      f.statut === 'Disponible'
-                        ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                        : f.statut === 'En session'
-                        ? 'bg-amber-100 text-amber-800 border border-amber-200'
-                        : 'bg-slate-100 text-slate-700 border border-slate-200'
-                    }`}
-                  >
+                  <span className={`px-2.5 py-1 rounded-full text-[11px] font-extrabold shrink-0 ${statutStyle(f.statut)}`}>
                     {f.statut}
                   </span>
                 </div>
 
                 <div className="mb-3">
-                  <div className="text-[10px] font-bold text-slate-400 uppercase mb-1">Spécialités IA</div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {f.specialites.map((spec, idx) => (
-                      <span key={idx} className="bg-slate-100 text-slate-700 px-2.5 py-0.5 rounded-md text-xs font-semibold">
-                        {spec}
-                      </span>
-                    ))}
-                  </div>
+                  <div className="text-[10px] font-bold text-slate-400 uppercase mb-1">Spécialités</div>
+                  {specs.length > 0 ? (
+                    <div className="flex flex-wrap gap-1.5">
+                      {specs.map((spec, idx) => (
+                        <span key={idx} className="bg-slate-100 text-slate-700 px-2.5 py-0.5 rounded-md text-xs font-semibold">
+                          {spec}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <span className="text-xs text-slate-400">Non renseignées</span>
+                  )}
                 </div>
 
                 <div className="space-y-1.5 text-xs text-slate-600 bg-slate-50 p-3 rounded-xl border border-slate-200/80 mb-3">
                   <div className="flex items-center gap-2">
                     <Mail size={13} className="text-slate-400 shrink-0" />
-                    <span className="font-medium text-slate-700">{f.email}</span>
+                    <span className="font-medium text-slate-700 truncate">{f.email ?? 'Email non renseigné'}</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <Phone size={13} className="text-slate-400 shrink-0" />
-                    <span className="font-medium text-slate-700">{f.telephone}</span>
+                    <span className="font-medium text-slate-700">{f.telephone ?? 'Téléphone non renseigné'}</span>
                   </div>
+                  {f.adresse && (
+                    <div className="flex items-center gap-2">
+                      <MapPin size={13} className="text-slate-400 shrink-0" />
+                      <span className="font-medium text-slate-700 truncate">{f.adresse}</span>
+                    </div>
+                  )}
                 </div>
 
-                {/* Individual Evaluation Summary Section */}
+                {/* Évaluation IA */}
                 <div className="p-3 bg-emerald-50/60 rounded-xl border border-emerald-200/80 text-xs space-y-2">
                   <div className="flex items-center justify-between font-bold text-emerald-900">
                     <span className="flex items-center gap-1.5">
                       <Award size={14} className="text-emerald-700" />
-                      Évaluation individuelle ({evals.length} avis)
+                      Évaluation post-session
                     </span>
-                    <span className="text-emerald-700 font-extrabold">{f.tauxSatisfaction} / 5</span>
+                    {f.scoreMoyen !== undefined ? (
+                      <span className={`font-extrabold ${scoreStyle(f.scoreMoyen)}`}>
+                        {Math.round(f.scoreMoyen)} / 100
+                      </span>
+                    ) : (
+                      <span className="text-slate-400 font-semibold">Pas encore évalué</span>
+                    )}
                   </div>
-
-                  {evals.length > 0 ? (
-                    <div className="text-[11px] text-slate-700 italic bg-white/80 p-2 rounded border border-emerald-100">
-                      "{evals[0].commentaire}"
-                      <div className="not-italic font-bold text-slate-500 text-[10px] mt-1">
-                        — {evals[0].apprenantNom} ({evals[0].entreprise})
-                      </div>
-                    </div>
-                  ) : (
-                    <p className="text-[11px] text-slate-500">Aucune évaluation enregistrée pour ce formateur.</p>
+                  {f.recommandation && (
+                    <span className={`inline-block px-2 py-0.5 rounded text-[11px] font-bold ${recommandationStyle(f.recommandation)}`}>
+                      Recommandation : {f.recommandation}
+                    </span>
+                  )}
+                  {f.notesInternes && (
+                    <p className="text-[11px] text-slate-600 line-clamp-2" title={f.notesInternes}>
+                      {f.notesInternes}
+                    </p>
                   )}
                 </div>
               </div>
 
-              {/* Bottom Actions */}
+              {/* Actions */}
               <div className="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 text-xs">
                 <div>
                   <span className="text-slate-400 font-medium text-[10px] uppercase block">Tarif journalier</span>
                   <strong className="text-sm font-extrabold text-[#11162A]">
-                    {f.tarifJournalier.toLocaleString()} Ar / jour
+                    {f.tarifJournalier !== undefined ? `${f.tarifJournalier.toLocaleString()} Ar / jour` : 'Non renseigné'}
                   </strong>
                 </div>
 
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => {
-                      setSelectedFormateurForEval(f);
-                      setIsEvalModalOpen(true);
-                    }}
-                    className="px-3 py-2 bg-[#11162A] hover:bg-[#1B8F6E] text-white rounded-xl font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
-                  >
-                    <Star size={13} className="fill-amber-400 text-amber-400" />
-                    <span>Ajouter avis</span>
-                  </button>
-                </div>
+                {canManage && (
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => openEdit(f)}
+                      className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                    >
+                      <Pencil size={13} />
+                      <span>Modifier</span>
+                    </button>
+                    <button
+                      onClick={() => setDeleteTarget(f)}
+                      className="px-3 py-2 bg-red-50 hover:bg-red-100 text-red-700 rounded-xl font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                    >
+                      <Trash2 size={13} />
+                      <span>Supprimer</span>
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           );
         })}
       </div>
 
-      {/* ======================================================== */}
-      {/* MODAL 1 : FORMULAIRE D'AJOUT D'UN FORMATEUR              */}
-      {/* ======================================================== */}
-      {isAddModalOpen && (
+      {filtered.length === 0 && (
+        <div className="bg-white p-8 rounded-2xl border border-slate-200 text-center text-slate-500">
+          <p className="font-bold text-xs text-slate-700">
+            {formateurs.length === 0 ? 'Aucun formateur enregistré pour le moment.' : 'Aucun formateur ne correspond au filtre.'}
+          </p>
+          {formateurs.length === 0 && canManage && (
+            <p className="text-[11px] text-slate-400 mt-1">Utilisez « Ajouter un formateur » pour créer le premier.</p>
+          )}
+        </div>
+      )}
+
+      {/* ===== Formulaire de création / modification ===== */}
+      {editing && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-5">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-5 max-h-[92vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b pb-3 border-slate-100">
               <div className="flex items-center gap-2">
-                <UserPlus size={20} className="text-[#1B8F6E]" />
-                <h2 className="text-lg font-extrabold text-[#11162A]">Ajouter un nouveau formateur</h2>
+                {editing === 'new' ? (
+                  <UserPlus size={20} className="text-[#1B8F6E]" />
+                ) : (
+                  <Pencil size={20} className="text-[#1B8F6E]" />
+                )}
+                <h2 className="text-lg font-extrabold text-[#11162A]">
+                  {editing === 'new' ? 'Ajouter un formateur' : 'Modifier le formateur'}
+                </h2>
               </div>
-              <button
-                onClick={() => setIsAddModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg cursor-pointer"
-              >
+              <button onClick={closeForm} className="text-slate-400 hover:text-slate-600 p-1 rounded-lg cursor-pointer">
                 <X size={18} />
               </button>
             </div>
 
-            <form onSubmit={handleCreateFormateur} className="space-y-4 text-xs">
-              <div>
-                <label className="font-extrabold text-slate-700 block mb-1">Nom et Prénom *</label>
-                <input
-                  type="text"
-                  required
-                  value={newNom}
-                  onChange={(e) => setNewNom(e.target.value)}
-                  placeholder="ex: Dr. Hasina RANAIVO"
-                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium focus:ring-2 focus:ring-[#1B8F6E] focus:outline-none"
-                />
+            <form onSubmit={handleSubmit} className="space-y-4 text-xs">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="font-extrabold text-slate-700 block mb-1">Nom *</label>
+                  <input
+                    type="text"
+                    required
+                    minLength={2}
+                    maxLength={100}
+                    value={form.nom}
+                    onChange={(e) => setField('nom', e.target.value)}
+                    className={inputClass}
+                  />
+                </div>
+                <div>
+                  <label className="font-extrabold text-slate-700 block mb-1">Prénom</label>
+                  <input
+                    type="text"
+                    maxLength={100}
+                    value={form.prenom}
+                    onChange={(e) => setField('prenom', e.target.value)}
+                    className={inputClass}
+                  />
+                </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
-                  <label className="font-extrabold text-slate-700 block mb-1">Email Professionnel *</label>
+                  <label className="font-extrabold text-slate-700 block mb-1">Email</label>
                   <input
                     type="email"
-                    required
-                    value={newEmail}
-                    onChange={(e) => setNewEmail(e.target.value)}
-                    placeholder="h.ranaivo@forma-ia.mg"
-                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium focus:ring-2 focus:ring-[#1B8F6E] focus:outline-none"
+                    maxLength={200}
+                    value={form.email}
+                    onChange={(e) => setField('email', e.target.value)}
+                    className={inputClass}
                   />
                 </div>
-
                 <div>
-                  <label className="font-extrabold text-slate-700 block mb-1">Téléphone *</label>
+                  <label className="font-extrabold text-slate-700 block mb-1">Téléphone</label>
                   <input
                     type="text"
-                    required
-                    value={newTel}
-                    onChange={(e) => setNewTel(e.target.value)}
-                    placeholder="+261 34 12 345 67"
-                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium focus:ring-2 focus:ring-[#1B8F6E] focus:outline-none"
+                    maxLength={30}
+                    value={form.telephone}
+                    onChange={(e) => setField('telephone', e.target.value)}
+                    className={inputClass}
                   />
                 </div>
+              </div>
+
+              <div>
+                <label className="font-extrabold text-slate-700 block mb-1">Adresse</label>
+                <input
+                  type="text"
+                  maxLength={300}
+                  value={form.adresse}
+                  onChange={(e) => setField('adresse', e.target.value)}
+                  className={inputClass}
+                />
               </div>
 
               <div>
                 <label className="font-extrabold text-slate-700 block mb-1">
-                  Spécialités IA (séparées par des virgules) *
+                  Spécialités (séparées par des virgules)
                 </label>
                 <input
                   type="text"
-                  required
-                  value={newSpecialites}
-                  onChange={(e) => setNewSpecialites(e.target.value)}
-                  placeholder="Agents IA, CrewAI, FastAPI, Python"
-                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium focus:ring-2 focus:ring-[#1B8F6E] focus:outline-none"
+                  maxLength={200}
+                  value={form.specialite}
+                  onChange={(e) => setField('specialite', e.target.value)}
+                  className={inputClass}
                 />
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
-                  <label className="font-extrabold text-slate-700 block mb-1">Statut Initial</label>
-                  <select
-                    value={newStatut}
-                    onChange={(e) => setNewStatut(e.target.value as any)}
-                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold focus:ring-2 focus:ring-[#1B8F6E] focus:outline-none"
-                  >
-                    <option value="Disponible">Disponible</option>
-                    <option value="En session">En session</option>
-                    <option value="Indisponible">Indisponible</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="font-extrabold text-slate-700 block mb-1">Tarif Journalier (Ar HT / jour) *</label>
+                  <label className="font-extrabold text-slate-700 block mb-1">Tarif journalier (Ar)</label>
                   <input
                     type="number"
-                    required
-                    value={newTarif}
-                    onChange={(e) => setNewTarif(e.target.value)}
-                    placeholder="1500000"
-                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold focus:ring-2 focus:ring-[#1B8F6E] focus:outline-none"
+                    min="1"
+                    step="any"
+                    value={form.tarifJournalier}
+                    onChange={(e) => setField('tarifJournalier', e.target.value)}
+                    className={inputClass}
                   />
+                  {editing !== 'new' && (
+                    <p className="text-[10px] text-slate-400 mt-1">Laissé vide, le tarif actuel est conservé.</p>
+                  )}
+                </div>
+                <div>
+                  <label className="font-extrabold text-slate-700 block mb-1">Statut</label>
+                  <select
+                    value={form.statut}
+                    onChange={(e) => setField('statut', e.target.value as StatutFormateur)}
+                    className={`${inputClass} font-bold`}
+                  >
+                    {STATUT_LABELS.map((s) => (
+                      <option key={s} value={s}>
+                        {s}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </div>
 
-              {/* Avatar Selector */}
               <div>
-                <label className="font-extrabold text-slate-700 block mb-1.5">Photo de Profil (Avatar)</label>
-                <div className="flex items-center gap-2">
-                  {avatarPresets.map((url, i) => (
-                    <img
-                      key={i}
-                      src={url}
-                      alt="avatar preset"
-                      onClick={() => setNewAvatar(url)}
-                      className={`w-10 h-10 rounded-xl object-cover cursor-pointer border-2 transition-all ${
-                        newAvatar === url ? 'border-[#1B8F6E] ring-2 ring-[#1B8F6E]/20 scale-105' : 'border-slate-200'
-                      }`}
-                    />
-                  ))}
-                </div>
+                <label className="font-extrabold text-slate-700 block mb-1">Notes internes</label>
+                <textarea
+                  rows={3}
+                  value={form.notesInternes}
+                  onChange={(e) => setField('notesInternes', e.target.value)}
+                  className={inputClass}
+                />
               </div>
+
+              {formError && (
+                <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 font-semibold flex items-start gap-2">
+                  <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+                  <span>{formError}</span>
+                </div>
+              )}
 
               <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
                 <button
                   type="button"
-                  onClick={() => setIsAddModalOpen(false)}
-                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold cursor-pointer"
+                  onClick={closeForm}
+                  disabled={isSaving}
+                  className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold cursor-pointer disabled:opacity-50"
                 >
                   Annuler
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-[#1B8F6E] hover:bg-[#16785c] text-white rounded-xl font-bold flex items-center gap-1.5 shadow-xs cursor-pointer"
+                  disabled={isSaving}
+                  className="px-5 py-2.5 bg-[#1B8F6E] hover:bg-[#16785c] text-white rounded-xl font-bold flex items-center gap-2 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  <CheckCircle2 size={15} />
-                  <span>Enregistrer le formateur</span>
+                  {isSaving ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
+                  <span>{isSaving ? 'Enregistrement…' : editing === 'new' ? 'Ajouter' : 'Enregistrer'}</span>
                 </button>
               </div>
             </form>
@@ -451,134 +742,35 @@ export const FormateursStaffView: React.FC<FormateursStaffViewProps> = ({
         </div>
       )}
 
-      {/* ======================================================== */}
-      {/* MODAL 2 : AJOUTER UNE EVALUATION A UN FORMATEUR          */}
-      {/* ======================================================== */}
-      {isEvalModalOpen && selectedFormateurForEval && (
+      {/* ===== Confirmation de suppression ===== */}
+      {deleteTarget && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-4">
-            <div className="flex items-center justify-between border-b pb-3 border-slate-100">
-              <div>
-                <div className="text-[10px] font-bold text-[#1B8F6E] uppercase">Formulaire d'évaluation</div>
-                <h2 className="text-base font-extrabold text-[#11162A]">
-                  Évaluer : {selectedFormateurForEval.nom}
-                </h2>
-              </div>
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+            <div className="flex items-center gap-2 text-red-700">
+              <Trash2 size={20} />
+              <h2 className="text-lg font-extrabold">Supprimer ce formateur ?</h2>
+            </div>
+            <p className="text-xs text-slate-600 leading-relaxed">
+              <strong className="text-[#11162A]">{formateurFullName(deleteTarget)}</strong> sera supprimé définitivement,
+              ainsi que les dossiers de candidature qui lui sont rattachés. Cette action est irréversible.
+            </p>
+            <div className="flex items-center justify-end gap-2 text-xs">
               <button
-                onClick={() => setIsEvalModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg cursor-pointer"
+                onClick={() => setDeleteTarget(null)}
+                disabled={isDeleting}
+                className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold cursor-pointer disabled:opacity-50"
               >
-                <X size={18} />
+                Annuler
+              </button>
+              <button
+                onClick={handleDelete}
+                disabled={isDeleting}
+                className="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl font-bold flex items-center gap-2 cursor-pointer disabled:opacity-60"
+              >
+                {isDeleting ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                <span>{isDeleting ? 'Suppression…' : 'Supprimer définitivement'}</span>
               </button>
             </div>
-
-            <form onSubmit={handleCreateEvaluation} className="space-y-3 text-xs">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div>
-                  <label className="font-extrabold text-slate-700 block mb-1">Nom de l'apprenant *</label>
-                  <input
-                    type="text"
-                    required
-                    value={evalApprenant}
-                    onChange={(e) => setEvalApprenant(e.target.value)}
-                    placeholder="ex: Mialy RAKOTO"
-                    className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl font-medium focus:ring-2 focus:ring-[#1B8F6E]"
-                  />
-                </div>
-
-                <div>
-                  <label className="font-extrabold text-slate-700 block mb-1">Entreprise *</label>
-                  <input
-                    type="text"
-                    required
-                    value={evalEntreprise}
-                    onChange={(e) => setEvalEntreprise(e.target.value)}
-                    placeholder="ex: TELMA / Bank Of Africa"
-                    className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl font-medium focus:ring-2 focus:ring-[#1B8F6E]"
-                  />
-                </div>
-              </div>
-
-              {/* Ratings */}
-              <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200">
-                <div>
-                  <label className="font-bold text-slate-600 block mb-1">Pédagogie ({evalPedagogie}/5)</label>
-                  <input
-                    type="range"
-                    min="1"
-                    max="5"
-                    value={evalPedagogie}
-                    onChange={(e) => setEvalPedagogie(Number(e.target.value))}
-                    className="w-full accent-[#1B8F6E]"
-                  />
-                </div>
-
-                <div>
-                  <label className="font-bold text-slate-600 block mb-1">Maîtrise Tech ({evalMaitrise}/5)</label>
-                  <input
-                    type="range"
-                    min="1"
-                    max="5"
-                    value={evalMaitrise}
-                    onChange={(e) => setEvalMaitrise(Number(e.target.value))}
-                    className="w-full accent-[#1B8F6E]"
-                  />
-                </div>
-
-                <div>
-                  <label className="font-bold text-slate-600 block mb-1">Supports ({evalSupports}/5)</label>
-                  <input
-                    type="range"
-                    min="1"
-                    max="5"
-                    value={evalSupports}
-                    onChange={(e) => setEvalSupports(Number(e.target.value))}
-                    className="w-full accent-[#1B8F6E]"
-                  />
-                </div>
-
-                <div>
-                  <label className="font-bold text-slate-600 block mb-1">Ponctualité ({evalPonctualite}/5)</label>
-                  <input
-                    type="range"
-                    min="1"
-                    max="5"
-                    value={evalPonctualite}
-                    onChange={(e) => setEvalPonctualite(Number(e.target.value))}
-                    className="w-full accent-[#1B8F6E]"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="font-extrabold text-slate-700 block mb-1">Avis / Commentaire à chaud *</label>
-                <textarea
-                  rows={3}
-                  required
-                  value={evalCommentaire}
-                  onChange={(e) => setEvalCommentaire(e.target.value)}
-                  placeholder="Explication claire des concepts, animation dynamique de la formation..."
-                  className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl font-medium focus:ring-2 focus:ring-[#1B8F6E]"
-                ></textarea>
-              </div>
-
-              <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setIsEvalModalOpen(false)}
-                  className="px-4 py-2 bg-slate-100 text-slate-700 rounded-xl font-bold cursor-pointer"
-                >
-                  Annuler
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 bg-[#1B8F6E] text-white rounded-xl font-bold flex items-center gap-1.5 shadow-xs cursor-pointer"
-                >
-                  <Star size={14} className="fill-white" />
-                  <span>Publier l'évaluation</span>
-                </button>
-              </div>
-            </form>
           </div>
         </div>
       )}

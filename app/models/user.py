@@ -1,7 +1,7 @@
 from enum import Enum
 from uuid import uuid4
 
-from sqlalchemy import Boolean, Column, String
+from sqlalchemy import Boolean, Column, ForeignKey, String
 from sqlalchemy import Enum as SQlEnum
 from sqlalchemy.dialects.postgresql import UUID
 
@@ -23,3 +23,5 @@ class User(Base):
     password = Column(String(255), nullable=False)
     role = Column(SQlEnum(RoleEnum, name="role_enum"), nullable=False)
     actif = Column(Boolean, default=True)
+    # A director owns their tenant; staff accounts point to that director.
+    owner_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)

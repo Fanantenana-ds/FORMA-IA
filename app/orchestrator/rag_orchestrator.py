@@ -13,6 +13,7 @@ import shutil
 import time
 from datetime import datetime
 from pathlib import Path
+from uuid import UUID
 from typing import Any, Dict, List, Optional
 
 from app.models.knowledge_base import KnowledgeBase
@@ -103,6 +104,8 @@ class RagOrchestrator:
         formation_code: str | None,
         collection: str = "support",
         nom_original: str | None = None,
+        session_id: str | None = None,
+        module: str | None = None,
     ) -> dict[str, Any]:
         """
         Ingestion complète d'UN fichier déjà sur disque (pas une archive).
@@ -115,7 +118,10 @@ class RagOrchestrator:
             logger.info(f"⏭️ Déjà indexé, ignoré : {nom_original}")
             return {"fichier": nom_original, "hash": hash_fichier, "statut": "deja_indexe"}
 
-        entree = registre.initialiser_entree(hash_fichier, nom_original, formation_code, collection)
+        entree = registre.initialiser_entree(
+            hash_fichier, nom_original, formation_code, collection,
+            module=module, session_id=session_id,
+        )
 
         # ── Compatibilité de famille de modèle (mission : une indexation avec
         # un modèle d'une autre famille que celle déjà en base est REFUSÉE) ──
@@ -255,6 +261,8 @@ class RagOrchestrator:
                         doc_hash=hash_fichier,
                         fichier=nom_original,
                         formation_code=formation_code,
+                        session_id=UUID(str(session_id)) if session_id else None,
+                        module=module,
                         formation_titre=titre,
                         domaine=domaine,
                         annee=annee,
@@ -305,7 +313,7 @@ class RagOrchestrator:
 
         # ── Résumé par formation (§10) ──
         if formation_code:
-            await self.regenerer_resume_formation(formation_code)
+            await self.regenerer_resume_formation(formation_code, session_id=session_id)
 
         logger.info(f"✅ Indexé : {nom_original} ({len(chunks)} chunks, {nb_pages} page(s))")
         return {
@@ -325,6 +333,7 @@ class RagOrchestrator:
 
     def preparer_indexation(
         self, chemin_fichier: str, formation_code: str | None, collection: str = "support",
+        session_id: str | None = None, module: str | None = None,
     ) -> dict[str, Any]:
         """
         Calcule le hash (rapide, synchrone) et vérifie l'idempotence.
@@ -338,9 +347,14 @@ class RagOrchestrator:
         hash_fichier = registre.calculer_hash_fichier(chemin_fichier)
 
         if registre.deja_indexe(hash_fichier):
+            if session_id:
+                self.repository.rattacher_document_a_session(hash_fichier, session_id, module)
             return {"hash": hash_fichier, "fichier": nom_original, "deja_indexe": True}
 
-        entree = registre.initialiser_entree(hash_fichier, nom_original, formation_code, collection)
+        entree = registre.initialiser_entree(
+            hash_fichier, nom_original, formation_code, collection,
+            module=module, session_id=session_id,
+        )
         entree.statut = "en_cours"
         entree.message = None
         entree.date_fin = None
@@ -369,7 +383,7 @@ class RagOrchestrator:
             fichier_copie.unlink()
 
         if formation_code:
-            await self.regenerer_resume_formation(formation_code)
+            await self.regenerer_resume_formation(formation_code, session_id=entree.session_id)
 
         logger.info(f"🗑️ Document supprimé : {entree.fichier} ({nb_supprimes} chunk(s))")
         return {"hash": hash_fichier, "statut": "supprime", "nb_chunks_supprimes": nb_supprimes}
@@ -378,11 +392,11 @@ class RagOrchestrator:
     # RÉSUMÉ PAR FORMATION (§10)
     # ========================================================
 
-    async def regenerer_resume_formation(self, formation_code: str) -> str | None:
+    async def regenerer_resume_formation(self, formation_code: str, session_id: str | None = None) -> str | None:
         """Régénère le résumé thématique d'une formation à partir des
         résumés de TOUS ses supports indexés, et l'upsert dans
         knowledge_base (collection='resume_formation')."""
-        entrees = registre.entrees_pour_formation(formation_code)
+        entrees = registre.entrees_pour_session(session_id) if session_id else registre.entrees_pour_formation(formation_code)
         resumes = [e.resume for e in entrees if e.statut == "indexe" and e.resume]
 
         formation = obtenir_formation(formation_code)
@@ -403,6 +417,7 @@ class RagOrchestrator:
             collection="resume_formation",
             fichier=None,
             formation_code=formation_code,
+            session_id=UUID(str(session_id)) if session_id else None,
             formation_titre=titre,
             domaine=formation.domaine if formation else None,
             annee=formation.annee_la_plus_recente() if formation else None,
@@ -410,7 +425,7 @@ class RagOrchestrator:
             embedding=vecteur,
             modele_embed=self.embedding_provider.modele_document,
         )
-        self.repository.remplacer_resume_formation(formation_code, ligne)
+        self.repository.remplacer_resume_formation(formation_code, ligne, session_id=session_id)
 
         logger.info(f"📝 Résumé de formation mis à jour : {formation_code}")
         return resume_texte

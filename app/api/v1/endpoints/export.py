@@ -82,15 +82,25 @@ def _export_excel(factures: list[Facture]) -> bytes:
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Factures"
+    ws.sheet_view.showGridLines = False
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=len(_COLONNES))
+    ws.cell(row=1, column=1, value="ALTIORA PREST  |  EXPORT COMPTABLE DES FACTURES")
+    ws.cell(row=1, column=1).font = Font(name="Arial", size=16, bold=True, color="11162A")
+    ws.cell(row=1, column=1).alignment = Alignment(vertical="center")
+    ws.row_dimensions[1].height = 32
+    ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=len(_COLONNES))
+    ws.cell(row=2, column=1, value=f"Généré le {datetime.now().strftime('%d/%m/%Y à %H:%M')}  ·  {len(factures)} facture(s)")
+    ws.cell(row=2, column=1).font = Font(name="Arial", size=10, color="667085", italic=True)
+    ws.row_dimensions[2].height = 22
 
     # En-tête
-    header_fill = PatternFill(start_color="1F4E79", end_color="1F4E79", fill_type="solid")
-    header_font = Font(color="FFFFFF", bold=True)
-    thin = Side(style="thin", color="AAAAAA")
+    header_fill = PatternFill(start_color="11162A", end_color="11162A", fill_type="solid")
+    header_font = Font(name="Arial", color="FFFFFF", bold=True, size=10)
+    thin = Side(style="thin", color="D9E2E8")
     border = Border(left=thin, right=thin, top=thin, bottom=thin)
 
     for col_idx, col_name in enumerate(_COLONNES, 1):
-        cell = ws.cell(row=1, column=col_idx, value=col_name)
+        cell = ws.cell(row=3, column=col_idx, value=col_name)
         cell.fill = header_fill
         cell.font = header_font
         cell.alignment = Alignment(horizontal="center", vertical="center")
@@ -104,7 +114,7 @@ def _export_excel(factures: list[Facture]) -> bytes:
         "EN_RETARD":         "FCE4D6",
     }
 
-    for row_idx, ligne in enumerate(_lignes(factures), 2):
+    for row_idx, ligne in enumerate(_lignes(factures), 4):
         statut_val = ligne[7]  # colonne Statut
         fill_color = statut_couleurs.get(statut_val, "FFFFFF")
         row_fill = PatternFill(start_color=fill_color, end_color=fill_color, fill_type="solid")
@@ -120,7 +130,11 @@ def _export_excel(factures: list[Facture]) -> bytes:
         ws.column_dimensions[get_column_letter(col_idx)].width = 18
 
     # Figer la ligne d'en-tête
-    ws.freeze_panes = "A2"
+    ws.freeze_panes = "A4"
+    ws.auto_filter.ref = f"A3:{get_column_letter(len(_COLONNES))}{max(3, ws.max_row)}"
+    wb.properties.creator = "ALTIORA PREST"
+    wb.properties.title = "Export comptable des factures"
+    wb.properties.subject = "Suivi des factures, paiements et soldes"
 
     buf = io.BytesIO()
     wb.save(buf)
@@ -134,15 +148,19 @@ def _export_pdf(factures: list[Facture], date_export: str) -> bytes:
     from reportlab.lib.styles import getSampleStyleSheet
     from reportlab.lib.units import cm
     from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+    from app.services.document_design import draw_pdf_branding, NAVY, TEAL
 
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=landscape(A4), leftMargin=1*cm, rightMargin=1*cm,
-                            topMargin=1.5*cm, bottomMargin=1.5*cm)
+                            topMargin=2.5*cm, bottomMargin=1.8*cm)
     styles = getSampleStyleSheet()
     elements = []
 
-    elements.append(Paragraph("Export comptable — Factures ALTIORA PREST", styles["Title"]))
-    elements.append(Paragraph(f"Généré le {date_export} — {len(factures)} facture(s)", styles["Normal"]))
+    title_style = styles["Title"]
+    title_style.textColor = colors.HexColor(f"#{NAVY}")
+    title_style.fontName = "Helvetica-Bold"
+    elements.append(Paragraph("Synthèse comptable des factures", title_style))
+    elements.append(Paragraph(f"ALTIORA PREST · Généré le {date_export} · {len(factures)} facture(s)", styles["Normal"]))
     elements.append(Spacer(1, 0.4*cm))
 
     # Colonnes réduites pour PDF (format paysage)
@@ -166,7 +184,7 @@ def _export_pdf(factures: list[Facture], date_export: str) -> bytes:
     col_widths = [3.5*cm, 4.5*cm, 2.5*cm, 2.5*cm, 3*cm, 3*cm, 3.5*cm, 3*cm, 3*cm]
     table = Table(data, colWidths=col_widths, repeatRows=1)
     table.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1F4E79")),
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor(f"#{NAVY}")),
         ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
         ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
         ("FONTSIZE", (0, 0), (-1, -1), 8),
@@ -178,7 +196,8 @@ def _export_pdf(factures: list[Facture], date_export: str) -> bytes:
         ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
     ]))
     elements.append(table)
-    doc.build(elements)
+    doc.build(elements, onFirstPage=lambda canvas, layout: draw_pdf_branding(canvas, layout, "Export comptable"),
+              onLaterPages=lambda canvas, layout: draw_pdf_branding(canvas, layout, "Export comptable"))
     return buf.getvalue()
 
 

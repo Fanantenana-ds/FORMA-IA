@@ -8,6 +8,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
 from app.database import Base
+from app.models.tenant import TenantOwned
 
 
 class TypeDocument(str, Enum):
@@ -24,7 +25,7 @@ class StatutValidation(str, Enum):
     VALIDE = "VALIDE"
     REJETE = "REJETE"
 
-class Document(Base):
+class Document(TenantOwned, Base):
     __tablename__ = "documents"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)

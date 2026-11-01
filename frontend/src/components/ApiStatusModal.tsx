@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { X, Server, RefreshCw, CheckCircle, AlertTriangle, Send, Copy, Code } from 'lucide-react';
+import { X, Server, RefreshCw, CheckCircle, AlertTriangle, UserCheck, Activity } from 'lucide-react';
 import { ApiConfig } from '../types';
-import { apiService } from '../services/api';
+import { apiService, ApiError } from '../services/api';
 
 interface ApiStatusModalProps {
   isOpen: boolean;
@@ -14,61 +14,43 @@ export const ApiStatusModal: React.FC<ApiStatusModalProps> = ({
   onClose,
   apiConfig
 }) => {
-  const [urlInput, setUrlInput] = useState(apiConfig.baseUrl);
   const [isTesting, setIsTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string; json?: string } | null>(null);
-  const [selectedEndpoint, setSelectedEndpoint] = useState('/api/dashboard/kpis');
 
   if (!isOpen) return null;
 
-  const handleSaveAndTest = async () => {
+  const handleTestHealth = async () => {
     setIsTesting(true);
     setTestResult(null);
-    apiService.setBaseUrl(urlInput);
-
-    try {
-      const isOk = await apiService.checkHealth();
-      if (isOk) {
-        setTestResult({
-          success: true,
-          message: `Connexion réussie avec ${urlInput} ! Statut HTTP 200 OK.`
-        });
-      } else {
-        setTestResult({
-          success: false,
-          message: `Impossible de joindre le serveur REST à ${urlInput}. Assurez-vous que votre serveur backend (e.g. FastAPI, Express, Django) tourne sur le port 8000.`
-        });
-      }
-    } catch (err: any) {
-      setTestResult({
-        success: false,
-        message: `Erreur réseau : ${err.message || 'Serveur indisponible'}`
-      });
-    } finally {
-      setIsTesting(false);
-    }
+    const ok = await apiService.checkHealth();
+    setTestResult(
+      ok
+        ? { success: true, message: `Le serveur ${apiConfig.baseUrl} répond (GET /health : 200 OK).` }
+        : {
+            success: false,
+            message: `Impossible de joindre ${apiConfig.baseUrl}. Vérifiez que le backend est démarré et que VITE_API_URL est correct.`
+          }
+    );
+    setIsTesting(false);
   };
 
-  const handleTestEndpoint = async () => {
+  const handleTestSession = async () => {
     setIsTesting(true);
     setTestResult(null);
-
     try {
-      const res = await fetch(`${urlInput}${selectedEndpoint}`, {
-        method: 'GET',
-        headers: { 'Accept': 'application/json' }
-      });
-      const data = await res.json();
+      const user = await apiService.fetchCurrentUser();
       setTestResult({
-        success: res.ok,
-        message: `Réponse HTTP ${res.status} de ${selectedEndpoint}`,
-        json: JSON.stringify(data, null, 2)
+        success: true,
+        message: 'Session valide (GET /api/v1/auth/me : 200 OK).',
+        json: JSON.stringify(user, null, 2)
       });
-    } catch (err: any) {
+    } catch (err) {
       setTestResult({
         success: false,
-        message: `Erreur lors de la requête vers ${urlInput}${selectedEndpoint} : ${err.message}. Passage automatique sur le jeu de données local.`,
-        json: JSON.stringify({ note: "Backend 127.0.0.1:8000 hors ligne dans cette démonstration.", fallback: "Données mock chargées" }, null, 2)
+        message:
+          err instanceof ApiError
+            ? `Échec de la vérification de session (${err.status || 'réseau'}) : ${err.message}`
+            : 'Échec de la vérification de session.'
       });
     } finally {
       setIsTesting(false);
@@ -84,9 +66,7 @@ export const ApiStatusModal: React.FC<ApiStatusModalProps> = ({
               <Server size={20} />
             </div>
             <div>
-              <h3 className="text-lg font-bold text-slate-800">
-                Configuration API REST (127.0.0.1:8000)
-              </h3>
+              <h3 className="text-lg font-bold text-slate-800">Connexion à l'API REST</h3>
               <p className="text-xs text-slate-500">
                 Communication avec le backend de la plateforme FORMA-IA
               </p>
@@ -116,69 +96,53 @@ export const ApiStatusModal: React.FC<ApiStatusModalProps> = ({
             )}
             <div className="text-xs leading-relaxed">
               <span className="font-bold block mb-0.5">
-                {apiConfig.isConnected
-                  ? 'Connecté au serveur REST local'
-                  : 'Mode Simulation / Standalone (Local REST)'}
+                {apiConfig.isConnected ? 'Backend joignable' : 'Backend injoignable'}
               </span>
               {apiConfig.isConnected ? (
-                <>Le frontend FORMA-IA reçoit et envoie en temps réel des requêtes à <code className="bg-emerald-100 px-1 py-0.5 rounded font-mono">{apiConfig.baseUrl}</code>.</>
+                <>Le frontend communique avec <code className="bg-emerald-100 px-1 py-0.5 rounded font-mono">{apiConfig.baseUrl}</code>.</>
               ) : (
-                <>Le serveur REST à l'adresse <code className="bg-amber-100 px-1 py-0.5 rounded font-mono">{apiConfig.baseUrl}</code> n'a pas répondu. L'interface utilise les données de démonstration interactives.</>
+                <>Le serveur <code className="bg-amber-100 px-1 py-0.5 rounded font-mono">{apiConfig.baseUrl}</code> n'a pas répondu.</>
+              )}
+              {apiConfig.lastPingTime && (
+                <span className="block mt-1 opacity-80">Dernière vérification : {apiConfig.lastPingTime}</span>
               )}
             </div>
           </div>
 
-          {/* URL Input */}
+          {/* URL (lecture seule) */}
           <div>
             <label className="block text-xs font-bold text-slate-700 uppercase mb-1.5">
-              Adresse URL de l'API REST Backend
+              Adresse du backend
             </label>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={urlInput}
-                onChange={(e) => setUrlInput(e.target.value)}
-                placeholder="http://127.0.0.1:8000"
-                className="flex-1 px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-lg text-sm font-mono text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#1B8F6E] focus:bg-white"
-              />
-              <button
-                onClick={handleSaveAndTest}
-                disabled={isTesting}
-                className="px-4 py-2.5 bg-[#1B8F6E] hover:bg-[#16785c] text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors shadow-xs disabled:opacity-50"
-              >
-                {isTesting ? <RefreshCw size={14} className="animate-spin" /> : <Send size={14} />}
-                <span>Tester & Enregistrer</span>
-              </button>
-            </div>
+            <input
+              type="text"
+              readOnly
+              value={apiConfig.baseUrl}
+              className="w-full px-3.5 py-2.5 bg-slate-100 border border-slate-300 rounded-lg text-sm font-mono text-slate-700 cursor-not-allowed"
+            />
+            <p className="text-[11px] text-slate-500 mt-1.5">
+              Définie par la variable <code className="font-mono">VITE_API_URL</code> du fichier <code className="font-mono">.env</code>. Redémarrez le serveur de développement après toute modification.
+            </p>
           </div>
 
-          {/* Endpoint Live Tester */}
+          {/* Tests */}
           <div className="pt-3 border-t border-slate-100">
-            <label className="block text-xs font-bold text-slate-700 uppercase mb-1.5 flex items-center gap-1">
-              <Code size={14} className="text-[#1B8F6E]" />
-              Tester un Endpoint spécifique
-            </label>
-            <div className="flex gap-2 mb-3">
-              <select
-                value={selectedEndpoint}
-                onChange={(e) => setSelectedEndpoint(e.target.value)}
-                className="flex-1 px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs font-mono text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#1B8F6E]"
-              >
-                <option value="/api/dashboard/kpis">GET /api/dashboard/kpis</option>
-                <option value="/api/dashboard/opportunities-by-domain">GET /api/dashboard/opportunities-by-domain</option>
-                <option value="/api/dashboard/invoicing-status">GET /api/dashboard/invoicing-status</option>
-                <option value="/api/dashboard/recent-activities">GET /api/dashboard/recent-activities</option>
-                <option value="/api/sessions">GET /api/sessions</option>
-                <option value="/api/opportunities">GET /api/opportunities</option>
-                <option value="/api/trainers">GET /api/trainers</option>
-                <option value="/api/invoices">GET /api/invoices</option>
-              </select>
+            <div className="flex flex-wrap gap-2 mb-3">
               <button
-                onClick={handleTestEndpoint}
+                onClick={handleTestHealth}
                 disabled={isTesting}
-                className="px-3 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-xs font-semibold flex items-center gap-1"
+                className="px-4 py-2 bg-[#1B8F6E] hover:bg-[#16785c] text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors shadow-xs disabled:opacity-50"
               >
-                Exécuter
+                {isTesting ? <RefreshCw size={14} className="animate-spin" /> : <Activity size={14} />}
+                <span>Tester la connexion</span>
+              </button>
+              <button
+                onClick={handleTestSession}
+                disabled={isTesting}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 disabled:opacity-50"
+              >
+                <UserCheck size={14} />
+                <span>Vérifier ma session</span>
               </button>
             </div>
 

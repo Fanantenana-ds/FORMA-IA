@@ -4,6 +4,7 @@
 # ============================================================
 
 from typing import Any, Dict, List, Optional
+from uuid import UUID
 
 from pydantic import BaseModel, Field
 
@@ -12,6 +13,8 @@ class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=2000)
     conversation_id: str | None = None
     formation_code: str | None = None
+    session_id: UUID | None = None
+    module: str | None = None
 
 
 class ChatSource(BaseModel):
@@ -79,6 +82,8 @@ class IndexerDocumentRequest(BaseModel):
         ..., description="Chemin local du fichier déjà présent sur le disque du service IA (pas d'upload multipart)."
     )
     formation_code: str | None = None
+    session_id: UUID
+    module: str | None = None
     collection: str = "support"
 
 
@@ -87,6 +92,8 @@ class RechercherRequest(BaseModel):
     top_k: int | None = Field(None, ge=1, le=50)
     collection: str = "support"
     formation_code: str | None = None
+    session_id: UUID | None = None
+    module: str | None = None
     domaine: str | None = None
     annee: int | None = None
     type_support: str | None = None

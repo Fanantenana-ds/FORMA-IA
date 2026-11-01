@@ -24,13 +24,14 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.sql import func
 
 from app.database import Base
+from app.models.tenant import TenantOwned
 
 # JSONB en PostgreSQL (prod/dev) ; JSON générique en SQLite (tests unitaires
 # en mémoire) — SQLite n'a pas de type JSONB.
 _JSON_PORTABLE = JSONB(astext_type=Text()).with_variant(JSON(), "sqlite")
 
 
-class KnowledgeBase(Base):
+class KnowledgeBase(TenantOwned, Base):
     """
     Table de stockage des chunks vectorisés du module RAG (C3).
 
@@ -45,7 +46,7 @@ class KnowledgeBase(Base):
     # les doublons d'une reprise d'indexation (constat du 12/10/2026 :
     # chunks 14 à 29 insérés deux fois). doc_hash NULL (résumés) non concerné.
     __table_args__ = (
-        Index("uq_kb_hash_collection_chunk", "doc_hash", "collection", "chunk_index", unique=True),
+        Index("uq_kb_tenant_hash_collection_chunk", "owner_id", "doc_hash", "collection", "chunk_index", unique=True),
     )
 
     # ═══ IDENTIFIANT ═══
@@ -56,6 +57,8 @@ class KnowledgeBase(Base):
     doc_hash = Column(String(64), nullable=True, index=True)  # SHA-256 du fichier source (idempotence)
     fichier = Column(String(500), nullable=True)
     formation_code = Column(String(100), nullable=True, index=True)
+    session_id = Column(UUID(as_uuid=True), nullable=True, index=True)
+    module = Column(String(200), nullable=True, index=True)
     formation_titre = Column(String(255), nullable=True)
     domaine = Column(String(100), nullable=True)
     annee = Column(Integer, nullable=True)

@@ -28,6 +28,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
 from app.database import Base
+from app.models.tenant import TenantOwned
 
 
 class StatutProjet(str, Enum):
@@ -40,7 +41,7 @@ class StatutProjet(str, Enum):
 
 # ── Salle ───────────────────────────────────────────────────
 
-class Salle(Base):
+class Salle(TenantOwned, Base):
     __tablename__ = "salles"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -55,7 +56,7 @@ class Salle(Base):
 
 # ── Projet ──────────────────────────────────────────────────
 
-class Projet(Base):
+class Projet(TenantOwned, Base):
     __tablename__ = "projets"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -79,7 +80,7 @@ class Projet(Base):
 
 # ── EdtSession (emploi du temps) ────────────────────────────
 
-class EdtSession(Base):
+class EdtSession(TenantOwned, Base):
     __tablename__ = "edt_sessions"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -97,7 +98,7 @@ class EdtSession(Base):
 
 # ── BudgetFormation ─────────────────────────────────────────
 
-class BudgetFormation(Base):
+class BudgetFormation(TenantOwned, Base):
     __tablename__ = "budgets_formation"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)

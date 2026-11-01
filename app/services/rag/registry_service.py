@@ -23,6 +23,16 @@ CHEMIN_REGISTRE_DEFAUT = (
     Path(__file__).resolve().parents[3] / "data" / "rag" / "index_registry.json"
 )
 
+
+def _chemin_registre_actif() -> Path:
+    """Use a private registry for every company; never merge tenant uploads."""
+    from app.core.tenant_context import get_tenant_id
+
+    tenant_id = get_tenant_id()
+    if tenant_id is None:
+        return CHEMIN_REGISTRE_DEFAUT
+    return CHEMIN_REGISTRE_DEFAUT.parent / "tenants" / str(tenant_id) / CHEMIN_REGISTRE_DEFAUT.name
+
 STATUTS_VALIDES = (
     "en_attente", "en_cours", "indexe", "erreur",
     "non_indexable_image", "ocr_necessaire",
@@ -48,6 +58,9 @@ class EntreeRegistre:
 
     # Module pédagogique (optionnel) — ex: "Module 1 — Introduction"
     module: str | None = None
+    # UUID de la session réelle, pour isoler les documents de deux sessions
+    # qui partagent le même code de formation.
+    session_id: str | None = None
 
     # Résumé (Étape C §9)
     resume: str | None = None
@@ -94,7 +107,7 @@ def _sauvegarder_brut(registre: dict[str, Any], chemin: Path) -> None:
 
 
 def charger_registre(chemin: Path | None = None) -> dict[str, EntreeRegistre]:
-    chemin = chemin or CHEMIN_REGISTRE_DEFAUT
+    chemin = chemin or _chemin_registre_actif()
     brut = _charger_brut(chemin)
     return {h: EntreeRegistre(**v) for h, v in brut.items()}
 
@@ -104,14 +117,14 @@ def obtenir_entree(hash_fichier: str, chemin: Path | None = None) -> EntreeRegis
 
 
 def enregistrer_entree(entree: EntreeRegistre, chemin: Path | None = None) -> None:
-    chemin = chemin or CHEMIN_REGISTRE_DEFAUT
+    chemin = chemin or _chemin_registre_actif()
     registre = _charger_brut(chemin)
     registre[entree.hash] = asdict(entree)
     _sauvegarder_brut(registre, chemin)
 
 
 def supprimer_entree(hash_fichier: str, chemin: Path | None = None) -> None:
-    chemin = chemin or CHEMIN_REGISTRE_DEFAUT
+    chemin = chemin or _chemin_registre_actif()
     registre = _charger_brut(chemin)
     registre.pop(hash_fichier, None)
     _sauvegarder_brut(registre, chemin)
@@ -131,16 +144,26 @@ def initialiser_entree(
     collection: str = "support",
     module: str | None = None,
     chemin: Path | None = None,
+    session_id: str | None = None,
 ) -> EntreeRegistre:
     """Crée (ou retourne) l'entrée pour ce fichier, statut 'en_attente' si
     nouvelle, INCHANGÉE si elle existe déjà (reprise après interruption)."""
     existante = obtenir_entree(hash_fichier, chemin)
     if existante is not None:
+        if session_id and existante.session_id and str(session_id) != str(existante.session_id):
+            raise ValueError("Ce fichier est déjà rattaché à une autre session. Téléversez un support propre à cette session.")
+        if session_id and not existante.session_id:
+            if existante.formation_code and formation_code and existante.formation_code != formation_code:
+                raise ValueError("Ce fichier est déjà associé à un autre code formation.")
+            existante.session_id = str(session_id)
+            existante.module = module or existante.module
+            enregistrer_entree(existante, chemin)
         return existante
 
     entree = EntreeRegistre(
         hash=hash_fichier, fichier=fichier, formation_code=formation_code,
-        collection=collection, module=module, statut="en_attente",
+        collection=collection, module=module, session_id=str(session_id) if session_id else None,
+        statut="en_attente",
         date_debut=datetime.now().isoformat(),
     )
     enregistrer_entree(entree, chemin)
@@ -216,6 +239,10 @@ def entrees_pour_formation(formation_code: str, chemin: Path | None = None) -> l
         e for e in charger_registre(chemin).values()
         if e.formation_code == formation_code
     ]
+
+
+def entrees_pour_session(session_id: str, chemin: Path | None = None) -> list[EntreeRegistre]:
+    return [e for e in charger_registre(chemin).values() if str(e.session_id or "") == str(session_id)]
 
 
 def entrees_sans_resume(chemin: Path | None = None) -> list[EntreeRegistre]:

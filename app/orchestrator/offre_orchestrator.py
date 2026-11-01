@@ -221,6 +221,7 @@ class OffreOrchestrator(BaseOrchestrator):
         self,
         tdr_data: dict[str, Any],
         session_info: dict[str, Any],
+        feedback: str | None = None,
     ) -> dict[str, Any]:
         """Génère uniquement l'offre technique."""
         start = self._log_start(
@@ -235,6 +236,7 @@ class OffreOrchestrator(BaseOrchestrator):
             result = await self.offre_technique.generate(
                 tdr_data=tdr_data,
                 session_info=session_info,
+                feedback=feedback,
             )
             self._log_end(
                 "generate_technique", start,

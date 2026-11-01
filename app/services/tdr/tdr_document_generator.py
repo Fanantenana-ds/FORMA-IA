@@ -25,6 +25,10 @@ from pathlib import Path
 from typing import Any
 
 from docxtpl import DocxTemplate
+from docx import Document as WordDocument
+from app.services.document_design import apply_docx_branding, draw_pdf_branding, style_docx_table, TEAL, NAVY, MUTED
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.shared import Pt, RGBColor
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +38,14 @@ logger = logging.getLogger(__name__)
 BASE_DIR = Path(__file__).resolve().parents[2]
 TEMPLATE_PATH = BASE_DIR / "templates" / "tdr" / "template_tdr_formation.docx"
 EXPORTS_DIR = BASE_DIR / "exports" / "tdr"
+
+
+def get_tenant_exports_dir() -> Path:
+    """Store generated TDRs in the active company's private export folder."""
+    from app.core.tenant_context import get_tenant_id
+
+    tenant_id = get_tenant_id()
+    return EXPORTS_DIR if tenant_id is None else EXPORTS_DIR / "tenants" / str(tenant_id)
 
 # ============================================================
 # CONFIG ALTIORA
@@ -110,7 +122,8 @@ class TDRDocumentGenerator:
     """Génère les documents Word + PDF à partir du template ALTIORA."""
 
     def __init__(self):
-        EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
+        self.exports_dir = get_tenant_exports_dir()
+        self.exports_dir.mkdir(parents=True, exist_ok=True)
 
         # Détecter les outils disponibles
         self.has_libreoffice = _libreoffice_available()
@@ -168,8 +181,8 @@ class TDRDocumentGenerator:
         docx_filename = f"{base_filename}.docx"
         pdf_filename = f"{base_filename}.pdf"
 
-        docx_path = EXPORTS_DIR / docx_filename
-        pdf_path = EXPORTS_DIR / pdf_filename
+        docx_path = self.exports_dir / docx_filename
+        pdf_path = self.exports_dir / pdf_filename
 
         # ============================================================
         # 4. GÉNÉRATION WORD
@@ -178,6 +191,10 @@ class TDRDocumentGenerator:
             doc = DocxTemplate(str(TEMPLATE_PATH))
             doc.render(context)
             doc.save(str(docx_path))
+            styled_doc = WordDocument(str(docx_path))
+            self._style_generated_tdr(styled_doc)
+            apply_docx_branding(styled_doc, "Termes de référence")
+            styled_doc.save(str(docx_path))
             logger.info("✅ Word généré : %s", docx_filename)
         except Exception as exc:
             logger.exception("❌ Erreur génération Word : %s", exc)
@@ -227,6 +244,61 @@ class TDRDocumentGenerator:
             pdf_filename = None
 
         return docx_filename, pdf_filename
+
+    @staticmethod
+    def _style_generated_tdr(doc: WordDocument) -> None:
+        """Polish the supplied TDR template after merge while preserving its content."""
+        from docx.enum.text import WD_ALIGN_PARAGRAPH
+        from docx.shared import Pt, RGBColor
+
+        for paragraph in list(doc.paragraphs):
+            text = paragraph.text.strip()
+            if not text:
+                continue
+            if "Ctrl+A" in text or "mettre à jour" in text.lower():
+                paragraph._element.getparent().remove(paragraph._element)
+                continue
+            if text == "Sommaire":
+                paragraph._element.getparent().remove(paragraph._element)
+                continue
+            if text == "ALTIORA SOLUTIONS":
+                paragraph.text = "ALTIORA PREST"
+                paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                for run in paragraph.runs:
+                    run.bold = True
+                    run.font.size = Pt(17)
+                    run.font.color.rgb = RGBColor.from_string(NAVY)
+            elif "Startup Tech" in text:
+                paragraph.text = "Cabinet de conseil et de formation · Antananarivo, Madagascar"
+                paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                for run in paragraph.runs:
+                    run.font.size = Pt(9)
+                    run.font.color.rgb = RGBColor.from_string(MUTED)
+            elif text == "TERMES DE RÉFÉRENCE":
+                paragraph.style = doc.styles["Title"]
+                paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            elif text == "Formation professionnelle":
+                paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                for run in paragraph.runs:
+                    run.bold = True
+                    run.font.size = Pt(11)
+                    run.font.color.rgb = RGBColor.from_string(TEAL)
+            elif re.match(r"^\d+\.\s", text):
+                paragraph.style = doc.styles["Heading 1"]
+            elif re.match(r"^\d+\.\d+\s", text):
+                paragraph.style = doc.styles["Heading 2"]
+            elif text.startswith("Module ") or text.startswith("TOTAL GÉNÉRAL"):
+                paragraph.style = doc.styles["Heading 2"]
+
+        for table in doc.tables:
+            for row in table.rows:
+                for cell in row.cells:
+                    if "ALTIORA SOLUTIONS" in cell.text:
+                        cell.text = cell.text.replace("ALTIORA SOLUTIONS", "ALTIORA PREST")
+        if doc.tables:
+            style_docx_table(doc.tables[0], header_row=False, key_value=True)
+        for table in doc.tables[1:]:
+            style_docx_table(table, header_row=True)
 
     # ============================================================
     # CONVERSION — LibreOffice
@@ -411,8 +483,8 @@ class TDRDocumentGenerator:
         doc = SimpleDocTemplate(
             str(pdf_path),
             pagesize=A4,
-            topMargin=2 * cm,
-            bottomMargin=2 * cm,
+            topMargin=2.5 * cm,
+            bottomMargin=1.8 * cm,
             leftMargin=2 * cm,
             rightMargin=2 * cm,
         )
@@ -550,7 +622,8 @@ class TDRDocumentGenerator:
                 story.append(Paragraph(str(content) or "Non précisé", body))
             story.append(Spacer(1, 0.5 * cm))
 
-        doc.build(story)
+        doc.build(story, onFirstPage=lambda canvas, layout: draw_pdf_branding(canvas, layout, "Termes de référence"),
+                  onLaterPages=lambda canvas, layout: draw_pdf_branding(canvas, layout, "Termes de référence"))
 
     # ============================================================
     # FORMAT HELPERS

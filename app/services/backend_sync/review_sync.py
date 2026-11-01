@@ -35,15 +35,25 @@ REGISTRY_PATH = (
 )
 
 
+def _active_registry_path() -> Path:
+    from app.core.tenant_context import get_tenant_id
+
+    tenant_id = get_tenant_id()
+    if tenant_id is None:
+        return REGISTRY_PATH
+    return REGISTRY_PATH.parent / "tenants" / str(tenant_id) / REGISTRY_PATH.name
+
+
 # ============================================================
 # REGISTRE (fichier JSON)
 # ============================================================
 
-def _load_registry() -> dict[str, Any]:
-    if not REGISTRY_PATH.exists():
+def _load_registry(path: Path | None = None) -> dict[str, Any]:
+    path = path or _active_registry_path()
+    if not path.exists():
         return {}
     try:
-        with open(REGISTRY_PATH, "r", encoding="utf-8") as f:
+        with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
         return data if isinstance(data, dict) else {}
     except (json.JSONDecodeError, OSError) as exc:
@@ -51,12 +61,13 @@ def _load_registry() -> dict[str, Any]:
         return {}
 
 
-def _save_registry(registry: dict[str, Any]) -> None:
-    REGISTRY_PATH.parent.mkdir(parents=True, exist_ok=True)
-    tmp = REGISTRY_PATH.with_suffix(".tmp")
+def _save_registry(registry: dict[str, Any], path: Path | None = None) -> None:
+    path = path or _active_registry_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(registry, f, indent=2, ensure_ascii=False)
-    os.replace(tmp, REGISTRY_PATH)  # écriture atomique
+    os.replace(tmp, path)  # écriture atomique
 
 
 def get_synced(review_id: str) -> dict[str, Any] | None:

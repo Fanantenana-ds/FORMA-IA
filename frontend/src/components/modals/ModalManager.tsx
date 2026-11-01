@@ -1,50 +1,42 @@
 import React from 'react';
-import { ApiStatusModal } from '../ApiStatusModal';
 import { NewOpportunityModal } from './NewOpportunityModal';
 import { NewSessionModal } from './NewSessionModal';
 import { NewInvoiceModal } from './NewInvoiceModal';
-import { ApiConfig, OpportuniteCRM, Session, DevisFacture } from '../../types';
+import { Formateur, OpportuniteCRM, Session, VeilleMarche, DevisFacture } from '../../types';
 
 interface ModalManagerProps {
-  apiConfig: ApiConfig;
-  isApiModalOpen: boolean;
-  onCloseApiModal: () => void;
-
   isNewOppModalOpen: boolean;
   onCloseNewOppModal: () => void;
-  onCreateOpportunity: (opp: Omit<OpportuniteCRM, 'id' | 'dateCreation'>) => void;
+  onCreateOpportunity: (opp: Partial<OpportuniteCRM>) => Promise<void>;
 
   isNewSessionModalOpen: boolean;
   onCloseNewSessionModal: () => void;
-  onCreateSession: (session: Omit<Session, 'id'>) => void;
+  onCreateSession: (session: Partial<Session>) => Promise<void>;
+  acceptedMarkets: VeilleMarche[];
+  formateurs: Formateur[];
 
   isNewInvoiceModalOpen: boolean;
   onCloseNewInvoiceModal: () => void;
-  onCreateInvoice: (invoice: Omit<DevisFacture, 'id' | 'dateEmission'>) => void;
+  onCreateInvoice: (invoice: Partial<DevisFacture>) => Promise<void>;
+  sessions: Session[];
 }
 
 export const ModalManager: React.FC<ModalManagerProps> = ({
-  apiConfig,
-  isApiModalOpen,
-  onCloseApiModal,
   isNewOppModalOpen,
   onCloseNewOppModal,
   onCreateOpportunity,
   isNewSessionModalOpen,
   onCloseNewSessionModal,
   onCreateSession,
+  acceptedMarkets,
+  formateurs,
   isNewInvoiceModalOpen,
   onCloseNewInvoiceModal,
-  onCreateInvoice
+  onCreateInvoice,
+  sessions
 }) => {
   return (
     <>
-      <ApiStatusModal
-        isOpen={isApiModalOpen}
-        onClose={onCloseApiModal}
-        apiConfig={apiConfig}
-      />
-
       <NewOpportunityModal
         isOpen={isNewOppModalOpen}
         onClose={onCloseNewOppModal}
@@ -55,12 +47,15 @@ export const ModalManager: React.FC<ModalManagerProps> = ({
         isOpen={isNewSessionModalOpen}
         onClose={onCloseNewSessionModal}
         onSubmit={onCreateSession}
+        acceptedMarkets={acceptedMarkets}
+        formateurs={formateurs}
       />
 
       <NewInvoiceModal
         isOpen={isNewInvoiceModalOpen}
         onClose={onCloseNewInvoiceModal}
         onSubmit={onCreateInvoice}
+        sessions={sessions}
       />
     </>
   );

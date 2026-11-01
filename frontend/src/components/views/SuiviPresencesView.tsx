@@ -7,10 +7,6 @@ import {
   Search,
   Users,
   ArrowLeft,
-  UserPlus,
-  X,
-  Plus,
-  Check,
   Building2,
   Calendar,
   MapPin,
@@ -19,15 +15,18 @@ import {
   UserX
 } from 'lucide-react';
 import { PresenceRecord, Session } from '../../types';
+import { apiService } from '../../services/api';
 
 interface SuiviPresencesViewProps {
   presences: PresenceRecord[];
   sessions: Session[];
+  readOnly?: boolean;
 }
 
 export const SuiviPresencesView: React.FC<SuiviPresencesViewProps> = ({
   presences: initialPresencesProps,
-  sessions
+  sessions,
+  readOnly = false
 }) => {
   // Navigation State: null = list of sessions, session ID = detail view
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
@@ -38,14 +37,23 @@ export const SuiviPresencesView: React.FC<SuiviPresencesViewProps> = ({
   // Search & Filter state
   const [sessionSearch, setSessionSearch] = useState('');
   const [participantSearch, setParticipantSearch] = useState('');
-  const [sessionFilter, setSessionFilter] = useState<'all' | 'en_cours'>('en_cours');
+  const [sessionFilter, setSessionFilter] = useState<'all' | 'en_cours'>(readOnly ? 'all' : 'en_cours');
 
-  // Modal State for adding retained participant
-  const [isAddParticipantModalOpen, setIsAddParticipantModalOpen] = useState(false);
-  const [newNom, setNewNom] = useState('');
-  const [newEntreprise, setNewEntreprise] = useState('');
-  const [newStatut, setNewStatut] = useState<'Présent' | 'Absent' | 'Retard'>('Présent');
-  const [newHeure, setNewHeure] = useState('');
+  const [seances, setSeances] = useState<any[]>([]);
+  const [selectedSeanceId, setSelectedSeanceId] = useState('');
+  const [sessionPeople, setSessionPeople] = useState<any[]>([]);
+  const [apiError, setApiError] = useState('');
+  const [presenceBusy, setPresenceBusy] = useState(false);
+
+  const createSessionSeance = async () => {
+    if (!selectedSessionId) return;
+    setPresenceBusy(true); setApiError('');
+    try {
+      const seance: any = await apiService.createSeance(selectedSessionId, { date: new Date().toISOString().slice(0, 10) });
+      setSeances((previous) => [...previous, seance]); setSelectedSeanceId(seance.id);
+    } catch (err) { setApiError(err instanceof Error ? err.message : 'La création de la séance a échoué.'); }
+    finally { setPresenceBusy(false); }
+  };
 
   // Sync if props change
   useEffect(() => {
@@ -54,6 +62,42 @@ export const SuiviPresencesView: React.FC<SuiviPresencesViewProps> = ({
 
   // Selected session object
   const activeSession = sessions.find((s) => s.id === selectedSessionId);
+
+  useEffect(() => {
+    if (!selectedSessionId) return;
+    let cancelled = false;
+    setApiError(''); setPresenceBusy(true);
+    Promise.all([apiService.getSeances(selectedSessionId), apiService.getParticipants(selectedSessionId)])
+      .then(([sessionSeances, participants]) => {
+        if (cancelled) return;
+        setSeances(sessionSeances); setSessionPeople(participants);
+        setSelectedSeanceId((previous) => previous && sessionSeances.some((s: any) => s.id === previous) ? previous : sessionSeances[0]?.id ?? '');
+      })
+      .catch((err) => { if (!cancelled) setApiError(err instanceof Error ? err.message : 'Impossible de charger les séances et les participants.'); })
+      .finally(() => { if (!cancelled) setPresenceBusy(false); });
+    return () => { cancelled = true; };
+  }, [selectedSessionId]);
+
+  useEffect(() => {
+    if (!selectedSeanceId) { setPresencesList([]); return; }
+    let cancelled = false;
+    setPresenceBusy(true); setApiError('');
+    apiService.getPresenceForSession(selectedSeanceId).then((records) => {
+      if (cancelled) return;
+      const byParticipant = new Map(records.map((r: any) => [r.participant_id, r]));
+      const sessionId = selectedSessionId;
+      const sessionTitle = activeSession?.intitule ?? '';
+      setPresencesList(sessionPeople.map((person: any) => {
+        const presence: any = byParticipant.get(person.id);
+        return { id: presence?.id ?? person.id, participantId: person.id, sessionId, sessionTitle, nom: person.nom ?? '', prenom: person.prenom ?? '', apprenantNom: [person.prenom, person.nom].filter(Boolean).join(' '),
+          entreprise: person.entreprise ?? '', date: new Date().toLocaleDateString('fr-FR'),
+          statut: presence?.statut === 'PRESENT' ? 'Présent' : presence?.statut === 'EXCUSE' ? 'Excusé' : 'Absent',
+          heureEmargement: undefined };
+      }));
+    }).catch((err) => { if (!cancelled) setApiError(err instanceof Error ? err.message : 'Impossible de charger les présences.'); })
+      .finally(() => { if (!cancelled) setPresenceBusy(false); });
+    return () => { cancelled = true; };
+  }, [selectedSeanceId, sessionPeople, activeSession?.intitule]);
 
   // Current time helper
   const getCurrentTime = () => {
@@ -64,13 +108,26 @@ export const SuiviPresencesView: React.FC<SuiviPresencesViewProps> = ({
   };
 
   // Handler to update presence status of a participant
-  const handleUpdateStatus = (participantId: string, newStatus: 'Présent' | 'Absent' | 'Retard') => {
+  const handleUpdateStatus = async (presenceId: string, newStatus: 'Présent' | 'Absent' | 'Excusé') => {
+    const item = presencesList.find((p) => p.id === presenceId);
+    const backendStatus = newStatus === 'Présent' ? 'PRESENT' : newStatus === 'Excusé' ? 'EXCUSE' : 'ABSENT';
+    if (!item || !selectedSeanceId) return;
+    setApiError(''); setPresenceBusy(true);
+    let savedPresenceId = item.id;
+    try {
+      if (item.participantId && item.id === item.participantId) {
+        const presence: any = await apiService.createPresence(selectedSeanceId, item.participantId, backendStatus);
+        savedPresenceId = presence.id ?? item.id;
+      } else await apiService.updatePresence(item.id, backendStatus);
+    } catch (err) { setApiError(err instanceof Error ? err.message : 'La mise à jour de la présence a échoué.'); setPresenceBusy(false); return; }
+    setPresenceBusy(false);
     const currentTime = getCurrentTime();
     setPresencesList((prev) =>
       prev.map((p) => {
-        if (p.id === participantId) {
+        if (p.id === presenceId) {
           return {
             ...p,
+            id: savedPresenceId,
             statut: newStatus,
             heureEmargement: newStatus === 'Absent' ? undefined : p.heureEmargement || currentTime
           };
@@ -78,40 +135,6 @@ export const SuiviPresencesView: React.FC<SuiviPresencesViewProps> = ({
         return p;
       })
     );
-  };
-
-  // Handler to submit a new retained participant
-  const handleAddParticipantSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newNom || !newEntreprise || !activeSession) return;
-
-    const timeToUse = newHeure || getCurrentTime();
-
-    const newRecord: PresenceRecord = {
-      id: `pres-${Date.now()}`,
-      sessionId: activeSession.id,
-      sessionTitle: activeSession.intitule,
-      apprenantNom: newNom,
-      entreprise: newEntreprise,
-      date: new Date().toLocaleDateString('fr-FR'),
-      statut: newStatut,
-      heureEmargement: newStatut === 'Absent' ? undefined : timeToUse
-    };
-
-    setPresencesList((prev) => [newRecord, ...prev]);
-
-    // Reset form & close
-    setNewNom('');
-    setNewEntreprise('');
-    setNewStatut('Présent');
-    setNewHeure('');
-    setIsAddParticipantModalOpen(false);
-  };
-
-  // Open modal handler
-  const handleOpenAddModal = () => {
-    setNewHeure(getCurrentTime());
-    setIsAddParticipantModalOpen(true);
   };
 
   // Filtered sessions for View 1
@@ -137,7 +160,7 @@ export const SuiviPresencesView: React.FC<SuiviPresencesViewProps> = ({
 
   // Stats for active selected session
   const presentsCount = sessionParticipants.filter((p) => p.statut === 'Présent').length;
-  const retardsCount = sessionParticipants.filter((p) => p.statut === 'Retard').length;
+  const retardsCount = sessionParticipants.filter((p) => p.statut === 'Excusé').length;
   const absentsCount = sessionParticipants.filter((p) => p.statut === 'Absent').length;
   const totalParticipants = sessionParticipants.length;
 
@@ -163,7 +186,7 @@ export const SuiviPresencesView: React.FC<SuiviPresencesViewProps> = ({
               </p>
             </div>
 
-            <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-xl text-xs font-bold shrink-0">
+            {!readOnly && <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-xl text-xs font-bold shrink-0">
               <button
                 onClick={() => setSessionFilter('en_cours')}
                 className={`px-3 py-2 rounded-lg transition-all cursor-pointer ${
@@ -184,7 +207,7 @@ export const SuiviPresencesView: React.FC<SuiviPresencesViewProps> = ({
               >
                 Toutes ({sessions.length})
               </button>
-            </div>
+            </div>}
           </div>
 
           {/* Search Bar */}
@@ -264,7 +287,7 @@ export const SuiviPresencesView: React.FC<SuiviPresencesViewProps> = ({
                       <div>
                         <div className="text-[10px] uppercase font-bold text-slate-400">Participants inscrits</div>
                         <div className="font-extrabold text-[#11162A] text-sm mt-0.5">
-                          {sessionPresences.length || s.participantsInscrits} / {s.capacityMax}
+                          {s.capacityMax ? `${sessionPresences.length || s.participantsInscrits} / ${s.capacityMax}` : `${sessionPresences.length || s.participantsInscrits} inscrits`}
                         </div>
                       </div>
                       <div className="text-right">
@@ -334,15 +357,18 @@ export const SuiviPresencesView: React.FC<SuiviPresencesViewProps> = ({
                 </p>
               </div>
 
-              {/* Add Retained Participant Modal Launcher Button */}
-              <button
-                onClick={handleOpenAddModal}
-                className="px-4 py-2.5 bg-[#1B8F6E] hover:bg-[#16785c] text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-sm transition-colors cursor-pointer shrink-0"
-              >
-                <UserPlus size={16} />
-                <span>+ Ajouter un participant retenu</span>
-              </button>
             </div>
+
+            <div className="mt-5 flex flex-wrap items-center gap-2">
+              <label htmlFor="presence-seance" className="text-xs font-bold text-slate-600">Séance :</label>
+              <select id="presence-seance" value={selectedSeanceId} onChange={(e) => setSelectedSeanceId(e.target.value)} className="px-3 py-2 border border-slate-300 rounded-lg bg-white text-xs">
+                <option value="">Choisir une séance</option>
+                {seances.map((seance: any) => <option key={seance.id} value={seance.id}>{new Date(seance.date).toLocaleDateString('fr-FR')}{seance.theme ? ` · ${seance.theme}` : ''}</option>)}
+              </select>
+              {!readOnly && !seances.length && <button type="button" disabled={presenceBusy} onClick={createSessionSeance} className="px-3 py-2 bg-[#1B8F6E] text-white rounded-lg text-xs font-bold">Créer une séance aujourd'hui</button>}
+              {presenceBusy && <span className="text-xs text-slate-500">Enregistrement…</span>}
+            </div>
+            {apiError && <div className="mt-3 p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs font-semibold">{apiError}</div>}
 
             {/* Attendance Counters Bar */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-6 pt-5 border-t border-slate-100">
@@ -357,7 +383,7 @@ export const SuiviPresencesView: React.FC<SuiviPresencesViewProps> = ({
               </div>
 
               <div className="p-3 bg-amber-50 rounded-xl border border-amber-200/80">
-                <div className="text-[10px] uppercase font-bold text-amber-700">Retards</div>
+                <div className="text-[10px] uppercase font-bold text-amber-700">Excusés</div>
                 <div className="text-xl font-extrabold text-amber-800 mt-0.5">{retardsCount}</div>
               </div>
 
@@ -425,6 +451,7 @@ export const SuiviPresencesView: React.FC<SuiviPresencesViewProps> = ({
 
                   {/* 3 STATUS ACTION BUTTONS: PRÉSENT | ABSENT | RETARD */}
                   <div className="col-span-4 flex items-center justify-center gap-1.5">
+                    {readOnly ? <span className={"rounded-full px-3 py-1.5 text-xs font-bold " + (p.statut === 'Présent' ? 'bg-emerald-50 text-emerald-700' : p.statut === 'Absent' ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-700')}>{p.statut}</span> : <>
                     {/* BUTTON 1: PRÉSENT */}
                     <button
                       onClick={() => handleUpdateStatus(p.id, 'Présent')}
@@ -453,16 +480,17 @@ export const SuiviPresencesView: React.FC<SuiviPresencesViewProps> = ({
 
                     {/* BUTTON 3: RETARD */}
                     <button
-                      onClick={() => handleUpdateStatus(p.id, 'Retard')}
+                      onClick={() => handleUpdateStatus(p.id, 'Excusé')}
                       className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 transition-all cursor-pointer ${
-                        p.statut === 'Retard'
+                        p.statut === 'Excusé'
                           ? 'bg-amber-500 text-white shadow-xs ring-2 ring-amber-500/30 font-extrabold'
                           : 'bg-slate-100 text-slate-600 hover:bg-amber-100 hover:text-amber-800'
                       }`}
                     >
                       <Clock size={14} />
-                      <span>Retard</span>
+                      <span>Excusé</span>
                     </button>
+                    </>}
                   </div>
                 </div>
               ))}
@@ -471,9 +499,7 @@ export const SuiviPresencesView: React.FC<SuiviPresencesViewProps> = ({
                 <div className="p-8 text-center text-slate-500">
                   <Users size={28} className="mx-auto text-slate-300 mb-2" />
                   <p className="font-bold text-xs text-slate-700">Aucun participant inscrit pour le moment.</p>
-                  <p className="text-[11px] text-slate-400 mt-1">
-                    Cliquez sur "+ Ajouter un participant retenu" pour l'inscrire à cette session.
-                  </p>
+                  <p className="text-[11px] text-slate-400 mt-1">Les inscriptions se gèrent depuis Sessions &amp; Groupes.</p>
                 </div>
               )}
             </div>
@@ -481,106 +507,6 @@ export const SuiviPresencesView: React.FC<SuiviPresencesViewProps> = ({
         </div>
       )}
 
-      {/* ========================================== */}
-      {/* MODAL : AJOUT DE PARTICIPANT RETENU       */}
-      {/* ========================================== */}
-      {isAddParticipantModalOpen && activeSession && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 relative">
-            <div className="flex items-center justify-between pb-4 border-b border-slate-100">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-[#1B8F6E]/10 text-[#1B8F6E] flex items-center justify-center font-bold">
-                  <UserPlus size={18} />
-                </div>
-                <div>
-                  <h3 className="text-base font-extrabold text-[#11162A]">Ajouter un Participant Retenu</h3>
-                  <p className="text-[11px] text-slate-500">Session : {activeSession.code}</p>
-                </div>
-              </div>
-
-              <button
-                onClick={() => setIsAddParticipantModalOpen(false)}
-                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100"
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            <form onSubmit={handleAddParticipantSubmit} className="mt-4 space-y-4 text-xs">
-              <div>
-                <label className="block font-bold text-slate-700 uppercase mb-1">
-                  Nom & Prénom de l'apprenant *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={newNom}
-                  onChange={(e) => setNewNom(e.target.value)}
-                  placeholder="ex: Jean-Baptiste Rabe"
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-800 focus:ring-2 focus:ring-[#1B8F6E] focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block font-bold text-slate-700 uppercase mb-1">
-                  Entreprise / Organisme Client *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={newEntreprise}
-                  onChange={(e) => setNewEntreprise(e.target.value)}
-                  placeholder="ex: TELMA Madagascar / Orange"
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-800 focus:ring-2 focus:ring-[#1B8F6E] focus:outline-none"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-bold text-slate-700 uppercase mb-1">Statut Initial</label>
-                  <select
-                    value={newStatut}
-                    onChange={(e) => setNewStatut(e.target.value as 'Présent' | 'Absent' | 'Retard')}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-800 font-bold focus:ring-2 focus:ring-[#1B8F6E]"
-                  >
-                    <option value="Présent">Présent</option>
-                    <option value="Retard">Retard</option>
-                    <option value="Absent">Absent</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block font-bold text-slate-700 uppercase mb-1">Heure d'émargement</label>
-                  <input
-                    type="text"
-                    value={newHeure}
-                    onChange={(e) => setNewHeure(e.target.value)}
-                    placeholder="HH:MM"
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-800 font-mono focus:ring-2 focus:ring-[#1B8F6E]"
-                  />
-                </div>
-              </div>
-
-              <div className="pt-2 flex items-center justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setIsAddParticipantModalOpen(false)}
-                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold transition-colors cursor-pointer"
-                >
-                  Annuler
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-[#1B8F6E] hover:bg-[#16785c] text-white rounded-xl font-bold shadow-xs transition-colors cursor-pointer flex items-center gap-1.5"
-                >
-                  <Check size={16} />
-                  <span>Valider & Inscrire</span>
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

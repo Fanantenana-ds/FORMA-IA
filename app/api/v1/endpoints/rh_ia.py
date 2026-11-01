@@ -25,6 +25,9 @@ import time
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi.responses import Response
+from docx import Document as WordDocument
+from app.services.document_design import apply_docx_branding, add_metadata_table
 from pydantic import BaseModel
 
 from app.orchestrator.rh_orchestrator import RhOrchestrator, get_rh_orchestrator
@@ -742,6 +745,70 @@ async def generer_contrat_formateur(
         return RouteResponse(success=False, message="")
 
 
+@router.get(
+    "/contrat-formateur/download/{review_id}",
+    summary="[M4-A4] Télécharger un contrat approuvé",
+    response_class=Response,
+)
+async def telecharger_contrat_formateur(review_id: str):
+    """Exporte le contrat uniquement après approbation HITL."""
+    from app.services.hitl import get_review
+
+    review = get_review(review_id)
+    if not review:
+        raise HTTPException(status_code=404, detail="Contrat introuvable.")
+    if review.get("agent_id") != "agent_m4_contrat":
+        raise HTTPException(status_code=404, detail="Cette validation ne correspond pas à un contrat formateur.")
+    if review.get("status") != "approved":
+        raise HTTPException(status_code=409, detail="Le contrat doit être approuvé dans l’Espace IA avant son téléchargement.")
+    data = review.get("data") or {}
+    body = data.get("texte_complet") or data.get("contenu") or data.get("contrat")
+    if not body:
+        raise HTTPException(status_code=422, detail="Le contenu du contrat est absent de cette validation.")
+    doc = WordDocument()
+    doc.add_heading("Contrat de prestation de services", level=0)
+    doc.add_paragraph("Entre les soussignés :")
+    formateur = data.get("formateur") or {}
+    session = data.get("session") or {}
+    metadata = []
+    for label, value in (
+        ("Formateur", " ".join(filter(None, [formateur.get("prenom"), formateur.get("nom")]))),
+        ("Formation / mission", session.get("titre") or session.get("intitule") or session.get("formation")),
+        ("Lieu", session.get("lieu")),
+        ("Période", session.get("dates") or session.get("date_debut")),
+        ("Référence", review_id),
+    ):
+        if value:
+            metadata.append((label, value))
+    if metadata:
+        add_metadata_table(doc, metadata)
+    doc.add_heading("Conditions de la prestation", level=1)
+    for line in str(body).splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        if line.upper().startswith(("ARTICLE ", "CHAPITRE ")):
+            doc.add_heading(line, level=2)
+        else:
+            doc.add_paragraph(line)
+    doc.add_paragraph("Fait à Antananarivo, le __________________")
+    signatures = doc.add_table(rows=1, cols=2)
+    signatures.cell(0, 0).text = "Pour ALTIORA PREST\n\nNom et signature :"
+    signatures.cell(0, 1).text = "Le formateur\n\nNom et signature :"
+    from app.services.document_design import style_docx_table
+    style_docx_table(signatures, header_row=False)
+    apply_docx_branding(doc, "Contrat de prestation formateur", format_tables=True)
+    from io import BytesIO
+    buffer = BytesIO()
+    doc.save(buffer)
+    safe_name = "contrat_formateur_" + "".join(c for c in review_id if c.isalnum() or c in "-_") + ".docx"
+    return Response(
+        content=buffer.getvalue(),
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": f'attachment; filename="{safe_name}"'},
+    )
+
+
 # =============================================================================
 # ROUTE 5 — POST /formateur/evaluer  (A5)
 # =============================================================================
@@ -769,6 +836,13 @@ async def evaluer_formateur(
             session=payload.session,
             donnees_session=payload.donnees_session.model_dump(),
         )
+        if payload.formateur_id and result.get("_review_id"):
+            from app.services.hitl import patch_review
+            patch_review(result["_review_id"], {
+                "formateur_id": str(payload.formateur_id),
+                "formateur_nom": payload.formateur,
+                "session_title": payload.session,
+            })
         elapsed = round(time.perf_counter() - start, 2)
         score = result.get("score_global", "N/A")
         recommandation = result.get("recommandation", "N/A")

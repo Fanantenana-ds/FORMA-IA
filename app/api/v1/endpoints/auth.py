@@ -22,8 +22,9 @@ router = APIRouter(
     status_code=status.HTTP_201_CREATED
 )
 def register(user_data: UserCreate, db: Session = Depends(get_db)):
+    if user_data.role != RoleEnum.DIRECTION:
+        raise HTTPException(status_code=403, detail="Les comptes assistants et comptables sont créés par la Direction depuis Gestion des utilisateurs.")
     service = AuthService(db)
-
     return service.register(user_data)
 
 @router.post(
@@ -100,7 +101,22 @@ def lister_utilisateurs(
     service: AuthService = Depends(get_auth_service),
     current_user=Depends(require_role("DIRECTION")),
 ):
-    return service.lister_utilisateurs(role=role, actif=actif)
+    owner_id = current_user.owner_id or current_user.id
+    return service.lister_utilisateurs(role=role, actif=actif, owner_id=owner_id)
+
+
+@router.post(
+    "/users",
+    response_model=UserAdminResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Créer un compte de l'entreprise",
+)
+def creer_utilisateur(
+    user_data: UserCreate,
+    service: AuthService = Depends(get_auth_service),
+    current_user=Depends(require_role("DIRECTION")),
+):
+    return service.create_managed_user(user_data, owner_id=current_user.owner_id or current_user.id)
 
 
 @router.get(
@@ -118,7 +134,7 @@ def get_utilisateur(
     service: AuthService = Depends(get_auth_service),
     current_user=Depends(require_role("DIRECTION")),
 ):
-    return service.get_utilisateur(user_id)
+    return service.get_utilisateur(user_id, owner_id=current_user.owner_id or current_user.id)
 
 
 @router.patch(
@@ -144,7 +160,7 @@ def mettre_a_jour_utilisateur(
     service: AuthService = Depends(get_auth_service),
     current_user=Depends(require_role("DIRECTION")),
 ):
-    return service.mettre_a_jour_utilisateur(user_id, data)
+    return service.mettre_a_jour_utilisateur(user_id, data, owner_id=current_user.owner_id or current_user.id)
 
 
 @router.delete(
@@ -167,4 +183,4 @@ def supprimer_utilisateur(
     service: AuthService = Depends(get_auth_service),
     current_user=Depends(require_role("DIRECTION")),
 ):
-    service.supprimer_utilisateur(user_id, current_user_id=current_user.id)
+    service.supprimer_utilisateur(user_id, current_user_id=current_user.id, owner_id=current_user.owner_id or current_user.id)

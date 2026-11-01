@@ -6,6 +6,8 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session as DbSession
 
 from app.models.formation import Inscription, Participant, Presence, Seance, Session
+from app.models.rh import Formateur
+from app.models.opportunite import Opportunite
 from app.schemas.formation import (
     InscriptionCreate,
     InscriptionResponse,
@@ -24,8 +26,18 @@ class FormationService:
     def __init__(self, db: DbSession):
         self.db = db
 
+    def _verifier_formateur(self, formateur_id: UUID | None) -> None:
+        if formateur_id is not None and not self.db.query(Formateur.id).filter(Formateur.id == formateur_id).first():
+            raise HTTPException(status_code=404, detail="Formateur introuvable dans votre entreprise.")
+
+    def _verifier_opportunite(self, opportunite_id: UUID | None) -> None:
+        if opportunite_id is not None and not self.db.query(Opportunite.id).filter(Opportunite.id == opportunite_id).first():
+            raise HTTPException(status_code=404, detail="Opportunité introuvable dans votre entreprise.")
+
     def creer_session(self, data: SessionCreate) -> Session:
         valeurs = data.model_dump()
+        self._verifier_formateur(valeurs.get("formateur_id"))
+        self._verifier_opportunite(valeurs.get("opportunite_id"))
         # Session.date_fin est NOT NULL en base alors que le schéma la
         # déclare optionnelle : sans valeur, l'insertion échouait (HTTP 500).
         # Défaut : même jour que date_debut (aucune durée n'est supposée).
@@ -45,6 +57,7 @@ class FormationService:
     def ajouter_seance(self, session_id: UUID, data: SeanceCreate) -> Seance:
         self.get_session(session_id)
         valeurs = data.model_dump()
+        self._verifier_formateur(valeurs.get("formateur_id"))
         # Seance.duree et Seance.theme sont NOT NULL en base alors que le
         # schéma les déclare optionnels : sans valeur, l'insertion échouait
         # (HTTP 500).
@@ -81,7 +94,12 @@ class FormationService:
     def mettre_a_jour_session(self, session_id: UUID, data: SessionUpdate) -> Session:
         """Mise à jour partielle d'une session (PATCH semantics)."""
         session = self.get_session(session_id)
-        for field, value in data.model_dump(exclude_none=True).items():
+        updates = data.model_dump(exclude_none=True)
+        if "formateur_id" in updates:
+            self._verifier_formateur(updates["formateur_id"])
+        if "opportunite_id" in updates:
+            self._verifier_opportunite(updates["opportunite_id"])
+        for field, value in updates.items():
             setattr(session, field, value)
         # Cohérence : date_fin ne peut pas être avant date_debut
         if session.date_fin and session.date_debut and session.date_fin < session.date_debut:
@@ -217,7 +235,10 @@ class FormationService:
     def mettre_a_jour_seance(self, seance_id: UUID, data: SeanceUpdate) -> Seance:
         """Mise à jour partielle d'une séance (PATCH semantics)."""
         seance = self.get_seance(seance_id)
-        for field, value in data.model_dump(exclude_none=True).items():
+        updates = data.model_dump(exclude_none=True)
+        if "formateur_id" in updates:
+            self._verifier_formateur(updates["formateur_id"])
+        for field, value in updates.items():
             setattr(seance, field, value)
         self.db.commit()
         self.db.refresh(seance)
@@ -250,7 +271,8 @@ class FormationService:
     def mettre_a_jour_presence(self, presence_id: UUID, data: PresenceUpdate) -> Presence:
         """Corrige le statut d'une présence (PATCH semantics)."""
         presence = self.get_presence(presence_id)
-        presence.statut = data.statut
+        for field, value in data.model_dump(exclude_none=True).items():
+            setattr(presence, field, value)
         self.db.commit()
         self.db.refresh(presence)
         return presence

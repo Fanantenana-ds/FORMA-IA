@@ -4,7 +4,6 @@
 # ============================================================
 
 import logging
-from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -23,16 +22,13 @@ from app.services.backend_sync.opportunity_fetcher import (
     fetch_opportunites_list,
     opportunity_to_brief,
 )
+from app.services.tdr.tdr_document_generator import get_tenant_exports_dir
 
 logger = logging.getLogger(__name__)
 from app.services.veille.access_service import verify_api_key
 
 router = APIRouter(dependencies=[Depends(verify_api_key)])
 orchestrator = TdrOrchestrator()
-
-BASE_DIR = Path(__file__).resolve().parents[3]
-EXPORTS_DIR = BASE_DIR / "exports" / "tdr"
-
 
 class SynchroniserTDRRequest(BaseModel):
     """Corps de la requête pour enregistrer un TDR APPROUVÉ dans le Backend."""
@@ -50,7 +46,38 @@ class SynchroniserTDRRequest(BaseModel):
 
 
 class ValidationTDRRequest(BaseModel):
-    reviewer_note: str = Field(..., min_length=3)
+    reviewer_note: str = Field(default="OK", min_length=2, max_length=1000)
+
+
+class RectifierTDRRequest(BaseModel):
+    review_id: str = Field(..., min_length=1, max_length=100)
+    feedback: str = Field(..., min_length=5, max_length=3000)
+    brief: TDRRequest
+
+
+@router.post("/ia/tdr/rectifier", tags=["M2 - TDR"], summary="Régénérer un TDR à partir des corrections du réviseur")
+async def rectifier_tdr(payload: RectifierTDRRequest):
+    from app.services.hitl import get_review, reject_review
+    ancien = get_review(payload.review_id)
+    if not ancien or ancien.get("agent_id") != "agent_m2_tdr":
+        raise HTTPException(404, "Validation TDR introuvable")
+    if ancien.get("status") != "pending_review":
+        raise HTTPException(409, "Cette version TDR n’est plus en attente de validation.")
+    brief = payload.brief.model_dump()
+    brief["feedback"] = payload.feedback.strip()
+    try:
+        result = await orchestrator.generate(brief)
+    except Exception as exc:
+        logger.exception("❌ Rectification TDR échouée : %s", exc)
+        raise HTTPException(500, "La génération de la version corrigée a échoué.") from exc
+    if not result.get("success") or not result.get("_review_id"):
+        raise HTTPException(500, result.get("error") or "Le TDR corrigé n’a pas été généré.")
+    reject_review(payload.review_id, f"Version remplacée par {result['_review_id']} — {payload.feedback.strip()}")
+    return {
+        "success": True, "data": result.get("data"), "files": result.get("files"),
+        "review_id": result.get("_review_id"), "review_status": "pending_review",
+        "replaces_review_id": payload.review_id,
+    }
 
 
 @router.post("/ia/tdr/reviews/{review_id}/approve", tags=["M2 - TDR"])
@@ -61,6 +88,17 @@ async def approuver_tdr(review_id: str, payload: ValidationTDRRequest):
     if not review or review.get("agent_id") != "agent_m2_tdr":
         raise HTTPException(404, "Validation TDR introuvable")
     return {"success": True, "review": approve_review(review_id, payload.reviewer_note)}
+
+
+@router.post("/ia/tdr/reviews/{review_id}/reject", tags=["M2 - TDR"])
+async def rejeter_tdr(review_id: str, payload: ValidationTDRRequest):
+    from app.services.hitl import get_review, reject_review
+    review = get_review(review_id)
+    if not review or review.get("agent_id") != "agent_m2_tdr":
+        raise HTTPException(404, "Validation TDR introuvable")
+    if review.get("status") != "pending_review":
+        raise HTTPException(409, "Cette validation TDR a déjà été traitée.")
+    return {"success": True, "review": reject_review(review_id, payload.reviewer_note)}
 
 
 # ============================================================
@@ -259,7 +297,7 @@ async def download_tdr(filename: str):
     if ".." in filename or "/" in filename or "\\" in filename:
         raise HTTPException(400, "Nom de fichier invalide")
 
-    file_path = EXPORTS_DIR / filename
+    file_path = get_tenant_exports_dir() / filename
     if not file_path.exists() or not file_path.is_file():
         raise HTTPException(404, f"Fichier non trouvé : {filename}")
 
@@ -292,11 +330,12 @@ async def download_tdr(filename: str):
 async def list_tdr():
     """Liste tous les TDR générés."""
     try:
-        if not EXPORTS_DIR.exists():
+        exports_dir = get_tenant_exports_dir()
+        if not exports_dir.exists():
             return {"success": True, "data": [], "total": 0}
 
         files = []
-        for f in EXPORTS_DIR.iterdir():
+        for f in exports_dir.iterdir():
             if f.is_file() and f.suffix in (".docx", ".pdf"):
                 files.append({
                     "name": f.name,

@@ -24,7 +24,7 @@ class AuthService:
             RevokedTokenRepository(db)
         )
 
-    def register(self, user_data: UserCreate):
+    def register(self, user_data: UserCreate, owner_id=None):
         existing_user = (
             self.user_repository
             .find_by_email(user_data.email)
@@ -45,7 +45,27 @@ class AuthService:
             password = hashed_password,
             role = user_data.role
         )
+        user.owner_id = owner_id or (None if user_data.role == RoleEnum.DIRECTION else None)
+        if user_data.role == RoleEnum.DIRECTION and user.owner_id is None:
+            self.user_repository.db.add(user)
+            self.user_repository.db.flush()
+            user.owner_id = user.id
 
+        return self.user_repository.save(user)
+
+    def create_managed_user(self, user_data: UserCreate, owner_id):
+        if user_data.role not in {RoleEnum.ASSISTANT, RoleEnum.COMPTABLE}:
+            raise HTTPException(status_code=422, detail="Le directeur peut créer un compte assistant ou comptable. Les comptes formateur sont créés à l’acceptation d’une candidature.")
+        existing = self.user_repository.find_by_email(user_data.email)
+        if existing:
+            raise HTTPException(status_code=400, detail="Cet email est déjà associé à un compte.")
+        user = User(
+            nom=user_data.nom,
+            email=user_data.email,
+            password=hash_password(user_data.password),
+            role=user_data.role,
+            owner_id=owner_id,
+        )
         return self.user_repository.save(user)
 
     def login(self, email: str, password: str):
@@ -127,25 +147,30 @@ class AuthService:
     # ADMIN â€” gestion des utilisateurs (DIRECTION uniquement)
     # -------------------------------------------------------------------------
 
-    def _get_user_or_404(self, user_id: UUID) -> User:
-        user = self.user_repository.find_by_id(user_id)
-        if not user:
-            raise HTTPException(status_code=404, detail="Utilisateur introuvable")
-        return user
-
     def lister_utilisateurs(
         self,
         role: RoleEnum | None = None,
         actif: bool | None = None,
+        owner_id=None,
     ) -> list[User]:
-        return self.user_repository.find_all(role=role, actif=actif)
+        return self.user_repository.find_all(role=role, actif=actif, owner_id=owner_id)
 
-    def get_utilisateur(self, user_id: UUID) -> User:
-        return self._get_user_or_404(user_id)
+    def _get_user_or_404(self, user_id: UUID, owner_id=None) -> User:
+        user = self.user_repository.find_by_id_for_owner(user_id, owner_id) if owner_id else self.user_repository.find_by_id(user_id)
+        if not user:
+            raise HTTPException(status_code=404, detail="Utilisateur introuvable")
+        return user
 
-    def mettre_a_jour_utilisateur(self, user_id: UUID, data: UserUpdate) -> User:
-        user = self._get_user_or_404(user_id)
+    def get_utilisateur(self, user_id: UUID, owner_id=None) -> User:
+        return self._get_user_or_404(user_id, owner_id)
+
+    def mettre_a_jour_utilisateur(self, user_id: UUID, data: UserUpdate, owner_id=None) -> User:
+        user = self._get_user_or_404(user_id, owner_id)
         updates = data.model_dump(exclude_none=True)
+        if user.role == RoleEnum.DIRECTION and "role" in updates:
+            raise HTTPException(status_code=422, detail="Le rôle du compte Directeur principal ne peut pas être modifié.")
+        if updates.get("role") in {RoleEnum.DIRECTION, RoleEnum.FORMATEUR}:
+            raise HTTPException(status_code=422, detail="Les comptes Directeur sont créés à l’ouverture de l’entreprise et les comptes formateur à l’acceptation d’une candidature.")
         if "email" in updates:
             existing = self.user_repository.find_by_email(updates["email"])
             if existing and existing.id != user_id:
@@ -157,12 +182,12 @@ class AuthService:
             setattr(user, field, value)
         return self.user_repository.save(user)
 
-    def supprimer_utilisateur(self, user_id: UUID, current_user_id: UUID) -> None:
+    def supprimer_utilisateur(self, user_id: UUID, current_user_id: UUID, owner_id=None) -> None:
         if user_id == current_user_id:
             raise HTTPException(
                 status_code=400,
                 detail="Impossible de supprimer son propre compte.",
             )
-        user = self._get_user_or_404(user_id)
+        user = self._get_user_or_404(user_id, owner_id)
         self.user_repository.delete(user)
 

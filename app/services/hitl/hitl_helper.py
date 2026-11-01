@@ -19,14 +19,25 @@ STORAGE_PATH = Path(__file__).resolve().parents[3] / "data" / "hitl_reviews.json
 STORAGE_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 
-def _load_store() -> dict[str, Any]:
+def _active_storage_path() -> Path:
+    """Keep pending/approved content private to the authenticated company."""
+    from app.core.tenant_context import get_tenant_id
+
+    tenant_id = get_tenant_id()
+    if tenant_id is None:
+        return STORAGE_PATH
+    return STORAGE_PATH.parent / "tenants" / str(tenant_id) / STORAGE_PATH.name
+
+
+def _load_store(path: Path | None = None) -> dict[str, Any]:
     """Charge le store depuis le fichier JSON."""
-    if not STORAGE_PATH.exists():
-        vlog(f"ℹ️  [HITL] Store inexistant → création : {STORAGE_PATH.name}")
+    path = path or _active_storage_path()
+    if not path.exists():
+        vlog(f"ℹ️  [HITL] Store inexistant → création : {path.name}")
         return {"reviews": {}, "counter": 0}
 
     try:
-        with open(STORAGE_PATH, "r", encoding="utf-8") as f:
+        with open(path, "r", encoding="utf-8") as f:
             store = json.load(f)
             vlog(
                 f"📂 [HITL] Store chargé : "
@@ -39,10 +50,12 @@ def _load_store() -> dict[str, Any]:
         return {"reviews": {}, "counter": 0}
 
 
-def _save_store(store: dict[str, Any]) -> None:
+def _save_store(store: dict[str, Any], path: Path | None = None) -> None:
     """Sauvegarde le store dans le fichier JSON."""
+    path = path or _active_storage_path()
     try:
-        with open(STORAGE_PATH, "w", encoding="utf-8") as f:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
             json.dump(store, f, indent=2, ensure_ascii=False)
         vlog(
             f"💾 [HITL] Store sauvegardé : "
@@ -96,12 +109,14 @@ def create_review(
     vlog(f"⏳ [HITL] create_review() — agent={agent_id}")
     vlog(f"   📝 Summary : {summary[:100]}")
 
-    store = _load_store()
+    store_path = _active_storage_path()
+    store = _load_store(store_path)
 
     # Générer un ID unique court : HITL-A1F-0001
     store["counter"] = store.get("counter", 0) + 1
     agent_short = agent_id.replace("agent_", "A").replace("_", "")[:3].upper()
-    review_id = f"HITL-{agent_short}-{store['counter']:04d}"
+    tenant_label = store_path.parent.name if store_path.parent.name != "data" else ""
+    review_id = f"HITL-{tenant_label[:8]}-{agent_short}-{store['counter']:04d}" if tenant_label else f"HITL-{agent_short}-{store['counter']:04d}"
 
     
     final_criticity = criticity or AGENT_CRITICITY.get(agent_id, "medium")
@@ -121,7 +136,7 @@ def create_review(
         "data": data,
     }
 
-    _save_store(store)
+    _save_store(store, store_path)
 
     vlog(
         f"✅ [HITL] Review créé : {review_id} "
@@ -180,6 +195,26 @@ def list_pending(
     return results
 
 
+def list_reviews(status: str = "approved", agent_id: str | None = None) -> list[dict[str, Any]]:
+    """Liste les validations déjà traitées, avec un résumé sans la charge utile."""
+    allowed = {"approved", "rejected"}
+    if status not in allowed:
+        return []
+    store = _load_store()
+    results = []
+    for review in store.get("reviews", {}).values():
+        if review.get("status") != status:
+            continue
+        if agent_id and review.get("agent_id") != agent_id:
+            continue
+        results.append({key: review.get(key) for key in (
+            "review_id", "agent_id", "criticity", "status", "summary",
+            "created_at", "reviewed_at", "reviewer_note", "rejection_reason",
+        )} | {"meta": review.get("meta", {})})
+    results.sort(key=lambda item: item.get("reviewed_at") or item.get("created_at") or "", reverse=True)
+    return results
+
+
 def get_review(review_id: str) -> dict[str, Any] | None:
     """
     Récupère un review complet (avec data).
@@ -204,6 +239,26 @@ def get_review(review_id: str) -> dict[str, Any] | None:
         logger.warning(f"⚠️  [HITL] Review non trouvé : {review_id}")
 
     return review
+
+
+def delete_pending_review(review_id: str) -> bool | None:
+    """Supprime uniquement une review encore en attente.
+
+    Retourne None si elle n'existe pas, False si elle a déjà été traitée,
+    et True après suppression. L'historique des validations traitées reste
+    donc intact.
+    """
+    store_path = _active_storage_path()
+    store = _load_store(store_path)
+    review = store.get("reviews", {}).get(review_id)
+    if review is None:
+        return None
+    if review.get("status") != "pending_review":
+        return False
+    del store["reviews"][review_id]
+    _save_store(store, store_path)
+    vlog(f"🗑️ [HITL] Review en attente supprimé : {review_id}")
+    return True
 
 
 def approve_review(

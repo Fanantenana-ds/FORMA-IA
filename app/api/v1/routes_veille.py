@@ -185,6 +185,18 @@ def _normalize_result(
     return resultat
 
 
+def _opportunites_demo_visibles(limit: int) -> list[dict]:
+    """Renvoie des avis actifs en démo, avec le pool synthétique en repli."""
+    archive = charger_opportunites_demo_reelles()
+    actives = [
+        item for item in archive
+        if isinstance(item, dict) and item.get("is_actionable", True)
+    ]
+    if not actives:
+        actives = generer_opportunites_demo(nb_min=3, nb_max=5)
+    return actives[:limit]
+
+
 # ===========================================================
 # SYSTÈME
 # ===========================================================
@@ -218,13 +230,23 @@ async def rechercher_opportunites(
 
     try:
 
-        resultat = await orchestrator.analyser_opportunites(
-            query=request.query
-        )
+        if DEMO_MODE:
+            opportunites = _opportunites_demo_visibles(request.limit)
+            resultat = {
+                "status": "success",
+                "query": request.query,
+                "opportunities": opportunites,
+                "total": len(opportunites),
+                "demo_mode": True,
+            }
+        else:
+            resultat = await orchestrator.analyser_opportunites(
+                query=request.query
+            )
 
         resultat = _normalize_result(
             resultat=resultat,
-            min_score=request.min_score,
+            min_score=0 if DEMO_MODE else request.min_score,
             limit=request.limit,
         )
 
@@ -285,12 +307,47 @@ async def detecter_opportunites(
     """
     Lance les requêtes du profil ALTIORA (VEILLE_AUTO_QUERIES ou défaut),
     fusionne, dédoublonne, garde les meilleurs scores et enregistre dans le
-    Backend celles qui n'y sont pas déjà. Peut durer plusieurs dizaines de
-    secondes (une recherche + analyse IA par requête).
+    Backend celles qui n'y sont pas déjà. En mode démo, renvoie des exemples
+    actifs sans lancer Tavily/Groq ni enregistrer de données fictives.
     """
     request = request or DetectionAutoRequest()
 
     try:
+        if DEMO_MODE:
+            debut = asyncio.get_running_loop().time()
+            opportunites = _opportunites_demo_visibles(
+                request.limit or auto_detection.limite()
+            )
+            queries = [
+                {"query": query, "status": "demo", "opportunities": len(opportunites)}
+                for query in auto_detection.get_queries()
+            ]
+            elapsed = round(asyncio.get_running_loop().time() - debut, 3)
+            resultat_demo = {
+                "status": "success",
+                "mode": "automatique",
+                "demo_mode": True,
+                "opportunities": opportunites,
+                "total": len(opportunites),
+                "queries": queries,
+                "notes": "Mode démo : exemples actifs affichés, aucune donnée fictive enregistrée automatiquement.",
+                "statistics": {
+                    "queries_run": len(queries),
+                    "processing_time_seconds": elapsed,
+                    "final": len(opportunites),
+                    "final_opportunities": len(opportunites),
+                    "demo_mode": True,
+                    "backend_sync": {
+                        "enabled": False,
+                        "sent": 0,
+                        "already_present": 0,
+                        "failed": 0,
+                        "deferred": True,
+                    },
+                },
+            }
+            return {"success": True, "data": resultat_demo, "error": None}
+
         resultat = await auto_detection.executer_detection(
             orchestrator,
             declenchement="manuel",
@@ -591,18 +648,9 @@ async def _stream_detection(min_score: int, limit: int, sync_backend: bool, owne
         await asyncio.sleep(3.5)
 
         # 3. Charge l'archive réelle ; bascule sur le pool fictif si vide
-        opportunites = charger_opportunites_demo_reelles()
-        if not opportunites:
-            opportunites = generer_opportunites_demo(nb_min=3, nb_max=5)
+        opportunites_filtrees = _opportunites_demo_visibles(limit)
 
-        # Filtre : score suffisant ET avis encore ouvert (is_actionable)
-        # Les avis clôturés sont comptés comme rejetés — réaliste (M1 ne présente que les opportunités actives)
-        opportunites_filtrees = [
-            o for o in opportunites
-            if (o.get("score") or 0) >= min_score and o.get("is_actionable", True)
-        ][:limit]
-
-        rejets = len(opportunites) - len(opportunites_filtrees)
+        rejets = 0
 
         # 4. Stream les résultats un par un
         for opp in opportunites_filtrees:
@@ -630,7 +678,7 @@ async def _stream_detection(min_score: int, limit: int, sync_backend: bool, owne
             "status": "success",
             "total": len(opportunites_filtrees),
             "sources": total_queries,
-            "candidats_collectes": len(opportunites),
+            "candidats_collectes": len(opportunites_filtrees),
             "requêtes": total_queries,
             "rejets": rejets,
             "message": (

@@ -89,6 +89,7 @@ async def _detecter_via_llm(message: str) -> str | None:
 
 # ── Niveau 3 : repli par mots-clés (LLM indisponible/échoué) ──
 _MOTS_CLES = {
+    "hors_sujet": ("météo", "meteo", "température à", "temperature a", "recette de", "horoscope", "résultat du match", "resultat du match", "actualité politique"),
     "catalogue": ("catalogue", "quelles formations", "liste des formations", "formations disponibles", "formations proposez"),
     "inventaire": ("inventaire", "documents indexes", "supports indexes", "combien de documents", "combien de supports"),
     "synthese_thematique": ("resume des formations", "formations concernant", "thematique", "synthese"),

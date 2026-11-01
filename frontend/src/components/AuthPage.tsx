@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { Mail, Lock, LogIn, UserPlus, Sparkles, CheckCircle2, ShieldCheck, Zap, ReceiptText, Users, ArrowRight, ArrowLeft } from 'lucide-react';
-import { AuthUser, UserRole } from '../types';
+import { Mail, Lock, LogIn, UserPlus, CheckCircle2, ShieldCheck, Zap, ReceiptText, ArrowRight, ArrowLeft, Loader2, User } from 'lucide-react';
+import { AuthUser, UserRole, ROLE_LABELS } from '../types';
+import { apiService, ApiError } from '../services/api';
 
 interface AuthPageProps {
   onLoginSuccess: (user: AuthUser) => void;
@@ -8,6 +9,29 @@ interface AuthPageProps {
   /** Retour vers la page d'accueil publique (optionnel). */
   onBackToHome?: () => void;
 }
+
+// Public registration is only for the initial company director account.
+// Team and trainer accounts are created from their authenticated workflows.
+const ROLE_CHOICES: UserRole[] = ['Dir.'];
+const MIN_PASSWORD_LENGTH = 8;
+
+/** Traduit une erreur de l'API en message affichable. */
+const describeAuthError = (err: unknown, context: 'login' | 'register'): string => {
+  if (err instanceof ApiError) {
+    if (err.status === 0) return err.message;
+    if (context === 'login') {
+      if (err.status === 401) return 'Email ou mot de passe incorrect.';
+      if (err.status === 403) return 'Ce compte est désactivé. Contactez la direction.';
+    }
+    if (context === 'register') {
+      if (err.status === 400) return 'Cet email est déjà associé à un compte.';
+      if (err.status === 422) return `Informations invalides : ${err.message}`;
+    }
+    if (err.status >= 500) return 'Erreur du serveur. Veuillez réessayer dans un instant.';
+    return err.message;
+  }
+  return 'Une erreur inattendue est survenue. Veuillez réessayer.';
+};
 
 export const AuthPage: React.FC<AuthPageProps> = ({
   onLoginSuccess,
@@ -22,96 +46,87 @@ export const AuthPage: React.FC<AuthPageProps> = ({
 
   // Register form state
   const [regNom, setRegNom] = useState('');
-  const [regPrenom, setRegPrenom] = useState('');
   const [regEmail, setRegEmail] = useState('');
   const [regPassword, setRegPassword] = useState('');
-  const [regRole, setRegRole] = useState<UserRole>('Dir.');
-  const [regOrg, setRegOrg] = useState('');
+  const [regPasswordConfirm, setRegPasswordConfirm] = useState('');
+  const [regRole, setRegRole] = useState<UserRole>('Assis.');
 
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [infoMsg, setInfoMsg] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Quick Demo Logins
-  const quickDemoLogin = (role: UserRole) => {
-    let demoUser: AuthUser;
-    if (role === 'Dir.') {
-      demoUser = {
-        id: 'user-dir-1',
-        nom: 'Raveloson',
-        prenom: 'Andry',
-        email: 'directeur@forma-ia.mg',
-        role: 'Dir.',
-        organisation: 'FORMA-IA Madagascar',
-        avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=150'
-      };
-    } else if (role === 'Form.') {
-      demoUser = {
-        id: 'user-form-1',
-        nom: 'Ranaivo',
-        prenom: 'Haja',
-        email: 'formateur@forma-ia.mg',
-        role: 'Form.',
-        organisation: 'FORMA-IA Académie',
-        avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=150'
-      };
-    } else {
-      demoUser = {
-        id: 'user-assis-1',
-        nom: 'Razafindrakoto',
-        prenom: 'Mialy',
-        email: 'assistant@forma-ia.mg',
-        role: 'Assis.',
-        organisation: 'FORMA-IA Support',
-        avatarUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&q=80&w=150'
-      };
-    }
-
-    onLoginSuccess(demoUser);
+  const switchMode = (next: 'login' | 'register') => {
+    setMode(next);
+    setErrorMsg(null);
+    setInfoMsg(null);
   };
 
-  const handleLoginSubmit = (e: React.FormEvent) => {
+  const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!loginEmail || !loginPassword) {
+    setErrorMsg(null);
+    setInfoMsg(null);
+
+    if (!loginEmail.trim() || !loginPassword) {
       setErrorMsg('Veuillez remplir votre adresse email et votre mot de passe.');
       return;
     }
 
-    let role: UserRole = 'Dir.';
-    if (loginEmail.includes('formateur')) role = 'Form.';
-    if (loginEmail.includes('assistant')) role = 'Assis.';
-
-    const parts = loginEmail.split('@')[0].split('.');
-    const prenom = parts[0] ? parts[0].charAt(0).toUpperCase() + parts[0].slice(1) : 'Utilisateur';
-    const nom = parts[1] ? parts[1].charAt(0).toUpperCase() + parts[1].slice(1) : 'FORMA-IA';
-
-    const user: AuthUser = {
-      id: `user-${Date.now()}`,
-      nom: nom,
-      prenom: prenom,
-      email: loginEmail,
-      role: role,
-      organisation: 'FORMA-IA Madagascar'
-    };
-
-    onLoginSuccess(user);
+    setIsSubmitting(true);
+    try {
+      const user = await apiService.login(loginEmail.trim(), loginPassword);
+      onLoginSuccess(user);
+    } catch (err) {
+      setErrorMsg(describeAuthError(err, 'login'));
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const handleRegisterSubmit = (e: React.FormEvent) => {
+  const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!regNom || !regPrenom || !regEmail || !regPassword) {
+    setErrorMsg(null);
+    setInfoMsg(null);
+
+    const nom = regNom.trim();
+    const email = regEmail.trim();
+
+    if (!nom || !email || !regPassword) {
       setErrorMsg('Veuillez renseigner tous les champs obligatoires.');
       return;
     }
+    if (regPassword.length < MIN_PASSWORD_LENGTH) {
+      setErrorMsg(`Le mot de passe doit contenir au moins ${MIN_PASSWORD_LENGTH} caractères.`);
+      return;
+    }
+    if (regPassword !== regPasswordConfirm) {
+      setErrorMsg('Les deux mots de passe ne correspondent pas.');
+      return;
+    }
 
-    const newUser: AuthUser = {
-      id: `user-${Date.now()}`,
-      nom: regNom,
-      prenom: regPrenom,
-      email: regEmail,
-      role: regRole,
-      organisation: regOrg || 'FORMA-IA Madagascar'
-    };
+    setIsSubmitting(true);
+    try {
+      await apiService.register({ nom, email, password: regPassword, role: regRole });
+    } catch (err) {
+      setErrorMsg(describeAuthError(err, 'register'));
+      setIsSubmitting(false);
+      return;
+    }
 
-    onLoginSuccess(newUser);
+    // Compte créé : connexion automatique
+    try {
+      const user = await apiService.login(email, regPassword);
+      onLoginSuccess(user);
+    } catch (err) {
+      setLoginEmail(email);
+      setLoginPassword('');
+      setMode('login');
+      setInfoMsg('Votre compte a bien été créé. Connectez-vous pour accéder à la plateforme.');
+      if (err instanceof ApiError && err.status === 0) {
+        setErrorMsg(err.message);
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -185,11 +200,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
         </div>
 
         {/* Footer info */}
-        <div className="pt-6 border-t border-slate-800/60 flex items-center justify-between text-xs text-slate-500">
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-            <span>Serveur API REST : 127.0.0.1:8000</span>
-          </div>
+        <div className="pt-6 border-t border-slate-800/60 flex items-center justify-end text-xs text-slate-500">
           <span>FORMA-IA © 2026</span>
         </div>
       </div>
@@ -234,7 +245,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
           {/* Mode Switcher Tabs */}
           <div className="p-1 bg-slate-100 rounded-2xl grid grid-cols-2 text-xs font-bold mb-6">
             <button
-              onClick={() => { setMode('login'); setErrorMsg(null); }}
+              onClick={() => switchMode('login')}
               className={`py-2.5 rounded-xl transition-all flex items-center justify-center gap-2 ${
                 mode === 'login' 
                   ? 'bg-white text-[#11162A] shadow-md font-extrabold' 
@@ -246,7 +257,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
             </button>
 
             <button
-              onClick={() => { setMode('register'); setErrorMsg(null); }}
+              onClick={() => switchMode('register')}
               className={`py-2.5 rounded-xl transition-all flex items-center justify-center gap-2 ${
                 mode === 'register' 
                   ? 'bg-white text-[#11162A] shadow-md font-extrabold' 
@@ -257,6 +268,12 @@ export const AuthPage: React.FC<AuthPageProps> = ({
               <span>Inscription</span>
             </button>
           </div>
+
+          {infoMsg && (
+            <div className="mb-4 p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold">
+              {infoMsg}
+            </div>
+          )}
 
           {errorMsg && (
             <div className="mb-4 p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs font-semibold">
@@ -275,8 +292,9 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                     type="email"
                     required
                     value={loginEmail}
+                    autoComplete="email"
                     onChange={(e) => setLoginEmail(e.target.value)}
-                    placeholder="directeur@forma-ia.mg"
+                    placeholder="nom@organisation.mg"
                     className="w-full pl-10 pr-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#1B8F6E] transition-all"
                   />
                 </div>
@@ -290,6 +308,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                     type="password"
                     required
                     value={loginPassword}
+                    autoComplete="current-password"
                     onChange={(e) => setLoginPassword(e.target.value)}
                     placeholder="••••••••"
                     className="w-full pl-10 pr-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#1B8F6E] transition-all"
@@ -299,75 +318,30 @@ export const AuthPage: React.FC<AuthPageProps> = ({
 
               <button
                 type="submit"
-                className="w-full py-3 bg-[#1B8F6E] hover:bg-[#16785c] text-white rounded-xl font-bold text-sm shadow-lg shadow-[#1B8F6E]/20 transition-all flex items-center justify-center gap-2 cursor-pointer mt-2"
+                disabled={isSubmitting}
+                className="w-full py-3 bg-[#1B8F6E] hover:bg-[#16785c] text-white rounded-xl font-bold text-sm shadow-lg shadow-[#1B8F6E]/20 transition-all flex items-center justify-center gap-2 cursor-pointer mt-2 disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                <span>Se connecter</span>
-                <ArrowRight size={16} />
+                {isSubmitting ? <Loader2 size={16} className="animate-spin" /> : <ArrowRight size={16} />}
+                <span>{isSubmitting ? 'Connexion en cours…' : 'Se connecter'}</span>
               </button>
-
-              {/* DEMO ACCOUNTS QUICK LOGIN */}
-              <div className="pt-5 mt-5 border-t border-slate-100">
-                <div className="text-[11px] font-extrabold text-slate-500 uppercase mb-2.5 flex items-center gap-1">
-                  <Sparkles size={14} className="text-[#1B8F6E]" />
-                  <span>Connexion Rapide en 1-Clic (Démonstration) :</span>
-                </div>
-                
-                <div className="grid grid-cols-3 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => quickDemoLogin('Dir.')}
-                    className="p-2.5 bg-[#F4F5F3] hover:bg-[#1B8F6E]/10 border border-slate-200 hover:border-[#1B8F6E]/40 rounded-xl text-center transition-all group cursor-pointer"
-                  >
-                    <div className="font-bold text-xs text-[#11162A] group-hover:text-[#1B8F6E]">Directeur</div>
-                    <div className="text-[10px] text-slate-400 mt-0.5">Andry R.</div>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => quickDemoLogin('Form.')}
-                    className="p-2.5 bg-[#F4F5F3] hover:bg-[#1B8F6E]/10 border border-slate-200 hover:border-[#1B8F6E]/40 rounded-xl text-center transition-all group cursor-pointer"
-                  >
-                    <div className="font-bold text-xs text-[#11162A] group-hover:text-[#1B8F6E]">Formateur</div>
-                    <div className="text-[10px] text-slate-400 mt-0.5">Haja R.</div>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => quickDemoLogin('Assis.')}
-                    className="p-2.5 bg-[#F4F5F3] hover:bg-[#1B8F6E]/10 border border-slate-200 hover:border-[#1B8F6E]/40 rounded-xl text-center transition-all group cursor-pointer"
-                  >
-                    <div className="font-bold text-xs text-[#11162A] group-hover:text-[#1B8F6E]">Assistant</div>
-                    <div className="text-[10px] text-slate-400 mt-0.5">Mialy R.</div>
-                  </button>
-                </div>
-              </div>
             </form>
           )}
 
           {/* FORM: REGISTER */}
           {mode === 'register' && (
             <form onSubmit={handleRegisterSubmit} className="space-y-3.5 text-xs">
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block font-bold text-slate-700 uppercase mb-1">Nom *</label>
+              <div>
+                <label className="block font-bold text-slate-700 uppercase mb-1">Nom complet *</label>
+                <div className="relative">
+                  <User size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
                   <input
                     type="text"
                     required
                     value={regNom}
+                    autoComplete="name"
                     onChange={(e) => setRegNom(e.target.value)}
-                    placeholder="ex: Rasoanaivo"
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-800 focus:ring-2 focus:ring-[#1B8F6E] focus:outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block font-bold text-slate-700 uppercase mb-1">Prénom *</label>
-                  <input
-                    type="text"
-                    required
-                    value={regPrenom}
-                    onChange={(e) => setRegPrenom(e.target.value)}
-                    placeholder="ex: Tahina"
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-800 focus:ring-2 focus:ring-[#1B8F6E] focus:outline-none"
+                    placeholder="Prénom et nom"
+                    className="w-full pl-10 pr-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-800 focus:ring-2 focus:ring-[#1B8F6E] focus:outline-none"
                   />
                 </div>
               </div>
@@ -378,74 +352,66 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                   type="email"
                   required
                   value={regEmail}
+                  autoComplete="email"
                   onChange={(e) => setRegEmail(e.target.value)}
-                  placeholder="t.rasoanaivo@entreprise.mg"
+                  placeholder="nom@organisation.mg"
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-800 focus:ring-2 focus:ring-[#1B8F6E] focus:outline-none"
                 />
               </div>
 
-              <div>
-                <label className="block font-bold text-slate-700 uppercase mb-1">Mot de passe *</label>
-                <input
-                  type="password"
-                  required
-                  value={regPassword}
-                  onChange={(e) => setRegPassword(e.target.value)}
-                  placeholder="Choisissez un mot de passe"
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-800 focus:ring-2 focus:ring-[#1B8F6E] focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block font-bold text-slate-700 uppercase mb-1">Rôle dans la plateforme *</label>
-                <div className="grid grid-cols-3 gap-1.5 p-1 bg-slate-100 rounded-xl">
-                  <button
-                    type="button"
-                    onClick={() => setRegRole('Dir.')}
-                    className={`py-1.5 rounded-lg font-bold text-xs transition-all ${
-                      regRole === 'Dir.' ? 'bg-[#1B8F6E] text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    Directeur
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setRegRole('Form.')}
-                    className={`py-1.5 rounded-lg font-bold text-xs transition-all ${
-                      regRole === 'Form.' ? 'bg-[#1B8F6E] text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    Formateur
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setRegRole('Assis.')}
-                    className={`py-1.5 rounded-lg font-bold text-xs transition-all ${
-                      regRole === 'Assis.' ? 'bg-[#1B8F6E] text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    Assistant
-                  </button>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block font-bold text-slate-700 uppercase mb-1">Mot de passe *</label>
+                  <input
+                    type="password"
+                    required
+                    minLength={MIN_PASSWORD_LENGTH}
+                    value={regPassword}
+                    autoComplete="new-password"
+                    onChange={(e) => setRegPassword(e.target.value)}
+                    placeholder={`${MIN_PASSWORD_LENGTH} caractères min.`}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-800 focus:ring-2 focus:ring-[#1B8F6E] focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-700 uppercase mb-1">Confirmation *</label>
+                  <input
+                    type="password"
+                    required
+                    value={regPasswordConfirm}
+                    autoComplete="new-password"
+                    onChange={(e) => setRegPasswordConfirm(e.target.value)}
+                    placeholder="Répétez le mot de passe"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-800 focus:ring-2 focus:ring-[#1B8F6E] focus:outline-none"
+                  />
                 </div>
               </div>
 
               <div>
-                <label className="block font-bold text-slate-700 uppercase mb-1">Organisme / Entreprise</label>
-                <input
-                  type="text"
-                  value={regOrg}
-                  onChange={(e) => setRegOrg(e.target.value)}
-                  placeholder="ex: FORMA-IA Mada / TELMA"
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-800 focus:ring-2 focus:ring-[#1B8F6E] focus:outline-none"
-                />
+                <label className="block font-bold text-slate-700 uppercase mb-1">Rôle dans la plateforme *</label>
+                <div className="grid grid-cols-2 gap-1.5 p-1 bg-slate-100 rounded-xl">
+                  {ROLE_CHOICES.map((role) => (
+                    <button
+                      key={role}
+                      type="button"
+                      onClick={() => setRegRole(role)}
+                      className={`py-1.5 rounded-lg font-bold text-xs transition-all ${
+                        regRole === role ? 'bg-[#1B8F6E] text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      {ROLE_LABELS[role]}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               <button
                 type="submit"
-                className="w-full py-3 bg-[#1B8F6E] hover:bg-[#16785c] text-white rounded-xl font-bold text-xs shadow-lg shadow-[#1B8F6E]/20 transition-all flex items-center justify-center gap-2 cursor-pointer mt-2"
+                disabled={isSubmitting}
+                className="w-full py-3 bg-[#1B8F6E] hover:bg-[#16785c] text-white rounded-xl font-bold text-xs shadow-lg shadow-[#1B8F6E]/20 transition-all flex items-center justify-center gap-2 cursor-pointer mt-2 disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                <CheckCircle2 size={16} />
-                <span>Créer mon compte et accéder à la plateforme</span>
+                {isSubmitting ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
+                <span>{isSubmitting ? 'Création du compte…' : 'Créer mon compte et accéder à la plateforme'}</span>
               </button>
             </form>
           )}

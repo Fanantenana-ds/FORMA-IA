@@ -19,13 +19,19 @@ class UserRepository:
         self,
         role: RoleEnum | None = None,
         actif: bool | None = None,
+        owner_id=None,
     ) -> list[User]:
         q = self.db.query(User)
+        if owner_id is not None:
+            q = q.filter(User.owner_id == owner_id)
         if role is not None:
             q = q.filter(User.role == role)
         if actif is not None:
             q = q.filter(User.actif == actif)
         return q.order_by(User.nom).all()
+
+    def find_by_id_for_owner(self, user_id, owner_id) -> User | None:
+        return self.db.query(User).filter(User.id == user_id, User.owner_id == owner_id).first()
 
     def save(self, user: User) -> User:
         self.db.add(user)

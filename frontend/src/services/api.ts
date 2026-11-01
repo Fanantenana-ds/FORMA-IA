@@ -1,249 +1,454 @@
-import {
-  KPIStats,
-  DomainOpportunity,
-  FacturationStatut,
-  ActiviteRecente,
-  Session,
-  OpportuniteCRM,
-  Formateur,
-  PresenceRecord,
-  DevisFacture,
-  VeilleMarche,
-  ApiConfig
+import { API_BASE_URL, API_PREFIX, API_REQUEST_BASE } from '../config/env';
+import type {
+  ApiConfig, AuthUser, DevisFacture, Formateur,
+  OpportuniteCRM, PresenceRecord, Session, UserRole, VeilleMarche
 } from '../types';
+import { buildDashboard, type BackendStats } from './dashboardMapping';
+import { formateurFullName, toFormateur, type BackendFormateur } from './formateurMapping';
+import type { DetectionResult, DetectionStatus, TavilyQuota } from './veilleMapping';
+import { addDaysToDate, addMonthsToDate } from './sessionDates';
 
-import {
-  initialKPIs,
-  initialDomainOpportunities,
-  initialFacturationStatuts,
-  initialActivites,
-  initialSessions,
-  initialOpportunites,
-  initialFormateurs,
-  initialPresences,
-  initialFactures,
-  initialVeilles
-} from '../data/mockData';
+const IA_TOKEN = import.meta.env.VITE_IA_TOKEN as string | undefined;
+const roleFromApi: Record<string, UserRole> = {
+  DIRECTION: 'Dir.', ADMIN: 'Dir.', FORMATEUR: 'Form.', ASSISTANT: 'Assis.', COMPTABLE: 'Compt.'
+};
+const roleToApi: Record<UserRole, string> = {
+  'Dir.': 'DIRECTION', 'Form.': 'FORMATEUR', 'Assis.': 'ASSISTANT', 'Compt.': 'COMPTABLE'
+};
 
-const DEFAULT_BASE_URL = 'http://127.0.0.1:8000';
-
-class ApiService {
-  private baseUrl: string = DEFAULT_BASE_URL;
-  private isConnected: boolean = false;
-  private isMockFallback: boolean = true;
-  private errorCount: number = 0;
-  private listeners: Array<(config: ApiConfig) => void> = [];
-
-  constructor() {
-    // Check saved base URL in localStorage if available
-    const savedUrl = typeof window !== 'undefined' ? localStorage.getItem('forma_ia_api_url') : null;
-    if (savedUrl) {
-      this.baseUrl = savedUrl;
-    }
-  }
-
-  public getBaseUrl(): string {
-    return this.baseUrl;
-  }
-
-  public setBaseUrl(url: string) {
-    this.baseUrl = url.replace(/\/$/, '');
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('forma_ia_api_url', this.baseUrl);
-    }
-    this.checkHealth();
-  }
-
-  public subscribe(listener: (config: ApiConfig) => void) {
-    this.listeners.push(listener);
-    // Send initial status
-    listener(this.getConfig());
-    return () => {
-      this.listeners = this.listeners.filter(l => l !== listener);
-    };
-  }
-
-  private notify() {
-    const config = this.getConfig();
-    this.listeners.forEach(listener => listener(config));
-  }
-
-  public getConfig(): ApiConfig {
-    return {
-      baseUrl: this.baseUrl,
-      isConnected: this.isConnected,
-      isMockFallback: this.isMockFallback,
-      errorCount: this.errorCount,
-      lastPingTime: new Date().toLocaleTimeString('fr-FR')
-    };
-  }
-
-  public async checkHealth(): Promise<boolean> {
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 2000);
-
-      const res = await fetch(`${this.baseUrl}/api/health`, {
-        method: 'GET',
-        signal: controller.signal
-      });
-      clearTimeout(timeoutId);
-
-      if (res.ok) {
-        this.isConnected = true;
-        this.isMockFallback = false;
-        this.errorCount = 0;
-        this.notify();
-        return true;
-      } else {
-        throw new Error(`HTTP Error ${res.status}`);
-      }
-    } catch (err) {
-      this.isConnected = false;
-      this.isMockFallback = true;
-      this.errorCount++;
-      this.notify();
-      return false;
-    }
-  }
-
-  private async request<T>(endpoint: string, fallbackData: T, options?: RequestInit): Promise<T> {
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 3000);
-
-      const response = await fetch(`${this.baseUrl}${endpoint}`, {
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          ...(options?.headers || {})
-        },
-        signal: controller.signal,
-        ...options
-      });
-      clearTimeout(timeoutId);
-
-      if (!response.ok) {
-        throw new Error(`Erreur API ${response.status}: ${response.statusText}`);
-      }
-
-      const data = await response.json();
-      this.isConnected = true;
-      this.isMockFallback = false;
-      this.notify();
-      return data as T;
-    } catch (error) {
-      console.warn(`[FORMA-IA API Client] Impossible de contacter ${this.baseUrl}${endpoint}. Bascule sur le fallback local REST simulation.`, error);
-      this.isConnected = false;
-      this.isMockFallback = true;
-      this.errorCount++;
-      this.notify();
-      return fallbackData;
-    }
-  }
-
-  // API Methods
-  public async getKPIs(): Promise<KPIStats> {
-    return this.request<KPIStats>('/api/dashboard/kpis', initialKPIs);
-  }
-
-  public async getDomainOpportunities(): Promise<DomainOpportunity[]> {
-    return this.request<DomainOpportunity[]>('/api/dashboard/opportunities-by-domain', initialDomainOpportunities);
-  }
-
-  public async getFacturationStatuts(): Promise<FacturationStatut[]> {
-    return this.request<FacturationStatut[]>('/api/dashboard/invoicing-status', initialFacturationStatuts);
-  }
-
-  public async getRecentActivities(): Promise<ActiviteRecente[]> {
-    return this.request<ActiviteRecente[]>('/api/dashboard/recent-activities', initialActivites);
-  }
-
-  public async getSessions(): Promise<Session[]> {
-    return this.request<Session[]>('/api/sessions', initialSessions);
-  }
-
-  public async createSession(session: Partial<Session>): Promise<Session> {
-    const newSession: Session = {
-      id: `sess-${Date.now()}`,
-      code: `FORMA-IA-${new Date().getFullYear()}-${Math.floor(Math.random() * 90 + 10)}`,
-      intitule: session.intitule || 'Nouvelle Session IA',
-      domaine: session.domaine || 'IA Générative',
-      formateur: session.formateur || 'Formateur Assigné',
-      dates: session.dates || 'À déterminer',
-      participantsInscrits: session.participantsInscrits || 0,
-      capacityMax: session.capacityMax || 20,
-      tauxPresence: 0,
-      statut: 'Planifiée',
-      lieu: session.lieu || 'Distanciel',
-      prixUnitaire: session.prixUnitaire || 1200
-    };
-
-    return this.request<Session>('/api/sessions', newSession, {
-      method: 'POST',
-      body: JSON.stringify(newSession)
-    });
-  }
-
-  public async getOpportunites(): Promise<OpportuniteCRM[]> {
-    return this.request<OpportuniteCRM[]>('/api/opportunities', initialOpportunites);
-  }
-
-  public async createOpportunite(opp: Partial<OpportuniteCRM>): Promise<OpportuniteCRM> {
-    const newOpp: OpportuniteCRM = {
-      id: `opp-${Date.now()}`,
-      entreprise: opp.entreprise || 'Nouvelle Entreprise',
-      contactName: opp.contactName || 'Contact Prospect',
-      contactEmail: opp.contactEmail || 'contact@entreprise.com',
-      domaineIA: opp.domaineIA || 'IA Générative',
-      besoinFormation: opp.besoinFormation || 'Acculturation et pratique des outils IA',
-      participantsEstimes: opp.participantsEstimes || 10,
-      montantEstime: opp.montantEstime || 15000,
-      etape: 'Détectée par IA',
-      probabilite: 40,
-      dateDetection: new Date().toLocaleDateString('fr-FR')
-    };
-
-    return this.request<OpportuniteCRM>('/api/opportunities', newOpp, {
-      method: 'POST',
-      body: JSON.stringify(newOpp)
-    });
-  }
-
-  public async getFormateurs(): Promise<Formateur[]> {
-    return this.request<Formateur[]>('/api/trainers', initialFormateurs);
-  }
-
-  public async getPresences(): Promise<PresenceRecord[]> {
-    return this.request<PresenceRecord[]>('/api/attendance', initialPresences);
-  }
-
-  public async getFactures(): Promise<DevisFacture[]> {
-    return this.request<DevisFacture[]>('/api/invoices', initialFactures);
-  }
-
-  public async createFacture(fac: Partial<DevisFacture>): Promise<DevisFacture> {
-    const newFacture: DevisFacture = {
-      id: `fac-${Date.now()}`,
-      numero: fac.type === 'Devis' ? `DEV-2026-${Math.floor(Math.random() * 900 + 100)}` : `FAC-2026-${Math.floor(Math.random() * 900 + 100)}`,
-      type: fac.type || 'Devis',
-      client: fac.client || 'Nouveau Client',
-      montantHT: fac.montantHT || 10000,
-      montantTTC: Math.round((fac.montantHT || 10000) * 1.2),
-      dateEmission: new Date().toLocaleDateString('fr-FR'),
-      dateEcheance: new Date(Date.now() + 30 * 24 * 3600 * 1000).toLocaleDateString('fr-FR'),
-      statut: fac.type === 'Devis' ? 'Envoyé' : 'En attente'
-    };
-
-    return this.request<DevisFacture>('/api/invoices', newFacture, {
-      method: 'POST',
-      body: JSON.stringify(newFacture)
-    });
-  }
-
-  public async getVeilles(): Promise<VeilleMarche[]> {
-    return this.request<VeilleMarche[]>('/api/market-watch', initialVeilles);
+export class ApiError extends Error {
+  constructor(message: string, public readonly status: number, public readonly detail?: unknown) {
+    super(message); this.name = 'ApiError';
   }
 }
 
+export type SessionTrainerOption = Formateur;
+
+export const tokenStore = {
+  get: () => { try { return localStorage.getItem('token'); } catch { return null; } },
+  set: (token: string) => { try { localStorage.setItem('token', token); } catch { /* stockage indisponible */ } },
+  clear: () => { try { localStorage.removeItem('token'); } catch { /* stockage indisponible */ } }
+};
+
+const dateOnly = (value: string | undefined): string | undefined => {
+  if (!value) return undefined;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? value : parsed.toISOString().slice(0, 10);
+};
+const fromRole = (value: unknown): UserRole => roleFromApi[String(value ?? '').toUpperCase()] ?? 'Assis.';
+const arr = <T,>(data: unknown, key?: string): T[] => {
+  const list = key && data && typeof data === 'object' ? (data as Record<string, unknown>)[key] : data;
+  return Array.isArray(list) ? list as T[] : [];
+};
+const currency = (n: unknown) => Number(n ?? 0);
+const normalizeBudget = (value: unknown): number | undefined => {
+  if (typeof value === 'number') return Number.isFinite(value) && value >= 0 ? value : undefined;
+  if (typeof value !== 'string' || !value.trim()) return undefined;
+  const millionMultiplier = /millions?|(?:^|\d)\s*m\s*(?:ar|mga|$)/i.test(value) ? 1_000_000 : 1;
+  let numeric = value.replace(/[\s\u00a0]/g, '').replace(/[^\d,.-]/g, '');
+  if (!numeric) return undefined;
+  if (numeric.includes(',') && numeric.includes('.')) {
+    numeric = numeric.lastIndexOf(',') > numeric.lastIndexOf('.')
+      ? numeric.replace(/\./g, '').replace(',', '.')
+      : numeric.replace(/,/g, '');
+  } else if ((numeric.match(/,/g) ?? []).length > 1) {
+    numeric = numeric.replace(/,/g, '');
+  } else {
+    numeric = numeric.replace(',', '.');
+  }
+  const amount = Number(numeric) * millionMultiplier;
+  return Number.isFinite(amount) && amount >= 0 ? amount : undefined;
+};
+const mapOpportunity = (o: any): OpportuniteCRM => ({
+  id: String(o.id), entreprise: o.objet || 'Opportunité', contactName: '', contactEmail: '',
+  domaineIA: o.domaine || 'AUTRE', besoinFormation: o.contenu || '', participantsEstimes: 0,
+  montantEstime: currency(o.budget), etape: o.statut === 'ANALYSEE' ? 'Contact qualifié' : o.statut === 'ARCHIVEE' ? 'Perdue' : 'Détectée par IA',
+  probabilite: currency(o.score_pertinence), dateDetection: o.date_creation ? new Date(o.date_creation).toLocaleDateString('fr-FR') : ''
+});
+const mapVeilleMarket = (m: any): VeilleMarche => ({
+  id: String(m.id ?? m.review_id ?? crypto.randomUUID()), titre: m.titre ?? m.title ?? m.objet ?? 'Résultat de veille',
+  categorie: m.domaine ?? m.domain ?? 'AUTRE', description: m.contenu ?? m.description ?? m.summary ?? '', impactOrganisme: 'Opportunité émergente',
+  demandeClient: m.contenu ?? m.description ?? m.summary ?? '', dateAnalyse: m.date_creation ?? new Date().toLocaleDateString('fr-FR'),
+  motsCles: [], statut: 'Trouvé', url: m.url ?? m.source_url, score: m.score_pertinence ?? m.score, budgetEstimeAr: normalizeBudget(m.budget),
+  echeance: m.echeance ?? m.deadline, clientCible: m.organizer ?? m.organization ?? m.objet, sourceSite: m.source ?? m.source_name, validation: m.validation
+});
+const mapSession = (s: any, formateurNom?: string): Session => {
+  const dateDebut = s.date_debut ? String(s.date_debut).slice(0, 10) : '';
+  const dateFin = s.date_fin ? String(s.date_fin).slice(0, 10) : '';
+  const start = dateDebut ? new Date(`${dateDebut}T12:00:00`) : null;
+  const end = dateFin ? new Date(`${dateFin}T12:00:00`) : null;
+  const now = Date.now();
+  const status: Session['statut'] = end && end.getTime() < now ? 'Terminée' : start && start.getTime() <= now ? 'En cours' : 'Planifiée';
+  return { id: String(s.id), code: String(s.id).slice(0, 8).toUpperCase(), intitule: s.titre, formationCode: s.formation_code ?? undefined, domaine: s.domaine ?? s.formation_code ?? 'À définir',
+    formateur: formateurNom ?? (s.formateur ? formateurFullName({ nom: s.formateur.nom ?? '', prenom: s.formateur.prenom }) : undefined) ?? s.formateur_nom ?? 'À définir', formateurId: s.formateur_id ?? s.formateur?.id ?? undefined,
+    dates: [start, end].filter(Boolean).map(d => d!.toLocaleDateString('fr-FR')).join(' – '), dateDebut: dateDebut || undefined,
+    participantsInscrits: Number(s.nombre_participants ?? s.participants?.length ?? 0), capacityMax: s.nb_participants_max == null ? undefined : Number(s.nb_participants_max),
+    tauxPresence: Number(s.taux_presence ?? 0), statut: status, lieu: s.lieu ?? 'À définir', prixUnitaire: s.prix_unitaire == null ? undefined : Number(s.prix_unitaire),
+    client: s.client ?? undefined, dateFin: dateFin || undefined, opportuniteId: s.opportunite_id ?? undefined };
+};
+const mapInvoice = (f: any): DevisFacture => ({
+  id: String(f.id), numero: f.numero ?? String(f.id).slice(0, 8), type: 'Facture', client: f.client,
+  clientAdresse: f.client_adresse ?? undefined, clientSiret: f.client_siret ?? undefined,
+  clientRcs: f.client_rcs ?? undefined, clientTva: f.client_tva ?? undefined,
+  montantHT: currency(f.montant), montantTTC: currency(f.montant_ttc ?? f.montant), tvaTaux: currency(f.tva_taux ?? 20),
+  dateEmission: f.date_emission ? new Date(f.date_emission).toLocaleDateString('fr-FR') : '',
+  dateEcheance: f.date_echeance ? String(f.date_echeance).slice(0, 10) : '',
+  statut: f.statut === 'BROUILLON' ? 'Brouillon' : f.statut === 'PAYEE' ? 'Payé' : f.statut === 'PARTIELLEMENT_PAYEE' ? 'Partiellement payé' : f.statut === 'EN_RETARD' ? 'En retard' : f.statut === 'ANNULEE' ? 'Annulée' : 'Envoyé',
+  paiements: Array.isArray(f.paiements) ? f.paiements.map((payment: any) => ({ id: String(payment.id), montant: currency(payment.montant), date: payment.date, mode: payment.mode })) : [],
+  montantPaye: Array.isArray(f.paiements) ? f.paiements.reduce((sum: number, payment: any) => sum + currency(payment.montant), 0) : 0,
+  montantRestantDu: Math.max(0, currency(f.montant_ttc ?? f.montant) - (Array.isArray(f.paiements) ? f.paiements.reduce((sum: number, payment: any) => sum + currency(payment.montant), 0) : 0)),
+  sessionId: f.session_id ? String(f.session_id) : undefined
+});
+
+class ApiService {
+  private connected = false;
+  private fallback = false;
+  private errors = 0;
+  private ping = '';
+  private listeners = new Set<(config: ApiConfig) => void>();
+  private unauthorized = new Set<() => void>();
+  getConfig = (): ApiConfig => ({ baseUrl: API_BASE_URL, isConnected: this.connected, isMockFallback: this.fallback, errorCount: this.errors, lastPingTime: this.ping });
+  subscribe = (fn: (config: ApiConfig) => void) => { this.listeners.add(fn); fn(this.getConfig()); return () => this.listeners.delete(fn); };
+  onUnauthorized = (fn: () => void) => { this.unauthorized.add(fn); return () => this.unauthorized.delete(fn); };
+  private notify() { this.ping = new Date().toLocaleTimeString('fr-FR'); this.listeners.forEach(fn => fn(this.getConfig())); }
+  private async request<T>(path: string, init: RequestInit = {}, opts: { ia?: boolean; jwtForIA?: boolean; timeout?: number; auth?: boolean } = {}): Promise<T> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), opts.timeout ?? (opts.ia ? 120000 : 20000));
+    const headers = new Headers(init.headers);
+    if (!(init.body instanceof FormData) && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
+    headers.set('Accept', 'application/json');
+    // Pour les appels IA, préférer la session JWT déjà ouverte dans le front.
+    // La clé interne reste un recours pour les intégrations sans session.
+    const userToken = tokenStore.get();
+    const token = opts.ia && !opts.jwtForIA ? (userToken || IA_TOKEN) : userToken;
+    const usingUserToken = !!userToken && token === userToken;
+    if (token) headers.set('Authorization', `Bearer ${token}`);
+    try {
+      const response = await fetch(`${API_REQUEST_BASE}${API_PREFIX}${path}`, { ...init, headers, signal: controller.signal });
+      clearTimeout(timeout);
+      if (response.status === 401 && opts.auth !== false && (!opts.ia || opts.jwtForIA || usingUserToken)) this.unauthorized.forEach(fn => fn());
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        const detail = (body as any)?.detail ?? (body as any)?.message;
+        const message = typeof detail === 'string' ? detail : detail ? JSON.stringify(detail) : `Erreur API ${response.status}`;
+        this.connected = response.status !== 0; this.fallback = false; this.errors++; this.notify();
+        throw new ApiError(message, response.status, detail);
+      }
+      this.connected = true; this.fallback = false; this.notify();
+      if (response.status === 204) return undefined as T;
+      const type = response.headers.get('content-type') ?? '';
+      return (type.includes('application/json') ? await response.json() : await response.blob()) as T;
+    } catch (error) {
+      clearTimeout(timeout);
+      if (error instanceof ApiError) throw error;
+      this.connected = false; this.fallback = true; this.errors++; this.notify();
+      throw new ApiError(error instanceof Error && error.name === 'AbortError' ? 'Le serveur met trop de temps à répondre.' : 'Impossible de joindre le serveur API.', 0, error);
+    }
+  }
+  private json(method: string, body?: unknown): RequestInit { return { method, ...(body === undefined ? {} : { body: JSON.stringify(body) }) }; }
+  async checkHealth() {
+    try {
+      const response = await fetch(`${API_REQUEST_BASE}/health`, { signal: AbortSignal.timeout(5000) });
+      this.connected = response.ok; this.fallback = !response.ok; this.notify(); return response.ok;
+    } catch { this.connected = false; this.fallback = true; this.notify(); return false; }
+  }
+  async login(email: string, password: string): Promise<AuthUser> {
+    const token = await this.request<any>('/auth/login', this.json('POST', { email, password }), { auth: false });
+    tokenStore.set(token.access_token);
+    return this.fetchCurrentUser();
+  }
+  async register(user: { nom: string; email: string; password: string; role: UserRole }) {
+    return this.request('/auth/register', this.json('POST', { ...user, role: roleToApi[user.role] }), { auth: false });
+  }
+  async fetchCurrentUser(): Promise<AuthUser> { const u = await this.request<any>('/auth/me'); return { id: String(u.id), nom: u.nom, email: u.email, role: fromRole(u.role) }; }
+  async getManagedUsers() { return this.request<any[]>('/auth/users'); }
+  async createManagedUser(data: { nom: string; email: string; password: string; role: 'ASSISTANT' | 'COMPTABLE' }) {
+    return this.request<any>('/auth/users', this.json('POST', data));
+  }
+  async updateManagedUser(id: string, payload: { actif?: boolean; nom?: string; email?: string }) {
+    return this.request<any>('/auth/users/' + encodeURIComponent(id), this.json('PATCH', payload));
+  }
+  async deleteManagedUser(id: string) { return this.request('/auth/users/' + encodeURIComponent(id), this.json('DELETE')); }
+  async logout() { try { if (tokenStore.get()) await this.request('/auth/logout', this.json('POST')); } finally { tokenStore.clear(); } }
+  async getDashboard(role: UserRole) {
+    const results = await Promise.allSettled([
+      this.request<BackendStats>('/dashboard/statistiques'), this.request<any>('/opportunites?skip=0&limit=100'),
+      this.request<any[]>('/sessions?skip=0&limit=100'), this.request<any[]>('/factures?skip=0&limit=100'), this.request<any[]>('/documents?skip=0&limit=100')
+    ]);
+    const val = <T,>(i: number): T | null => results[i].status === 'fulfilled' ? (results[i] as PromiseFulfilledResult<T>).value : null;
+    const op = val<any>(1); const dashboard = buildDashboard({ stats: val<BackendStats>(0), opportunites: arr(op, 'opportunites'), sessions: val<any[]>(2), factures: val<any[]>(3), documents: val<any[]>(4) }, results.some((result, index) => result.status === 'rejected' && (index !== 0 || role === 'Dir.')));
+    if (role !== 'Dir.') { dashboard.kpis.presenceIndisponible = true; }
+    return dashboard;
+  }
+  async getFormateurs(): Promise<Formateur[]> { return arr<BackendFormateur>(await this.request('/rh/formateurs')).map(toFormateur); }
+  async getSessionTrainerOptions(): Promise<SessionTrainerOption[]> {
+    const trainers = await this.getFormateurs();
+    // Session.formateur_id référence directement formateurs.id dans ce backend.
+    return trainers.filter((trainer) => trainer.statut !== 'Indisponible').sort((a, b) =>
+      Number(b.recommandation === 'Oui') - Number(a.recommandation === 'Oui') ||
+      (b.scoreMoyen ?? -1) - (a.scoreMoyen ?? -1)
+    );
+  }
+  async createFormateur(payload: Record<string, unknown>) { return toFormateur(await this.request<BackendFormateur>('/rh/formateurs', this.json('POST', payload))); }
+  async updateFormateur(id: string, payload: Record<string, unknown>) { return toFormateur(await this.request<BackendFormateur>(`/rh/formateurs/${id}`, this.json('PATCH', payload))); }
+  async deleteFormateur(id: string) { return this.request(`/rh/formateurs/${id}`, this.json('DELETE')); }
+  async getVeilles(): Promise<VeilleMarche[]> { const data = await this.request<any>('/opportunites?skip=0&limit=100'); return arr<any>(data, 'opportunites').map(mapVeilleMarket); }
+  async getOpportunites(): Promise<OpportuniteCRM[]> { const data = await this.request<any>('/opportunites?skip=0&limit=100'); return arr<any>(data, 'opportunites').map(mapOpportunity); }
+  async createOpportunite(form: Partial<OpportuniteCRM>) {
+    const raw = await this.request<any>('/opportunites', this.json('POST', { source: 'TEXTE', contenu: form.besoinFormation || form.entreprise || 'Opportunité saisie depuis le CRM', objet: form.entreprise || 'Nouvelle opportunité', budget: normalizeBudget(form.montantEstime), domaine: normalizeDomain(form.domaineIA) }));
+    return mapOpportunity(raw);
+  }
+  async searchMarkets(query: string) {
+    const data = await this.request<any>('/ia/veille/rechercher', this.json('POST', { query, domains: [], min_score: 0, limit: 20 }), { ia: true, jwtForIA: true });
+    const payload = data.data ?? data;
+    const results = arr<any>(payload, 'opportunities').concat(arr<any>(payload, 'opportunites'), arr<any>(payload, 'results'), arr<any>(payload, 'markets'));
+    const markets = results.map(mapVeilleMarket);
+    return { markets, status: payload.status === 'degraded' ? 'degraded' as const : 'ok' as const, notes: payload.notes ?? payload.message };
+  }
+  async acceptMarket(market: VeilleMarche): Promise<{ opportunity: OpportuniteCRM; session?: Session; sessionError?: string }> {
+    const opportunity = await this.createOpportunite({ entreprise: market.titre, domaineIA: market.categorie, besoinFormation: market.description || market.titre, montantEstime: market.budgetEstimeAr });
+    const acceptanceDate = new Date();
+    const acceptedOn = `${acceptanceDate.getFullYear()}-${String(acceptanceDate.getMonth() + 1).padStart(2, '0')}-${String(acceptanceDate.getDate()).padStart(2, '0')}`;
+    const dateDebut = addDaysToDate(acceptedOn, 7);
+    const dateFin = addMonthsToDate(dateDebut, 1);
+    try {
+      const session = await this.createSession({
+        intitule: market.titre,
+        client: market.clientCible || market.sourceSite,
+        dates: dateDebut,
+        dateFin,
+        opportuniteId: opportunity.id
+      });
+      return { opportunity, session };
+    } catch (error) {
+      return { opportunity, sessionError: error instanceof Error ? error.message : 'La session automatique n’a pas pu être créée.' };
+    }
+  }
+  async getDetectionStatus(): Promise<DetectionStatus> {
+    const response = await this.request<any>('/ia/veille/detecter/statut', {}, { ia: true, jwtForIA: true });
+    return response.data;
+  }
+  async getTavilyQuota(): Promise<TavilyQuota> {
+    const response = await this.request<any>('/ia/veille/quota', {}, { ia: true, jwtForIA: true });
+    return response.data;
+  }
+  async runDetection(options: { syncBackend?: boolean } = {}): Promise<DetectionResult> {
+    const data = await this.request<any>('/ia/veille/detecter', this.json('POST', { sync_backend: !!options.syncBackend }), { ia: true, jwtForIA: true, timeout: 120000 });
+    const payload = data.data ?? data;
+    return {
+      markets: arr<any>(payload, 'opportunities').concat(arr<any>(payload, 'opportunites'), arr<any>(payload, 'results')).map(mapVeilleMarket),
+      total: Number(payload.total ?? 0), status: payload.status ?? 'success',
+      quotaReached: payload.status === 'quota_atteint' || data.status === 'quota_atteint',
+      reason: payload.reason ?? payload.notes ?? data.error,
+      statistics: payload.statistics ?? {}, queries: arr<any>(payload, 'queries')
+    };
+  }
+  async getSessions(): Promise<Session[]> {
+    const rawSessions = arr<any>(await this.request('/sessions?skip=0&limit=100'));
+    const trainers = await this.getFormateurs().catch(() => []);
+    return rawSessions.map((raw) => {
+      const trainer = trainers.find((item) => String(item.id) === String(raw.formateur_id ?? ''));
+      return mapSession(raw, trainer ? formateurFullName(trainer) : undefined);
+    });
+  }
+  async createSession(form: Partial<Session>) {
+    const trainers = form.formateurId || form.formateur ? await this.getFormateurs().catch(() => []) : [];
+    const trainer = trainers.find(t => t.id === form.formateurId || `${t.prenom ?? ''} ${t.nom}`.trim() === form.formateur || t.nom === form.formateur);
+    const formateurId = trainer?.id;
+    const start = dateOnly(form.dates);
+    const raw = await this.request<any>('/sessions', this.json('POST', { titre: form.intitule?.trim().slice(0, 50), client: form.client?.trim().slice(0, 50) || undefined, formation_code: (form as any).formationCode || undefined, opportunite_id: form.opportuniteId || undefined, lieu: form.lieu || undefined, nb_participants_max: form.capacityMax || undefined, date_debut: start, date_fin: dateOnly(form.dateFin), ...(formateurId ? { formateur_id: formateurId } : {}) }));
+    return mapSession(raw, trainer ? formateurFullName(trainer) : form.formateur);
+  }
+  async getFactures(): Promise<DevisFacture[]> { return arr<any>(await this.request('/factures?skip=0&limit=100')).map(mapInvoice); }
+  async createFacture(form: Partial<DevisFacture>) {
+    const raw = await this.request<any>('/factures', this.json('POST', {
+      client: form.client?.trim() || undefined,
+      client_adresse: form.clientAdresse?.trim() || undefined,
+      client_siret: form.clientSiret?.trim() || undefined,
+      client_rcs: form.clientRcs?.trim() || undefined,
+      client_tva: form.clientTva?.trim() || undefined,
+      montant: form.montantHT ?? 0,
+      tva_taux: form.tvaTaux ?? 20,
+      date_echeance: form.dateEcheance || new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10),
+      session_id: form.sessionId || undefined
+    }));
+    return mapInvoice(raw);
+  }
+  async updateFactureStatus(id: string, statut: string) {
+    const status = statut === 'Brouillon' || statut === 'Annulée' ? 'ANNULEE' : 'EMISE';
+    return mapInvoice(await this.request<any>(`/factures/${id}`, this.json('PATCH', { statut: status })));
+  }
+  async addPayment(id: string, montant: number, mode?: string) {
+    return this.request(`/factures/${id}/paiements`, this.json('POST', { montant, date: new Date().toISOString().slice(0, 10), mode }));
+  }
+  async generateInvoiceReminder(id: string) { return this.request<any>('/ia/facturation/relances/generer', this.json('POST', { facture_id: id }), { ia: true, timeout: 120000 }); }
+  async syncInvoiceReminder(reviewId: string) { return this.request<any>('/ia/facturation/relances/synchroniser', this.json('POST', { review_id: reviewId }), { ia: true, timeout: 120000 }); }
+  async evaluateTrainer(body: unknown) { return this.request<any>('/ia/rh/formateur/evaluer', this.json('POST', body), { ia: true, timeout: 120000 }); }
+  async syncTrainerEvaluation(reviewId: string, trainerId: string) { return this.request<any>('/ia/rh/synchroniser/evaluation', this.json('POST', { review_id: reviewId, formateur_id: trainerId }), { ia: true, timeout: 120000 }); }
+  async analyzeTrainerCv(file: File, criteria: Record<string, unknown>) {
+    const form = new FormData(); form.append('fichier', file); form.append('criteres_poste', JSON.stringify(criteria));
+    return this.request<any>('/ia/rh/cv/analyser', { method: 'POST', body: form }, { ia: true, timeout: 120000 });
+  }
+  async generateTrainerContract(body: unknown) { return this.request<any>('/ia/rh/contrat-formateur', this.json('POST', body), { ia: true, timeout: 120000 }); }
+  async draftTrainerEmail(body: { type_email: string; destinataire: string; contexte?: Record<string, unknown> }) { return this.request<any>('/ia/rh/email/brouillon', this.json('POST', body), { ia: true, timeout: 120000 }); }
+  async getApprovedTrainerContracts() { return this.getReviewHistory('approved', 'agent_m4_contrat'); }
+  async downloadTrainerContract(reviewId: string) { return this.request<Blob>(`/ia/rh/contrat-formateur/download/${encodeURIComponent(reviewId)}`, {}, { ia: true, timeout: 30000 }); }
+  async analyzeTrainerEvaluation(body: unknown) { return this.request<any>('/ia/rh/formateur/evaluer', this.json('POST', body), { ia: true, timeout: 120000 }); }
+  async sendVoiceCommand(body: { texte: string; ecran_actuel?: string; formations_disponibles?: string[] }) {
+    return this.request<any>('/ia/vocal/commande', this.json('POST', body), { ia: true, timeout: 60000 });
+  }
+  async executeVoiceAction(action: string, session_info: Record<string, unknown>, payload: Record<string, unknown> = {}) {
+    return this.request<any>('/ia/vocal/executer', this.json('POST', { action, confirmer: true, session_info, payload }), { ia: true, timeout: 120000 });
+  }
+  async getInvoiceReminders(id: string) { return this.request<any[]>(`/factures/${id}/relances`); }
+  async saveInvoicePayment(id: string, payload: { montant: number; date: string; mode?: string }) { return mapInvoice(await this.request<any>(`/factures/${id}/paiements`, this.json('POST', payload))); }
+  async createManualReminder(id: string) { return this.request(`/factures/${id}/relance`, this.json('POST', {})); }
+  async exportAccounting(format: 'csv' | 'excel' | 'pdf') { return this.request<Blob>(`/exports/comptable?format=${format}`); }
+  async downloadInvoicePdf(id: string) { return this.request<Blob>(`/factures/${encodeURIComponent(id)}/pdf`); }
+  async getPresences(): Promise<PresenceRecord[]> { return []; }
+  async getPresenceForSession(id: string) { return this.request<any[]>(`/sessions/seances/${id}/presences`); }
+  async createSeance(sessionId: string, body: unknown) { return this.request(`/sessions/${sessionId}/seances`, this.json('POST', body)); }
+  async createPresence(seanceId: string, participantId: string, statut: string, extras: { heure_arrivee?: string; motif_absence?: string } = {}) { return this.request(`/sessions/seances/${seanceId}/presences`, this.json('POST', { participant_id: participantId, statut, ...extras })); }
+  async updatePresence(id: string, statut: string, extras: { heure_arrivee?: string; motif_absence?: string } = {}) { return this.request(`/sessions/seances/presences/${id}`, this.json('PATCH', { statut, ...extras })); }
+  async getSeances(sessionId: string) { return this.request<any[]>(`/sessions/${sessionId}/seances`); }
+  async createParticipant(data: { nom: string; prenom?: string; email?: string; entreprise?: string }) { return this.request<any>('/participants', this.json('POST', data)); }
+  async getParticipants(sessionId?: string) { return this.request<any[]>(sessionId ? `/sessions/${sessionId}/participants` : '/participants?skip=0&limit=500'); }
+  async enrollParticipant(sessionId: string, participantId: string) { return this.request(`/sessions/${sessionId}/inscrire`, this.json('POST', { participant_id: participantId })); }
+  async removeParticipant(sessionId: string, participantId: string) { return this.request(`/sessions/${sessionId}/inscrire/${participantId}`, this.json('DELETE')); }
+  async updateSession(id: string, payload: Record<string, unknown>) { return mapSession(await this.request<any>(`/sessions/${id}`, this.json('PATCH', payload))); }
+  async deleteSession(id: string) { return this.request(`/sessions/${id}`, this.json('DELETE')); }
+  async deleteOpportunity(id: string) { return this.request(`/opportunites/${encodeURIComponent(id)}`, this.json('DELETE')); }
+  async createPublicRegistrationLink(kind: 'participant' | 'formateur' | 'post_formation', session_id?: string) { return this.request<{token:string;path:string;kind:string;assessment_question_count?:number}>('/public/links', this.json('POST', { kind, ...(session_id ? {session_id} : {}) })); }
+  async getSessionPublicLinks(sessionId: string) { return this.request<{participant?:{token:string;path:string};formateur?:{token:string;path:string};post_formation?:{token:string;path:string}}>(`/public/links/session/${encodeURIComponent(sessionId)}`); }
+  async getPublicRegistration(token: string) { return this.request<any>(`/public/links/${encodeURIComponent(token)}`, {}, {auth:false}); }
+  async submitPublicParticipant(token: string, data: {nom:string;prenom:string;email:string;organisation?:string;poste?:string;assessment_attempt_id?:string;answers?:Array<{question_id:string;answer:string}>}) { return this.request<any>(`/public/links/${encodeURIComponent(token)}/participant`, this.json('POST', data), {auth:false}); }
+  async submitPostFormation(token: string, data: {email:string;assessment_attempt_id:string;answers:Array<{question_id:string;answer:string}>;satisfaction_answers:Array<{question_id:string;answer:string}>}) { return this.request<any>(`/public/links/${encodeURIComponent(token)}/post-formation`, this.json('POST', data), {auth:false}); }
+  async getTrainerSatisfactionResponses() { return this.request<any[]>('/sessions/evaluations/satisfaction'); }
+  async submitPublicTrainer(token: string, data: {nom:string;prenom:string;email:string;telephone?:string;specialite:string;fichier:File}) {
+    const form = new FormData(); Object.entries(data).forEach(([key, value]) => form.append(key, value as string | Blob));
+    return this.request<any>(`/public/links/${encodeURIComponent(token)}/formateur`, {method:'POST',body:form}, {auth:false});
+  }
+  async getCandidates() { return this.request<any[]>('/rh/candidats'); }
+  async updateCandidate(id: string, payload: Record<string, unknown>) { return this.request<any>(`/rh/candidats/${encodeURIComponent(id)}`, this.json('PATCH', payload)); }
+  async preselectTrainerCv(body: { cv_texte: string; criteres_poste: Record<string, unknown> }) { return this.request<any>('/ia/rh/preselection', this.json('POST', body), { ia: true, timeout: 120000 }); }
+  async getCandidateCv(id:string) { return this.request<any>(`/rh/candidats/${encodeURIComponent(id)}/cv`); }
+  async downloadCandidateCv(id:string) { return this.request<Blob>(`/rh/candidats/${encodeURIComponent(id)}/cv-fichier`); }
+  async decideCandidate(id:string, decision:'ACCEPTER'|'REFUSER') { return this.request<any>(`/rh/candidats/${encodeURIComponent(id)}/decision?decision=${decision}`, this.json('POST', {})); }
+  async createOpportunityFromReview(path: string, body: unknown) { return this.request(`/ia/${path}`, this.json('POST', body), { ia: true, timeout: 120000 }); }
+  async getTdrBriefFromOpportunity(id: string) { return this.request<any>(`/ia/tdr/from-opportunite/${encodeURIComponent(id)}`, {}, { ia: true }); }
+  async searchRagDocuments(requete: string) { return this.request<any>('/ia/rag/rechercher', this.json('POST', { requete, top_k: 5, collection: 'support' }), { ia: true, timeout: 60000 }); }
+  async generateTdr(body: unknown) { return this.request<any>('/ia/tdr/generer', this.json('POST', body), { ia: true, timeout: 120000 }); }
+  async rectifyTdr(body: unknown) { return this.request<any>('/ia/tdr/rectifier', this.json('POST', body), { ia: true, timeout: 120000 }); }
+  async generateOfferTechnique(body: unknown) { return this.request<any>('/ia/offres/generer-technique', this.json('POST', body), { ia: true, timeout: 120000 }); }
+  async generateOfferFinanciere(body: unknown) { return this.request<any>('/ia/offres/generer-financiere', this.json('POST', body), { ia: true, timeout: 120000 }); }
+  async rectifyOfferTechnique(body: unknown) { return this.request<any>('/ia/offres/rectifier-technique', this.json('POST', body), { ia: true, timeout: 120000 }); }
+  async rectifyOfferFinanciere(body: unknown) { return this.request<any>('/ia/offres/rectifier-financiere', this.json('POST', body), { ia: true, timeout: 120000 }); }
+  async getOfferReviews() { return this.request<any>('/ia/offres/reviews', {}, { ia: true, timeout: 30000 }); }
+  async getOfferReview(id: string) { return this.request<any>(`/ia/offres/reviews/${id}`, {}, { ia: true }); }
+  async deleteOfferReview(id: string) { return this.request<any>(`/ia/offres/reviews/${id}`, { method: 'DELETE' }, { ia: true }); }
+  async approveOfferReview(id: string, reviewer_note = 'OK') { return this.request(`/ia/offres/reviews/${id}/approve`, this.json('POST', { reviewer_note }), { ia: true }); }
+  async rejectOfferReview(id: string, reason: string) { return this.request(`/ia/offres/reviews/${id}/reject`, this.json('POST', { reason }), { ia: true }); }
+  async approveTdr(id: string, reviewer_note: string) { return this.request(`/ia/tdr/reviews/${id}/approve`, this.json('POST', { reviewer_note }), { ia: true }); }
+  async rejectTdr(id: string, reviewer_note: string) { return this.request(`/ia/tdr/reviews/${id}/reject`, this.json('POST', { reviewer_note }), { ia: true }); }
+  async syncTdr(id: string, opportunite_id?: string) { return this.request('/ia/tdr/synchroniser', this.json('POST', { review_id: id, opportunite_id }), { ia: true, timeout: 120000 }); }
+  async syncOffer(id: string, opportunite_id?: string) { return this.request('/ia/offres/synchroniser', this.json('POST', { review_id: id, opportunite_id }), { ia: true, timeout: 120000 }); }
+  async createOffer(body: unknown) { return this.request<any>('/offres', this.json('POST', body)); }
+  async downloadTdr(filename: string) {
+    if (!tokenStore.get()) throw new ApiError('Votre session frontend est affichée comme ouverte, mais son jeton est absent. Reconnectez-vous puis réessayez.', 401);
+    return this.request<Blob>(`/ia/tdr/download/${encodeURIComponent(filename)}`, { credentials: 'include' }, { ia: true, jwtForIA: true });
+  }
+  async getPendingReviews() { return this.request<any>('/ia/formations/pending-reviews', {}, { ia: true, timeout: 30000 }); }
+  async getReviewHistory(status: 'approved' | 'rejected', agentId?: string) { const params = new URLSearchParams({ status }); if (agentId) params.set('agent_id', agentId); return this.request<any>(`/ia/formations/reviews?${params}`, {}, { ia: true, timeout: 30000 }); }
+  async generateFormationForms(body: unknown) { return this.request<any>('/ia/formations/generate-forms', this.json('POST', body), { ia: true, timeout: 120000 }); }
+  async analyzeFormationLevels(body: unknown) { return this.request<any>('/ia/formations/analyze-levels', this.json('POST', body), { ia: true, timeout: 120000 }); }
+  async analyzeFormationSatisfaction(body: unknown) { return this.request<any>('/ia/formations/analyze-satisfaction', this.json('POST', body), { ia: true, timeout: 120000 }); }
+  async publishFormationForms(reviewId: string, session_titre: string) { return this.request<any>(`/ia/formations/reviews/${reviewId}/publish-forms`, this.json('POST', { session_titre }), { ia: true, timeout: 120000 }); }
+  private isM3ReviewId(id: string) { return /(?:^|-)AM3(?:-|$)/i.test(id); }
+  async getReview(id: string) {
+    const path = this.isM3ReviewId(id) ? `/ia/offres/reviews/${id}` : `/ia/formations/reviews/${id}`;
+    return this.request<any>(path, {}, { ia: true });
+  }
+  async approveReview(id: string, reviewer_note?: string) {
+    if (this.isM3ReviewId(id)) return this.approveOfferReview(id, reviewer_note || 'OK');
+    return this.request(`/ia/formations/reviews/${id}/approve`, this.json('POST', { reviewer_note }), { ia: true });
+  }
+  async rejectReview(id: string, reason: string) {
+    if (this.isM3ReviewId(id)) return this.rejectOfferReview(id, reason);
+    return this.request(`/ia/formations/reviews/${id}/reject`, this.json('POST', { reason }), { ia: true });
+  }
+  async getRagReviews() { return this.request<any>('/ia/rag/reviews', {}, { ia: true, timeout: 30000 }); }
+  async getRagReview(id: string) { return this.request<any>(`/ia/rag/reviews/${id}`, {}, { ia: true }); }
+  async deleteReview(id: string) { return this.request<any>(`/ia/formations/reviews/${id}`, { method: 'DELETE' }, { ia: true }); }
+  async deleteRagReview(id: string) { return this.request<any>(`/ia/rag/reviews/${id}`, { method: 'DELETE' }, { ia: true }); }
+  async approveRagReview(id: string, reviewer_note: string) { return this.request(`/ia/rag/reviews/${id}/approve`, this.json('POST', { reviewer_note }), { ia: true }); }
+  async rejectRagReview(id: string, reviewer_note: string) { return this.request(`/ia/rag/reviews/${id}/reject`, this.json('POST', { reviewer_note }), { ia: true }); }
+  async uploadSupport(file: File, formation_code: string, session_id: string, collection?: string, module?: string) {
+    const form = new FormData(); form.append('fichier', file); form.append('formation_code', formation_code);
+    form.append('session_id', session_id);
+    if (collection) form.append('collection', collection); if (module) form.append('module', module);
+    return this.request('/documents/upload', { method: 'POST', body: form });
+  }
+  async getSupports(params: Record<string, string> = {}) { return this.request<any>(`/documents/rag/supports${queryString(params)}`); }
+  async getRagSessions() { return this.request<any>('/ia/rag/sessions', {}, { ia: true }); }
+  async getRagIndexStatus(hash: string) { return this.request<any>(`/ia/rag/statut/${encodeURIComponent(hash)}`, {}, { ia: true }); }
+  async indexSupport(chemin_fichier: string, formation_code: string, session_id: string, module?: string) { return this.request('/ia/rag/indexer-document', this.json('POST', { chemin_fichier, formation_code, session_id, module }), { ia: true }); }
+  async chatRag(body: { message: string; conversation_id?: string | null; formation_code?: string | null; session_id?: string | null; module?: string | null }) { return this.request<any>('/ia/rag/chat', this.json('POST', body), { ia: true, timeout: 120000 }); }
+  async chatRagStream(
+    body: { message: string; conversation_id?: string | null; formation_code?: string | null; session_id?: string | null; module?: string | null },
+    onEvent: (event: any) => void,
+  ) {
+    const headers = new Headers({ Accept: 'text/event-stream', 'Content-Type': 'application/json' });
+    const userToken = tokenStore.get();
+    const token = userToken || IA_TOKEN;
+    if (token) headers.set('Authorization', `Bearer ${token}`);
+    const response = await fetch(`${API_REQUEST_BASE}${API_PREFIX}/ia/rag/chat/stream`, {
+      method: 'POST', headers, body: JSON.stringify(body), signal: AbortSignal.timeout(120000),
+    });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      const detail = (payload as any)?.detail ?? (payload as any)?.message;
+      throw new ApiError(typeof detail === 'string' ? detail : `Erreur API ${response.status}`, response.status, detail);
+    }
+    if (!response.body) throw new ApiError('Le serveur n’a pas ouvert le flux de réponse.', 500);
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    const dispatchFrames = (final = false) => {
+      const frames = buffer.split(/\r?\n\r?\n/);
+      buffer = final ? '' : frames.pop() ?? '';
+      for (const frame of frames) {
+        const data = frame.split(/\r?\n/).filter(line => line.startsWith('data:')).map(line => line.slice(5).trim()).join('\n');
+        if (!data) continue;
+        try { onEvent(JSON.parse(data)); } catch { /* ignore malformed server event */ }
+      }
+    };
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      dispatchFrames();
+    }
+    buffer += decoder.decode();
+    dispatchFrames(true);
+  }
+  async getRagHealth() { return this.request<any>('/ia/rag/health', {}, { ia: true }); }
+  async getRagFormations() { return this.request<any>('/ia/rag/formations', {}, { ia: true }); }
+  async getProjects() { return this.request<any[]>('/projets?skip=0&limit=100'); }
+  async createProject(body: unknown) { return this.request<any>('/projets', this.json('POST', body)); }
+  async getRooms() { return this.request<any[]>('/salles?skip=0&limit=100'); }
+  async createRoom(body: unknown) { return this.request<any>('/salles', this.json('POST', body)); }
+  async createCandidate(body: unknown) { return this.request<any>('/rh/candidats', this.json('POST', body)); }
+  async generateSyllabus(body: unknown) { return this.request<any>('/ia/rag/syllabus', this.json('POST', body), { ia: true, timeout: 120000 }); }
+  async generatePortfolio(body: unknown) { return this.request<any>('/ia/rag/portfolio', this.json('POST', body), { ia: true, timeout: 120000 }); }
+  async getBlob(path: string, params: Record<string, string> = {}) { return this.request<Blob>(`${path}${queryString(params)}`); }
+}
+const normalizeDomain = (value?: string): string => {
+  const text = (value ?? '').toUpperCase();
+  if (text.includes('DATA')) return 'DATA'; if (text.includes('DEVOPS')) return 'DEVOPS';
+  if (text.includes('DEVELOP')) return 'DEVELOPPEMENT'; if (text.includes('BUREAUT')) return 'BUREAUTIQUE';
+  if (text.includes('IA')) return 'IA'; return 'AUTRE';
+};
+const queryString = (params: Record<string, string>) => { const q = new URLSearchParams(params); const value = q.toString(); return value ? `?${value}` : ''; };
 export const apiService = new ApiService();

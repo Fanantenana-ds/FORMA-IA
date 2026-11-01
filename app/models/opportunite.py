@@ -8,6 +8,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
 from app.database import Base
+from app.models.tenant import TenantOwned
 
 
 class SourceOpportunite(str, Enum):
@@ -28,7 +29,7 @@ class StatutOpportunite(str, Enum):
     ANALYSEE = "ANALYSEE"
     ARCHIVEE = "ARCHIVEE"
 
-class Opportunite(Base):
+class Opportunite(TenantOwned, Base):
     __tablename__ = "opportunites"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)

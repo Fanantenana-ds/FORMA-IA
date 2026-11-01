@@ -43,11 +43,20 @@ interface DashboardViewProps {
   facturationStatuts: FacturationStatut[];
   activites: ActiviteRecente[];
   currentRole: UserRole;
+  isLoading?: boolean;
+  notice?: string | null;
   onRefresh: () => void;
   onNavigateTo: (section: any) => void;
   onOpenNewOpportunity: () => void;
   onOpenNewSession: () => void;
 }
+
+const DASHBOARD_VIEW_LABELS: Record<UserRole, string> = {
+  'Dir.': 'Direction Générale',
+  'Form.': 'Pédagogique',
+  'Assis.': 'Assistant',
+  'Compt.': 'Comptabilité'
+};
 
 export const DashboardView: React.FC<DashboardViewProps> = ({
   kpis,
@@ -55,12 +64,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   facturationStatuts,
   activites,
   currentRole,
+  isLoading = false,
+  notice,
   onRefresh,
   onNavigateTo,
   onOpenNewOpportunity,
   onOpenNewSession
 }) => {
-  const [timeframe, setTimeframe] = useState<'mois' | 'trimestre' | 'annee'>('mois');
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   const handleRefreshClick = async () => {
@@ -78,7 +88,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         <div>
           <div className="flex items-center gap-2 mb-1">
             <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-[#1B8F6E]/10 text-[#1B8F6E]">
-              Vue {currentRole === 'Dir.' ? 'Direction Générale' : currentRole === 'Form.' ? 'Pédagogique' : 'Assistant'}
+              Vue {DASHBOARD_VIEW_LABELS[currentRole]}
             </span>
             <span className="text-xs text-slate-400">• Temps réel (REST)</span>
           </div>
@@ -92,49 +102,36 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
         {/* Controls */}
         <div className="flex items-center gap-2.5 shrink-0 self-start md:self-center">
-          <div className="flex items-center bg-[#F4F5F3] p-1 rounded-xl border border-slate-200">
-            <button
-              onClick={() => setTimeframe('mois')}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
-                timeframe === 'mois'
-                  ? 'bg-white text-[#11162A] shadow-xs'
-                  : 'text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              Mois
-            </button>
-            <button
-              onClick={() => setTimeframe('trimestre')}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
-                timeframe === 'trimestre'
-                  ? 'bg-white text-[#11162A] shadow-xs'
-                  : 'text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              Trimestre
-            </button>
-            <button
-              onClick={() => setTimeframe('annee')}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
-                timeframe === 'annee'
-                  ? 'bg-white text-[#11162A] shadow-xs'
-                  : 'text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              Année 2026
-            </button>
-          </div>
-
           <button
             onClick={handleRefreshClick}
             disabled={isRefreshing}
             className="p-2.5 text-slate-600 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl transition-all shadow-xs active:scale-95"
-            title="Rafraîchir les données depuis l'API REST"
+            title="Rafraîchir les données"
           >
             <RefreshCw size={16} className={isRefreshing ? 'animate-spin text-[#1B8F6E]' : ''} />
           </button>
         </div>
       </div>
+
+      {isLoading && (
+        <div className="p-3 rounded-xl bg-blue-50 border border-blue-200 text-blue-800 text-xs font-semibold flex items-center gap-2">
+          <RefreshCw size={14} className="animate-spin shrink-0" />
+          Chargement des indicateurs…
+        </div>
+      )}
+
+      {notice && !isLoading && (
+        <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs font-semibold flex items-start gap-2">
+          <AlertCircle size={14} className="shrink-0 mt-0.5" />
+          <span>{notice}</span>
+        </div>
+      )}
+
+      {kpis.presenceIndisponible && !isLoading && (
+        <div className="p-3 rounded-xl bg-slate-100 border border-slate-200 text-slate-600 text-xs font-medium">
+          Le nombre de participants et le taux de présence global sont réservés à la Direction.
+        </div>
+      )}
 
       {/* GROS AFFICHAGE - 4 KPI CARDS */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
@@ -152,17 +149,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <div className="text-3xl font-extrabold text-[#11162A]">
               {kpis.sessionsRealisees}
             </div>
-            <div className="flex items-center text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">
-              <TrendingUp size={12} className="mr-1" />
-              +12%
-            </div>
-          </div>
-          <p className="text-xs text-slate-500 mt-2 flex items-center justify-between">
-            <span>Objectif mensuel : 40</span>
-            <span className="font-semibold text-slate-700">92.5% atteint</span>
-          </p>
-          <div className="w-full bg-slate-100 h-1.5 rounded-full mt-2 overflow-hidden">
-            <div className="bg-[#1B8F6E] h-full rounded-full" style={{ width: '92.5%' }}></div>
           </div>
         </div>
 
@@ -178,19 +164,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
           <div className="flex items-baseline justify-between">
             <div className="text-3xl font-extrabold text-[#11162A]">
-              {kpis.participantsFormes}
+              {kpis.presenceIndisponible ? '—' : kpis.participantsFormes}
             </div>
-            <div className="flex items-center text-xs font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">
-              <TrendingUp size={12} className="mr-1" />
-              +18%
-            </div>
-          </div>
-          <p className="text-xs text-slate-500 mt-2 flex items-center justify-between">
-            <span>Moyenne/session : 11.1</span>
-            <span className="font-semibold text-slate-700">Qualiopi Conforme</span>
-          </p>
-          <div className="w-full bg-slate-100 h-1.5 rounded-full mt-2 overflow-hidden">
-            <div className="bg-blue-600 h-full rounded-full" style={{ width: '84%' }}></div>
           </div>
         </div>
 
@@ -206,7 +181,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
           <div className="flex items-baseline justify-between">
             <div className="text-3xl font-extrabold text-[#11162A]">
-              {kpis.tauxPresenceMoyen}%
+              {kpis.presenceIndisponible ? '—' : `${kpis.tauxPresenceMoyen}%`}
             </div>
             <div className="flex items-center text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">
               <CheckCircle2 size={12} className="mr-1" />
@@ -215,7 +190,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
           <p className="text-xs text-slate-500 mt-2 flex items-center justify-between">
             <span>Seuil d'alerte : &lt;85%</span>
-            <span className="font-semibold text-emerald-600">Excellence</span>
+            <span className={`font-semibold ${kpis.tauxPresenceMoyen >= 85 ? 'text-emerald-600' : 'text-amber-600'}`}>
+              {kpis.presenceIndisponible || kpis.tauxPresenceMoyen === 0 ? '—' : kpis.tauxPresenceMoyen >= 85 ? 'Conforme' : 'Sous le seuil'}
+            </span>
           </p>
           <div className="w-full bg-slate-100 h-1.5 rounded-full mt-2 overflow-hidden">
             <div className="bg-amber-500 h-full rounded-full" style={{ width: `${kpis.tauxPresenceMoyen}%` }}></div>
@@ -241,13 +218,45 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               IA Active
             </div>
           </div>
-          <p className="text-xs text-slate-500 mt-2 flex items-center justify-between">
-            <span>Valeur estimée pipeline :</span>
-            <span className="font-extrabold text-[#11162A]">300 000 Ar</span>
-          </p>
-          <div className="w-full bg-slate-100 h-1.5 rounded-full mt-2 overflow-hidden">
-            <div className="bg-purple-600 h-full rounded-full" style={{ width: '78%' }}></div>
+        </div>
+      </div>
+
+      {/* INDICATEURS FINANCIERS & DOCUMENTS */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+        {[
+          { label: 'CA facturé (HT)', value: kpis.chiffreAffairesFacture, unit: ' Ar', accent: 'text-[#11162A]' },
+          { label: 'CA encaissé', value: kpis.chiffreAffairesEncaisse, unit: ' Ar', accent: 'text-emerald-700' },
+          { label: 'Montant impayé (TTC)', value: kpis.montantImpaye, unit: ' Ar', accent: 'text-amber-700' },
+          { label: 'Factures en retard', value: kpis.facturesEnRetard, unit: '', accent: (kpis.facturesEnRetard ?? 0) > 0 ? 'text-red-600' : 'text-[#11162A]' }
+        ].map((card) => (
+          <div key={card.label} className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs">
+            <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">{card.label}</span>
+            <div className={`text-2xl font-extrabold mt-2 ${card.accent}`}>
+              {card.value === undefined ? '—' : `${card.value.toLocaleString()}${card.unit}`}
+            </div>
           </div>
+        ))}
+      </div>
+
+      <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs">
+        <div className="flex items-center gap-2 mb-4">
+          <FileText size={18} className="text-[#1B8F6E]" />
+          <h3 className="text-lg font-bold text-[#11162A]">Documents générés</h3>
+        </div>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 text-center">
+          {[
+            { label: 'TDR', value: kpis.tdrGeneres },
+            { label: 'Offres', value: kpis.offresGenerees },
+            { label: 'Attestations', value: kpis.attestationsGenerees },
+            { label: 'Relances de facture', value: kpis.relancesEnvoyees }
+          ].map((doc) => (
+            <div key={doc.label} className="bg-[#F4F5F3] rounded-xl p-3 border border-slate-200/60">
+              <div className="text-2xl font-extrabold text-[#11162A]">
+                {doc.value === undefined ? '—' : doc.value.toLocaleString()}
+              </div>
+              <div className="text-[11px] font-bold text-slate-500 uppercase mt-0.5">{doc.label}</div>
+            </div>
+          ))}
         </div>
       </div>
 
@@ -276,6 +285,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </div>
 
             {/* Recharts Bar Chart */}
+            {domainOpportunities.length === 0 && (
+              <p className="text-xs text-slate-500 bg-slate-50 p-4 rounded-xl border border-slate-200/80 mt-2">
+                Aucune opportunité enregistrée pour le moment.
+              </p>
+            )}
+            {domainOpportunities.length > 0 && (
             <div className="h-64 w-full mt-2">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart
@@ -313,6 +328,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 </BarChart>
               </ResponsiveContainer>
             </div>
+            )}
           </div>
 
           {/* Quick Domain Metrics Grid */}
@@ -323,7 +339,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 <div className="flex items-baseline justify-between mt-1">
                   <span className="text-sm font-extrabold text-[#11162A]">{item.nombre} opp.</span>
                   <span className="text-[10px] font-bold text-emerald-600 bg-emerald-100/60 px-1.5 py-0.2 rounded">
-                    +{item.croissance}%
+                    {item.valeurEstimee > 0 ? `${item.valeurEstimee.toLocaleString()} Ar` : 'Budget n.c.'}
                   </span>
                 </div>
               </div>
@@ -353,7 +369,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               </button>
             </div>
 
+            {facturationStatuts.length === 0 && (
+              <p className="text-xs text-slate-500 bg-slate-50 p-4 rounded-xl border border-slate-200/80">
+                Aucune facture enregistrée pour le moment.
+              </p>
+            )}
+
             {/* Donut Chart */}
+            {facturationStatuts.length > 0 && (
             <div className="h-52 w-full flex items-center justify-center">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
@@ -383,6 +406,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 </PieChart>
               </ResponsiveContainer>
             </div>
+            )}
           </div>
 
           {/* Status breakdown list */}
@@ -412,7 +436,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               Activité récente
             </h3>
             <p className="text-xs text-slate-500 mt-0.5">
-              Historique des événements clés, signatures et émargements
+              Dernières créations : opportunités, sessions, factures et documents
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -421,13 +445,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               className="px-3 py-1.5 bg-[#1B8F6E]/10 text-[#1B8F6E] hover:bg-[#1B8F6E]/20 text-xs font-semibold rounded-lg transition-colors flex items-center gap-1"
             >
               <Plus size={14} />
-              <span>Saisir événement</span>
+              <span>Nouvelle opportunité</span>
             </button>
           </div>
         </div>
 
         {/* Timeline List */}
         <div className="space-y-4">
+          {activites.length === 0 && (
+            <p className="text-xs text-slate-500 bg-slate-50 p-4 rounded-xl border border-slate-200/80">
+              Aucune activité enregistrée pour le moment.
+            </p>
+          )}
           {activites.map((item) => {
             const getIcon = () => {
               switch (item.type) {
@@ -439,6 +468,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   return <Zap className="text-purple-600" size={16} />;
                 case 'facture':
                   return <FileText className="text-emerald-600" size={16} />;
+                case 'document':
+                  return <FileText className="text-amber-600" size={16} />;
                 default:
                   return <Sparkles className="text-amber-600" size={16} />;
               }

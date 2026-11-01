@@ -19,6 +19,7 @@ class TDRRequest(BaseModel):
     lieu: str | None = None
     deadline: str | None = None
     opportunite_id: str | None = None       # ✅ Lien vers M1
+    feedback: str | None = Field(default=None, max_length=3000, description="Corrections demandées par le réviseur humain")
 
 
 class TDRFromOpportuniteRequest(BaseModel):

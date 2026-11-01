@@ -3,7 +3,11 @@ import io
 from docx import Document as DocxDocument
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import cm
-from reportlab.pdfgen import canvas
+from reportlab.lib import colors
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+from xml.sax.saxutils import escape
+from app.services.document_design import apply_docx_branding, draw_pdf_branding
 
 from app.models.document import Document, FormatExport, TypeDocument
 
@@ -44,10 +48,18 @@ class DocumentExportService:
 
     def _exporter_word(self, document: Document) -> tuple[bytes, str, str]:
         doc = DocxDocument()
-        doc.add_heading(self._titre_document(document), level=1)
+        doc.add_heading(self._titre_document(document), level=0)
 
         for ligne in self._ligne_contenu(document):
-            doc.add_paragraph(ligne)
+            if ": " in ligne:
+                label, value = ligne.split(": ", 1)
+                p = doc.add_paragraph()
+                p.add_run(label + " : ").bold = True
+                p.add_run(value)
+            else:
+                doc.add_paragraph(ligne)
+
+        apply_docx_branding(doc, self._titre_document(document))
 
         buffer = io.BytesIO()
         doc.save(buffer)
@@ -61,24 +73,24 @@ class DocumentExportService:
 
     def _exporter_pdf(self, document: Document) -> tuple[bytes, str, str]:
         buffer = io.BytesIO()
-        c = canvas.Canvas(buffer, pagesize=A4)
-        width, height = A4
-
-        y = height - 3 *cm
-        c.setFont("Helvetica-Bold", 16)
-        c.drawString(2 * cm, y, self._titre_document(document))
-        y -= 1.5 * cm
-
-        c.setFont("Helvetica", 11)
+        doc = SimpleDocTemplate(buffer, pagesize=A4, leftMargin=2*cm, rightMargin=2*cm,
+                                topMargin=2.6*cm, bottomMargin=1.8*cm)
+        styles = getSampleStyleSheet()
+        title_style = ParagraphStyle("BrandTitle", parent=styles["Title"], fontName="Helvetica-Bold",
+                                     fontSize=22, leading=27, textColor=colors.HexColor("#11162A"),
+                                     spaceAfter=18)
+        body_style = ParagraphStyle("BrandBody", parent=styles["BodyText"], fontSize=10,
+                                    leading=15, textColor=colors.HexColor("#202938"), spaceAfter=10)
+        story = [Paragraph(escape(self._titre_document(document)), title_style)]
         for ligne in self._ligne_contenu(document):
-            for sous_ligne in self._decouper_ligne(ligne, 90):
-                c.drawString(2 * cm, y, sous_ligne)
-                y -= 0.7 * cm
-                if y < 2 * cm:
-                    c.showPage()
-                    y = height - 2 * cm
-
-        c.save()
+            if ": " in ligne:
+                label, value = ligne.split(": ", 1)
+                line = f"<b>{escape(label)} :</b> {escape(value)}"
+            else:
+                line = escape(ligne).replace("\n", "<br/>")
+            story.append(Paragraph(line, body_style))
+        doc.build(story, onFirstPage=lambda canvas, layout: draw_pdf_branding(canvas, layout, self._titre_document(document)),
+                  onLaterPages=lambda canvas, layout: draw_pdf_branding(canvas, layout, self._titre_document(document)))
         buffer.seek(0)
 
         nom_fichier = f"{document.type.value.lower()}_{document.id}.pdf"

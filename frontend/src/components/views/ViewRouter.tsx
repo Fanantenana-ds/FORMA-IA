@@ -7,6 +7,8 @@ import { EvaluationCompetencesView } from './EvaluationCompetencesView';
 import { SessionsGroupesView } from './SessionsGroupesView';
 import { SuiviPresencesView } from './SuiviPresencesView';
 import { FacturationDevisView } from './FacturationDevisView';
+import { EspaceIAView } from './EspaceIAView';
+import { GestionUtilisateursView } from './GestionUtilisateursView';
 import {
   MenuSection,
   UserRole,
@@ -19,8 +21,7 @@ import {
   Formateur,
   Session,
   PresenceRecord,
-  DevisFacture,
-  EvaluationFormateur
+  DevisFacture
 } from '../../types';
 
 interface ViewRouterProps {
@@ -37,12 +38,14 @@ interface ViewRouterProps {
   presences: PresenceRecord[];
   factures: DevisFacture[];
   onRefreshData: () => void;
+  dashboardLoading?: boolean;
+  dashboardNotice?: string | null;
   onNavigateTo: (section: MenuSection) => void;
   onOpenNewOpportunity: () => void;
   onOpenNewSession: () => void;
+  /** Seule la Direction peut créer, modifier ou supprimer des formateurs. */
+  canManageFormateurs: boolean;
   onOpenNewInvoice: () => void;
-  onAddFormateur?: (formateur: Formateur) => void;
-  onAddEvaluation?: (evaluation: EvaluationFormateur) => void;
 }
 
 export const ViewRouter: React.FC<ViewRouterProps> = ({
@@ -59,14 +62,17 @@ export const ViewRouter: React.FC<ViewRouterProps> = ({
   presences,
   factures,
   onRefreshData,
+  dashboardLoading,
+  dashboardNotice,
   onNavigateTo,
   onOpenNewOpportunity,
   onOpenNewSession,
   onOpenNewInvoice,
-  onAddFormateur,
-  onAddEvaluation
+  canManageFormateurs
 }) => {
   switch (currentSection) {
+    case 'gestion_utilisateurs':
+      return currentRole === 'Dir.' ? <GestionUtilisateursView /> : null;
     case 'tableau_de_bord':
       return (
         <DashboardView
@@ -75,6 +81,8 @@ export const ViewRouter: React.FC<ViewRouterProps> = ({
           facturationStatuts={facturationStatuts}
           activites={activites}
           currentRole={currentRole}
+          isLoading={dashboardLoading}
+          notice={dashboardNotice}
           onRefresh={onRefreshData}
           onNavigateTo={onNavigateTo}
           onOpenNewOpportunity={onOpenNewOpportunity}
@@ -87,6 +95,8 @@ export const ViewRouter: React.FC<ViewRouterProps> = ({
         <VeilleMarcheView
           veilles={veilles}
           onNavigateToSection={onNavigateTo}
+          onRefreshData={onRefreshData}
+          canTriggerDetection={currentRole === 'Dir.' || currentRole === 'Assis.'}
         />
       );
 
@@ -95,6 +105,8 @@ export const ViewRouter: React.FC<ViewRouterProps> = ({
         <OpportunitesCrmView
           opportunites={opportunites}
           onOpenNewOpportunity={onOpenNewOpportunity}
+          onRefreshData={onRefreshData}
+          canDeleteOpportunities={currentRole === 'Dir.' || currentRole === 'Assis.'}
         />
       );
 
@@ -102,8 +114,9 @@ export const ViewRouter: React.FC<ViewRouterProps> = ({
       return (
         <FormateursStaffView
           formateurs={formateurs}
-          onAddFormateur={onAddFormateur}
-          onAddEvaluation={onAddEvaluation}
+          sessions={sessions}
+          canManage={canManageFormateurs}
+          onRefreshData={onRefreshData}
         />
       );
 
@@ -111,7 +124,6 @@ export const ViewRouter: React.FC<ViewRouterProps> = ({
       return (
         <EvaluationCompetencesView
           formateurs={formateurs}
-          onAddEvaluation={onAddEvaluation}
         />
       );
 
@@ -121,19 +133,27 @@ export const ViewRouter: React.FC<ViewRouterProps> = ({
           sessions={sessions}
           presences={presences}
           onOpenNewSession={onOpenNewSession}
+          onRefreshData={onRefreshData}
+          canDeleteSessions={currentRole === 'Dir.'}
+          readOnly={currentRole === 'Form.'}
         />
       );
 
     case 'suivi_presences':
-      return <SuiviPresencesView presences={presences} sessions={sessions} />;
+      return <SuiviPresencesView presences={presences} sessions={sessions} readOnly={currentRole === 'Form.'} />;
 
     case 'facturation_devis':
       return (
         <FacturationDevisView
           factures={factures}
+          sessions={sessions}
           onOpenNewInvoice={onOpenNewInvoice}
+          onRefreshData={onRefreshData}
         />
       );
+
+    case 'espace_ia':
+      return <EspaceIAView readOnly={currentRole === 'Form.'} trainerMode={currentRole === 'Form.'} />;
 
     default:
       return (
@@ -143,6 +163,8 @@ export const ViewRouter: React.FC<ViewRouterProps> = ({
           facturationStatuts={facturationStatuts}
           activites={activites}
           currentRole={currentRole}
+          isLoading={dashboardLoading}
+          notice={dashboardNotice}
           onRefresh={onRefreshData}
           onNavigateTo={onNavigateTo}
           onOpenNewOpportunity={onOpenNewOpportunity}

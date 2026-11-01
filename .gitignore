@@ -164,3 +164,5 @@ test.http
 formaia-backend.zip
 backups/
 !.env.production.example
+# Uploaded applicant CVs are runtime data, not repository fixtures
+app/uploads/candidats/

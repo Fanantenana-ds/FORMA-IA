@@ -1,5 +1,5 @@
 import React from 'react';
-import { Building2, Calendar, FileText, Sparkles, CheckCircle2 } from 'lucide-react';
+import { Building2, Calendar, FileText, Sparkles, CheckCircle2, Trash2 } from 'lucide-react';
 import { AcceptedMarket } from '../../types/tdr';
 
 interface AcceptedMarketsListProps {
@@ -7,13 +7,17 @@ interface AcceptedMarketsListProps {
   selectedMarketId: string;
   onSelectMarket: (id: string) => void;
   onOpenNewOpportunity?: () => void;
+  onDeleteMarket?: (id: string, title: string) => void;
+  canDeleteMarkets?: boolean;
 }
 
 export const AcceptedMarketsList: React.FC<AcceptedMarketsListProps> = ({
   markets,
   selectedMarketId,
   onSelectMarket,
-  onOpenNewOpportunity
+  onOpenNewOpportunity,
+  onDeleteMarket,
+  canDeleteMarkets = false
 }) => {
   return (
     <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-4">
@@ -22,7 +26,7 @@ export const AcceptedMarketsList: React.FC<AcceptedMarketsListProps> = ({
           <span className="text-[10px] font-extrabold text-[#1B8F6E] uppercase tracking-wider">
             Portefeuille CRM & Veille
           </span>
-          <h2 className="text-base font-extrabold text-[#11162A]">Marchés & Projets Acceptés</h2>
+          <h2 className="text-base font-extrabold text-[#11162A]">Opportunités enregistrées</h2>
         </div>
         {onOpenNewOpportunity && (
           <button
@@ -33,6 +37,12 @@ export const AcceptedMarketsList: React.FC<AcceptedMarketsListProps> = ({
           </button>
         )}
       </div>
+
+      {markets.length === 0 && (
+        <p className="text-xs text-slate-500 bg-slate-50 p-4 rounded-xl border border-slate-200/80">
+          Aucune opportunité enregistrée pour le moment.
+        </p>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {markets.map((m) => {
@@ -52,7 +62,10 @@ export const AcceptedMarketsList: React.FC<AcceptedMarketsListProps> = ({
                   <CheckCircle2 size={12} />
                   {m.statut}
                 </span>
-                <span className="text-[11px] font-mono text-slate-400">{m.date}</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] font-mono text-slate-400">{m.date}</span>
+                  {canDeleteMarkets && onDeleteMarket && <button type="button" title="Supprimer cette opportunité acceptée" aria-label={`Supprimer ${m.titre}`} onClick={(event) => { event.stopPropagation(); onDeleteMarket(m.id, m.titre); }} className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600"><Trash2 size={14} /></button>}
+                </div>
               </div>
 
               <h3 className="text-xs font-extrabold text-[#11162A] line-clamp-2">{m.titre}</h3>

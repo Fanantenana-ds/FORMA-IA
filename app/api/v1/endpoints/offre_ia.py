@@ -15,6 +15,7 @@ from app.orchestrator.offre_orchestrator import (
 )
 from app.schemas.common import RouteResponse
 from app.utils.security import verify_api_key
+from app.core.dependencies import require_role
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +78,7 @@ class GenerateTechniqueRequest(BaseModel):
     """Corps de la requête pour générer uniquement l'offre technique."""
     tdr_data: dict[str, Any] = Field(..., description="Données du TDR (issu du M2)")
     session_info: dict[str, Any] = Field(..., description="Informations de session")
+    feedback: str | None = Field(default=None, max_length=3000, description="Corrections demandées par le réviseur")
 
 
 class GenerateFinanciereRequest(BaseModel):
@@ -85,6 +87,25 @@ class GenerateFinanciereRequest(BaseModel):
         ...,
         description="Offre technique (issue du M3-1)",
     )
+
+
+class RectifierTechniqueRequest(BaseModel):
+    review_id: str = Field(..., min_length=1, max_length=100)
+    feedback: str = Field(..., min_length=5, max_length=3000)
+    tdr_data: dict[str, Any]
+    session_info: dict[str, Any]
+
+
+class RectifierFinanciereRequest(BaseModel):
+    review_id: str = Field(..., min_length=1, max_length=100)
+    feedback: str = Field(..., min_length=5, max_length=3000)
+    offre_technique: dict[str, Any]
+    options: dict[str, Any] = Field(default_factory=dict)
+
+
+class M3ReviewActionRequest(BaseModel):
+    reviewer_note: str | None = Field(default=None, max_length=1000)
+    reason: str | None = Field(default=None, max_length=1000)
     options: dict[str, Any] = Field(
         default_factory=dict,
         description="Options (type_formateur, type_salle, nb_participants, tva_applicable)",
@@ -212,6 +233,7 @@ async def generer_technique(
         result = await orchestrator.generate_technique(
             tdr_data=payload.tdr_data,
             session_info=payload.session_info,
+            feedback=payload.feedback,
         )
         elapsed = round(time.perf_counter() - start, 2)
         vlog(f"✅ [Route M3] generer-technique OK en {elapsed}s")
@@ -251,6 +273,106 @@ async def generer_financiere(
     except Exception as e:
         _handle_exception(e, "generer_financiere")
         return RouteResponse(success=False, message="")
+
+
+@router.post("/rectifier-technique", response_model=RouteResponse, summary="Appliquer les corrections IA à une offre technique")
+async def rectifier_technique(payload: RectifierTechniqueRequest, orchestrator: OffreOrchestrator = Depends(get_offre_orchestrator)) -> RouteResponse:
+    from app.services.hitl import get_review, reject_review
+    review = get_review(payload.review_id)
+    if not review or review.get("agent_id") != "agent_m3_technique":
+        raise HTTPException(status_code=404, detail="Validation de l’offre technique introuvable.")
+    if review.get("status") != "pending_review":
+        raise HTTPException(status_code=409, detail="Cette version technique n’est plus en attente de validation.")
+    start = time.perf_counter()
+    try:
+        result = await orchestrator.generate_technique(
+            tdr_data=payload.tdr_data,
+            session_info=payload.session_info,
+            feedback=payload.feedback.strip(),
+        )
+        reject_review(payload.review_id, f"Version remplacée par {result.get('_review_id')} — {payload.feedback.strip()}")
+        return _build_response(result, "Offre technique corrigée et soumise à nouveau à validation.", round(time.perf_counter() - start, 2))
+    except Exception as exc:
+        _handle_exception(exc, "rectifier_technique")
+
+
+@router.post("/rectifier-financiere", response_model=RouteResponse, summary="Appliquer les corrections IA à une offre financière")
+async def rectifier_financiere(payload: RectifierFinanciereRequest, orchestrator: OffreOrchestrator = Depends(get_offre_orchestrator)) -> RouteResponse:
+    from app.services.hitl import get_review, reject_review
+    review = get_review(payload.review_id)
+    if not review or review.get("agent_id") != "agent_m3_financiere":
+        raise HTTPException(status_code=404, detail="Validation de l’offre financière introuvable.")
+    if review.get("status") != "pending_review":
+        raise HTTPException(status_code=409, detail="Cette version financière n’est plus en attente de validation.")
+    start = time.perf_counter()
+    try:
+        options = dict(payload.options)
+        options["feedback"] = payload.feedback.strip()
+        result = await orchestrator.generate_financiere(
+            offre_technique=payload.offre_technique,
+            options=options,
+        )
+        reject_review(payload.review_id, f"Version remplacée par {result.get('_review_id')} — {payload.feedback.strip()}")
+        return _build_response(result, "Offre financière corrigée et soumise à nouveau à validation.", round(time.perf_counter() - start, 2))
+    except Exception as exc:
+        _handle_exception(exc, "rectifier_financiere")
+
+
+@router.get("/reviews", summary="Lister les validations en attente M3")
+async def lister_reviews_m3():
+    from app.services.hitl import list_pending
+    reviews = []
+    for agent_id in ("agent_m3_technique", "agent_m3_financiere", "agent_m3_complete"):
+        reviews.extend(list_pending(agent_id=agent_id))
+    return {"success": True, "total": len(reviews), "data": reviews}
+
+
+@router.get("/reviews/{review_id}", summary="Lire une validation M3")
+async def lire_review_m3(review_id: str):
+    from app.services.hitl import get_review
+    review = get_review(review_id)
+    if not review or review.get("agent_id") not in {"agent_m3_technique", "agent_m3_financiere", "agent_m3_complete"}:
+        raise HTTPException(404, detail="Validation M3 introuvable.")
+    return {"success": True, "review": review}
+
+
+@router.delete("/reviews/{review_id}", summary="Supprimer une validation M3 en attente")
+async def supprimer_review_m3(review_id: str, _current_user=Depends(require_role("DIRECTION", "ADMIN", "ASSISTANT"))):
+    from app.services.hitl import delete_pending_review, get_review
+    review = get_review(review_id)
+    if not review or review.get("agent_id") not in {"agent_m3_technique", "agent_m3_financiere", "agent_m3_complete"}:
+        raise HTTPException(404, detail="Validation M3 introuvable.")
+    deleted = delete_pending_review(review_id)
+    if deleted is False:
+        raise HTTPException(409, detail="Cette validation M3 a déjà été traitée.")
+    if deleted is None:
+        raise HTTPException(404, detail="Validation M3 introuvable.")
+    return {"success": True, "review_id": review_id}
+
+
+@router.post("/reviews/{review_id}/approve", summary="Approuver une validation M3")
+async def approuver_review_m3(review_id: str, payload: M3ReviewActionRequest):
+    from app.services.hitl import approve_review, get_review
+    review = get_review(review_id)
+    if not review or review.get("agent_id") not in {"agent_m3_technique", "agent_m3_financiere", "agent_m3_complete"}:
+        raise HTTPException(404, detail="Validation M3 introuvable.")
+    if review.get("status") != "pending_review":
+        raise HTTPException(409, detail="Cette validation M3 a déjà été traitée.")
+    return {"success": True, "review": approve_review(review_id, payload.reviewer_note or "OK")}
+
+
+@router.post("/reviews/{review_id}/reject", summary="Rejeter une validation M3")
+async def rejeter_review_m3(review_id: str, payload: M3ReviewActionRequest):
+    from app.services.hitl import get_review, reject_review
+    review = get_review(review_id)
+    if not review or review.get("agent_id") not in {"agent_m3_technique", "agent_m3_financiere", "agent_m3_complete"}:
+        raise HTTPException(404, detail="Validation M3 introuvable.")
+    if review.get("status") != "pending_review":
+        raise HTTPException(status_code=409, detail="Cette validation M3 a déjà été traitée.")
+    reason = (payload.reason or payload.reviewer_note or "Rejeté").strip()
+    if len(reason) < 2:
+        raise HTTPException(status_code=422, detail="Précisez le motif du rejet.")
+    return {"success": True, "review": reject_review(review_id, reason)}
 
 
 # =============================================================================

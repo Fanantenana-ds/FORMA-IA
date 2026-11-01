@@ -37,6 +37,8 @@ class ResultatRecherche:
     score: float
     fichier: str | None
     formation_code: str | None
+    session_id: str | None
+    module: str | None
     formation_titre: str | None
     collection: str
     page_debut: int | None
@@ -77,6 +79,8 @@ async def rechercher(
     top_k: int = RAG_TOP_K_DEFAUT,
     collection: str = "support",
     formation_code: str | None = None,
+    session_id: str | None = None,
+    module: str | None = None,
     domaine: str | None = None,
     annee: int | None = None,
     type_support: str | None = None,
@@ -107,7 +111,8 @@ async def rechercher(
 
     lignes = repo.rechercher_par_similarite(
         vecteur, collection, top_k,
-        formation_code=formation_code, domaine=domaine, annee=annee, type_support=type_support,
+        formation_code=formation_code, session_id=session_id, module=module,
+        domaine=domaine, annee=annee, type_support=type_support,
     )
 
     resultats = []
@@ -117,7 +122,8 @@ async def rechercher(
             continue
         resultats.append(ResultatRecherche(
             contenu=ligne.contenu, score=round(score, 4), fichier=ligne.fichier,
-            formation_code=ligne.formation_code, formation_titre=ligne.formation_titre,
+            formation_code=ligne.formation_code, session_id=str(ligne.session_id) if ligne.session_id else None,
+            module=ligne.module, formation_titre=ligne.formation_titre,
             collection=ligne.collection, page_debut=ligne.page_debut, page_fin=ligne.page_fin,
             type_support=ligne.type_support,
         ))

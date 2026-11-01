@@ -41,6 +41,7 @@ class FormateurUpdate(BaseModel):
 
 class FormateurResponse(BaseModel):
     id: UUID
+    user_id: UUID | None = None
     nom: str
     prenom: str | None = None
     email: str | None = None
@@ -63,8 +64,12 @@ class FormateurResponse(BaseModel):
 
 class CandidatCreate(BaseModel):
     nom: str = Field(..., min_length=2, max_length=200)
+    prenom: str | None = Field(default=None, max_length=100)
+    email: str | None = Field(default=None, max_length=200)
+    telephone: str | None = Field(default=None, max_length=30)
     poste_vise: str = Field(..., min_length=2, max_length=200)
     cv_texte: str | None = None
+    cv_filename: str | None = Field(default=None, max_length=255)
     score_preselection: float | None = None
     decision_preselection: str | None = None
     review_id_preselection: str | None = Field(default=None, max_length=100)
@@ -81,10 +86,15 @@ class CandidatUpdate(BaseModel):
 class CandidatResponse(BaseModel):
     id: UUID
     nom: str
+    prenom: str | None = None
+    email: str | None = None
+    telephone: str | None = None
     poste_vise: str
     score_preselection: float | None = None
     decision_preselection: str | None = None
     review_id_preselection: str | None = None
+    cv_filename: str | None = None
+    session_id: UUID | None = None
     formateur_id: UUID | None = None
     date_creation: datetime
     model_config = {"from_attributes": True}

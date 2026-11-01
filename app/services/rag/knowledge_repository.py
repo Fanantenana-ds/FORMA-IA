@@ -9,8 +9,9 @@
 
 import logging
 from typing import Any, Dict, List, Optional, Tuple
+from uuid import UUID
 
-from sqlalchemy import delete, select, func
+from sqlalchemy import delete, select, func, update
 
 from app.database import SessionLocal
 from app.models.knowledge_base import KnowledgeBase
@@ -52,6 +53,8 @@ class KnowledgeRepository:
         collection: str,
         top_k: int,
         formation_code: str | None = None,
+        session_id: str | None = None,
+        module: str | None = None,
         domaine: str | None = None,
         annee: int | None = None,
         type_support: str | None = None,
@@ -66,6 +69,10 @@ class KnowledgeRepository:
             )
             if formation_code:
                 stmt = stmt.where(KnowledgeBase.formation_code == formation_code)
+            if session_id:
+                stmt = stmt.where(KnowledgeBase.session_id == UUID(str(session_id)))
+            if module:
+                stmt = stmt.where(KnowledgeBase.module == module)
             if domaine:
                 stmt = stmt.where(KnowledgeBase.domaine == domaine)
             if annee:
@@ -109,13 +116,33 @@ class KnowledgeRepository:
         finally:
             db.close()
 
-    def remplacer_resume_formation(self, formation_code: str, ligne: KnowledgeBase) -> None:
+    def rattacher_document_a_session(self, doc_hash: str, session_id: str, module: str | None) -> int:
+        """Classifie les chunks déjà indexés sans recalculer leurs embeddings."""
         db = SessionLocal()
         try:
-            db.execute(delete(KnowledgeBase).where(
+            resultat = db.execute(
+                update(KnowledgeBase)
+                .where(KnowledgeBase.doc_hash == doc_hash, KnowledgeBase.collection == "support")
+                .values(session_id=UUID(str(session_id)), module=module)
+            )
+            db.commit()
+            return int(resultat.rowcount or 0)
+        except Exception:
+            db.rollback()
+            raise
+        finally:
+            db.close()
+
+    def remplacer_resume_formation(self, formation_code: str, ligne: KnowledgeBase, session_id: str | None = None) -> None:
+        db = SessionLocal()
+        try:
+            filtres = [
                 KnowledgeBase.collection == "resume_formation",
                 KnowledgeBase.formation_code == formation_code,
-            ))
+            ]
+            if session_id:
+                filtres.append(KnowledgeBase.session_id == UUID(str(session_id)))
+            db.execute(delete(KnowledgeBase).where(*filtres))
             db.add(ligne)
             db.commit()
         except Exception:

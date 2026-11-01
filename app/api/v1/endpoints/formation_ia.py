@@ -16,8 +16,10 @@ from app.orchestrator.formation_orchestrator import (
 from app.schemas.common import RouteResponse
 from app.services.hitl import approve_review as _approve
 from app.services.hitl import get_review as _get
-from app.services.hitl import get_stats, list_pending
+from app.services.hitl import get_stats, list_pending, list_reviews
 from app.services.hitl import reject_review as _reject
+from app.services.hitl import delete_pending_review as _delete_pending
+from app.core.dependencies import require_role
 from app.utils.security import verify_api_key
 
 logger = logging.getLogger(__name__)
@@ -244,6 +246,18 @@ async def analyze_satisfaction(
         result = await orchestrator.analyze_satisfaction(
             payload.session_info, payload.responses
         )
+        # Conserve le lien M5 → M4 dans les métadonnées HITL quand la session
+        # est animée par un formateur connu. Le lien n'est jamais déduit du texte.
+        formateur_id = payload.session_info.get("formateur_id")
+        if formateur_id and result.get("_review_id"):
+            from app.services.hitl import patch_review
+            patch_review(result["_review_id"], {
+                "formateur_id": str(formateur_id),
+                "formateur_nom": payload.session_info.get("formateur_nom"),
+                "session_id": payload.session_info.get("session_id"),
+                "session_title": payload.session_info.get("titre"),
+                "taux_presence": payload.session_info.get("taux_presence"),
+            })
         elapsed = round(time.perf_counter() - start, 2)
         vlog(f"✅ [Route IA] analyze-satisfaction OK en {elapsed}s")
         return _build_response(result, "Analyse satisfaction réussie.", elapsed)
@@ -383,6 +397,15 @@ async def get_reviews_stats() -> dict[str, Any]:
         return {"success": False, "stats": {}}
 
 
+@router.get("/reviews", summary="[HITL] Historique des contenus approuvés ou rejetés")
+async def list_review_history(
+    status: str = Query("approved", pattern="^(approved|rejected)$"),
+    agent_id: str | None = Query(None),
+) -> dict[str, Any]:
+    reviews = list_reviews(status=status, agent_id=agent_id)
+    return {"success": True, "status": status, "total": len(reviews), "reviews": reviews}
+
+
 @router.get("/reviews/{review_id}",
             summary="[HITL] Détails d'un contenu en attente")
 async def get_review(review_id: str) -> dict[str, Any]:
@@ -399,6 +422,16 @@ async def get_review(review_id: str) -> dict[str, Any]:
     except Exception as e:
         _handle_exception(e, "get_review")
         return {"success": False, "review": None}
+
+
+@router.delete("/reviews/{review_id}", summary="Supprimer une validation encore en attente")
+async def delete_pending_review(review_id: str, _current_user=Depends(require_role("DIRECTION", "ADMIN", "ASSISTANT"))):
+    result = _delete_pending(review_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Validation introuvable.")
+    if result is False:
+        raise HTTPException(status_code=409, detail="Cette validation a déjà été traitée et ne peut plus être supprimée.")
+    return {"success": True, "message": "Validation en attente supprimée.", "review_id": review_id}
 
 
 @router.post("/reviews/{review_id}/approve",

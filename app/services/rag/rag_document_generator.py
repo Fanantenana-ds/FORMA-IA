@@ -21,7 +21,8 @@ from typing import Any, Dict
 
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
-from docx.shared import Pt
+from docx.shared import Pt, Cm
+from app.services.document_design import apply_docx_branding, LOGO_PATH
 
 logger = logging.getLogger(__name__)
 
@@ -29,8 +30,21 @@ BASE_DIR = Path(__file__).resolve().parents[3]
 EXPORTS_DIR = BASE_DIR / "exports" / "rag"
 
 
+def get_tenant_exports_dir() -> Path:
+    from app.core.tenant_context import get_tenant_id
+
+    tenant_id = get_tenant_id()
+    return EXPORTS_DIR if tenant_id is None else EXPORTS_DIR / "tenants" / str(tenant_id)
+
+
 def _page_de_garde(doc: Document, titre: str, sous_titre: str, prepare_pour: str) -> None:
-    doc.add_paragraph("[LOGO ALTIORA PREST]").alignment = WD_ALIGN_PARAGRAPH.CENTER
+    if LOGO_PATH.is_file():
+        logo = doc.add_paragraph()
+        logo.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        logo.add_run().add_picture(str(LOGO_PATH), height=Cm(2.1))
+    else:
+        logo = doc.add_paragraph("ALTIORA PREST")
+        logo.alignment = WD_ALIGN_PARAGRAPH.CENTER
     titre_p = doc.add_heading(titre, level=0)
     titre_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     sous_p = doc.add_paragraph(sous_titre)
@@ -128,8 +142,10 @@ def generer_docx_syllabus(donnees: dict[str, Any], nom_fichier: str) -> Path:
         for section, sources in donnees["sources_par_section"].items():
             doc.add_paragraph(f"{section} : {', '.join(sources)}")
 
-    EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
-    chemin = EXPORTS_DIR / nom_fichier
+    exports_dir = get_tenant_exports_dir()
+    exports_dir.mkdir(parents=True, exist_ok=True)
+    chemin = exports_dir / nom_fichier
+    apply_docx_branding(doc, "Syllabus de formation", format_tables=True)
     doc.save(str(chemin))
     logger.info(f"📄 Syllabus DOCX généré : {chemin}")
     return chemin
@@ -200,8 +216,10 @@ def generer_docx_portfolio(donnees: dict[str, Any], nom_fichier: str) -> Path:
         for fiche_nom, sources in donnees["sources_par_fiche"].items():
             doc.add_paragraph(f"{fiche_nom} : {', '.join(sources)}")
 
-    EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
-    chemin = EXPORTS_DIR / nom_fichier
+    exports_dir = get_tenant_exports_dir()
+    exports_dir.mkdir(parents=True, exist_ok=True)
+    chemin = exports_dir / nom_fichier
+    apply_docx_branding(doc, "Portfolio de références", format_tables=True)
     doc.save(str(chemin))
     logger.info(f"📄 Portfolio DOCX généré : {chemin}")
     return chemin

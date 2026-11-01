@@ -6,6 +6,7 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.models.facture import Facture, Paiement, Relance, StatutFacture
+from app.models.formation import Session as TrainingSession
 from app.schemas.facture import FactureCreate, FactureUpdate, PaiementCreate, RelanceIACreate
 
 
@@ -19,12 +20,27 @@ class FactureService:
         return f"FACT-{annee}-{total + 1:04d}"
 
     def emettre_facture(self, data: FactureCreate) -> Facture:
+        session = None
+        if data.session_id:
+            session = self.db.query(TrainingSession).filter(TrainingSession.id == data.session_id).first()
+            if not session:
+                raise HTTPException(status_code=404, detail="Session introuvable.")
+            if session.date_fin > date_type.today():
+                raise HTTPException(status_code=422, detail="Une facture depuis une session ne peut être créée qu’après sa date de fin.")
+        client = (data.client or (session.client if session else None) or "").strip()
+        if not client:
+            raise HTTPException(status_code=422, detail="Le client est obligatoire pour émettre la facture.")
         facture = Facture(
             numero = self._generer_numero(),
-            client = data.client,
+            client = client,
+            client_adresse = data.client_adresse,
+            client_siret = data.client_siret,
+            client_rcs = data.client_rcs,
+            client_tva = data.client_tva,
             montant = data.montant,
             tva_taux = data.tva_taux,
             date_echeance = data.date_echeance,
+            session_id = data.session_id,
             statut = StatutFacture.EMISE
         )
         self.db.add(facture)
@@ -41,11 +57,20 @@ class FactureService:
     def ajouter_paiement(self, facture_id: UUID, data: PaiementCreate) -> Facture:
         facture = self.get_facture(facture_id)
 
+        if facture.statut == StatutFacture.ANNULEE:
+            raise HTTPException(status_code=409, detail="Impossible d'enregistrer un paiement sur une facture annulée.")
+
+        total_paye = sum(p.montant for p in facture.paiements)
+        restant_du = round(facture.montant_ttc - total_paye, 2)
+        if data.montant > restant_du:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Le paiement dépasse le montant restant dû ({restant_du:.2f}).",
+            )
+
         paiement = Paiement(facture_id=facture_id, **data.model_dump())
         self.db.add(paiement)
-        self.db.flush()
-
-        total_paye = sum(p.montant for p in facture.paiements) + data.montant
+        total_paye += data.montant
         if total_paye >= facture.montant_ttc:
             facture.statut = StatutFacture.PAYEE
         elif total_paye > 0:
@@ -124,4 +149,15 @@ class FactureService:
             q = q.filter(Facture.statut == statut)
         if client is not None:
             q = q.filter(Facture.client.ilike(f"%{client}%"))
-        return q.order_by(Facture.date_emission.desc()).offset(skip).limit(limit).all()
+        factures = q.order_by(Facture.date_emission.desc()).offset(skip).limit(limit).all()
+        today = date_type.today()
+        changed = False
+        for facture in factures:
+            if facture.statut not in (StatutFacture.PAYEE, StatutFacture.ANNULEE) and facture.date_echeance and facture.date_echeance < today:
+                paid = sum(payment.montant for payment in facture.paiements)
+                if paid < facture.montant_ttc and facture.statut != StatutFacture.EN_RETARD:
+                    facture.statut = StatutFacture.EN_RETARD
+                    changed = True
+        if changed:
+            self.db.commit()
+        return factures

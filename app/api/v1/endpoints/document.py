@@ -16,13 +16,14 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile
 from sqlalchemy.orm import Session
 
-from app.core.dependencies import get_current_user, require_role
+from app.core.dependencies import get_current_tenant_user, get_current_user, require_role
 from app.database import get_db
 from app.models.document import Document, FormatExport, TypeDocument
 from app.models.user import User
 from app.services.rag import registry_service as registre
 from app.services.rag.registry_service import initialiser_entree
 from app.services.storage import EXTENSIONS_AUTORISEES, TAILLE_MAX_OCTETS, calculer_hash, get_storage
+from app.services.rag.trainer_access import assigned_formation_codes, assigned_session_ids, get_accessible_session, is_trainer, require_assigned_code
 
 logger = logging.getLogger(__name__)
 from app.schemas.document import (
@@ -33,10 +34,12 @@ from app.schemas.document import (
 )
 from app.services.document_export_service import DocumentExportService
 from app.services.document_service import DocumentService
+from app.services.document_design import apply_docx_branding
 
 router = APIRouter(
     prefix="/documents",
-    tags=["Documents"]
+    tags=["Documents"],
+    dependencies=[Depends(get_current_tenant_user)],
 )
 
 def get_document_service(db: Session = Depends(get_db)) -> DocumentService:
@@ -219,10 +222,18 @@ def supprimer_document(
 async def uploader_support(
     fichier: UploadFile = File(..., description="Fichier à indexer (PDF, DOCX, PPTX, XLSX, TXT, MD)"),
     formation_code: str | None = Form(default=None, description="Code de la formation associée (catalogue RAG)"),
+    session_id: UUID = Form(..., description="Session de formation à laquelle ce support est rattaché"),
     collection: str = Form(default="support", description="Collection RAG : support | aide_plateforme"),
     module: str | None = Form(default=None, description="Module pédagogique (ex: 'Module 1 — Introduction'). Optionnel — utilisé pour grouper les supports dans le résumé téléchargeable."),
     current_user: User = Depends(require_role("DIRECTION", "ASSISTANT", "FORMATEUR")),
+    db: Session = Depends(get_db),
 ):
+    session = get_accessible_session(db, current_user, str(session_id))
+    if formation_code and session.formation_code and formation_code != session.formation_code:
+        raise HTTPException(status_code=422, detail="Le code formation ne correspond pas à la session sélectionnée.")
+    formation_code = session.formation_code or formation_code
+    if is_trainer(current_user) and collection != "support":
+        raise HTTPException(status_code=403, detail="Un formateur peut uniquement indexer des supports pédagogiques pour ses formations affectées.")
     # Vérification extension
     nom = fichier.filename or "fichier_inconnu"
     ext = Path(nom).suffix.lower()
@@ -249,13 +260,17 @@ async def uploader_support(
         raise HTTPException(status_code=507, detail=str(e))
 
     # Enregistrement dans le registre RAG (crée ou retourne l'entrée existante)
-    entree = initialiser_entree(
-        hash_fichier=doc_hash,
-        fichier=nom,
-        formation_code=formation_code,
-        collection=collection,
-        module=module,
-    )
+    try:
+        entree = initialiser_entree(
+            hash_fichier=doc_hash,
+            fichier=nom,
+            formation_code=formation_code,
+            collection=collection,
+            module=module,
+            session_id=str(session.id),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     return {
         "success": True,
@@ -263,6 +278,7 @@ async def uploader_support(
         "fichier": nom,
         "chemin_fichier": chemin_fichier,
         "formation_code": formation_code,
+        "session_id": str(session.id),
         "module": module,
         "collection": collection,
         "statut": entree.statut,
@@ -282,24 +298,36 @@ async def uploader_support(
 )
 def lister_supports(
     formation_code: str | None = Query(default=None, description="Filtrer par code de formation"),
+    session_id: UUID | None = Query(default=None, description="Filtrer par session de formation"),
     statut: str | None = Query(default=None, description="en_attente | en_cours | indexe | erreur"),
     current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     registre_complet = registre.charger_registre()
     entrees = list(registre_complet.values())
 
+    if session_id:
+        session = get_accessible_session(db, current_user, str(session_id))
+        entrees = [e for e in entrees if e.session_id == str(session.id)]
+    elif is_trainer(current_user):
+        ids = assigned_session_ids(db, current_user)
+        entrees = [e for e in entrees if e.session_id in ids]
     if formation_code:
+        require_assigned_code(db, current_user, formation_code)
         entrees = [e for e in entrees if e.formation_code == formation_code]
     if statut:
         entrees = [e for e in entrees if e.statut == statut]
 
     data = []
+    storage = get_storage()
     for e in entrees:
-        chemin = DOSSIER_FICHIERS_RAG / f"{e.hash}{Path(e.fichier).suffix.lower()}"
+        ext = Path(e.fichier).suffix.lower()
+        chemin = storage.chemin_local(e.hash, ext) if hasattr(storage, "chemin_local") else None
         data.append({
             "hash": e.hash,
             "fichier": e.fichier,
             "formation_code": e.formation_code,
+            "session_id": e.session_id,
             "module": e.module,
             "collection": e.collection,
             "statut": e.statut,
@@ -307,8 +335,8 @@ def lister_supports(
             "date_debut": e.date_debut,
             "date_fin": e.date_fin,
             "message": e.message,
-            "fichier_disponible": chemin.exists(),
-            "chemin_fichier": str(chemin),
+            "fichier_disponible": storage.existe(e.hash, ext),
+            "chemin_fichier": str(chemin) if chemin is not None else None,
         })
 
     return {"success": True, "total": len(data), "data": data}
@@ -327,8 +355,14 @@ def lister_supports(
 )
 def telecharger_resume_formation(
     formation_code: str = Query(..., description="Code de la formation (ex: PYTHON-2026)"),
+    session_id: UUID | None = Query(default=None, description="Session exacte (recommandé pour éviter de mélanger des sessions)"),
     current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
+    if is_trainer(current_user) and not session_id:
+        raise HTTPException(status_code=422, detail="Sélectionnez la session qui vous est affectée.")
+    session = get_accessible_session(db, current_user, str(session_id)) if session_id else None
+    require_assigned_code(db, current_user, formation_code)
     from collections import defaultdict
     from io import BytesIO
 
@@ -336,7 +370,7 @@ def telecharger_resume_formation(
     from docx.shared import RGBColor
 
     entrees = registre.charger_registre()
-    supports = [e for e in entrees.values() if e.formation_code == formation_code]
+    supports = [e for e in entrees.values() if e.formation_code == formation_code and (not session or e.session_id == str(session.id))]
 
     if not supports:
         raise HTTPException(
@@ -399,6 +433,7 @@ def telecharger_resume_formation(
 
     # Sérialisation en mémoire
     buffer = BytesIO()
+    apply_docx_branding(doc, "Résumé de formation", format_tables=True)
     doc.save(buffer)
     buffer.seek(0)
 
@@ -500,6 +535,7 @@ def telecharger_bilan_formations(
         doc.add_paragraph("")
 
     buffer = BytesIO()
+    apply_docx_branding(doc, "Bilan de formation", format_tables=True)
     doc.save(buffer)
     buffer.seek(0)
 
@@ -548,11 +584,10 @@ def supprimer_support(
 
     # 2. Suppression du fichier physique
     ext = Path(entree.fichier).suffix.lower()
-    chemin = DOSSIER_FICHIERS_RAG / f"{doc_hash}{ext}"
-    if chemin.exists():
-        chemin.unlink()
-        fichier_supprime = True
-        logger.info(f"RAG suppression : fichier supprimé {chemin}")
+    try:
+        fichier_supprime = get_storage().supprimer(doc_hash, ext)
+    except Exception as exc:
+        logger.warning("RAG suppression du fichier impossible : %s", exc)
 
     # 3. Suppression du registre
     registre.supprimer_entree(doc_hash)

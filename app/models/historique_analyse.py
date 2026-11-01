@@ -7,10 +7,11 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
 from app.database import Base
+from app.models.tenant import TenantOwned
 from app.models.opportunite import Domaine
 
 
-class HistoriqueAnalyse(Base):
+class HistoriqueAnalyse(TenantOwned, Base):
     __tablename__ = "historique_analyses"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)

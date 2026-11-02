@@ -1,8 +1,18 @@
-import React, { useEffect, useState } from 'react';
-import { AlertCircle, Check, FileText, Loader2, MessageCircle, Paperclip, Send, ShieldCheck, Trash2, Upload, X } from 'lucide-react';
-import { apiService } from '../../services/api';
+﻿import React, { useEffect, useRef, useState } from 'react';
 
-type Tab = 'reviews' | 'supports' | 'chat' | 'syllabus';
+function renderMarkdown(text: string): string {
+  return text
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/^- (.+)$/gm, '<li>$1</li>')
+    .replace(/(<li>.*<\/li>(\n|$))+/g, (match) => `<ul class="list-disc pl-4 my-1 space-y-0.5">${match}</ul>`)
+    .replace(/^(\d+)\. (.+)$/gm, '<li>$2</li>')
+    .replace(/\n/g, '<br />');
+}
+import { AlertCircle, Check, Copy, FileText, Loader2, MessageCircle, Paperclip, Pencil, PlusCircle, Send, ShieldCheck, Trash2, Upload, X } from 'lucide-react';
+import { apiService } from '../../services/api';
+import { MenuSection } from '../../types';
+
+type Tab = 'reviews' | 'history' | 'supports' | 'chat' | 'syllabus';
 const errorText = (error: unknown) => error instanceof Error ? error.message : 'Une erreur est survenue.';
 const panel = 'bg-white p-5 rounded-2xl border border-slate-200 shadow-xs';
 const supportStatusStyle: Record<string, string> = {
@@ -13,11 +23,11 @@ const supportStatusStyle: Record<string, string> = {
 };
 const supportStatusLabel: Record<string, string> = {
   en_attente: 'En attente', en_cours: 'Indexation en cours', indexe: 'Indexé', deja_indexe: 'Déjà indexé',
-  erreur: 'Erreur d’indexation', ocr_necessaire: 'OCR nécessaire', non_indexable_image: 'Image non indexable'
+  erreur: "Erreur d'indexation", ocr_necessaire: 'OCR nécessaire', non_indexable_image: 'Image non indexable'
 };
 const labels: Record<string, string> = {
   resume: 'Résumé', synthese: 'Synthèse', progression: 'Progression', competences: 'Compétences',
-  points_forts: 'Points forts', axes_amelioration: 'Axes d’amélioration', recommandations: 'Recommandations',
+  points_forts: 'Points forts', axes_amelioration: "Axes d'amélioration", recommandations: 'Recommandations',
   nps: 'NPS', score_global: 'Score global', moyenne: 'Moyenne', commentaires: 'Commentaires',
   sentiment: 'Sentiment', participant: 'Participant', nom: 'Nom', prenom: 'Prénom',
   reponses: 'Réponses', question: 'Question', score: 'Score', niveau: 'Niveau',
@@ -25,6 +35,29 @@ const labels: Record<string, string> = {
   titre: 'Titre', domaine: 'Domaine', session_id: 'Session', date: 'Date'
 };
 const humanize = (key: string) => labels[key.toLowerCase()] ?? key.replace(/[_-]+/g, ' ').replace(/^./, c => c.toUpperCase());
+const documentAgents = ['agent_m2_tdr', 'agent_m3_technique', 'agent_m3_financiere'];
+const editableDocument = (review: any): Record<string, any> | null => {
+  if (review?.status !== 'pending_review') return null;
+  if (!documentAgents.includes(String(review?.agent_id))) return null;
+  const data = review?.data;
+  if (!data || typeof data !== 'object') return null;
+  if (review.agent_id === 'agent_m2_tdr') return data.data && typeof data.data === 'object' ? data.data : null;
+  return Object.fromEntries(Object.entries(data).filter(([key]) => !key.startsWith('_') && !['metadata', 'success'].includes(key)));
+};
+const setDocumentField = (source: any, path: (string | number)[], value: unknown): any => {
+  if (!path.length) return value;
+  const [head, ...tail] = path;
+  const copy = Array.isArray(source) ? [...source] : { ...(source ?? {}) };
+  copy[head] = setDocumentField(copy[head], tail, value);
+  return copy;
+};
+const DocumentFields: React.FC<{ value: any; path?: (string | number)[]; onChange: (path: (string | number)[], value: unknown) => void; allowNumbers: boolean }> = ({ value, path = [], onChange, allowNumbers }) => {
+  if (Array.isArray(value)) return <div className="space-y-2">{value.map((item, index) => <div key={index} className="rounded-xl border border-slate-200 bg-white p-3"><span className="text-[10px] font-bold text-slate-500">Élément {index + 1}</span><DocumentFields value={item} path={[...path, index]} onChange={onChange} allowNumbers={allowNumbers} /></div>)}</div>;
+  if (value && typeof value === 'object') return <div className="space-y-3">{Object.entries(value).filter(([key]) => !key.startsWith('_')).map(([key, item]) => <div key={key}><label className="mb-1 block text-[11px] font-bold text-slate-600">{humanize(key)}</label><DocumentFields value={item} path={[...path, key]} onChange={onChange} allowNumbers={allowNumbers} /></div>)}</div>;
+  if (typeof value === 'number') return <input type="number" step="any" value={value} disabled={!allowNumbers} onChange={event => onChange(path, Number(event.target.value))} className="w-full rounded-lg border border-slate-300 bg-white p-2 text-xs disabled:bg-slate-100" />;
+  if (typeof value === 'boolean') return <input type="checkbox" checked={value} disabled={!allowNumbers} onChange={event => onChange(path, event.target.checked)} className="accent-[#1B8F6E]" />;
+  return <textarea value={value == null ? '' : String(value)} onChange={event => onChange(path, event.target.value)} rows={String(value ?? '').length > 150 ? 4 : 2} className="w-full resize-y rounded-lg border border-slate-300 bg-white p-2 text-xs leading-relaxed" />;
+};
 const isOfferReview = (review: any) => String(review?.agent_id ?? '').startsWith('agent_m3_')
   || /(?:^|-)AM3(?:-|$)/i.test(String(review?.review_id ?? review?.id ?? ''));
 const readableValue = (value: any): any => {
@@ -44,6 +77,27 @@ const unwrapReview = (value: any) => {
     break;
   }
   return current;
+};
+
+const workflowForReview = (reviewId: string) => {
+  try {
+    for (let index = 0; index < sessionStorage.length; index += 1) {
+      const key = sessionStorage.key(index);
+      if (!key?.startsWith('formaia-m2-m3-')) continue;
+      const workflow = JSON.parse(sessionStorage.getItem(key) ?? 'null');
+      if (workflow && [workflow.tdrReviewId, workflow.techniqueReviewId, workflow.financeReviewId].includes(reviewId)) {
+        return { key, workflow };
+      }
+    }
+  } catch { /* stockage de session indisponible */ }
+  return null;
+};
+
+const updateWorkflow = (reviewId: string, changes: Record<string, unknown>) => {
+  const found = workflowForReview(reviewId);
+  if (!found) return false;
+  try { sessionStorage.setItem(found.key, JSON.stringify({ ...found.workflow, ...changes })); return true; }
+  catch { return false; }
 };
 
 const ReviewContent: React.FC<{ value: any }> = ({ value }) => {
@@ -75,9 +129,11 @@ const ReviewContent: React.FC<{ value: any }> = ({ value }) => {
   return <div className="max-h-[560px] space-y-3 overflow-auto rounded-2xl bg-slate-50 p-3">{renderNode(content)}</div>;
 };
 
-export const EspaceIAView: React.FC<{ readOnly?: boolean; trainerMode?: boolean }> = ({ readOnly = false, trainerMode = false }) => {
+export const EspaceIAView: React.FC<{ readOnly?: boolean; trainerMode?: boolean; onNavigateToSection?: (section: MenuSection) => void }> = ({ readOnly = false, trainerMode = false, onNavigateToSection }) => {
   const [tab, setTab] = useState<Tab>(readOnly ? 'supports' : 'reviews');
   const [reviews, setReviews] = useState<any[]>([]);
+  const [history, setHistory] = useState<any[]>([]);
+  const [historyStatus, setHistoryStatus] = useState<'all' | 'approved' | 'rejected'>('all');
   const [selected, setSelected] = useState<any>(null);
   const [reviewLoading, setReviewLoading] = useState(false);
   const [deletingReviewId, setDeletingReviewId] = useState('');
@@ -92,11 +148,19 @@ export const EspaceIAView: React.FC<{ readOnly?: boolean; trainerMode?: boolean 
   const [file, setFile] = useState<File | null>(null);
   const [messages, setMessages] = useState<Array<{ role: 'user' | 'assistant'; text: string; sources?: any[]; suggestions?: string[] }>>([]);
   const [conversationId, setConversationId] = useState<string | null>(null);
+  const [ragConversations, setRagConversations] = useState<any[]>([]);
+  const [conversationsLoading, setConversationsLoading] = useState(false);
+  const [renamingConvId, setRenamingConvId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState('');
+  const [copiedMsgIdx, setCopiedMsgIdx] = useState<number | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
   const [draft, setDraft] = useState('');
   const [reviewNote, setReviewNote] = useState('');
+  const [documentEdit, setDocumentEdit] = useState<Record<string, any> | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [continueMarket, setContinueMarket] = useState(false);
   const [streamingStatus, setStreamingStatus] = useState('');
 
   const loadReviews = async () => {
@@ -115,6 +179,74 @@ export const EspaceIAView: React.FC<{ readOnly?: boolean; trainerMode?: boolean 
     [...regularReviews, ...offerReviews, ...ragReviews].forEach((item: any) => unique.set(String(item.review_id ?? item.id), item));
     setReviews([...unique.values()]);
   };
+  const loadHistory = async () => {
+    const [approved, rejected] = await Promise.all([
+      apiService.getReviewHistory('approved'), apiService.getReviewHistory('rejected')
+    ]);
+    setHistory([...(approved.reviews ?? []), ...(rejected.reviews ?? [])]
+      .sort((a: any, b: any) => String(b.reviewed_at ?? '').localeCompare(String(a.reviewed_at ?? ''))));
+  };
+  const loadRagConversations = async () => {
+    setConversationsLoading(true);
+    try {
+      const result = await apiService.getRagConversations();
+      setRagConversations(Array.isArray(result?.data) ? result.data : []);
+    } catch { /* silencieux — la liste des conversations est optionnelle */ }
+    finally { setConversationsLoading(false); }
+  };
+
+  const newConversation = () => {
+    setConversationId(null);
+    setMessages([]);
+    setDraft('');
+    setError('');
+    setStreamingStatus('');
+  };
+
+  const resumeConversation = async (conv: any) => {
+    if (conv.conversation_id === conversationId) return;
+    setError(''); setStreamingStatus('');
+    try {
+      const detail = await apiService.getRagConversation(conv.conversation_id);
+      const echanges: Array<{ role: 'user' | 'assistant'; text: string }> = (detail.echanges ?? []).map((e: any) => ({
+        role: e.role === 'utilisateur' ? 'user' : 'assistant',
+        text: e.texte ?? '',
+      }));
+      setMessages(echanges);
+      setConversationId(conv.conversation_id);
+    } catch (e) { setError(errorText(e)); }
+  };
+
+  const deleteRagConversation = async (id: string) => {
+    if (!window.confirm('Supprimer cette conversation ? Cette action est irréversible.')) return;
+    try {
+      await apiService.deleteRagConversation(id);
+      if (conversationId === id) newConversation();
+      await loadRagConversations();
+    } catch (e) { setError(errorText(e)); }
+  };
+
+  const startRename = (conv: any) => {
+    setRenamingConvId(conv.conversation_id);
+    setRenameValue(conv.titre || '');
+  };
+
+  const confirmRename = async (id: string) => {
+    const titre = renameValue.trim();
+    if (titre) {
+      try { await apiService.renameRagConversation(id, titre); } catch (_) { /* ignore */ }
+      setRagConversations(prev => prev.map(c => c.conversation_id === id ? { ...c, titre } : c));
+    }
+    setRenamingConvId(null);
+  };
+
+  const copyMessage = (text: string, idx: number) => {
+    void navigator.clipboard.writeText(text);
+    setCopiedMsgIdx(idx);
+    setTimeout(() => setCopiedMsgIdx(null), 1500);
+  };
+
+
   const loadSupports = async (formationFilter = formationCode, sessionFilter = sessionId) => {
     const params = sessionFilter ? { session_id: sessionFilter } : formationFilter ? { formation_code: formationFilter } : {};
     const [list, courses, sessionResponse] = await Promise.all([apiService.getSupports(params), apiService.getRagFormations(), apiService.getRagSessions()]);
@@ -128,10 +260,12 @@ export const EspaceIAView: React.FC<{ readOnly?: boolean; trainerMode?: boolean 
       setFormationCode(sessionRows[0].formation_code ?? '');
     }
   };
-  useEffect(() => { setError(''); setNotice(''); if (tab === 'reviews') loadReviews().catch(e => setError(errorText(e))); if (tab === 'supports' || tab === 'chat') loadSupports().catch(e => setError(errorText(e))); if (tab === 'syllabus') apiService.getRagFormations().then(data => setFormations(Array.isArray(data) ? data : data.data ?? data.formations ?? [])).catch(e => setError(errorText(e))); }, [tab, formationCode, sessionId]);
+  useEffect(() => { setError(''); setNotice(''); if (tab === 'reviews') loadReviews().catch(e => setError(errorText(e))); if (tab === 'history') loadHistory().catch(e => setError(errorText(e))); if (tab === 'supports' || tab === 'chat') loadSupports().catch(e => setError(errorText(e))); if (tab === 'chat') loadRagConversations(); if (tab === 'syllabus') apiService.getRagFormations().then(data => setFormations(Array.isArray(data) ? data : data.data ?? data.formations ?? [])).catch(e => setError(errorText(e))); }, [tab, formationCode, sessionId]);
+  // Scroll automatique vers le bas à chaque nouveau message
+  useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
 
   const openReview = async (item: any) => {
-    setSelected(item); setReviewLoading(true); setError('');
+    setSelected(item); setReviewLoading(true); setError(''); setDocumentEdit(null);
     try {
       const id = item.review_id ?? item.id;
       const isRag = String(item.agent_id ?? '').startsWith('agent_rag_');
@@ -143,12 +277,118 @@ export const EspaceIAView: React.FC<{ readOnly?: boolean; trainerMode?: boolean 
     catch (e) { setError(errorText(e)); }
     finally { setReviewLoading(false); }
   };
+  useEffect(() => {
+    if (!reviews.length) return;
+    let focusId = '';
+    try { focusId = sessionStorage.getItem('formaia-review-focus') ?? ''; } catch { return; }
+    const item = reviews.find(review => String(review.review_id ?? review.id) === focusId);
+    if (!item) return;
+    sessionStorage.removeItem('formaia-review-focus');
+    void openReview(item);
+  }, [reviews]);
+  const saveManualDocument = async () => {
+    const id = String(selected?.review_id ?? selected?.id ?? '');
+    if (!id || !documentEdit || !selected?.updated_at) return;
+    setBusy(true); setError(''); setNotice('');
+    try {
+      const response = await apiService.updateReviewDocument(id, documentEdit, selected.updated_at);
+      const review = response.review;
+      if (!response.success || !review) throw new Error("La modification n'a pas été enregistrée.");
+      if (review.agent_id === 'agent_m2_tdr') {
+        updateWorkflow(id, { generatedTdr: review.data.data, tdrFiles: review.data.files });
+      } else if (review.agent_id === 'agent_m3_technique') {
+        updateWorkflow(id, { techniqueDocument: review.data });
+      } else if (review.agent_id === 'agent_m3_financiere') {
+        const costs = review.data?.details_couts ?? {};
+        const workflow = workflowForReview(id)?.workflow;
+        updateWorkflow(id, {
+          financeDocument: review.data,
+          financeInputs: {
+            ...workflow?.financeInputs,
+            trainerRate: Number(costs.honoraires_formateur?.tarif_journalier ?? workflow?.financeInputs?.trainerRate ?? 0),
+            trainerDays: Number(costs.honoraires_formateur?.nb_jours ?? workflow?.financeInputs?.trainerDays ?? 0),
+            roomRate: Number(costs.location_salle?.tarif_journalier ?? workflow?.financeInputs?.roomRate ?? 0),
+            roomDays: Number(costs.location_salle?.nb_jours ?? workflow?.financeInputs?.roomDays ?? 0),
+            supportRate: Number(costs.supports_pedagogiques?.forfait_participant ?? workflow?.financeInputs?.supportRate ?? 0),
+            participants: Number(costs.supports_pedagogiques?.nb_participants ?? workflow?.financeInputs?.participants ?? 0),
+            logistics: Number(costs.logistique?.montant ?? workflow?.financeInputs?.logistics ?? 0),
+            adminPercent: Number(costs.administration?.pourcentage ?? workflow?.financeInputs?.adminPercent ?? 0)
+          }
+        });
+      }
+      setSelected(review); setDocumentEdit(null);
+      setNotice("Modifications enregistrées. Vérifiez la nouvelle version avant de l'approuver.");
+    } catch (e) { setError(errorText(e)); }
+    finally { setBusy(false); }
+  };
+  const correctDocument = async () => {
+    const id = String(selected?.review_id ?? selected?.id ?? '');
+    const agent = String(selected?.agent_id ?? '');
+    const feedback = reviewNote.trim();
+    if (!id || !['agent_m2_tdr', 'agent_m3_technique', 'agent_m3_financiere'].includes(agent)) return;
+    if (feedback.length < 5) { setError('Décrivez la correction souhaitée en au moins 5 caractères.'); return; }
+    const found = workflowForReview(id);
+    const workflow = found?.workflow;
+    if (agent !== 'agent_m2_tdr' && !workflow) {
+      setError("Le dossier source de cette offre n'est plus disponible dans cette session du navigateur. Ouvrez le dossier marché avant de demander une correction.");
+      return;
+    }
+    setBusy(true); setError(''); setNotice('');
+    try {
+      let result: any;
+      let workflowChanges: Record<string, unknown>;
+      if (agent === 'agent_m2_tdr') {
+        const brief = selected?.data?._inputs?.brief ?? (workflow ? { ...workflow.tdrBrief, opportunite_id: found?.key.slice('formaia-m2-m3-'.length) } : null);
+        if (!brief) throw new Error("Le brief d'origine du TDR est introuvable.");
+        result = await apiService.rectifyTdr({ review_id: id, feedback, brief });
+        workflowChanges = { generatedTdr: result.data ?? null, tdrFiles: result.files ?? {}, tdrReviewId: result.review_id, tdrApproved: false, tdrSynchronized: false, docTab: 'tdr' };
+      } else if (agent === 'agent_m3_technique') {
+        if (!workflow.generatedTdr) throw new Error('Le TDR source est absent du dossier marché.');
+        const source = workflow.techniqueRequest ?? {};
+        result = await apiService.rectifyOfferTechnique({
+          review_id: id, feedback,
+          tdr_data: source.tdr_data ?? workflow.generatedTdr,
+          session_info: source.session_info ?? { titre: workflow.generatedTdr.titre, client: workflow.tdrBrief?.client, opportunite_id: found?.key.slice('formaia-m2-m3-'.length), duree: workflow.tdrBrief?.duree }
+        });
+        workflowChanges = { techniqueDocument: result.data ?? null, techniqueReviewId: result.review_id, techniqueApproved: false, financeDocument: null, financeReviewId: '', financeApproved: false, offerSaved: false, docTab: 'technical' };
+      } else {
+        if (!workflow.techniqueApproved || !workflow.techniqueDocument) throw new Error("Validez d'abord l'offre technique dans ce dossier.");
+        const options = workflow.offerOptions ?? {};
+        result = await apiService.rectifyOfferFinanciere({
+          review_id: id, feedback, offre_technique: workflow.techniqueDocument,
+          options: { nb_participants: workflow.financeInputs?.participants || options.participants, type_formateur: options.trainerType, type_salle: options.roomType, tva_applicable: options.vat, inclure_logistique: options.logistics, inclure_administration: options.administration }
+        });
+        const costs = result.data?.details_couts ?? {};
+        workflowChanges = {
+          financeDocument: result.data ?? null, financeReviewId: result.review_id, financeApproved: false, offerSaved: false, docTab: 'financial',
+          financeInputs: {
+            ...workflow.financeInputs,
+            trainerRate: Number(costs.honoraires_formateur?.tarif_journalier ?? workflow.financeInputs?.trainerRate ?? 0),
+            trainerDays: Number(costs.honoraires_formateur?.nb_jours ?? workflow.financeInputs?.trainerDays ?? 0),
+            roomRate: Number(costs.location_salle?.tarif_journalier ?? workflow.financeInputs?.roomRate ?? 0),
+            roomDays: Number(costs.location_salle?.nb_jours ?? workflow.financeInputs?.roomDays ?? 0),
+            supportRate: Number(costs.supports_pedagogiques?.forfait_participant ?? workflow.financeInputs?.supportRate ?? 0),
+            participants: Number(costs.supports_pedagogiques?.nb_participants ?? workflow.financeInputs?.participants ?? 0),
+            logistics: Number(costs.logistique?.montant ?? workflow.financeInputs?.logistics ?? 0),
+            adminPercent: Number(costs.administration?.pourcentage ?? workflow.financeInputs?.adminPercent ?? 0)
+          }
+        };
+      }
+      if (!result?.success || !result.review_id) throw new Error(result?.message ?? "La nouvelle version du document n'a pas été créée.");
+      updateWorkflow(id, workflowChanges);
+      setReviewNote('');
+      setNotice("Nouvelle version créée. Vérifiez-la avant de l'approuver.");
+      await loadReviews();
+      await openReview({ review_id: result.review_id, agent_id: agent });
+    } catch (e) { setError(errorText(e)); }
+    finally { setBusy(false); }
+  };
   const reviewAction = async (approve: boolean) => {
     const id = selected?.review_id ?? selected?.id;
     if (!id) return;
     if (!approve && reviewNote.trim().length < 3) { setError('Le motif du rejet doit contenir au moins 3 caractères.'); return; }
     const reviewerNote = reviewNote.trim() || 'OK';
-    setBusy(true); setError('');
+    setBusy(true); setError(''); setContinueMarket(false);
     let actionNotice = '';
     try {
       const isRag = String(selected?.agent_id ?? '').startsWith('agent_rag_');
@@ -159,17 +399,35 @@ export const EspaceIAView: React.FC<{ readOnly?: boolean; trainerMode?: boolean 
       } else if (isOffer) {
         if (approve) await apiService.approveOfferReview(id, reviewerNote);
         else await apiService.rejectOfferReview(id, reviewNote);
+        if (String(selected?.agent_id) === 'agent_m3_technique') {
+          if (updateWorkflow(id, approve ? { techniqueApproved: true, docTab: 'financial' } : { techniqueApproved: false, techniqueDocument: null, techniqueReviewId: '', financeDocument: null, financeReviewId: '', financeApproved: false, offerSaved: false, docTab: 'technical' }) && approve) setContinueMarket(true);
+          if (approve) actionNotice = "Offre technique approuvée. Vous pouvez générer l'offre financière dans le dossier du marché.";
+        }
+        if (String(selected?.agent_id) === 'agent_m3_financiere') {
+          if (updateWorkflow(id, approve ? { financeApproved: true, docTab: 'financial' } : { financeApproved: false, financeDocument: null, financeReviewId: '', offerSaved: false, docTab: 'financial' }) && approve) setContinueMarket(true);
+          if (approve) actionNotice = 'Offre financière approuvée. Enregistrez les deux volets dans le dossier du marché.';
+        }
         if (approve && String(selected?.agent_id) === 'agent_m3_complete') {
           await apiService.syncOffer(id, selected?.data?.opportunite_id ?? selected?.data?._inputs?.tdr_data?.opportunite_id ?? selected?.opportunite_id);
           actionNotice = 'Offre approuvée et synchronisée avec le backend.';
         }
       } else {
         const agent = String(selected?.agent_id ?? '');
-        if (!approve) await apiService.rejectReview(id, reviewNote);
+        if (!approve) {
+          await apiService.rejectReview(id, reviewNote);
+          if (agent === 'agent_m2_tdr') updateWorkflow(id, { generatedTdr: null, tdrReviewId: '', tdrApproved: false, tdrSynchronized: false, techniqueDocument: null, techniqueReviewId: '', techniqueApproved: false, financeDocument: null, financeReviewId: '', financeApproved: false, offerSaved: false, docTab: 'tdr' });
+        }
         else if (agent === 'agent_m2_tdr') {
           await apiService.approveTdr(id, reviewerNote);
-          await apiService.syncTdr(id, selected?.data?.opportunite_id ?? selected?.opportunite_id);
-          actionNotice = 'TDR approuvé et synchronisé avec le backend.';
+          if (updateWorkflow(id, { tdrApproved: true, docTab: 'technical' })) setContinueMarket(true);
+          try {
+            await apiService.syncTdr(id, selected?.data?.opportunite_id ?? selected?.opportunite_id);
+            updateWorkflow(id, { tdrSynchronized: true });
+            actionNotice = "TDR approuvé et enregistré. Vous pouvez générer l'offre technique dans le dossier du marché.";
+          } catch (syncError) {
+            setError(`TDR approuvé, mais son enregistrement a échoué : ${errorText(syncError)}`);
+            actionNotice = 'TDR approuvé. Reprenez son enregistrement dans le dossier du marché.';
+          }
         } else {
           await apiService.approveReview(id, reviewerNote);
           if (agent === 'agent_m3_complete') {
@@ -242,7 +500,7 @@ export const EspaceIAView: React.FC<{ readOnly?: boolean; trainerMode?: boolean 
     try {
       const code = formationCode.trim();
       const uploaded: any = await apiService.uploadSupport(file, code, sessionId, 'support', module.trim() || undefined);
-      if (!uploaded.chemin_fichier) throw new Error('Le backend n’a pas retourné le chemin du support téléversé.');
+      if (!uploaded.chemin_fichier) throw new Error("Le backend n'a pas retourné le chemin du support téléversé.");
       await apiService.indexSupport(uploaded.chemin_fichier, code, sessionId, module.trim() || undefined);
       setFile(null); setModule(''); await loadSupports(code, sessionId);
       if (uploaded.hash) {
@@ -255,10 +513,10 @@ export const EspaceIAView: React.FC<{ readOnly?: boolean; trainerMode?: boolean 
           setSupports(previous => previous.map(support => (support.hash ?? support.doc_hash) === uploaded.hash ? { ...support, ...indexed } : support));
           if (status === 'indexe' || status === 'erreur' || status === 'ocr_necessaire' || status === 'non_indexable_image') {
             await loadSupports(code, sessionId);
-            setNotice(status === 'indexe' ? `Support indexé et rattaché à la formation ${code}. Les recherches ciblées utiliseront ce document.` : result.data?.message || result.message || `L’indexation du document a terminé avec le statut « ${supportStatusLabel[status] ?? status} ».`);
+            setNotice(status === 'indexe' ? `Support indexé et rattaché à la formation ${code}. Les recherches ciblées utiliseront ce document.` : result.data?.message || result.message || `L'indexation du document a terminé avec le statut « ${supportStatusLabel[status] ?? status} ».`);
             break;
           }
-          if (attempt === 11) { await loadSupports(code, sessionId); setNotice(`Support rattaché à la session ; l’indexation continue en arrière-plan. Son statut reste visible dans la liste des supports.`); }
+          if (attempt === 11) { await loadSupports(code, sessionId); setNotice(`Support rattaché à la session ; l'indexation continue en arrière-plan. Son statut reste visible dans la liste des supports.`); }
         }
       } else {
         setNotice(`Support rattaché à ${code} et indexation lancée.`);
@@ -277,14 +535,14 @@ export const EspaceIAView: React.FC<{ readOnly?: boolean; trainerMode?: boolean 
       if (!modules.length) throw new Error('Ajoutez au moins un module avec sa durée.');
       const result = await apiService.generateSyllabus({ formation_code: syllabusForm.formation_code, modules, options: { format: syllabusForm.format } });
       const reviewId = result?._review_id ?? result?.review_id ?? result?.data?._review_id;
-      setNotice(`Syllabus généré et envoyé pour validation humaine${reviewId ? ` · ${reviewId}` : ''}. Consultez l’onglet Validation IA.`);
+      setNotice(`Syllabus généré et envoyé pour validation humaine${reviewId ? ` · ${reviewId}` : ''}. Consultez l'onglet Validation IA.`);
       setSyllabusForm(previous => ({ ...previous, modules: '' }));
     } catch (e) { setError(errorText(e)); } finally { setBusy(false); }
   };
   const sendMessage = async (text = draft) => {
     const message = text.trim(); if (!message || busy) return;
-    if (trainerMode && !sessionId) { setError('Sélectionnez d’abord une session qui vous est affectée.'); return; }
-    setMessages(prev => [...prev, { role: 'user', text: message }, { role: 'assistant', text: '' }]); setDraft(''); setBusy(true); setError(''); setStreamingStatus('Connexion à l’assistant documentaire…');
+    if (trainerMode && !sessionId) { setError("Sélectionnez d'abord une session qui vous est affectée."); return; }
+    setMessages(prev => [...prev, { role: 'user', text: message }, { role: 'assistant', text: '' }]); setDraft(''); setBusy(true); setError(''); setStreamingStatus("Connexion à l'assistant documentaire…");
     try {
       await apiService.chatRagStream({ message, conversation_id: conversationId, formation_code: formationCode || null, session_id: sessionId || null, module: chatModule || null }, event => {
         if (event.type === 'status') setStreamingStatus(event.message ?? 'Préparation de la réponse…');
@@ -315,11 +573,16 @@ export const EspaceIAView: React.FC<{ readOnly?: boolean; trainerMode?: boolean 
     } catch (e) {
       setError(errorText(e));
       setMessages(previous => previous.filter((item, index) => !(index === previous.length - 1 && item.role === 'assistant' && !item.text)));
-    } finally { setBusy(false); setStreamingStatus(''); }
+    } finally {
+      setBusy(false); setStreamingStatus('');
+      // Actualiser la liste des conversations en arrière-plan
+      loadRagConversations();
+    }
   };
 
   const tabs: Array<{ id: Tab; label: string; icon: React.ReactNode }> = [
     ...(!readOnly ? [{ id: 'reviews' as const, label: 'Validation IA', icon: <ShieldCheck size={15} /> }] : []),
+    ...(!readOnly ? [{ id: 'history' as const, label: 'Historique', icon: <FileText size={15} /> }] : []),
     ...(!readOnly ? [{ id: 'syllabus' as const, label: 'Générer un syllabus', icon: <FileText size={15} /> }] : []),
     { id: 'supports', label: 'Supports RAG', icon: <Paperclip size={15} /> },
     { id: 'chat', label: 'Chat documentaire', icon: <MessageCircle size={15} /> }
@@ -327,27 +590,35 @@ export const EspaceIAView: React.FC<{ readOnly?: boolean; trainerMode?: boolean 
   return <div className="space-y-6 animate-in fade-in duration-300">
     <div className={`${panel} flex flex-col md:flex-row md:items-center md:justify-between gap-4`}>
       <div><div className="text-[11px] font-bold uppercase tracking-wider text-[#1B8F6E]">Services connectés au backend</div><h1 className="text-2xl font-extrabold text-[#11162A] mt-1">Espace IA</h1><p className="text-xs text-slate-500 mt-1">Validez les contenus générés, alimentez la base documentaire et échangez avec vos supports.</p></div>
-      <div className="flex gap-1.5 bg-slate-100 p-1.5 rounded-xl text-xs font-bold flex-wrap">{tabs.map(t => <button key={t.id} onClick={() => setTab(t.id)} className={`px-3 py-2 rounded-lg flex items-center gap-1.5 ${tab === t.id ? 'bg-white text-[#11162A] shadow-xs' : 'text-slate-500'}`}>{t.icon}{t.label}</button>)}</div>
+      <div className="flex gap-1.5 bg-slate-100 p-1.5 rounded-xl text-xs font-bold flex-wrap">{tabs.map(t => <button key={t.id} onClick={() => { setTab(t.id); setSelected(null); setDocumentEdit(null); }} className={`px-3 py-2 rounded-lg flex items-center gap-1.5 ${tab === t.id ? 'bg-white text-[#11162A] shadow-xs' : 'text-slate-500'}`}>{t.icon}{t.label}</button>)}</div>
     </div>
     {error && <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs font-semibold flex gap-2"><AlertCircle size={15} />{error}</div>}
-    {notice && <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold">{notice}</div>}
+    {notice && <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold"><span>{notice}</span>{continueMarket && <button type="button" onClick={() => onNavigateToSection?.('opportunites_crm')} className="rounded-lg bg-emerald-700 px-3 py-2 font-bold text-white">Continuer le dossier du marché</button>}</div>}
 
     {tab === 'reviews' && <div className="grid lg:grid-cols-[minmax(260px,0.8fr)_minmax(0,1.2fr)] gap-4">
       <section className={panel}><div className="mb-4 flex flex-wrap items-center justify-between gap-3"><h2 className="font-extrabold text-[#11162A]">À valider</h2><span className="text-xs bg-emerald-50 text-emerald-700 rounded-full px-2.5 py-1 font-bold">{reviews.length}</span></div>
         {reviews.length ? <div className="space-y-2">{reviews.map((r, i) => { const id = String(r.review_id ?? r.id ?? i); return <div key={id} className={`flex items-center gap-2 rounded-xl border p-2 ${selected?.review_id === id ? 'border-[#1B8F6E] bg-emerald-50/50' : 'border-slate-200 hover:border-slate-300'}`}><button onClick={() => openReview(r)} className="min-w-0 flex-1 p-1 text-left"><div className="truncate font-bold text-sm text-[#11162A]">{r.title ?? r.titre ?? r.summary ?? r.agent_id ?? 'Contenu généré'}</div><div className="mt-1 truncate text-[11px] text-slate-500">{r.agent_id ?? r.type ?? 'Agent IA'} · {r.created_at ? new Date(r.created_at).toLocaleString('fr-FR') : r.date_creation ?? ''}</div></button><button type="button" aria-label={`Supprimer la validation ${id}`} title="Supprimer cette validation" disabled={deletingReviewId !== '' || busy} onClick={() => void deleteReview(r)} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-red-100 bg-red-50 text-red-600 transition hover:bg-red-100 disabled:cursor-wait disabled:opacity-50">{deletingReviewId === id ? <Loader2 size={15} className="animate-spin" /> : <Trash2 size={15} />}</button></div>; })}</div> : <p className="text-xs text-slate-500">Aucun contenu en attente de validation.</p>}
       </section>
-      <section className={panel}>{selected ? <><div className="flex items-start justify-between gap-3"><div><h2 className="font-extrabold text-[#11162A]">{selected.summary ?? selected.title ?? 'Aperçu du contenu à valider'}</h2><p className="text-[11px] text-slate-500 mt-1">{selected.agent_id ?? selected.type ?? selected.review_id} · {selected.criticity ?? ''} · {selected.created_at ? new Date(selected.created_at).toLocaleString('fr-FR') : ''}</p></div><button onClick={() => setSelected(null)} className="p-1.5 text-slate-400 hover:text-slate-700"><X size={16} /></button></div>{reviewLoading ? <div className="mt-6 flex min-h-48 items-center justify-center gap-2 text-sm font-semibold text-slate-500"><Loader2 size={18} className="animate-spin text-[#1B8F6E]" />Chargement de l’aperçu complet…</div> : <><div className="mt-4"><ReviewContent value={selected} /></div><textarea value={reviewNote} onChange={e => setReviewNote(e.target.value)} placeholder="Note d’approbation ou motif du rejet (3 caractères minimum)" rows={2} className="mt-3 w-full p-3 bg-white border border-slate-300 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#1B8F6E]" /><div className="flex justify-end gap-2 mt-3"><button disabled={busy} onClick={() => reviewAction(false)} className="px-4 py-2 bg-red-50 text-red-700 rounded-lg text-xs font-bold">Rejeter</button><button disabled={busy} onClick={() => reviewAction(true)} className="px-4 py-2 bg-[#1B8F6E] text-white rounded-lg text-xs font-bold flex gap-1.5 items-center">{busy ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}Approuver</button></div></>}</> : <div className="h-full min-h-56 flex flex-col items-center justify-center text-center text-slate-400"><FileText size={30} className="mb-2" /><p className="text-xs font-semibold">Sélectionnez un contenu pour le consulter.</p></div>}</section>
+      <section className={panel}>{selected ? <><div className="flex items-start justify-between gap-3"><div><h2 className="font-extrabold text-[#11162A]">{selected.summary ?? selected.title ?? 'Aperçu du contenu à valider'}</h2><p className="text-[11px] text-slate-500 mt-1">{selected.agent_id ?? selected.type ?? selected.review_id} · {selected.criticity ?? ''} · {selected.created_at ? new Date(selected.created_at).toLocaleString('fr-FR') : ''}</p></div><button onClick={() => setSelected(null)} className="p-1.5 text-slate-400 hover:text-slate-700"><X size={16} /></button></div>{!reviewLoading && !documentEdit && editableDocument(selected) && <button type="button" onClick={() => setDocumentEdit(structuredClone(editableDocument(selected)))} className="mt-3 rounded-lg bg-slate-100 px-3 py-2 text-xs font-bold text-slate-700">Modifier manuellement</button>}{reviewLoading ? <div className="mt-6 flex min-h-48 items-center justify-center gap-2 text-sm font-semibold text-slate-500"><Loader2 size={18} className="animate-spin text-[#1B8F6E]" />Chargement de l'aperçu complet…</div> : <>{documentEdit ? <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 p-3"><p className="mb-3 text-xs text-blue-900">Modifiez les champs, enregistrez, puis approuvez la version mise à jour. Les montants calculés de l'offre financière restent à ajuster dans le dossier marché.</p><div className="max-h-[560px] overflow-auto rounded-lg bg-white p-3"><DocumentFields value={documentEdit} onChange={(path, value) => setDocumentEdit(current => current ? setDocumentField(current, path, value) : null)} allowNumbers={selected.agent_id !== 'agent_m3_financiere'} /></div><div className="mt-3 flex justify-end gap-2"><button type="button" onClick={() => setDocumentEdit(null)} className="rounded-lg bg-white px-3 py-2 text-xs font-bold text-slate-700">Annuler</button><button type="button" disabled={busy} onClick={() => void saveManualDocument()} className="rounded-lg bg-blue-800 px-3 py-2 text-xs font-bold text-white disabled:opacity-50">Enregistrer les modifications</button></div></div> : <div className="mt-4"><ReviewContent value={selected} /></div>}<textarea disabled={documentEdit !== null} value={reviewNote} onChange={e => setReviewNote(e.target.value)} placeholder="Note de validation, motif de rejet ou correction demandée à l'IA" rows={2} className="mt-3 w-full p-3 bg-white border border-slate-300 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#1B8F6E]" /><div className="flex justify-end gap-2 mt-3"><button disabled={busy || documentEdit !== null} onClick={() => reviewAction(false)} className="px-4 py-2 bg-red-50 text-red-700 rounded-lg text-xs font-bold">Rejeter</button>{['agent_m2_tdr', 'agent_m3_technique', 'agent_m3_financiere'].includes(String(selected.agent_id)) && <button disabled={busy || reviewLoading || documentEdit !== null} onClick={() => void correctDocument()} className="px-4 py-2 bg-blue-50 text-blue-800 rounded-lg text-xs font-bold">Demander une correction à l'IA</button>}<button disabled={busy || documentEdit !== null} onClick={() => reviewAction(true)} className="px-4 py-2 bg-[#1B8F6E] text-white rounded-lg text-xs font-bold flex gap-1.5 items-center">{busy ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}Approuver</button></div></>}</> : <div className="h-full min-h-56 flex flex-col items-center justify-center text-center text-slate-400"><FileText size={30} className="mb-2" /><p className="text-xs font-semibold">Sélectionnez un contenu pour le consulter.</p></div>}</section>
+    </div>}
+
+    {tab === 'history' && <div className="grid gap-4 lg:grid-cols-[minmax(260px,0.8fr)_minmax(0,1.2fr)]">
+      <section className={panel}><div className="mb-4 flex flex-wrap items-center justify-between gap-2"><div><h2 className="font-extrabold text-[#11162A]">Décisions conservées</h2><p className="mt-1 text-xs text-slate-500">TDR, offres et autres contenus soumis à validation humaine.</p></div><button type="button" onClick={() => void loadHistory().catch(e => setError(errorText(e)))} className="text-xs font-bold text-[#1B8F6E]">Actualiser</button></div>
+        <div className="mb-4 flex flex-wrap gap-2">{(['all', 'approved', 'rejected'] as const).map(status => <button key={status} type="button" onClick={() => setHistoryStatus(status)} className={`rounded-full px-3 py-1.5 text-xs font-bold ${historyStatus === status ? 'bg-[#11162A] text-white' : 'bg-slate-100 text-slate-600'}`}>{status === 'all' ? 'Toutes' : status === 'approved' ? 'Approuvées' : 'Rejetées'}</button>)}</div>
+        <div className="max-h-[620px] space-y-2 overflow-auto">{history.filter(item => historyStatus === 'all' || item.status === historyStatus).map((item: any) => { const id = String(item.review_id ?? item.id); return <div key={id} className={`relative rounded-xl border ${selected?.review_id === id ? 'border-[#1B8F6E] bg-emerald-50/50' : 'border-slate-200 hover:border-slate-300'}`}><button type="button" onClick={() => void openReview(item)} className="w-full p-3 text-left"><span className={`mb-1 inline-block rounded-full px-2 py-0.5 text-[10px] font-bold ${item.status === 'approved' ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'}`}>{item.status === 'approved' ? 'Approuvé' : 'Rejeté'}</span><strong className="block text-sm text-[#11162A]">{item.summary ?? item.agent_id ?? 'Contenu IA'}</strong><span className="mt-1 block text-[11px] text-slate-500">{item.agent_id} · {item.reviewed_at ? new Date(item.reviewed_at).toLocaleString('fr-FR') : 'Date non renseignée'}</span></button><button type="button" disabled={busy} title="Supprimer définitivement" onClick={async () => { if (!confirm('Supprimer définitivement cette décision de l\'historique ?')) return; setBusy(true); setError(''); try { await apiService.deleteHistoryReview(id); if (selected?.review_id === id) setSelected(null); await loadHistory(); setNotice('Décision supprimée de l\'historique.'); } catch (e) { setError(errorText(e)); } finally { setBusy(false); } }} className="absolute right-2 top-2 rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-40"><Trash2 size={13} /></button></div>; })}{!history.some(item => historyStatus === 'all' || item.status === historyStatus) && <p className="text-xs text-slate-500">Aucune décision dans cette catégorie.</p>}</div>
+      </section>
+      <section className={panel}>{selected ? <><div className="flex items-start justify-between gap-3"><div><h2 className="font-extrabold text-[#11162A]">{selected.summary ?? selected.agent_id ?? 'Décision'}</h2><p className="mt-1 text-xs text-slate-500">{selected.review_id} · {selected.reviewed_at ? new Date(selected.reviewed_at).toLocaleString('fr-FR') : ''}</p></div><button type="button" onClick={() => setSelected(null)} className="text-slate-500"><X size={16} /></button></div>{reviewLoading ? <p className="mt-4 text-xs text-slate-500">Chargement…</p> : <><div className="mt-4 rounded-xl bg-slate-50 p-3 text-xs text-slate-700"><strong>{selected.status === 'approved' ? 'Note de validation' : 'Motif du rejet'}</strong><p className="mt-1 whitespace-pre-wrap">{selected.status === 'approved' ? selected.reviewer_note || 'Aucune note' : selected.rejection_reason || 'Aucun motif'}</p>{selected.manual_edits_count > 0 && <p className="mt-2">Modifications manuelles avant décision : {selected.manual_edits_count}</p>}</div><div className="mt-4"><ReviewContent value={selected} /></div>{Array.isArray(selected.revision_history) && selected.revision_history.length > 0 && <details className="mt-4 rounded-xl border border-slate-200 p-3"><summary className="cursor-pointer text-xs font-bold text-[#11162A]">Versions avant validation ({selected.revision_history.length})</summary><div className="mt-3 space-y-3">{selected.revision_history.map((revision: any, index: number) => <div key={index} className="rounded-lg bg-slate-50 p-3"><p className="mb-2 text-xs font-bold text-slate-600">Version {index + 1} · {revision.updated_at ? new Date(revision.updated_at).toLocaleString('fr-FR') : 'Date inconnue'}</p><ReviewContent value={{ data: revision.data }} /></div>)}</div></details>}</>}</> : <p className="text-xs text-slate-500">Sélectionnez une décision pour revoir son contenu et sa note.</p>}</section>
     </div>}
 
     {tab === 'syllabus' && <div className="grid gap-4 lg:grid-cols-[minmax(280px,0.85fr)_minmax(0,1.15fr)]">
       <form onSubmit={generateSyllabus} className={`${panel} space-y-4`}>
-        <div><h2 className="font-extrabold text-[#11162A]">Générer un syllabus avec le RAG</h2><p className="mt-1 text-xs text-slate-500">Le syllabus s’appuie sur les supports indexés et passe en validation humaine avant utilisation.</p></div>
+        <div><h2 className="font-extrabold text-[#11162A]">Générer un syllabus avec le RAG</h2><p className="mt-1 text-xs text-slate-500">Le syllabus s'appuie sur les supports indexés et passe en validation humaine avant utilisation.</p></div>
         <label className="block text-[11px] font-bold uppercase text-slate-600">Formation du catalogue *<select required value={syllabusForm.formation_code} onChange={e => setSyllabusForm(previous => ({ ...previous, formation_code: e.target.value }))} className="mt-1 w-full rounded-xl border border-slate-300 bg-slate-50 px-3 py-2.5 text-sm font-normal normal-case text-slate-800"><option value="">Sélectionner une formation</option>{formations.map((formation: any) => <option key={formation.code ?? formation.formation_code} value={formation.code ?? formation.formation_code}>{formation.code ?? formation.formation_code} — {formation.titre ?? formation.nom}</option>)}</select></label>
         <label className="block text-[11px] font-bold uppercase text-slate-600">Modules et durées *<textarea required value={syllabusForm.modules} onChange={e => setSyllabusForm(previous => ({ ...previous, modules: e.target.value }))} rows={7} placeholder={'Introduction | 1 jour\nAtelier pratique | 3h\nÉvaluation | 2h'} className="mt-1 w-full rounded-xl border border-slate-300 bg-slate-50 p-3 text-sm font-normal normal-case text-slate-800"/><span className="mt-1 block text-[10px] font-normal normal-case text-slate-500">Une ligne par module au format « titre | durée ».</span></label>
         <label className="block text-[11px] font-bold uppercase text-slate-600">Format<select value={syllabusForm.format} onChange={e => setSyllabusForm(previous => ({ ...previous, format: e.target.value }))} className="mt-1 w-full rounded-xl border border-slate-300 bg-slate-50 px-3 py-2.5 text-sm font-normal normal-case"><option value="présentiel">Présentiel</option><option value="distanciel">Distanciel</option><option value="hybride">Hybride</option></select></label>
         <button disabled={busy || !syllabusForm.formation_code} className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#1B8F6E] px-4 py-2.5 text-xs font-bold text-white disabled:opacity-50">{busy ? <Loader2 size={15} className="animate-spin"/> : <FileText size={15}/>}Générer et soumettre à validation</button>
       </form>
-      <section className={`${panel} space-y-4`}><h2 className="font-extrabold text-[#11162A]">Documents de formation</h2><p className="text-xs leading-relaxed text-slate-600">Les syllabus générés apparaissent dans <strong>Validation IA</strong>. Les supports nécessaires au RAG se déposent dans l’onglet <strong>Supports RAG</strong>, puis sont indexés pour enrichir les prochains syllabus.</p><button type="button" onClick={() => setTab('supports')} className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-xs font-bold text-[#11162A]">Ouvrir les supports documentaires</button>{formations.length === 0 && <p className="rounded-lg bg-amber-50 p-3 text-[11px] text-amber-800">Le catalogue de formations n’est pas disponible. Vérifiez le backend RAG avant de générer le syllabus.</p>}</section>
+      <section className={`${panel} space-y-4`}><h2 className="font-extrabold text-[#11162A]">Documents de formation</h2><p className="text-xs leading-relaxed text-slate-600">Les syllabus générés apparaissent dans <strong>Validation IA</strong>. Les supports nécessaires au RAG se déposent dans l'onglet <strong>Supports RAG</strong>, puis sont indexés pour enrichir les prochains syllabus.</p><button type="button" onClick={() => setTab('supports')} className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-xs font-bold text-[#11162A]">Ouvrir les supports documentaires</button>{formations.length === 0 && <p className="rounded-lg bg-amber-50 p-3 text-[11px] text-amber-800">Le catalogue de formations n'est pas disponible. Vérifiez le backend RAG avant de générer le syllabus.</p>}</section>
     </div>}
 
     {tab === 'supports' && <div className="grid lg:grid-cols-[minmax(280px,0.8fr)_minmax(0,1.2fr)] gap-4">
@@ -355,11 +626,135 @@ export const EspaceIAView: React.FC<{ readOnly?: boolean; trainerMode?: boolean 
       <section className={panel}><div className="flex justify-between items-center mb-4"><div><h2 className="font-extrabold text-[#11162A]">Supports de formation</h2><p className="mt-1 text-[10px] text-slate-500">Chaque document est isolé par session et repéré par son module pédagogique.</p></div><button onClick={() => loadSupports().catch(e => setError(errorText(e)))} className="text-xs font-bold text-[#1B8F6E]">Actualiser</button></div>{sessions.length > 0 && <div className="mb-4 flex flex-wrap gap-2"><button onClick={() => { setSessionId(''); setFormationCode(''); }} className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${sessionId ? 'bg-slate-100 text-slate-600' : 'bg-[#11162A] text-white'}`}>Toutes les sessions</button>{sessions.map((item: any) => <button key={item.id} onClick={() => { setSessionId(item.id); setFormationCode(item.formation_code ?? ''); }} className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${sessionId === item.id ? 'bg-emerald-700 text-white' : 'bg-emerald-50 text-emerald-800'}`}>{item.titre}</button>)}</div>}{supports.length ? <div className="max-h-[440px] space-y-2 overflow-auto">{supports.map((s: any, i) => { const status = s.statut_indexation ?? s.statut ?? 'en_attente'; const course = formations.find((f: any) => f.code === s.formation_code); const trainingSession = sessions.find((item: any) => item.id === s.session_id); return <div key={s.hash ?? s.doc_hash ?? s.id ?? i} className="flex items-start justify-between gap-3 rounded-xl border border-slate-200 p-3"><div className="min-w-0"><div className="truncate font-bold text-sm text-[#11162A]">{s.fichier ?? s.nom_fichier ?? s.filename ?? 'Support'}</div><div className="mt-1 text-[11px] font-semibold text-emerald-800">{trainingSession?.titre ?? s.session_id ?? 'Session non classée'}{s.formation_code ? ` · ${s.formation_code}` : ''}{course?.titre ? ` — ${course.titre}` : ''}{s.module ? ` · ${s.module}` : ''}</div>{s.message && <p className="mt-1 text-[10px] text-slate-500">{s.message}</p>}</div><span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-bold ${supportStatusStyle[status] ?? 'bg-slate-100 text-slate-600'}`}>{supportStatusLabel[status] ?? status}</span></div>; })}</div> : <p className="rounded-xl bg-slate-50 p-4 text-xs text-slate-500">{sessionId ? `Aucun support enregistré pour la session sélectionnée.` : 'Aucun support disponible.'}</p>}</section>
     </div>}
 
-    {tab === 'chat' && <section className={`${panel} max-w-4xl mx-auto`}><div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100"><div><h2 className="font-extrabold text-[#11162A]">Assistant documentaire</h2><p className="text-[11px] text-slate-500 mt-1">{sessionId ? `Recherche isolée dans la session « ${sessions.find((item: any) => item.id === sessionId)?.titre ?? sessionId} »${chatModule ? ` · module ${chatModule}` : ''}.` : trainerMode ? 'Choisissez une session qui vous est affectée.' : 'Le catalogue, l’inventaire et les synthèses peuvent couvrir votre espace ; choisissez une session pour les questions sur son contenu.'}</p></div><div className="flex flex-col gap-2 sm:items-end"><select required={trainerMode} value={sessionId} onChange={e => { const id = e.target.value; setSessionId(id); setFormationCode(sessions.find((item: any) => item.id === id)?.formation_code ?? ''); setChatModule(''); }} className="px-3 py-2 border border-slate-300 bg-white rounded-lg text-xs"><option value="">{trainerMode ? 'Choisir ma session' : 'Toutes les sessions'}</option>{sessions.map((item: any) => <option key={item.id} value={item.id}>{item.titre}{item.formation_code ? ` — ${item.formation_code}` : ''}</option>)}</select>{sessionId && (sessions.find((item: any) => item.id === sessionId)?.modules?.length ?? 0) > 0 && <select value={chatModule} onChange={e => setChatModule(e.target.value)} className="px-3 py-2 border border-slate-300 bg-white rounded-lg text-xs"><option value="">Tous les modules de la session</option>{sessions.find((item: any) => item.id === sessionId)?.modules.map((name: string) => <option key={name} value={name}>{name}</option>)}</select>}</div></div>
-      <div className="min-h-[300px] max-h-[480px] overflow-y-auto py-4 space-y-3">{messages.length === 0 && <div className="text-center text-slate-400 py-20"><MessageCircle size={30} className="mx-auto mb-2" /><p className="text-xs">Posez une question sur les documents de formation.</p></div>}{messages.map((m, i) => <div key={i} className={`max-w-[90%] p-3 rounded-xl text-xs whitespace-pre-wrap ${m.role === 'user' ? 'ml-auto bg-[#1B8F6E] text-white' : 'mr-auto bg-slate-50 text-slate-700 border border-slate-200'}`}><div>{m.text || (busy && i === messages.length - 1 ? streamingStatus || 'Préparation de la réponse…' : '')}</div>{!trainerMode && m.sources?.length ? <div className="mt-3 pt-2 border-t border-slate-200/70 text-[11px]">Sources : {m.sources.map((s: any, j: number) => <span key={j} className="mr-2">{s.fichier ?? s.filename ?? 'Document'}{s.page ? `, p. ${s.page}` : ''}</span>)}</div> : null}{m.suggestions?.map((suggestion, j) => <button key={j} onClick={() => sendMessage(suggestion)} className="mt-2 mr-2 px-2.5 py-1 rounded-full bg-white border border-slate-200 text-[#1B8F6E] font-bold">{suggestion}</button>)}</div>)}</div>
-      {busy && streamingStatus && <div className="mb-2 flex items-center gap-2 text-[11px] text-slate-500"><Loader2 size={13} className="animate-spin text-[#1B8F6E]" />{streamingStatus}</div>}
-      <form onSubmit={e => { e.preventDefault(); void sendMessage(); }} className="flex gap-2 border-t border-slate-100 pt-3"><input value={draft} onChange={e => setDraft(e.target.value)} placeholder="Votre question sur les supports…" className="flex-1 min-w-0 px-3 py-2.5 border border-slate-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-[#1B8F6E]" /><button disabled={busy || !draft.trim() || (trainerMode && !sessionId)} className="px-4 py-2.5 bg-[#1B8F6E] text-white rounded-xl text-xs font-bold flex items-center gap-1.5">{busy ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}Envoyer</button></form>
-    </section>}
+    {tab === 'chat' && <div className={`grid gap-4 ${ragConversations.length > 0 ? 'lg:grid-cols-[220px_minmax(0,1fr)]' : ''}`}>
+      {/* Sidebar conversations — visible seulement si conversations existantes */}
+      {ragConversations.length > 0 && (
+        <aside className={`${panel} flex flex-col gap-3 h-fit`}>
+          <div className="flex items-center justify-between">
+            <h3 className="font-extrabold text-[#11162A] text-sm">Conversations</h3>
+            {conversationsLoading && <Loader2 size={13} className="animate-spin text-slate-400" />}
+          </div>
+          <button type="button" onClick={newConversation} className="flex items-center gap-2 w-full rounded-xl border border-dashed border-[#1B8F6E] px-3 py-2 text-xs font-bold text-[#1B8F6E] hover:bg-emerald-50 transition">
+            <PlusCircle size={14} />Nouvelle conversation
+          </button>
+          <div className="space-y-1 max-h-[400px] overflow-y-auto">
+            {ragConversations.map((conv: any) => (
+              <div key={conv.conversation_id} className={`group relative rounded-xl border p-2.5 transition ${conversationId === conv.conversation_id ? 'border-[#1B8F6E] bg-emerald-50/50' : 'border-slate-200 hover:border-slate-300'}`}>
+                {renamingConvId === conv.conversation_id ? (
+                  <div className="flex items-center gap-1">
+                    <input autoFocus value={renameValue} onChange={e => setRenameValue(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') void confirmRename(conv.conversation_id); if (e.key === 'Escape') setRenamingConvId(null); }} className="flex-1 min-w-0 text-xs border border-[#1B8F6E] rounded px-1.5 py-1 outline-none" />
+                    <button type="button" onClick={() => void confirmRename(conv.conversation_id)} className="p-1 rounded text-[#1B8F6E] hover:bg-emerald-50"><Check size={11} /></button>
+                    <button type="button" onClick={() => setRenamingConvId(null)} className="p-1 rounded text-slate-400 hover:bg-slate-100"><X size={11} /></button>
+                  </div>
+                ) : (
+                  <>
+                    <button type="button" onClick={() => void resumeConversation(conv)} className="w-full text-left min-w-0 pr-10">
+                      <div className="truncate text-xs font-semibold text-[#11162A]">{conv.titre || 'Conversation'}</div>
+                      <div className="mt-0.5 text-[10px] text-slate-500">{conv.nb_echanges} échange{conv.nb_echanges > 1 ? 's' : ''} · {conv.mis_a_jour_le ? new Date(conv.mis_a_jour_le * 1000).toLocaleDateString('fr-FR') : ''}</div>
+                    </button>
+                    <div className="absolute right-1.5 top-1.5 flex gap-0.5 opacity-0 group-hover:opacity-100 transition">
+                      <button type="button" onClick={() => startRename(conv)} title="Renommer" className="p-1 rounded text-slate-400 hover:text-[#1B8F6E] hover:bg-emerald-50"><Pencil size={11} /></button>
+                      <button type="button" onClick={() => void deleteRagConversation(conv.conversation_id)} title="Supprimer" className="p-1 rounded text-slate-400 hover:text-red-600 hover:bg-red-50"><Trash2 size={11} /></button>
+                    </div>
+                  </>
+                )}
+              </div>
+            ))}
+          </div>
+          <p className="text-[10px] text-slate-400 border-t border-slate-100 pt-2">Max 20 conversations conservées.</p>
+        </aside>
+      )}
+
+      {/* Zone de chat principale */}
+      <section className={`${panel} flex flex-col`}>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+          <div>
+            <h2 className="font-extrabold text-[#11162A]">Assistant documentaire</h2>
+            <p className="text-[11px] text-slate-500 mt-1">{sessionId ? `Recherche isolée dans la session « ${sessions.find((item: any) => item.id === sessionId)?.titre ?? sessionId} »${chatModule ? ` · module ${chatModule}` : ''}.` : trainerMode ? 'Choisissez une session qui vous est affectée.' : "Le catalogue, l'inventaire et les synthèses peuvent couvrir votre espace ; choisissez une session pour les questions sur son contenu."}</p>
+          </div>
+          <div className="flex flex-col gap-2 sm:items-end">
+            <select required={trainerMode} value={sessionId} onChange={e => { const id = e.target.value; setSessionId(id); setFormationCode(sessions.find((item: any) => item.id === id)?.formation_code ?? ''); setChatModule(''); }} className="px-3 py-2 border border-slate-300 bg-white rounded-lg text-xs">
+              <option value="">{trainerMode ? 'Choisir ma session' : 'Toutes les sessions'}</option>
+              {sessions.map((item: any) => <option key={item.id} value={item.id}>{item.titre}{item.formation_code ? ` — ${item.formation_code}` : ''}</option>)}
+            </select>
+            {sessionId && (sessions.find((item: any) => item.id === sessionId)?.modules?.length ?? 0) > 0 && (
+              <select value={chatModule} onChange={e => setChatModule(e.target.value)} className="px-3 py-2 border border-slate-300 bg-white rounded-lg text-xs">
+                <option value="">Tous les modules de la session</option>
+                {sessions.find((item: any) => item.id === sessionId)?.modules.map((name: string) => <option key={name} value={name}>{name}</option>)}
+              </select>
+            )}
+          </div>
+        </div>
+
+        <div className="flex-1 min-h-[320px] max-h-[500px] overflow-y-auto py-4 space-y-4">
+          {messages.length === 0 && (
+            <div className="text-center text-slate-400 py-20">
+              <MessageCircle size={30} className="mx-auto mb-2" />
+              <p className="text-xs font-semibold">Posez une question sur les documents de formation.</p>
+              <p className="text-[10px] mt-1 text-slate-300">Les réponses sont fondées exclusivement sur les supports indexés.</p>
+            </div>
+          )}
+          {messages.map((m, i) => {
+            const isStreaming = busy && i === messages.length - 1 && m.role === 'assistant';
+            const isUser = m.role === 'user';
+            return (
+            <div key={i} className={`group max-w-[88%] mb-6 ${isUser ? 'ml-auto' : 'mr-auto'}`}>
+              <div className={`relative p-3.5 rounded-2xl text-xs leading-relaxed ${isUser ? 'bg-[#1B8F6E] text-white rounded-br-sm whitespace-pre-wrap' : 'bg-slate-50 text-slate-800 border border-slate-200 rounded-bl-sm'}`}>
+                {m.text
+                  ? isUser
+                    ? <>{m.text}{isStreaming && <span className="inline-block w-0.5 h-3 bg-white ml-0.5 align-middle animate-pulse" />}</>
+                    : <><span dangerouslySetInnerHTML={{ __html: renderMarkdown(m.text) }} />{isStreaming && <span className="inline-block w-0.5 h-3 bg-[#1B8F6E] ml-0.5 align-middle animate-pulse" />}</>
+                  : isStreaming
+                    ? <span className="flex items-center gap-1.5 text-slate-400 italic"><span className="flex gap-0.5">{[0,1,2].map(d => <span key={d} className="w-1.5 h-1.5 rounded-full bg-slate-400 animate-bounce" style={{animationDelay:`${d*120}ms`}}/>)}</span>{streamingStatus || 'Préparation de la réponse…'}</span>
+                    : ''}
+                {m.text && !isStreaming && (
+                  <button type="button" onClick={() => copyMessage(m.text, i)} title="Copier" className={`absolute -bottom-5 ${isUser ? 'right-0' : 'left-0'} flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-white border border-slate-200 text-[10px] text-slate-500 hover:text-[#1B8F6E] hover:border-[#1B8F6E] shadow-sm transition opacity-0 group-hover:opacity-100`}>
+                    {copiedMsgIdx === i ? <Check size={10} className="text-emerald-600" /> : <Copy size={10} />}
+                    {copiedMsgIdx === i ? 'Copié' : 'Copier'}
+                  </button>
+                )}
+              </div>
+              {/* Sources — visibles uniquement si retournées par le backend (rôle DIRECTION) */}
+              {m.sources && m.sources.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {m.sources.map((s: any, j: number) => (
+                    <span key={j} className="inline-flex items-center gap-1 rounded-full bg-emerald-50 border border-emerald-200 px-2 py-0.5 text-[10px] font-semibold text-emerald-800">
+                      <FileText size={9} />
+                      {s.fichier ?? s.filename ?? 'Document'}{s.page ? `, p. ${s.page}` : ''}
+                      {s.score ? ` (${Math.round(s.score * 100)}%)` : ''}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {/* Suggestions de relance */}
+              {m.suggestions && m.suggestions.length > 0 && m.role === 'assistant' && (
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {m.suggestions.map((suggestion, j) => (
+                    <button key={j} type="button" onClick={() => void sendMessage(suggestion)} className="rounded-full bg-white border border-slate-200 px-2.5 py-1 text-[11px] font-bold text-[#1B8F6E] hover:border-[#1B8F6E] transition">
+                      {suggestion}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            );
+          })}
+          <div ref={messagesEndRef} />
+        </div>
+
+        {busy && streamingStatus && (
+          <div className="mb-2 flex items-center gap-2 text-[11px] text-slate-500">
+            <Loader2 size={13} className="animate-spin text-[#1B8F6E]" />{streamingStatus}
+          </div>
+        )}
+        <form onSubmit={e => { e.preventDefault(); void sendMessage(); }} className="flex gap-2 border-t border-slate-100 pt-3">
+          <input value={draft} onChange={e => setDraft(e.target.value)} placeholder="Votre question sur les supports…" className="flex-1 min-w-0 px-3 py-2.5 border border-slate-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-[#1B8F6E]" />
+          <button disabled={busy || !draft.trim() || (trainerMode && !sessionId)} className="px-4 py-2.5 bg-[#1B8F6E] text-white rounded-xl text-xs font-bold flex items-center gap-1.5 disabled:opacity-50">
+            {busy ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}Envoyer
+          </button>
+        </form>
+      </section>
+    </div>}
   </div>;
 };
 

@@ -24,7 +24,7 @@ def run(coro):
 # ============================================================
 
 def test_normaliser_texte():
-    assert cache.normaliser_texte("  Quels   SONT   les Fondamentaux  ?  ") == "quels sont les fondamentaux ?"
+    assert cache.normaliser_texte("  Quels   SONT   les Fondamentaux  ?  ") == "quels sont les fondamentaux"
 
 
 def test_cache_miss_puis_hit(tmp_path):
@@ -140,6 +140,8 @@ class Ligne:
         self.page_fin = page_fin
         self.type_support = type_support
         self.modele_embed = "voyage-4-large"
+        self.session_id = None
+        self.module = None
 
 
 class FauxRepositoryRecherche:
@@ -199,6 +201,7 @@ def test_rechercher_transmet_les_filtres():
     assert repo.derniers_filtres == {
         "collection": "support", "top_k": 3, "formation_code": "IA_FONDAMENTAUX",
         "domaine": "IA", "annee": 2026, "type_support": "pdf",
+        "module": None, "session_id": None,
     }
 
 

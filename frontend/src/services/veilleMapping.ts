@@ -48,6 +48,7 @@ export interface DetectionResult {
   markets: VeilleMarche[];
   total: number;
   status: string;
+  demoMode: boolean;
   quotaReached: boolean;
   reason?: string;
   statistics: {

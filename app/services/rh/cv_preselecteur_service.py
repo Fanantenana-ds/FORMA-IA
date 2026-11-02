@@ -63,10 +63,14 @@ class CvPreselecteurService:
             "Analyse ce profil pour le poste suivant :",
             "",
             "=== CRITÈRES DU POSTE ===",
+            f"- Poste visé : {criteres_poste.get('poste', 'N/A')}",
             f"- Domaine : {criteres_poste.get('domaine', 'N/A')}",
             f"- Compétences requises : {', '.join(criteres_poste.get('competences', []))}",
             f"- Expérience min. en formation : {criteres_poste.get('experience_formation_min', 'N/A')}",
             f"- Niveau requis : {criteres_poste.get('niveau', 'N/A')}",
+            f"- Formation liée : {criteres_poste.get('formation', 'N/A')}",
+            f"- Domaine de la formation : {criteres_poste.get('formation_domaine', 'N/A')}",
+            f"- Offre ou besoin du client : {criteres_poste.get('offre_description', 'N/A')}",
             "",
             "=== CV (TEXTE BRUT) ===",
             cv_texte.strip()[:8000],
@@ -136,7 +140,7 @@ class CvPreselecteurService:
             summary=(
                 f"Présélection CV — {result.get('nom_candidat', 'Candidat')} "
                 f"— {result.get('poste_vise', 'N/A')} "
-                f"— Décision : {result.get('decision', 'N/A')}"
+                f"— {'Décision : ' + str(result.get('decision', 'N/A')) if source == 'llm' else 'Analyse IA indisponible — à évaluer'}"
             ),
             criticity="high",
         )
@@ -160,16 +164,12 @@ class CvPreselecteurService:
         return {
             "nom_candidat": "À identifier",
             "poste_vise": domaine,
-            "score_global": 50,
+            "score_global": None,
             "decision": "À_DISCUTER",
-            "points_forts": ["Profil à analyser manuellement"],
+            "points_forts": [],
             "reserves": ["Analyse LLM indisponible — vérification manuelle requise"],
-            "questions_entretien": [
-                "Quelle est votre expérience en formation professionnelle ?",
-                f"Maîtrisez-vous les outils liés à {domaine} ?",
-                "Quelle est votre disponibilité pour des missions de courte durée ?",
-            ],
-            "adequation_domaine": {"score": 50, "justification": "Non évalué (fallback)"},
+            "questions_entretien": [],
+            "adequation_domaine": {"score": None, "justification": "Non évalué (LLM indisponible)"},
             "experience_formation": {"annees_estimees": None, "types": [], "justification": "Non évalué"},
             "competences_techniques": [],
             "synthese": (

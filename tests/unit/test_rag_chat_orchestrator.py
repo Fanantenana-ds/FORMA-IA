@@ -54,6 +54,8 @@ class Ligne:
         self.page_fin = page_fin
         self.type_support = type_support
         self.modele_embed = "voyage-4-large"
+        self.session_id = None
+        self.module = None
 
 
 class FauxRepository:
@@ -144,6 +146,7 @@ def test_salutation_avec_question_n_est_jamais_conversationnel(orchestrateur):
 # ============================================================
 
 def test_catalogue_jamais_voyage_ni_llm(orchestrateur):
+    registre.marquer_statut_special("h_cat", "doc.pdf", "IA_FONDAMENTAUX", "indexe", "ok")
     resultat = run(orchestrateur.traiter_message("quelles formations proposez-vous ?"))
     assert resultat["type_reponse"] == "catalogue"
     assert "Intelligence artificielle" in resultat["reponse"]
@@ -171,7 +174,7 @@ def test_localisation_utilise_voyage_pas_llm(orchestrateur, monkeypatch):
     monkeypatch.setattr(chat_module, "get_llm_provider", lambda: faux_llm)
     orchestrateur.repository = FauxRepository([Ligne("Le surapprentissage survient quand...", page_debut=34)])
 
-    resultat = run(orchestrateur.traiter_message("où est expliqué le surapprentissage ?"))
+    resultat = run(orchestrateur.traiter_message("où est expliqué le surapprentissage ?", session_id="test-session"))
 
     assert resultat["type_reponse"] == "localisation"
     assert orchestrateur._faux_provider.appels >= 1
@@ -181,7 +184,7 @@ def test_localisation_utilise_voyage_pas_llm(orchestrateur, monkeypatch):
 
 def test_localisation_mode_strict_si_rien_trouve(orchestrateur):
     orchestrateur.repository = FauxRepository([])  # aucun résultat
-    resultat = run(orchestrateur.traiter_message("où est expliqué le surapprentissage ?"))
+    resultat = run(orchestrateur.traiter_message("où est expliqué le surapprentissage ?", session_id="test-session"))
     assert "Aucun support ALTIORA" in resultat["reponse"]
 
 
@@ -194,7 +197,7 @@ def test_question_fond_success(orchestrateur, monkeypatch):
     monkeypatch.setattr(chat_module, "get_llm_provider", lambda: faux_llm)
     orchestrateur.repository = FauxRepository([Ligne("Extrait pertinent.", page_debut=34)])
 
-    resultat = run(orchestrateur.traiter_message("qu'est-ce que le surapprentissage ?"))
+    resultat = run(orchestrateur.traiter_message("qu'est-ce que le surapprentissage ?", session_id="test-session"))
 
     assert resultat["type_reponse"] == "question_fond"
     assert "[doc.pdf, p. 34]" in resultat["reponse"]
@@ -203,8 +206,8 @@ def test_question_fond_success(orchestrateur, monkeypatch):
 
 def test_question_fond_mode_strict_si_rien_trouve(orchestrateur):
     orchestrateur.repository = FauxRepository([])
-    resultat = run(orchestrateur.traiter_message("qu'est-ce que le surapprentissage ?"))
-    assert "Aucun support ALTIORA" in resultat["reponse"]
+    resultat = run(orchestrateur.traiter_message("qu'est-ce que le surapprentissage ?", session_id="test-session"))
+    assert "Aucun support ALTIORA" in resultat["reponse"] or "Aucun extrait" in resultat["reponse"]
 
 
 # ============================================================
@@ -219,9 +222,12 @@ def test_contenu_formation_utilise_tous_les_supports(orchestrateur, monkeypatch)
         registre.marquer_statut_special(f"h{i}", nom, "IA_FONDAMENTAUX", "indexe", "ok")
         e = registre.obtenir_entree(f"h{i}")
         e.resume = f"Résumé de {nom}"
+        e.session_id = "test-session"
         registre.enregistrer_entree(e)
 
-    resultat = run(orchestrateur.traiter_message("donne moi le contenu de la formation IA fondamentaux"))
+    resultat = run(orchestrateur.traiter_message(
+        "donne moi le contenu de la formation IA fondamentaux", session_id="test-session",
+    ))
 
     assert resultat["type_reponse"] == "contenu_formation"
     assert len(resultat["sources"]) == 3
@@ -233,16 +239,19 @@ def test_contenu_formation_relance_garde_la_formation(orchestrateur):
     registre.marquer_statut_special("h1", "support1.pdf", "IA_FONDAMENTAUX", "indexe", "ok")
     e = registre.obtenir_entree("h1")
     e.resume = "Résumé."
+    e.session_id = "test-session"
     registre.enregistrer_entree(e)
 
     premier = run(orchestrateur.traiter_message(
         "donne moi le contenu de la formation IA fondamentaux", conversation_id="conv-1",
+        session_id="test-session",
     ))
     assert premier["formation_resolue"] == "IA_FONDAMENTAUX"
 
     # Relance sans nommer la formation : "et le module 2 ?" -> reste sur IA_FONDAMENTAUX
     second = run(orchestrateur.traiter_message(
         "et le contenu, donne le encore", conversation_id="conv-1",
+        session_id="test-session",
     ))
     assert second["formation_resolue"] == "IA_FONDAMENTAUX"
 

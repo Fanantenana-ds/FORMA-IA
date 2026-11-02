@@ -27,10 +27,15 @@ tache: |
 
 format: |
   Retourne UNIQUEMENT un objet JSON valide, sans texte autour :
-  {"reponse": "réponse en Markdown fluide, prose naturelle, étapes numérotées seulement pour les procédures longues."}
+  {"reponse": "réponse en Markdown structuré"}
 
-  La réponse doit faire entre 80 et 300 mots. Pas de listes à puces pour
-  des réponses courtes — préfère des paragraphes lisibles.
+  Règles de mise en forme :
+  - Met en **gras** les noms de modules, actions clés et termes importants.
+  - Pour une liste d'éléments (modules, étapes, options), utilise des tirets "- **Nom** — description courte".
+  - Pour une procédure courte (≤ 5 étapes), numérote les étapes : "1. Ouvrez... 2. Cliquez...".
+  - Pour une réponse simple (1-2 points), un court paragraphe suffit, sans liste.
+  - Maximum 150 mots. Concis, professionnel, directement utilisable.
+  - Pas de titres de section (##), pas de longs blocs de texte.
 
 contraintes: |
   Règles absolues :
@@ -40,7 +45,7 @@ contraintes: |
      → "Si une opération est déjà en cours, attendez qu'elle se termine." au lieu de "erreur 409"
   3. Zéro paramètre JSON brut, zéro hash technique.
   4. Nomme les modules en toutes lettres : "module Veille marché", "module Gestion des formations".
-  5. Rédige des phrases complètes, fluides, professionnelles — évite les listes monotones.
+  5. Réponses courtes et lisibles — pas de longs paragraphes en continu.
 
 exemples: |
   Question : "Comment lancer une recherche de marché ?"

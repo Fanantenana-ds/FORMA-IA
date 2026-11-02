@@ -186,15 +186,17 @@ def _normalize_result(
 
 
 def _opportunites_demo_visibles(limit: int) -> list[dict]:
-    """Renvoie des avis actifs en démo, avec le pool synthétique en repli."""
+    """Varie les avis publics ouverts et vérifiables de l'archive."""
     archive = charger_opportunites_demo_reelles()
     actives = [
         item for item in archive
         if isinstance(item, dict) and item.get("is_actionable", True)
     ]
-    if not actives:
-        actives = generer_opportunites_demo(nb_min=3, nb_max=5)
-    return actives[:limit]
+    verifies = [item for item in actives if item.get("source_url") or item.get("url")]
+    if verifies:
+        import random
+        return random.sample(verifies, min(limit, len(verifies)))
+    return []
 
 
 # ===========================================================
@@ -626,29 +628,25 @@ async def _stream_detection(min_score: int, limit: int, sync_backend: bool, owne
     queries = auto_detection.get_config().get("requetes", [])
     total_queries = len(queries)
 
-    yield _sse("debut", {"message": "Lancement de la recherche réelle d’opportunités..."})
+    yield _sse("debut", {"message": "Consultation des avis publics vérifiés..." if DEMO_MODE else "Lancement de la recherche réelle d’opportunités..."})
     await asyncio.sleep(0.3)
 
     # ================================================================
     # BRANCHE DEMO — archive réelle, même rythme que le pipeline live
     # ================================================================
     if DEMO_MODE:
-        # 1. Affiche les requêtes du profil ALTIORA comme si elles étaient lancées
-        for i, query in enumerate(queries, 1):
+        opportunites_filtrees = _opportunites_demo_visibles(limit)
+        for i, opp in enumerate(opportunites_filtrees, 1):
             yield _sse("requete", {
                 "numero": i,
-                "total": total_queries,
-                "query": query,
-                "message": f"🔍 Requête {i}/{total_queries} : « {query} »",
+                "total": len(opportunites_filtrees),
+                "query": opp.get("source_site", "Source publique"),
+                "message": f"Avis {i}/{len(opportunites_filtrees)} · {opp.get('source_site', 'Source publique')}",
             })
             await asyncio.sleep(0.7)
 
-        # 2. Signal analyse IA (même message que le vrai pipeline)
-        yield _sse("analyse", {"message": "🧠 Analyse IA en cours..."})
-        await asyncio.sleep(3.5)
-
-        # 3. Charge l'archive réelle ; bascule sur le pool fictif si vide
-        opportunites_filtrees = _opportunites_demo_visibles(limit)
+        yield _sse("analyse", {"message": "Classement des avis archivés selon leur pertinence..."})
+        await asyncio.sleep(1.5)
 
         rejets = 0
 
@@ -670,22 +668,14 @@ async def _stream_detection(min_score: int, limit: int, sync_backend: bool, owne
             })
             await asyncio.sleep(0.8)
 
-        yield _sse("rejet_info", {
-            "message": f"❌ {rejets} opportunités écartées sous le seuil de score.",
-            "rejets": rejets,
-        })
         yield _sse("fin", {
             "status": "success",
             "total": len(opportunites_filtrees),
-            "sources": total_queries,
+            "sources": len(opportunites_filtrees),
             "candidats_collectes": len(opportunites_filtrees),
-            "requêtes": total_queries,
+            "requêtes": 0,
             "rejets": rejets,
-            "message": (
-                f"🎯 Détection terminée : {len(opportunites_filtrees)} opportunité(s) "
-                f"retenue(s) après {total_queries} requête(s), "
-                f"{rejets} écartée(s) sous le seuil de score."
-            ),
+            "message": f"{len(opportunites_filtrees)} avis publics archivés et vérifiables prêts à examiner.",
             "opportunites": opportunites_filtrees,
         })
         return

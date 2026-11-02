@@ -549,6 +549,7 @@ def test_la_boucle_lance_un_passage_quand_il_est_du(monkeypatch):
 
 @pytest.fixture
 def api(monkeypatch):
+    monkeypatch.setattr(routes_veille, "DEMO_MODE", False)
     app = FastAPI()
     app.include_router(routes_veille.router, prefix="/api/v1")
     app.dependency_overrides[verify_api_key] = lambda: None
@@ -633,6 +634,7 @@ def test_route_statut(api):
 def test_route_rechercher_429_si_quota_depasse(monkeypatch):
     """Étape B : QuotaTavilyDepasseError -> HTTP 429, message clair, pas
     un 500 générique."""
+    monkeypatch.setattr(routes_veille, "DEMO_MODE", False)
     app = FastAPI()
     app.include_router(routes_veille.router, prefix="/api/v1")
     app.dependency_overrides[verify_api_key] = lambda: None

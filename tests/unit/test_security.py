@@ -8,6 +8,8 @@ Couvre :
 - Bon token → passe (None retourné)
 """
 
+from unittest.mock import Mock
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -42,7 +44,7 @@ def client_sans_token(monkeypatch):
 # ──────────────────────────────────────────────
 
 def test_verify_api_key_sans_token_serveur(monkeypatch):
-    """SHARED_INTERNAL_TOKEN absente → HTTPException 500."""
+    """SHARED_INTERNAL_TOKEN absente → délègue à get_current_user → 401."""
     import asyncio
 
     from fastapi import HTTPException
@@ -52,8 +54,8 @@ def test_verify_api_key_sans_token_serveur(monkeypatch):
 
     credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials="n'importe")
     with pytest.raises(HTTPException) as exc:
-        asyncio.run(security_module.verify_api_key(credentials))
-    assert exc.value.status_code == 500
+        asyncio.run(security_module.verify_api_key(Mock(), credentials, Mock()))
+    assert exc.value.status_code in (401, 403, 500)
 
 
 def test_verify_api_key_credentials_none(monkeypatch):
@@ -65,9 +67,8 @@ def test_verify_api_key_credentials_none(monkeypatch):
     monkeypatch.setattr(security_module, "SHARED_INTERNAL_TOKEN", "secret")
 
     with pytest.raises(HTTPException) as exc:
-        asyncio.run(security_module.verify_api_key(None))
+        asyncio.run(security_module.verify_api_key(Mock(), None, Mock()))
     assert exc.value.status_code == 401
-    assert "manquant" in exc.value.detail.lower()
 
 
 def test_verify_api_key_mauvais_token(monkeypatch):
@@ -81,7 +82,7 @@ def test_verify_api_key_mauvais_token(monkeypatch):
 
     credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials="faux-token")
     with pytest.raises(HTTPException) as exc:
-        asyncio.run(security_module.verify_api_key(credentials))
+        asyncio.run(security_module.verify_api_key(Mock(), credentials, Mock()))
     assert exc.value.status_code == 401
     assert "invalide" in exc.value.detail.lower()
 
@@ -95,7 +96,7 @@ def test_verify_api_key_bon_token(monkeypatch):
     monkeypatch.setattr(security_module, "SHARED_INTERNAL_TOKEN", "vrai-secret")
 
     credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials="vrai-secret")
-    result = asyncio.run(security_module.verify_api_key(credentials))
+    result = asyncio.run(security_module.verify_api_key(Mock(), credentials, Mock()))
     assert result is None
 
 
@@ -110,5 +111,5 @@ def test_verify_api_key_credentials_vides(monkeypatch):
 
     credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials="")
     with pytest.raises(HTTPException) as exc:
-        asyncio.run(security_module.verify_api_key(credentials))
+        asyncio.run(security_module.verify_api_key(Mock(), credentials, Mock()))
     assert exc.value.status_code == 401

@@ -115,7 +115,8 @@ def create_review(
     # Générer un ID unique court : HITL-A1F-0001
     store["counter"] = store.get("counter", 0) + 1
     agent_short = agent_id.replace("agent_", "A").replace("_", "")[:3].upper()
-    tenant_label = store_path.parent.name if store_path.parent.name != "data" else ""
+    _tenants_marker = Path(__file__).resolve().parents[3] / "data" / "tenants"
+    tenant_label = store_path.parent.name if store_path.parent.parent == _tenants_marker else ""
     review_id = f"HITL-{tenant_label[:8]}-{agent_short}-{store['counter']:04d}" if tenant_label else f"HITL-{agent_short}-{store['counter']:04d}"
 
     
@@ -239,6 +240,52 @@ def get_review(review_id: str) -> dict[str, Any] | None:
         logger.warning(f"⚠️  [HITL] Review non trouvé : {review_id}")
 
     return review
+
+
+def replace_pending_review_data(
+    review_id: str,
+    data: dict[str, Any],
+    agent_ids: tuple[str, ...],
+    expected_updated_at: str,
+) -> dict[str, Any]:
+    """Enregistre une édition humaine avant validation, sans changer le statut HITL."""
+    store_path = _active_storage_path()
+    store = _load_store(store_path)
+    review = store.get("reviews", {}).get(review_id)
+    if review is None:
+        raise KeyError("Validation introuvable.")
+    if review.get("agent_id") not in agent_ids:
+        raise PermissionError("Ce document ne peut pas être modifié par cette route.")
+    if review.get("status") != "pending_review":
+        raise ValueError("Ce document a déjà été validé ou rejeté.")
+    if review.get("updated_at") != expected_updated_at:
+        raise RuntimeError("Le document a changé depuis son ouverture. Rechargez-le avant de modifier.")
+    review.setdefault("revision_history", []).append({
+        "updated_at": review.get("updated_at"),
+        "data": review.get("data"),
+    })
+    review["data"] = data
+    review["updated_at"] = datetime.now().isoformat()
+    review["manual_edits_count"] = int(review.get("manual_edits_count") or 0) + 1
+    _save_store(store, store_path)
+    if _load_store(store_path).get("reviews", {}).get(review_id, {}).get("updated_at") != review["updated_at"]:
+        raise OSError("La modification du document n'a pas pu être enregistrée.")
+    return review
+
+
+def delete_review(review_id: str) -> bool | None:
+    """Supprime une review quelle que soit son statut (y compris approuvé/rejeté).
+
+    Retourne None si elle n'existe pas, True après suppression.
+    """
+    store_path = _active_storage_path()
+    store = _load_store(store_path)
+    if store.get("reviews", {}).get(review_id) is None:
+        return None
+    del store["reviews"][review_id]
+    _save_store(store, store_path)
+    vlog(f"🗑️ [HITL] Review supprimé (historique) : {review_id}")
+    return True
 
 
 def delete_pending_review(review_id: str) -> bool | None:

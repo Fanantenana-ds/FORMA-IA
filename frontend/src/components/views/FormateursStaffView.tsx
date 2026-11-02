@@ -21,7 +21,7 @@ import {
   FileSignature,
   CalendarDays
 } from 'lucide-react';
-import { Formateur, StatutFormateur, Session } from '../../types';
+import { Formateur, StatutFormateur, Session, OpportuniteCRM } from '../../types';
 import { apiService, ApiError } from '../../services/api';
 import {
   EMPTY_FORMATEUR_FORM,
@@ -41,6 +41,7 @@ interface FormateursStaffViewProps {
   /** Recharge les données de l'application après une modification. */
   onRefreshData?: () => Promise<void> | void;
   sessions: Session[];
+  opportunites?: OpportuniteCRM[];
 }
 
 const describeError = (err: unknown): string => {
@@ -82,7 +83,8 @@ export const FormateursStaffView: React.FC<FormateursStaffViewProps> = ({
   formateurs,
   canManage,
   onRefreshData,
-  sessions
+  sessions,
+  opportunites = []
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [statutFilter, setStatutFilter] = useState<'Tous' | StatutFormateur>('Tous');
@@ -119,8 +121,19 @@ export const FormateursStaffView: React.FC<FormateursStaffViewProps> = ({
   const [evaluationBusy, setEvaluationBusy] = useState(false);
   const [approvedContracts, setApprovedContracts] = useState<any[]>([]);
   const [emailBusyId, setEmailBusyId] = useState('');
+  const [emailDraft, setEmailDraft] = useState<{ candidate: any; reviewId: string; type: string; email: string; subject: string; body: string; approved: boolean } | null>(null);
+  const [unverifiedCandidateIds, setUnverifiedCandidateIds] = useState<Set<string>>(new Set());
 
-  const refreshCandidates = async () => setCandidates(await apiService.getCandidates());
+  const refreshCandidates = async () => {
+    const rows = await apiService.getCandidates();
+    setCandidates(rows);
+    const oldScores = rows.filter((candidate: any) => candidate.score_preselection === 50 && candidate.review_id_preselection);
+    const reviews = await Promise.allSettled(oldScores.map((candidate: any) => apiService.getReview(candidate.review_id_preselection)));
+    setUnverifiedCandidateIds(new Set(oldScores.filter((_: any, index: number) => {
+      const result = reviews[index];
+      return result.status === 'fulfilled' && (result.value.review ?? result.value).data?.metadata?.source === 'fallback_template';
+    }).map((candidate: any) => String(candidate.id))));
+  };
   useEffect(() => { if (canManage) void refreshCandidates().catch(e => setCandidatePanelError(e.message)); }, [canManage]);
   useEffect(() => { if (canManage) void apiService.getApprovedTrainerContracts().then((r:any)=>setApprovedContracts(r.reviews ?? [])).catch(()=>setApprovedContracts([])); }, [canManage, contractReview]);
   const decideCandidate = async (candidate: any, decision: 'ACCEPTER' | 'REFUSER') => {
@@ -137,6 +150,36 @@ export const FormateursStaffView: React.FC<FormateursStaffViewProps> = ({
     finally { setCandidateBusyId(''); }
   };
   const openCandidateCv = async (id:string) => { try { setCandidateCv(await apiService.getCandidateCv(id)); } catch(e) { setCandidatePanelError(e instanceof Error?e.message:'Lecture du CV impossible.'); } };
+  const candidateCriteria = (candidate: any) => {
+    const session = sessions.find(item => item.id === candidate.session_id);
+    const offer = opportunites.find(item => item.id === session?.opportuniteId);
+    return {
+      poste: candidate.poste_vise || session?.intitule || 'Formateur',
+      domaine: offer?.domaineIA || session?.domaine || candidate.poste_vise || 'Formation',
+      competences: [candidate.poste_vise, session?.domaine].filter(Boolean),
+      formation: session?.intitule || '',
+      formation_domaine: session?.domaine || '',
+      offre_description: offer?.besoinFormation || session?.intitule || ''
+    };
+  };
+  const reanalyzeCandidate = async (candidate: any) => {
+    setInterviewBusyId(String(candidate.id)); setCandidatePanelError('');
+    try {
+      const cv = await apiService.getCandidateCv(String(candidate.id));
+      const cvText = String(cv.cv_texte ?? cv.texte ?? '').trim();
+      if (cvText.length < 50) throw new Error('Le texte du CV est absent ou trop court pour une analyse fiable.');
+      const generated = await apiService.preselectTrainerCv({ cv_texte: cvText, criteres_poste: candidateCriteria(candidate) });
+      const data = generated.data ?? generated;
+      const reviewId = generated.review_id ?? data._review_id;
+      const analyzed = data.metadata?.source === 'llm' && typeof data.score_global === 'number';
+      if (analyzed && reviewId) {
+        await apiService.updateCandidate(String(candidate.id), { score_preselection: data.score_global, review_id_preselection: reviewId });
+        await refreshCandidates();
+      } else setUnverifiedCandidateIds(previous => new Set(previous).add(String(candidate.id)));
+      setInterviewPack({ candidate, reviewId, score: analyzed ? data.score_global : null, decision: analyzed ? data.decision : null, summary: analyzed ? data.synthese : 'Analyse IA indisponible. Aucun score ni question ne peut être attribué automatiquement. Vérifiez le CV et relancez l’analyse.', questions: analyzed && Array.isArray(data.questions_entretien) ? data.questions_entretien : [], source: data.metadata?.source });
+    } catch (e) { setCandidatePanelError(e instanceof Error ? e.message : 'Impossible de relancer l’analyse du CV.'); }
+    finally { setInterviewBusyId(''); }
+  };
   const openInterviewQuestions = async (candidate: any) => {
     setInterviewBusyId(String(candidate.id)); setCandidatePanelError('');
     try {
@@ -145,21 +188,13 @@ export const FormateursStaffView: React.FC<FormateursStaffViewProps> = ({
       if (reviewId) {
         const response = await apiService.getReview(reviewId);
         review = response.review ?? response;
-      } else {
-        const cv = await apiService.getCandidateCv(String(candidate.id));
-        const cvText = String(cv.cv_texte ?? cv.texte ?? '').trim();
-        if (cvText.length < 50) throw new Error('Le texte du CV est absent ou trop court pour générer les questions.');
-        const generated = await apiService.preselectTrainerCv({ cv_texte: cvText, criteres_poste: { poste: candidate.poste_vise, domaine: candidate.poste_vise, competences: String(candidate.poste_vise ?? '').split(',').map((v:string)=>v.trim()).filter(Boolean) } });
-        const data = generated.data ?? generated;
-        reviewId = generated.review_id ?? data._review_id;
-        await apiService.updateCandidate(String(candidate.id), { score_preselection: data.score_global, review_id_preselection: reviewId });
-        review = { data, review_id: reviewId };
-        await refreshCandidates();
-      }
+      } else { await reanalyzeCandidate(candidate); return; }
       const payload = review?.data ?? review?.review?.data ?? {};
-      const questions = payload.questions_entretien ?? payload.questions ?? [];
-      setInterviewPack({ candidate, reviewId, score: payload.score_global ?? candidate.score_preselection, decision: payload.decision, summary: payload.synthese, questions: Array.isArray(questions) ? questions : [] });
-      if (!questions.length) setCandidatePanelError('Aucune question n’a été renvoyée pour cette présélection. Relancez l’analyse depuis le bouton ci-dessous ou vérifiez le résultat dans Espace IA.');
+      const analyzed = payload.metadata?.source !== 'fallback_template' && typeof payload.score_global === 'number';
+      const questions = analyzed ? payload.questions_entretien ?? payload.questions ?? [] : [];
+      setInterviewPack({ candidate, reviewId, score: analyzed ? payload.score_global : null, decision: analyzed ? payload.decision : null, summary: analyzed ? payload.synthese : 'Analyse IA indisponible. Le score et les questions génériques précédents ne constituent pas une évaluation de ce CV.', questions: Array.isArray(questions) ? questions : [], source: payload.metadata?.source });
+      if (!analyzed) setUnverifiedCandidateIds(previous => new Set(previous).add(String(candidate.id)));
+      if (analyzed && !questions.length) setCandidatePanelError('L’analyse n’a pas fourni de questions ciblées. Relancez-la avec le CV et la formation liée.');
     } catch (e) { setCandidatePanelError(e instanceof Error ? e.message : 'Impossible de charger les questions d’entretien.'); }
     finally { setInterviewBusyId(''); }
   };
@@ -219,8 +254,36 @@ export const FormateursStaffView: React.FC<FormateursStaffViewProps> = ({
     try {
       const name = `${candidate.prenom ?? ''} ${candidate.nom ?? ''}`.trim();
       const result = await apiService.draftTrainerEmail({ type_email: type, destinataire: name, contexte: { email: candidate.email, poste: candidate.poste_vise, session_id: candidate.session_id, session: sessions.find(s=>s.id===candidate.session_id)?.intitule } });
-      flash(`Brouillon ${type.toLowerCase()} préparé et envoyé à l’Espace IA pour validation${result.review_id ? ` (${result.review_id})` : ''}. Aucun email n’a été envoyé.`);
+      const data = result.data ?? {};
+      if (!result.success || !result.review_id || !data.objet || !data.corps) throw new Error('Le brouillon est incomplet. Aucun e-mail n’a été envoyé.');
+      setEmailDraft({ candidate, reviewId: result.review_id, type, email: String(candidate.email ?? ''), subject: String(data.objet), body: String(data.corps), approved: false });
     } catch (e) { setCandidatePanelError(e instanceof Error ? e.message : 'Le brouillon RH n’a pas pu être généré.'); }
+    finally { setEmailBusyId(''); }
+  };
+  const saveHrEmailDraft = async () => {
+    if (!emailDraft || emailDraft.approved) return;
+    if (!emailDraft.subject.trim() || !emailDraft.body.trim()) { setCandidatePanelError('Renseignez l’objet et le message avant de sauvegarder.'); return; }
+    setEmailBusyId(String(emailDraft.candidate.id)); setCandidatePanelError('');
+    try {
+      await apiService.updateTrainerEmailDraft(emailDraft.reviewId, { objet: emailDraft.subject.trim(), corps: emailDraft.body.trim() });
+      flash('Brouillon enregistré. Aucun e-mail n’a été envoyé.');
+    } catch (e) { setCandidatePanelError(e instanceof Error ? e.message : 'Enregistrement du brouillon impossible.'); }
+    finally { setEmailBusyId(''); }
+  };
+  const sendHrEmailDraft = async () => {
+    if (!emailDraft) return;
+    if (!emailDraft.email.trim() || !emailDraft.subject.trim() || !emailDraft.body.trim()) { setCandidatePanelError('Vérifiez le destinataire, l’objet et le message avant l’envoi.'); return; }
+    setEmailBusyId(String(emailDraft.candidate.id)); setCandidatePanelError('');
+    try {
+      if (!emailDraft.approved) {
+        await apiService.updateTrainerEmailDraft(emailDraft.reviewId, { objet: emailDraft.subject.trim(), corps: emailDraft.body.trim() });
+        await apiService.approveReview(emailDraft.reviewId, 'Brouillon relu et validé dans la fiche candidat.');
+        setEmailDraft(previous => previous ? { ...previous, approved: true } : null);
+      }
+      await apiService.sendTrainerEmail(emailDraft.reviewId, emailDraft.email.trim());
+      setEmailDraft(null);
+      flash(`E-mail envoyé à ${emailDraft.email.trim()}.`);
+    } catch (e) { setCandidatePanelError(e instanceof Error ? e.message : 'L’envoi de l’e-mail a échoué. Le brouillon reste consultable ici.'); }
     finally { setEmailBusyId(''); }
   };
 
@@ -369,7 +432,17 @@ export const FormateursStaffView: React.FC<FormateursStaffViewProps> = ({
         {approvedContracts.length>0&&<div className="border-t border-slate-100 pt-4"><h3 className="font-bold text-sm text-[#11162A]">Contrats approuvés · prêts à télécharger</h3><div className="mt-2 space-y-2">{approvedContracts.map((review:any)=><div key={review.review_id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-200 bg-emerald-50/50 p-3"><span className="text-xs font-semibold text-slate-700">{review.summary ?? `Contrat ${review.review_id}`}</span><button onClick={()=>void downloadApprovedContract(review.review_id)} className="rounded-lg bg-[#1B8F6E] px-3 py-2 text-[11px] font-bold text-white">Télécharger le contrat</button></div>)}</div></div>}
         {candidatePanelError && <p role="alert" className="text-xs text-red-700">{candidatePanelError}</p>}
       </section>}
-      {canManage && <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs"><div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="font-extrabold text-[#11162A]">Candidatures formateur</h2><p className="mt-1 text-xs text-slate-500">Les candidatures déposées depuis les liens publics de session apparaissent ici. L’analyse IA prépare les questions à utiliser pendant l’entretien.</p></div></div>{candidatePanelError && <p role="alert" className="mt-3 text-xs text-red-700">{candidatePanelError}</p>}<div className="mt-4 space-y-2">{candidates.filter(c => c.decision_preselection !== 'NON_RETENU' && !c.formateur_id).map(candidate => <div key={candidate.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 p-3"><div><div className="text-sm font-bold text-slate-800">{candidate.prenom} {candidate.nom}</div><div className="text-xs text-slate-500">{candidate.email} · {candidate.telephone} · {candidate.poste_vise}</div><div className="text-[11px] text-slate-500">Formation liée : {candidate.session_id || 'Aucune'} · CV : {candidate.cv_filename || 'CV reçu'} · {candidate.decision_preselection || 'À étudier'}{candidate.score_preselection != null ? ` · Score IA ${Math.round(candidate.score_preselection)}/100` : ''}</div><button onClick={() => void openCandidateCv(candidate.id)} className="mt-1 mr-3 text-[11px] font-bold text-blue-700 underline">Lire le CV</button><button onClick={() => void downloadCandidateCv(candidate.id,candidate.cv_filename)} className="mt-1 mr-3 text-[11px] font-bold text-blue-700 underline">Télécharger le fichier</button><button disabled={interviewBusyId===String(candidate.id)} onClick={() => void openInterviewQuestions(candidate)} className="mt-1 text-[11px] font-bold text-[#1B8F6E] underline disabled:opacity-50">{interviewBusyId===String(candidate.id)?'Préparation…':candidate.review_id_preselection?'Voir les questions d’entretien':'Générer les questions d’entretien'}</button></div><div className="flex flex-wrap gap-2"><button disabled={emailBusyId===String(candidate.id)} onClick={() => void prepareHrEmail(candidate,'CONVOCATION')} className="rounded-lg bg-blue-50 px-3 py-2 text-[11px] font-bold text-blue-700 disabled:opacity-50">Préparer convocation</button><button disabled={emailBusyId===String(candidate.id)} onClick={() => void prepareHrEmail(candidate,'ACCEPTATION')} className="rounded-lg bg-emerald-50 px-3 py-2 text-[11px] font-bold text-emerald-800 disabled:opacity-50">Préparer offre</button><button disabled={emailBusyId===String(candidate.id)} onClick={() => void prepareHrEmail(candidate,'REFUS')} className="rounded-lg bg-slate-100 px-3 py-2 text-[11px] font-bold text-slate-700 disabled:opacity-50">Préparer refus</button><button disabled={!!candidateBusyId} onClick={() => void decideCandidate(candidate,'REFUSER')} className="rounded-lg bg-red-50 px-3 py-2 text-xs font-bold text-red-700 disabled:opacity-50">Refuser</button><button disabled={!!candidateBusyId} onClick={() => void decideCandidate(candidate,'ACCEPTER')} className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-bold text-white disabled:opacity-50">Accepter après entretien</button></div></div>)}{!candidates.filter(c => c.decision_preselection !== 'NON_RETENU' && !c.formateur_id).length && <p className="text-xs text-slate-500">Aucune candidature en attente.</p>}</div>{candidateCv && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"><div className="max-h-[85vh] w-full max-w-2xl overflow-auto rounded-2xl bg-white p-5"><div className="flex justify-between"><h3 className="font-extrabold">CV · {candidateCv.prenom} {candidateCv.nom}</h3><button onClick={()=>setCandidateCv(null)} className="font-bold">Fermer</button></div><p className="mt-1 text-xs text-slate-500">{candidateCv.fichier}</p><pre className="mt-4 whitespace-pre-wrap rounded-xl bg-slate-50 p-4 text-xs">{candidateCv.cv_texte}</pre></div></div>}{interviewPack&&<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"><section className="max-h-[88vh] w-full max-w-2xl overflow-auto rounded-2xl bg-white p-5 shadow-2xl"><div className="flex items-start justify-between gap-4 border-b border-slate-100 pb-3"><div><span className="text-[10px] font-bold uppercase tracking-wider text-[#1B8F6E]">Guide d’entretien · M4</span><h3 className="mt-1 text-lg font-extrabold text-[#11162A]">{interviewPack.candidate.prenom} {interviewPack.candidate.nom}</h3><p className="mt-1 text-xs text-slate-500">{interviewPack.candidate.poste_vise} · {interviewPack.candidate.session_id ? sessions.find(s=>s.id===interviewPack.candidate.session_id)?.intitule ?? 'Formation liée' : 'Candidature RH'}{interviewPack.score!=null?` · Score IA ${Math.round(interviewPack.score)}/100`:''}</p></div><button onClick={()=>setInterviewPack(null)} className="rounded-lg px-2 py-1 text-sm font-bold text-slate-500 hover:bg-slate-100">Fermer</button></div>{interviewPack.summary&&<p className="mt-4 rounded-xl bg-slate-50 p-3 text-xs leading-relaxed text-slate-700">{interviewPack.summary}</p>}<div className="mt-4 space-y-2">{interviewPack.questions.map((q:any,i:number)=><article key={i} className="flex gap-3 rounded-xl border border-slate-200 p-3"><span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-xs font-extrabold text-[#1B8F6E]">{i+1}</span><div><h4 className="text-xs font-bold text-[#11162A]">{typeof q==='string'?q:q.question??q.titre??'Question d’entretien'}</h4>{typeof q==='object'&&q.objectif&&<p className="mt-1 text-[11px] text-slate-500">À évaluer : {q.objectif}</p>}</div></article>)}{!interviewPack.questions.length&&<p className="rounded-xl bg-amber-50 p-3 text-xs text-amber-800">Aucune question n’est enregistrée pour ce candidat.</p>}</div><div className="mt-4 flex flex-wrap justify-between gap-2 border-t pt-3"><span className="self-center text-[10px] text-slate-400">Review IA : {interviewPack.reviewId ?? 'non générée'}</span><button onClick={()=>window.print()} className="rounded-lg bg-[#11162A] px-3 py-2 text-xs font-bold text-white">Imprimer le guide</button></div></section></div>}</section>}
+      {canManage && <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs"><div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="font-extrabold text-[#11162A]">Candidatures formateur</h2><p className="mt-1 text-xs text-slate-500">Les candidatures déposées depuis les liens publics de session apparaissent ici. L’analyse IA prépare les questions à utiliser pendant l’entretien.</p></div></div>{candidatePanelError && <p role="alert" className="mt-3 text-xs text-red-700">{candidatePanelError}</p>}<div className="mt-4 space-y-2">{candidates.filter(c => c.decision_preselection !== 'NON_RETENU' && !c.formateur_id).map(candidate => <div key={candidate.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 p-3"><div><div className="text-sm font-bold text-slate-800">{candidate.prenom} {candidate.nom}</div><div className="text-xs text-slate-500">{candidate.email} · {candidate.telephone} · {candidate.poste_vise}</div><div className="text-[11px] text-slate-500">Formation liée : {candidate.session_id || 'Aucune'} · CV : {candidate.cv_filename || 'CV reçu'} · {candidate.decision_preselection || 'À étudier'}{candidate.score_preselection != null && !unverifiedCandidateIds.has(String(candidate.id)) ? ` · Score IA ${Math.round(candidate.score_preselection)}/100` : unverifiedCandidateIds.has(String(candidate.id)) ? ' · Analyse IA à relancer' : ''}</div><button onClick={() => void openCandidateCv(candidate.id)} className="mt-1 mr-3 text-[11px] font-bold text-blue-700 underline">Lire le CV</button><button onClick={() => void downloadCandidateCv(candidate.id,candidate.cv_filename)} className="mt-1 mr-3 text-[11px] font-bold text-blue-700 underline">Télécharger le fichier</button><button disabled={interviewBusyId===String(candidate.id)} onClick={() => void (unverifiedCandidateIds.has(String(candidate.id)) || !candidate.review_id_preselection ? reanalyzeCandidate(candidate) : openInterviewQuestions(candidate))} className="mt-1 text-[11px] font-bold text-[#1B8F6E] underline disabled:opacity-50">{interviewBusyId===String(candidate.id)?'Analyse…':unverifiedCandidateIds.has(String(candidate.id)) || !candidate.review_id_preselection?'Analyser le CV selon l’offre':'Voir les questions d’entretien'}</button></div><div className="flex flex-wrap gap-2"><button disabled={emailBusyId===String(candidate.id)} onClick={() => void prepareHrEmail(candidate,'CONVOCATION')} className="rounded-lg bg-blue-50 px-3 py-2 text-[11px] font-bold text-blue-700 disabled:opacity-50">Préparer convocation</button><button disabled={emailBusyId===String(candidate.id)} onClick={() => void prepareHrEmail(candidate,'ACCEPTATION')} className="rounded-lg bg-emerald-50 px-3 py-2 text-[11px] font-bold text-emerald-800 disabled:opacity-50">Préparer offre</button><button disabled={emailBusyId===String(candidate.id)} onClick={() => void prepareHrEmail(candidate,'REFUS')} className="rounded-lg bg-slate-100 px-3 py-2 text-[11px] font-bold text-slate-700 disabled:opacity-50">Préparer refus</button><button disabled={!!candidateBusyId} onClick={() => void decideCandidate(candidate,'REFUSER')} className="rounded-lg bg-red-50 px-3 py-2 text-xs font-bold text-red-700 disabled:opacity-50">Refuser</button><button disabled={!!candidateBusyId} onClick={() => void decideCandidate(candidate,'ACCEPTER')} className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-bold text-white disabled:opacity-50">Accepter après entretien</button></div></div>)}{!candidates.filter(c => c.decision_preselection !== 'NON_RETENU' && !c.formateur_id).length && <p className="text-xs text-slate-500">Aucune candidature en attente.</p>}</div>{candidateCv && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"><div className="max-h-[85vh] w-full max-w-2xl overflow-auto rounded-2xl bg-white p-5"><div className="flex justify-between"><h3 className="font-extrabold">CV · {candidateCv.prenom} {candidateCv.nom}</h3><button onClick={()=>setCandidateCv(null)} className="font-bold">Fermer</button></div><p className="mt-1 text-xs text-slate-500">{candidateCv.fichier}</p><pre className="mt-4 whitespace-pre-wrap rounded-xl bg-slate-50 p-4 text-xs">{candidateCv.cv_texte}</pre></div></div>}{interviewPack&&<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"><section className="max-h-[88vh] w-full max-w-2xl overflow-auto rounded-2xl bg-white p-5 shadow-2xl"><div className="flex items-start justify-between gap-4 border-b border-slate-100 pb-3"><div><span className="text-[10px] font-bold uppercase tracking-wider text-[#1B8F6E]">Guide d’entretien · M4</span><h3 className="mt-1 text-lg font-extrabold text-[#11162A]">{interviewPack.candidate.prenom} {interviewPack.candidate.nom}</h3><p className="mt-1 text-xs text-slate-500">{interviewPack.candidate.poste_vise} · {interviewPack.candidate.session_id ? sessions.find(s=>s.id===interviewPack.candidate.session_id)?.intitule ?? 'Formation liée' : 'Candidature RH'}{interviewPack.score!=null?` · Score IA ${Math.round(interviewPack.score)}/100`:''}</p></div><button onClick={()=>setInterviewPack(null)} className="rounded-lg px-2 py-1 text-sm font-bold text-slate-500 hover:bg-slate-100">Fermer</button></div>{interviewPack.summary&&<p className="mt-4 rounded-xl bg-slate-50 p-3 text-xs leading-relaxed text-slate-700">{interviewPack.summary}</p>}<div className="mt-4 space-y-2">{interviewPack.questions.map((q:any,i:number)=><article key={i} className="flex gap-3 rounded-xl border border-slate-200 p-3"><span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-xs font-extrabold text-[#1B8F6E]">{i+1}</span><div><h4 className="text-xs font-bold text-[#11162A]">{typeof q==='string'?q:q.question??q.titre??'Question d’entretien'}</h4>{typeof q==='object'&&q.objectif&&<p className="mt-1 text-[11px] text-slate-500">À évaluer : {q.objectif}</p>}</div></article>)}{!interviewPack.questions.length&&<p className="rounded-xl bg-amber-50 p-3 text-xs text-amber-800">Aucune question fiable n’est disponible. Relancez l’analyse du CV avec les critères de la formation liée.</p>}</div><div className="mt-4 flex flex-wrap justify-between gap-2 border-t pt-3"><span className="self-center text-[10px] text-slate-400">Review IA : {interviewPack.reviewId ?? 'non générée'}</span><div className="flex gap-2"><button disabled={!!interviewBusyId} onClick={()=>void reanalyzeCandidate(interviewPack.candidate)} className="rounded-lg bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-800 disabled:opacity-50">{interviewBusyId?'Analyse…':'Relancer l’analyse ciblée'}</button><button onClick={()=>window.print()} className="rounded-lg bg-[#11162A] px-3 py-2 text-xs font-bold text-white">Imprimer le guide</button></div></div></section></div>}</section>}
+
+      {emailDraft && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+        <section role="dialog" aria-modal="true" aria-label="Vérification du courriel RH" className="max-h-[90vh] w-full max-w-2xl overflow-auto rounded-2xl bg-white p-5 shadow-2xl">
+          <div className="flex items-start justify-between gap-3 border-b pb-3"><div><span className="text-[10px] font-bold uppercase tracking-wider text-[#1B8F6E]">Brouillon RH · {emailDraft.type.toLowerCase()}</span><h3 className="mt-1 text-lg font-extrabold text-[#11162A]">Relire avant l’envoi</h3><p className="mt-1 text-xs text-slate-500">Aucun message ne part tant que vous ne cliquez pas sur « Valider et envoyer ».</p></div><button type="button" onClick={() => setEmailDraft(null)} className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100" aria-label="Fermer le brouillon"><X size={18}/></button></div>
+          {candidatePanelError && <p role="alert" className="mt-3 rounded-lg bg-red-50 p-3 text-xs text-red-700">{candidatePanelError}</p>}
+          <div className="mt-4 space-y-3"><label className="block text-xs font-bold text-slate-600">Destinataire<input readOnly value={emailDraft.email} className={`${inputClass} mt-1 text-xs bg-slate-100`}/></label><label className="block text-xs font-bold text-slate-600">Objet<input disabled={emailDraft.approved} value={emailDraft.subject} onChange={e=>setEmailDraft(previous=>previous?{...previous,subject:e.target.value}:null)} className={`${inputClass} mt-1 text-xs disabled:opacity-60`}/></label><label className="block text-xs font-bold text-slate-600">Message<textarea disabled={emailDraft.approved} value={emailDraft.body} onChange={e=>setEmailDraft(previous=>previous?{...previous,body:e.target.value}:null)} rows={14} className={`${inputClass} mt-1 resize-y text-xs leading-relaxed disabled:opacity-60`}/></label></div>
+          {emailDraft.approved && <p className="mt-3 rounded-lg bg-amber-50 p-3 text-xs text-amber-800">Brouillon approuvé. Si l’envoi a échoué, vous pouvez réessayer sans recréer le message.</p>}
+          <div className="mt-4 flex flex-wrap justify-end gap-2 border-t pt-4"><button type="button" onClick={() => setEmailDraft(null)} className="rounded-lg bg-slate-100 px-4 py-2 text-xs font-bold text-slate-700">Fermer</button><button type="button" disabled={!!emailBusyId || emailDraft.approved} onClick={() => void saveHrEmailDraft()} className="rounded-lg bg-blue-50 px-4 py-2 text-xs font-bold text-blue-800 disabled:opacity-50">Enregistrer sans envoyer</button><button type="button" disabled={!!emailBusyId || !emailDraft.email.trim() || !emailDraft.subject.trim() || !emailDraft.body.trim()} onClick={() => void sendHrEmailDraft()} className="rounded-lg bg-[#1B8F6E] px-4 py-2 text-xs font-bold text-white disabled:opacity-50">{emailBusyId ? 'Traitement…' : emailDraft.approved ? 'Réessayer l’envoi' : 'Valider et envoyer'}</button></div>
+        </section>
+      </div>}
 
       {!canManage && (
         <div className="p-3 rounded-xl bg-slate-100 border border-slate-200 text-slate-600 text-xs font-medium flex items-center gap-2">

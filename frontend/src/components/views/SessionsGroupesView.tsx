@@ -80,6 +80,7 @@ export const SessionsGroupesView: React.FC<SessionsGroupesViewProps> = ({
   const [editingDateSessionId, setEditingDateSessionId] = useState<string | null>(null);
   const [editStartDate, setEditStartDate] = useState('');
   const [editEndDate, setEditEndDate] = useState('');
+  const [editLieu, setEditLieu] = useState('');
   const [dateEditError, setDateEditError] = useState('');
   const [savingDates, setSavingDates] = useState(false);
   const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null);
@@ -126,6 +127,7 @@ export const SessionsGroupesView: React.FC<SessionsGroupesViewProps> = ({
     setEditingDateSessionId(session.id);
     setEditStartDate(session.dateDebut ?? '');
     setEditEndDate(session.dateFin ?? '');
+    setEditLieu(session.lieu ?? '');
     setEditFormateurId(session.formateurId ?? '');
     setDateEditError('');
     try { setSessionTrainerOptions(await apiService.getSessionTrainerOptions()); }
@@ -138,7 +140,7 @@ export const SessionsGroupesView: React.FC<SessionsGroupesViewProps> = ({
     setSavingDates(true);
     setDateEditError('');
     try {
-      await apiService.updateSession(sessionId, { date_debut: editStartDate, date_fin: editEndDate || null, ...(editFormateurId ? { formateur_id: editFormateurId } : {}) });
+      await apiService.updateSession(sessionId, { date_debut: editStartDate, date_fin: editEndDate || null, lieu: editLieu.trim() || null, ...(editFormateurId ? { formateur_id: editFormateurId } : {}) });
       await onRefreshData?.();
       setEditingDateSessionId(null);
     } catch (err) {
@@ -389,6 +391,10 @@ export const SessionsGroupesView: React.FC<SessionsGroupesViewProps> = ({
                           <input type="date" min={editStartDate || undefined} value={editEndDate} onChange={(e) => setEditEndDate(e.target.value)} className="block mt-1 px-2.5 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs text-slate-800" />
                         </label>
                         <label className="text-[11px] font-semibold text-slate-600">
+                          Lieu
+                          <input type="text" maxLength={200} value={editLieu} onChange={(e) => setEditLieu(e.target.value)} placeholder="Ville et salle à confirmer" className="block mt-1 min-w-44 px-2.5 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs text-slate-800" />
+                        </label>
+                        <label className="text-[11px] font-semibold text-slate-600">
                           Formateur
                           <select value={editFormateurId} onChange={(e) => setEditFormateurId(e.target.value)} className="block mt-1 min-w-52 px-2.5 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs text-slate-800">
                             <option value="">Conserver le formateur actuel</option>
@@ -495,7 +501,7 @@ export const SessionsGroupesView: React.FC<SessionsGroupesViewProps> = ({
                 <button disabled={publicLinkBusy} onClick={() => void generatePublicLink('formateur')} className="px-4 py-2.5 bg-violet-50 text-violet-800 rounded-xl text-xs font-bold disabled:opacity-50">Lien candidature formateur</button></>}
               </div>
             </div>
-            {(publicLinks.participant || publicLinks.formateur || publicLinks.post_formation || publicLinkError) && <div className="mt-3 space-y-2">{publicLinkError && <p role="alert" className="text-xs text-red-700">{publicLinkError}</p>}{(['participant','post_formation','formateur'] as const).map(kind => publicLinks[kind] && <div key={kind} className="flex flex-wrap items-center gap-2 rounded-lg bg-slate-50 p-2 text-xs"><strong>{kind === 'participant' ? 'Inscription participants' : kind === 'formateur' ? 'Candidatures formateur' : 'Évaluation post-formation'} :</strong><a className="break-all text-blue-700 underline" href={publicLinks[kind]} target="_blank" rel="noreferrer">{publicLinks[kind]}</a><button onClick={() => void navigator.clipboard?.writeText(publicLinks[kind]!)} className="rounded bg-white px-2 py-1 font-bold">Copier</button></div>)}</div>}
+            {(publicLinks.participant || publicLinks.formateur || publicLinks.post_formation || publicLinkError) && <div className="mt-3 space-y-2">{publicLinkError && <p role="alert" className="text-xs text-red-700">{publicLinkError}</p>}{(['participant','post_formation','formateur'] as const).map(kind => publicLinks[kind] && <div key={kind} className="flex flex-wrap items-center gap-2 rounded-lg bg-slate-50 p-2 text-xs"><strong>{kind === 'participant' ? 'Inscription participants' : kind === 'formateur' ? 'Candidatures formateur' : 'Évaluation post-formation'} :</strong><a className="break-all text-blue-700 underline" href={publicLinks[kind]} target="_blank" rel="noreferrer">{publicLinks[kind]}</a><button onClick={() => void navigator.clipboard?.writeText(publicLinks[kind]!)} className="rounded bg-white px-2 py-1 font-bold">Copier</button></div>)}{publicLinks.formateur && <p className="text-xs text-slate-600">Avant de partager ce lien, vérifiez sur la page publique le lieu, les dates et le profil issu du TDR validé.</p>}</div>}
 
             {/* Session Stats Bar */}
             <div className="grid grid-cols-3 gap-3 mt-6 pt-5 border-t border-slate-100">

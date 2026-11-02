@@ -6,7 +6,7 @@ import {
   Check,
   Loader2
 } from 'lucide-react';
-import { OpportuniteCRM } from '../../types';
+import { MenuSection, OpportuniteCRM } from '../../types';
 import { AcceptedMarket } from '../../types/tdr';
 import { AcceptedMarketsList } from '../tdr/AcceptedMarketsList';
 
@@ -126,13 +126,15 @@ interface OpportunitesCrmViewProps {
   onOpenNewOpportunity?: () => void;
   onRefreshData?: () => Promise<void> | void;
   canDeleteOpportunities?: boolean;
+  onNavigateToSection?: (section: MenuSection) => void;
 }
 
 export const OpportunitesCrmView: React.FC<OpportunitesCrmViewProps> = ({
   opportunites,
   onOpenNewOpportunity,
   onRefreshData,
-  canDeleteOpportunities = false
+  canDeleteOpportunities = false,
+  onNavigateToSection
 }) => {
   const acceptedMarkets: AcceptedMarket[] = opportunites.map((opportunity) => ({
     id: opportunity.id,
@@ -145,7 +147,14 @@ export const OpportunitesCrmView: React.FC<OpportunitesCrmViewProps> = ({
     statut: opportunity.etape
   }));
 
-  const [selectedMarketId, setSelectedMarketId] = useState<string>(acceptedMarkets[0]?.id ?? '');
+  const [selectedMarketId, setSelectedMarketId] = useState<string>(() => {
+    try {
+      const saved = sessionStorage.getItem('formaia-active-market');
+      if (saved && acceptedMarkets.some(market => market.id === saved)) return saved;
+    } catch { /* stockage désactivé */ }
+    return acceptedMarkets[0]?.id ?? '';
+  });
+  useEffect(() => { try { sessionStorage.setItem('formaia-active-market', selectedMarketId); } catch { /* stockage désactivé */ } }, [selectedMarketId]);
 
   const activeMarket: AcceptedMarket | undefined =
     acceptedMarkets.find((m) => m.id === selectedMarketId) ?? acceptedMarkets[0];
@@ -161,6 +170,7 @@ export const OpportunitesCrmView: React.FC<OpportunitesCrmViewProps> = ({
   const [tdrSynchronized, setTdrSynchronized] = useState(false);
   const [tdrReviewNote, setTdrReviewNote] = useState('');
   const [techniqueDocument, setTechniqueDocument] = useState<Record<string, any> | null>(null);
+  const [techniqueRequest, setTechniqueRequest] = useState<{ tdr_data: Record<string, any>; session_info: Record<string, any> } | null>(null);
   const [techniqueEditMode, setTechniqueEditMode] = useState(false);
   const [techniqueReviewId, setTechniqueReviewId] = useState('');
   const [techniqueApproved, setTechniqueApproved] = useState(false);
@@ -180,6 +190,14 @@ export const OpportunitesCrmView: React.FC<OpportunitesCrmViewProps> = ({
   const [deletingOpportunityId, setDeletingOpportunityId] = useState('');
   const restoredWorkflowMarket = useRef('');
   const skipWorkflowWrite = useRef(false);
+  const pendingDocumentReview = docTab === 'tdr' && !tdrApproved ? tdrReviewId
+    : docTab === 'technical' && !techniqueApproved ? techniqueReviewId
+      : docTab === 'financial' && !financeApproved ? financeReviewId : '';
+  const openDocumentReview = () => {
+    if (!pendingDocumentReview) return;
+    try { sessionStorage.setItem('formaia-review-focus', pendingDocumentReview); } catch { /* stockage désactivé */ }
+    onNavigateToSection?.('espace_ia');
+  };
 
   const deleteOpportunity = async (id: string, title: string) => {
     if (!window.confirm(`Supprimer l’opportunité acceptée « ${title} » ?`)) return;
@@ -207,14 +225,14 @@ export const OpportunitesCrmView: React.FC<OpportunitesCrmViewProps> = ({
     if (restored) {
       setDocTab(restored.docTab ?? 'tdr'); setTdrBrief(restored.tdrBrief ?? { client: activeMarket.client, objectifs: activeMarket.titre, public: '', duree: '', format: 'Présentiel', budget: '', lieu: '', deadline: '' });
       setEnrichFromRag(!!restored.enrichFromRag); setGeneratedTdr(restored.generatedTdr ?? null); setTdrEditMode(false); setTdrFiles(restored.tdrFiles ?? {}); setTdrReviewId(restored.tdrReviewId ?? ''); setTdrApproved(!!restored.tdrApproved); setTdrSynchronized(!!restored.tdrSynchronized); setTdrReviewNote(restored.tdrReviewNote ?? '');
-      setTechniqueDocument(restored.techniqueDocument ?? null); setTechniqueEditMode(false); setTechniqueReviewId(restored.techniqueReviewId ?? ''); setTechniqueApproved(!!restored.techniqueApproved);
+      setTechniqueDocument(restored.techniqueDocument ?? null); setTechniqueRequest(restored.techniqueRequest ?? null); setTechniqueEditMode(false); setTechniqueReviewId(restored.techniqueReviewId ?? ''); setTechniqueApproved(!!restored.techniqueApproved);
       setFinanceDocument(restored.financeDocument ?? null); setFinanceReviewId(restored.financeReviewId ?? ''); setFinanceApproved(!!restored.financeApproved); setOfferSaved(!!restored.offerSaved);
       setFinanceInputs(restored.financeInputs ?? { trainerRate: 0, trainerDays: 0, roomRate: 0, roomDays: 0, supportRate: 0, participants: 0, logistics: 0, adminPercent: 0 });
       setOfferOptions(restored.offerOptions ?? { participants: 20, trainerType: 'senior', roomType: 'standard', vat: true, logistics: true, administration: true }); setIncludePortfolioRag(!!restored.includePortfolioRag); setReviewNote(restored.reviewNote ?? '');
     } else {
       setDocTab('tdr'); setTdrBrief({ client: activeMarket.client, objectifs: activeMarket.titre, public: '', duree: '', format: 'Présentiel', budget: activeMarket.budgetAr ? String(activeMarket.budgetAr) : '', lieu: '', deadline: '' });
       setEnrichFromRag(false); setGeneratedTdr(null); setTdrEditMode(false); setTdrFiles({}); setTdrReviewId(''); setTdrApproved(false); setTdrSynchronized(false); setTdrReviewNote('');
-      setTechniqueDocument(null); setTechniqueEditMode(false); setTechniqueReviewId(''); setTechniqueApproved(false); setFinanceDocument(null); setFinanceReviewId(''); setFinanceApproved(false); setOfferSaved(false);
+      setTechniqueDocument(null); setTechniqueRequest(null); setTechniqueEditMode(false); setTechniqueReviewId(''); setTechniqueApproved(false); setFinanceDocument(null); setFinanceReviewId(''); setFinanceApproved(false); setOfferSaved(false);
       setFinanceInputs({ trainerRate: 0, trainerDays: 0, roomRate: 0, roomDays: 0, supportRate: 0, participants: 0, logistics: 0, adminPercent: 0 }); setOfferOptions({ participants: 20, trainerType: 'senior', roomType: 'standard', vat: true, logistics: true, administration: true }); setIncludePortfolioRag(false); setReviewNote('');
     }
     setGenerationMessage(''); setGenerationError('');
@@ -241,11 +259,11 @@ export const OpportunitesCrmView: React.FC<OpportunitesCrmViewProps> = ({
     try {
       sessionStorage.setItem(`formaia-m2-m3-${activeMarket.id}`, JSON.stringify({
         docTab, tdrBrief, enrichFromRag, generatedTdr, tdrFiles, tdrReviewId, tdrApproved, tdrSynchronized, tdrReviewNote,
-        techniqueDocument, techniqueReviewId, techniqueApproved, financeDocument, financeReviewId, financeApproved, offerSaved,
+        techniqueDocument, techniqueRequest, techniqueReviewId, techniqueApproved, financeDocument, financeReviewId, financeApproved, offerSaved,
         financeInputs, offerOptions, includePortfolioRag, reviewNote
       }));
     } catch { /* le stockage de session peut être désactivé */ }
-  }, [activeMarket?.id, docTab, tdrBrief, enrichFromRag, generatedTdr, tdrFiles, tdrReviewId, tdrApproved, tdrSynchronized, tdrReviewNote, techniqueDocument, techniqueReviewId, techniqueApproved, financeDocument, financeReviewId, financeApproved, offerSaved, financeInputs, offerOptions, includePortfolioRag, reviewNote]);
+  }, [activeMarket?.id, docTab, tdrBrief, enrichFromRag, generatedTdr, tdrFiles, tdrReviewId, tdrApproved, tdrSynchronized, tdrReviewNote, techniqueDocument, techniqueRequest, techniqueReviewId, techniqueApproved, financeDocument, financeReviewId, financeApproved, offerSaved, financeInputs, offerOptions, includePortfolioRag, reviewNote]);
 
   const downloadBlob = (blob: Blob, filename: string) => {
     const url = URL.createObjectURL(blob); const anchor = document.createElement('a');
@@ -332,9 +350,10 @@ export const OpportunitesCrmView: React.FC<OpportunitesCrmViewProps> = ({
         const refs = (rag.data ?? []).map((row: any) => row.contenu ?? row.texte ?? row.extrait).filter(Boolean).slice(0, 5);
         tdrForOffer = { ...tdrForOffer, references_portfolio: refs };
       }
-      const result = await apiService.generateOfferTechnique({ tdr_data: tdrForOffer, session_info: { titre: activeMarket.titre, client: tdrBrief.client, opportunite_id: activeMarket.id, domaine: activeMarket.domaine, duree: tdrBrief.duree } });
+      const request = { tdr_data: tdrForOffer, session_info: { titre: activeMarket.titre, client: tdrBrief.client, opportunite_id: activeMarket.id, domaine: activeMarket.domaine, duree: tdrBrief.duree } };
+      const result = await apiService.generateOfferTechnique(request);
       if (!result.success || !result.review_id) throw new Error(result.message || 'Le backend n’a pas créé le review de l’offre technique.');
-      setTechniqueDocument(result.data ?? {}); setTechniqueReviewId(result.review_id); setTechniqueApproved(false); setFinanceDocument(null); setFinanceReviewId(''); setFinanceApproved(false); setOfferSaved(false);
+      setTechniqueDocument(result.data ?? {}); setTechniqueRequest(request); setTechniqueReviewId(result.review_id); setTechniqueApproved(false); setFinanceDocument(null); setFinanceReviewId(''); setFinanceApproved(false); setOfferSaved(false);
       setGenerationMessage(`Offre technique générée. Vérifiez et validez-la avant de passer au volet financier (${result.review_id}).`);
       setDocTab('technical');
     } catch (error) { setGenerationError(error instanceof Error ? error.message : 'Génération de l’offre technique impossible.'); }
@@ -373,9 +392,14 @@ export const OpportunitesCrmView: React.FC<OpportunitesCrmViewProps> = ({
   };
 
   const generateFinance = async () => {
-    if (!techniqueApproved || !techniqueDocument || !activeMarket) return;
+    if (!techniqueApproved || !techniqueDocument || !techniqueReviewId || !activeMarket) return;
     setGenerationBusy(true); setGenerationError(''); setGenerationMessage(''); setActiveAction('financial');
     try {
+      const approvedReview = await apiService.getOfferReview(techniqueReviewId);
+      if (approvedReview.review?.status !== 'approved') {
+        setTechniqueApproved(false);
+        throw new Error('L’offre technique doit être approuvée avant la génération financière.');
+      }
       const technicalForPricing = structuredClone(techniqueDocument);
       const durationInOffer = Number.parseInt(String(techniqueDocument.programme?.duree_totale ?? ''), 10);
       const durationDays = Math.max(1, financeInputs.trainerDays || durationInOffer || 1);
@@ -411,11 +435,7 @@ export const OpportunitesCrmView: React.FC<OpportunitesCrmViewProps> = ({
     return { trainer, room, supports, logistics: financeInputs.logistics, admin, subtotal, taxRate, tax, discount, total };
   })();
 
-  const saveApprovedOffer = async (financeJustApproved = false) => {
-    if (!activeMarket || !techniqueApproved || (!financeApproved && !financeJustApproved) || !techniqueDocument || !financeDocument) return;
-    setGenerationBusy(true); setGenerationError(''); setGenerationMessage(''); setActiveAction('review');
-    try {
-      const finalFinancial = {
+  const finalFinancial = financeDocument ? {
         ...financeDocument,
         details_couts: {
           honoraires_formateur: { tarif_journalier: financeInputs.trainerRate, nb_jours: financeInputs.trainerDays, sous_total: adjustedFinance.trainer },
@@ -425,7 +445,12 @@ export const OpportunitesCrmView: React.FC<OpportunitesCrmViewProps> = ({
           administration: { pourcentage: financeInputs.adminPercent, base: adjustedFinance.trainer + adjustedFinance.room + adjustedFinance.supports + adjustedFinance.logistics, montant: adjustedFinance.admin }
         },
         recapitulatif: { ...financeDocument.recapitulatif, sous_total_ht: adjustedFinance.subtotal, tva: { taux: adjustedFinance.taxRate, montant: adjustedFinance.tax, applicable: adjustedFinance.taxRate > 0 }, total_ttc: adjustedFinance.subtotal + adjustedFinance.tax, remises: (financeDocument.recapitulatif?.remises ?? []).map((row: any) => ({ ...row, montant: adjustedFinance.discount })), net_a_payer: adjustedFinance.total }
-      };
+  } : null;
+
+  const saveApprovedOffer = async (financeJustApproved = false) => {
+    if (!activeMarket || !techniqueApproved || (!financeApproved && !financeJustApproved) || !techniqueDocument || !finalFinancial) return;
+    setGenerationBusy(true); setGenerationError(''); setGenerationMessage(''); setActiveAction('review');
+    try {
       await apiService.createOffer({
         titre: techniqueDocument.titre_offre ?? activeMarket.titre, client: tdrBrief.client.trim().slice(0, 100),
         opportunite_id: activeMarket.id, description: `TDR ${generatedTdr?.titre ?? activeMarket.titre}`,
@@ -443,7 +468,14 @@ export const OpportunitesCrmView: React.FC<OpportunitesCrmViewProps> = ({
     setGenerationBusy(true); setGenerationError(''); setGenerationMessage(''); setActiveAction('review');
     try {
       if (approve) {
+        if (!finalFinancial) throw new Error('Le document financier est introuvable.');
+        const current = (await apiService.getOfferReview(financeReviewId)).review;
+        if (current?.status !== 'pending_review' || !current.updated_at) throw new Error('Cette version financière n’est plus en attente de validation.');
+        const content = Object.fromEntries(Object.entries(finalFinancial).filter(([key]) => !key.startsWith('_') && !['success', 'metadata'].includes(key)));
+        const original = Object.fromEntries(Object.entries(current.data ?? {}).filter(([key]) => !key.startsWith('_') && !['success', 'metadata'].includes(key)));
+        if (JSON.stringify(content) !== JSON.stringify(original)) await apiService.updateReviewDocument(financeReviewId, content, current.updated_at);
         await apiService.approveOfferReview(financeReviewId, reviewNote.trim() || 'OK');
+        setFinanceDocument(finalFinancial);
         setFinanceApproved(true);
         setGenerationMessage('Offre financière approuvée. Enregistrement dans le backend…');
         await saveApprovedOffer(true);
@@ -546,6 +578,11 @@ export const OpportunitesCrmView: React.FC<OpportunitesCrmViewProps> = ({
       {([['tdr','1. Termes de Référence'],['technical','2. Offre technique'],['financial','3. Offre financière']] as const).map(([id,label]) => <button key={id} onClick={() => setDocTab(id)} className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${docTab === id ? 'bg-[#11162A] text-white shadow-xs' : 'bg-slate-100 text-slate-600 hover:text-slate-900'}`}>{label}</button>)}
     </div>
 
+    {pendingDocumentReview && <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-blue-200 bg-blue-50 p-4 text-xs text-blue-900">
+      <span>Ce document attend votre validation. Les corrections IA et modifications manuelles se font dans l’Espace IA.</span>
+      <button type="button" onClick={openDocumentReview} className="rounded-lg bg-blue-800 px-4 py-2 font-bold text-white">Ouvrir la validation IA</button>
+    </div>}
+
     {docTab === 'tdr' && <div className="grid lg:grid-cols-[0.9fr_1.1fr] gap-4">
       <section className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-3"><div><h2 className="font-extrabold text-[#11162A]">Brief TDR prérempli depuis l’opportunité</h2><p className="mt-1 text-[11px] text-slate-500">Complétez les champs métier avant de lancer la génération.</p></div>
         {textField('client','Client / organisme *')}{textField('objectifs','Objectifs et contexte *','text',4)}{textField('public','Public cible *')}
@@ -555,21 +592,21 @@ export const OpportunitesCrmView: React.FC<OpportunitesCrmViewProps> = ({
         <button disabled={!activeMarket || generationBusy} onClick={() => void generateTdr()} className="w-full py-2.5 rounded-xl bg-[#1B8F6E] text-white text-xs font-bold flex items-center justify-center gap-2 disabled:opacity-50"><Sparkles size={15}/>Générer le TDR</button>
       </section>
       <section className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
-        <div className="flex items-center justify-between gap-3"><h2 className="font-extrabold text-[#11162A]">Aperçu complet du TDR</h2><div className="flex items-center gap-2">{generatedTdr && tdrReviewId && !tdrApproved && <button onClick={() => setTdrEditMode(value => !value)} className="px-3 py-1.5 rounded-lg bg-slate-100 text-xs font-bold text-slate-700">{tdrEditMode ? 'Voir l’aperçu' : 'Modifier le contenu'}</button>}{tdrApproved && <span className="px-2 py-1 bg-emerald-50 text-emerald-700 rounded-full text-[10px] font-bold">Approuvé</span>}</div></div>
+        <div className="flex items-center justify-between gap-3"><h2 className="font-extrabold text-[#11162A]">Aperçu complet du TDR</h2><div className="flex items-center gap-2">{tdrApproved && <span className="px-2 py-1 bg-emerald-50 text-emerald-700 rounded-full text-[10px] font-bold">Approuvé</span>}</div></div>
         {generatedTdr ? <div className="mt-4 max-h-[560px] overflow-auto rounded-xl border border-slate-200 bg-slate-50 p-4">{tdrEditMode ? <><p className="mb-4 rounded-lg bg-blue-50 p-3 text-xs text-blue-800">Modifiez les champs générés ici, puis revenez à l’aperçu pour vérifier le document avant validation.</p>{renderTdrEditor(generatedTdr)}</> : renderMarkdown(`# ${generatedTdr.titre ?? tdrBrief.client}\n\n${markdownFor(generatedTdr)}`)}</div> : <p className="mt-4 p-8 rounded-xl bg-slate-50 border border-slate-200 text-center text-xs text-slate-500">La génération backend affichera ici le contenu complet du TDR.</p>}
-        {tdrReviewId && !tdrApproved && <div className="mt-4 space-y-2"><label className="block text-[11px] font-bold text-slate-600">Retour à l’agent IA<textarea value={tdrReviewNote} onChange={e => setTdrReviewNote(e.target.value)} rows={3} placeholder="Décrivez les corrections à effectuer. Pour valider la version actuelle, saisissez simplement OK." className="mt-1 w-full p-3 rounded-xl border border-slate-300 text-xs"/></label><div className="flex flex-wrap gap-2"><button disabled={generationBusy} onClick={() => void reviewTdr(false)} className="px-4 py-2 rounded-lg bg-red-50 text-red-700 text-xs font-bold">Rejeter</button><button disabled={generationBusy} onClick={() => void rectifyTdr()} className="px-4 py-2 rounded-lg bg-blue-50 text-blue-800 text-xs font-bold">Demander une correction à l’IA</button><button disabled={generationBusy} onClick={() => void reviewTdr(true)} className="px-4 py-2 rounded-lg bg-[#1B8F6E] text-white text-xs font-bold flex items-center gap-1"><Check size={14}/>Approuver (OK)</button></div></div>}
+        {tdrReviewId && !tdrApproved && <button type="button" disabled={generationBusy} onClick={openDocumentReview} className="mt-4 rounded-lg bg-blue-800 px-4 py-2 text-xs font-bold text-white disabled:opacity-50">Vérifier, modifier ou valider dans l’Espace IA</button>}
         {tdrApproved && <div className="mt-4 flex flex-wrap gap-2">{tdrFiles.docx && <button onClick={() => void apiService.downloadTdr(tdrFiles.docx!).then(blob => downloadBlob(blob, tdrFiles.docx!)).catch(e => setGenerationError(e.message))} className="px-4 py-2 bg-slate-100 rounded-lg text-xs font-bold flex items-center gap-1.5"><Download size={14}/>Télécharger Word</button>}{tdrFiles.pdf && <button onClick={() => void apiService.downloadTdr(tdrFiles.pdf!).then(blob => downloadBlob(blob, tdrFiles.pdf!)).catch(e => setGenerationError(e.message))} className="px-4 py-2 bg-slate-100 rounded-lg text-xs font-bold flex items-center gap-1.5"><Download size={14}/>Télécharger PDF</button>}{!tdrSynchronized && <button disabled={generationBusy} onClick={() => void retryTdrSync()} className="px-4 py-2 bg-amber-50 text-amber-800 rounded-lg text-xs font-bold">Réessayer l’enregistrement backend</button>}</div>}
       </section>
     </div>}
 
     {docTab === 'technical' && <div className="grid lg:grid-cols-[0.75fr_1.25fr] gap-4">
       <section className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-3"><h2 className="font-extrabold text-[#11162A]">Offre technique</h2><p className="text-xs text-slate-500">La génération est ouverte après validation du TDR.</p><label className="flex items-center gap-2 text-xs font-semibold text-slate-700"><input type="checkbox" checked={includePortfolioRag} onChange={e=>setIncludePortfolioRag(e.target.checked)} className="accent-[#1B8F6E]"/>Inclure notre portfolio de formations passées (RAG)</label><button disabled={!tdrApproved || generationBusy} onClick={() => void generateTechnique()} className="w-full py-2.5 rounded-xl bg-[#1B8F6E] text-white text-xs font-bold flex items-center justify-center gap-2 disabled:opacity-50"><Sparkles size={15}/>Générer l’offre technique</button>{techniqueApproved && <div className="p-3 bg-emerald-50 text-emerald-800 rounded-xl text-xs font-semibold">Volet technique approuvé.</div>}</section>
-      <section className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs"><div className="flex justify-between items-center"><h2 className="font-extrabold text-[#11162A]">Aperçu technique</h2><div className="flex items-center gap-2">{techniqueDocument && techniqueReviewId && !techniqueApproved && <button onClick={() => setTechniqueEditMode(value => !value)} className="px-3 py-1.5 rounded-lg bg-slate-100 text-xs font-bold text-slate-700">{techniqueEditMode ? 'Voir l’aperçu' : 'Modifier le contenu'}</button>}{techniqueApproved && <span className="px-2 py-1 bg-emerald-50 text-emerald-700 rounded-full text-[10px] font-bold">Approuvé</span>}</div></div>{techniqueDocument ? <div className="mt-3 max-h-[530px] overflow-auto rounded-xl border border-slate-200 bg-slate-50 p-4">{techniqueEditMode ? <><p className="mb-4 rounded-lg bg-blue-50 p-3 text-xs text-blue-800">Modifiez les informations de l’offre technique, puis revenez à l’aperçu avant la validation.</p>{renderTdrEditor(techniqueDocument, ['technique'])}</> : renderMarkdown(`# ${techniqueDocument.titre_offre ?? 'Offre technique'}\n\n${markdownFor(techniqueDocument)}`)}</div> : <p className="mt-3 p-8 rounded-xl bg-slate-50 border border-slate-200 text-center text-xs text-slate-500">L’offre technique générée apparaîtra ici.</p>}{techniqueReviewId && !techniqueApproved && <div className="mt-4 space-y-2"><label className="block text-[11px] font-bold text-slate-600">Retour à l’agent IA<textarea value={reviewNote} onChange={e => setReviewNote(e.target.value)} rows={3} placeholder="Décrivez les corrections à effectuer. Pour valider la version actuelle, saisissez simplement OK." className="mt-1 w-full p-3 rounded-xl border border-slate-300 text-xs"/></label><div className="flex flex-wrap gap-2"><button disabled={generationBusy || techniqueEditMode} onClick={() => void reviewTechnique(false)} className="px-4 py-2 rounded-lg bg-red-50 text-red-700 text-xs font-bold disabled:opacity-50">Rejeter</button><button disabled={generationBusy || techniqueEditMode} onClick={() => void rectifyTechnique()} className="px-4 py-2 rounded-lg bg-blue-50 text-blue-800 text-xs font-bold disabled:opacity-50">Demander une correction à l’IA</button><button disabled={generationBusy || techniqueEditMode} onClick={() => void reviewTechnique(true)} className="px-4 py-2 rounded-lg bg-[#1B8F6E] text-white text-xs font-bold disabled:opacity-50">Approuver (OK)</button></div></div>}{techniqueApproved && <div className="mt-4 flex gap-2"><button onClick={() => downloadOffer('technical','word')} className="px-3 py-2 bg-slate-100 rounded-lg text-xs font-bold"><Download size={13} className="inline mr-1"/>Word</button><button onClick={() => downloadOffer('technical','pdf')} className="px-3 py-2 bg-slate-100 rounded-lg text-xs font-bold">PDF / Imprimer</button></div>}</section>
+      <section className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs"><div className="flex justify-between items-center"><h2 className="font-extrabold text-[#11162A]">Aperçu technique</h2><div className="flex items-center gap-2">{techniqueApproved && <span className="px-2 py-1 bg-emerald-50 text-emerald-700 rounded-full text-[10px] font-bold">Approuvé</span>}</div></div>{techniqueDocument ? <div className="mt-3 max-h-[530px] overflow-auto rounded-xl border border-slate-200 bg-slate-50 p-4">{techniqueEditMode ? <><p className="mb-4 rounded-lg bg-blue-50 p-3 text-xs text-blue-800">Modifiez les informations de l’offre technique, puis revenez à l’aperçu avant la validation.</p>{renderTdrEditor(techniqueDocument, ['technique'])}</> : renderMarkdown(`# ${techniqueDocument.titre_offre ?? 'Offre technique'}\n\n${markdownFor(techniqueDocument)}`)}</div> : <p className="mt-3 p-8 rounded-xl bg-slate-50 border border-slate-200 text-center text-xs text-slate-500">L’offre technique générée apparaîtra ici.</p>}{techniqueReviewId && !techniqueApproved && <button type="button" disabled={generationBusy} onClick={openDocumentReview} className="mt-4 rounded-lg bg-blue-800 px-4 py-2 text-xs font-bold text-white disabled:opacity-50">Vérifier, modifier ou valider dans l’Espace IA</button>}{techniqueApproved && <div className="mt-4 flex gap-2"><button onClick={() => downloadOffer('technical','word')} className="px-3 py-2 bg-slate-100 rounded-lg text-xs font-bold"><Download size={13} className="inline mr-1"/>Word</button><button onClick={() => downloadOffer('technical','pdf')} className="px-3 py-2 bg-slate-100 rounded-lg text-xs font-bold">PDF / Imprimer</button></div>}</section>
     </div>}
 
     {docTab === 'financial' && <div className="space-y-4">
       {!financeDocument && <section className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-3"><h2 className="font-extrabold text-[#11162A]">Paramètres de calcul financier</h2><p className="text-xs text-slate-500">Les catégories de tarif sont celles prises en charge par la grille du backend; la durée et chaque ligne restent ajustables dans le tableau après génération.</p><div className="grid md:grid-cols-4 gap-3"><label className="text-[11px] font-bold text-slate-600">Participants<input type="number" min="1" value={offerOptions.participants} onChange={e=>setOfferOptions(p=>({...p,participants:Math.max(1,Number(e.target.value)||1)}))} className="mt-1 w-full p-2.5 rounded-xl border border-slate-300"/></label><label className="text-[11px] font-bold text-slate-600">Formateur<select value={offerOptions.trainerType} onChange={e=>setOfferOptions(p=>({...p,trainerType:e.target.value}))} className="mt-1 w-full p-2.5 rounded-xl border border-slate-300"><option value="senior">Senior</option><option value="junior">Junior</option></select></label><label className="text-[11px] font-bold text-slate-600">Salle<select value={offerOptions.roomType} onChange={e=>setOfferOptions(p=>({...p,roomType:e.target.value}))} className="mt-1 w-full p-2.5 rounded-xl border border-slate-300"><option value="standard">Standard</option><option value="premium">Premium</option></select></label><label className="text-[11px] font-bold text-slate-600">Durée (jours)<input type="number" min="1" value={financeInputs.trainerDays || ''} onChange={e=>setFinanceInputs(p=>({...p,trainerDays:Number(e.target.value)||0,roomDays:Number(e.target.value)||0}))} className="mt-1 w-full p-2.5 rounded-xl border border-slate-300" placeholder="Selon l’offre technique"/></label></div><div className="flex flex-wrap gap-4 text-xs font-semibold text-slate-700"><label className="flex gap-2 items-center"><input type="checkbox" checked={offerOptions.vat} onChange={e=>setOfferOptions(p=>({...p,vat:e.target.checked}))}/>TVA</label><label className="flex gap-2 items-center"><input type="checkbox" checked={offerOptions.logistics} onChange={e=>setOfferOptions(p=>({...p,logistics:e.target.checked}))}/>Logistique</label><label className="flex gap-2 items-center"><input type="checkbox" checked={offerOptions.administration} onChange={e=>setOfferOptions(p=>({...p,administration:e.target.checked}))}/>Administration</label></div><button disabled={!techniqueApproved || generationBusy} onClick={() => void generateFinance()} className="px-4 py-2.5 rounded-xl bg-[#1B8F6E] text-white text-xs font-bold flex gap-2 items-center disabled:opacity-50"><Sparkles size={15}/>Générer l’offre financière</button>{!techniqueApproved && <p className="text-[11px] text-amber-700">Validez d’abord l’offre technique.</p>}</section>}
-      {financeDocument && <div className="grid lg:grid-cols-[1.05fr_0.95fr] gap-4"><section className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs"><div className="flex justify-between items-center mb-3"><h2 className="font-extrabold text-[#11162A]">Tableau financier modifiable</h2>{financeApproved && <span className="px-2 py-1 bg-emerald-50 text-emerald-700 rounded-full text-[10px] font-bold">Approuvé</span>}</div><div className="grid grid-cols-2 gap-3">{field('Jours formateur',financeInputs.trainerDays,'trainerDays')}{field('Tarif/jour formateur (MGA)',financeInputs.trainerRate,'trainerRate')}{field('Jours de salle',financeInputs.roomDays,'roomDays')}{field('Tarif/jour salle (MGA)',financeInputs.roomRate,'roomRate')}{field('Participants',financeInputs.participants,'participants')}{field('Forfait support / personne (MGA)',financeInputs.supportRate,'supportRate')}{field('Frais logistiques (MGA)',financeInputs.logistics,'logistics')}{field('Frais administratifs (%)',financeInputs.adminPercent,'adminPercent')}</div><div className="mt-4 space-y-2 rounded-xl bg-slate-50 p-4 text-xs"><div className="flex justify-between"><span>Honoraires formateur</span><strong>{adjustedFinance.trainer.toLocaleString()} MGA</strong></div><div className="flex justify-between"><span>Location salle</span><strong>{adjustedFinance.room.toLocaleString()} MGA</strong></div><div className="flex justify-between"><span>Supports participants</span><strong>{adjustedFinance.supports.toLocaleString()} MGA</strong></div><div className="flex justify-between"><span>Logistique et administration</span><strong>{(adjustedFinance.logistics+adjustedFinance.admin).toLocaleString()} MGA</strong></div><div className="flex justify-between border-t pt-2"><span>Sous-total HT</span><strong>{adjustedFinance.subtotal.toLocaleString()} MGA</strong></div><div className="flex justify-between"><span>TVA ({adjustedFinance.taxRate}%)</span><strong>{adjustedFinance.tax.toLocaleString()} MGA</strong></div><div className="flex justify-between"><span>Remise</span><strong>−{adjustedFinance.discount.toLocaleString()} MGA</strong></div><div className="flex justify-between border-t pt-2 text-sm font-extrabold text-[#11162A]"><span>Net à payer</span><strong>{adjustedFinance.total.toLocaleString()} MGA</strong></div></div>{financeReviewId && !financeApproved && <div className="mt-4 space-y-2"><label className="block text-[11px] font-bold text-slate-600">Retour à l’agent IA<textarea value={reviewNote} onChange={e=>setReviewNote(e.target.value)} rows={3} placeholder="Décrivez les corrections à effectuer. Pour valider la version actuelle, saisissez simplement OK." className="mt-1 w-full p-3 rounded-xl border border-slate-300 text-xs"/></label><div className="flex flex-wrap gap-2"><button disabled={generationBusy} onClick={() => void reviewFinance(false)} className="px-4 py-2 rounded-lg bg-red-50 text-red-700 text-xs font-bold">Rejeter</button><button disabled={generationBusy} onClick={() => void rectifyFinance()} className="px-4 py-2 rounded-lg bg-blue-50 text-blue-800 text-xs font-bold">Demander une correction à l’IA</button><button disabled={generationBusy} onClick={() => void reviewFinance(true)} className="px-4 py-2 rounded-lg bg-[#1B8F6E] text-white text-xs font-bold">Approuver (OK)</button></div></div>}{financeApproved && !offerSaved && <button disabled={generationBusy || !techniqueApproved} onClick={() => void saveApprovedOffer()} className="mt-4 w-full px-4 py-2.5 rounded-xl bg-[#11162A] text-white text-xs font-bold">Enregistrer les deux offres validées</button>}{offerSaved && <div className="mt-4 p-3 bg-emerald-50 text-emerald-800 rounded-xl text-xs font-semibold">Offre enregistrée dans le backend.</div>}</section>
+      {financeDocument && <div className="grid lg:grid-cols-[1.05fr_0.95fr] gap-4"><section className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs"><div className="flex justify-between items-center mb-3"><h2 className="font-extrabold text-[#11162A]">Tableau financier modifiable</h2>{financeApproved && <span className="px-2 py-1 bg-emerald-50 text-emerald-700 rounded-full text-[10px] font-bold">Approuvé</span>}</div><div className="grid grid-cols-2 gap-3">{field('Jours formateur',financeInputs.trainerDays,'trainerDays')}{field('Tarif/jour formateur (MGA)',financeInputs.trainerRate,'trainerRate')}{field('Jours de salle',financeInputs.roomDays,'roomDays')}{field('Tarif/jour salle (MGA)',financeInputs.roomRate,'roomRate')}{field('Participants',financeInputs.participants,'participants')}{field('Forfait support / personne (MGA)',financeInputs.supportRate,'supportRate')}{field('Frais logistiques (MGA)',financeInputs.logistics,'logistics')}{field('Frais administratifs (%)',financeInputs.adminPercent,'adminPercent')}</div><div className="mt-4 space-y-2 rounded-xl bg-slate-50 p-4 text-xs"><div className="flex justify-between"><span>Honoraires formateur</span><strong>{adjustedFinance.trainer.toLocaleString()} MGA</strong></div><div className="flex justify-between"><span>Location salle</span><strong>{adjustedFinance.room.toLocaleString()} MGA</strong></div><div className="flex justify-between"><span>Supports participants</span><strong>{adjustedFinance.supports.toLocaleString()} MGA</strong></div><div className="flex justify-between"><span>Logistique et administration</span><strong>{(adjustedFinance.logistics+adjustedFinance.admin).toLocaleString()} MGA</strong></div><div className="flex justify-between border-t pt-2"><span>Sous-total HT</span><strong>{adjustedFinance.subtotal.toLocaleString()} MGA</strong></div><div className="flex justify-between"><span>TVA ({adjustedFinance.taxRate}%)</span><strong>{adjustedFinance.tax.toLocaleString()} MGA</strong></div><div className="flex justify-between"><span>Remise</span><strong>−{adjustedFinance.discount.toLocaleString()} MGA</strong></div><div className="flex justify-between border-t pt-2 text-sm font-extrabold text-[#11162A]"><span>Net à payer</span><strong>{adjustedFinance.total.toLocaleString()} MGA</strong></div></div>{financeReviewId && !financeApproved && <button type="button" disabled={generationBusy} onClick={openDocumentReview} className="mt-4 rounded-lg bg-blue-800 px-4 py-2 text-xs font-bold text-white disabled:opacity-50">Vérifier, modifier ou valider dans l’Espace IA</button>}{financeApproved && !offerSaved && <button disabled={generationBusy || !techniqueApproved} onClick={() => void saveApprovedOffer()} className="mt-4 w-full px-4 py-2.5 rounded-xl bg-[#11162A] text-white text-xs font-bold">Enregistrer les deux offres validées</button>}{offerSaved && <div className="mt-4 p-3 bg-emerald-50 text-emerald-800 rounded-xl text-xs font-semibold">Offre enregistrée dans le backend.</div>}</section>
         <section className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs"><div className="flex justify-between items-center"><h2 className="font-extrabold text-[#11162A]">Aperçu de l’offre financière</h2><button onClick={() => void downloadOffer('financial','word')} disabled={!financeApproved || !offerSaved} className="px-3 py-2 bg-slate-100 rounded-lg text-xs font-bold disabled:opacity-50"><Download size={13} className="inline mr-1"/>Word</button></div><div className="mt-3 max-h-[520px] overflow-auto rounded-xl border border-slate-200 bg-slate-50 p-4"><h1 className="mb-4 text-lg font-extrabold text-[#11162A]">{financeDocument.titre_offre ?? 'Offre financière'}</h1><FinancialOfferPreview document={financeDocument}/></div><button disabled={!financeApproved || !offerSaved} onClick={() => downloadOffer('financial','pdf')} className="mt-3 px-3 py-2 bg-slate-100 rounded-lg text-xs font-bold disabled:opacity-50">PDF / Imprimer</button></section></div>}
       {techniqueApproved && financeApproved && <section className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-3"><p className="text-xs font-bold text-slate-700">Les deux volets sont approuvés. Enregistrez l’offre pour exporter la version financière ajustée.</p><div className="flex flex-wrap gap-2"><button onClick={() => downloadOffer('technical','word')} className="px-3 py-2 bg-slate-100 rounded-lg text-xs font-bold">Word technique</button><button onClick={() => downloadOffer('technical','pdf')} className="px-3 py-2 bg-slate-100 rounded-lg text-xs font-bold">PDF technique / Imprimer</button><button onClick={() => downloadOffer('financial','word')} disabled={!offerSaved} className="px-3 py-2 bg-slate-100 rounded-lg text-xs font-bold disabled:opacity-50">Word financier</button><button onClick={() => downloadOffer('financial','pdf')} disabled={!offerSaved} className="px-3 py-2 bg-[#1B8F6E] text-white rounded-lg text-xs font-bold disabled:opacity-50">PDF financier / Imprimer</button></div></section>}
     </div>}

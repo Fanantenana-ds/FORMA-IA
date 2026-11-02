@@ -7,6 +7,7 @@ import { buildDashboard, type BackendStats } from './dashboardMapping';
 import { formateurFullName, toFormateur, type BackendFormateur } from './formateurMapping';
 import type { DetectionResult, DetectionStatus, TavilyQuota } from './veilleMapping';
 import { addDaysToDate, addMonthsToDate } from './sessionDates';
+import { reportFrontendError } from './frontendErrorReporter';
 
 const IA_TOKEN = import.meta.env.VITE_IA_TOKEN as string | undefined;
 const roleFromApi: Record<string, UserRole> = {
@@ -66,8 +67,9 @@ const mapOpportunity = (o: any): OpportuniteCRM => ({
   montantEstime: currency(o.budget), etape: o.statut === 'ANALYSEE' ? 'Contact qualifié' : o.statut === 'ARCHIVEE' ? 'Perdue' : 'Détectée par IA',
   probabilite: currency(o.score_pertinence), dateDetection: o.date_creation ? new Date(o.date_creation).toLocaleDateString('fr-FR') : ''
 });
+let veilleClientId = 0;
 const mapVeilleMarket = (m: any): VeilleMarche => ({
-  id: String(m.id ?? m.review_id ?? crypto.randomUUID()), titre: m.titre ?? m.title ?? m.objet ?? 'Résultat de veille',
+  id: String(m.id ?? m.review_id ?? globalThis.crypto?.randomUUID?.() ?? `veille-${Date.now()}-${++veilleClientId}`), titre: m.titre ?? m.title ?? m.objet ?? 'Résultat de veille',
   categorie: m.domaine ?? m.domain ?? 'AUTRE', description: m.contenu ?? m.description ?? m.summary ?? '', impactOrganisme: 'Opportunité émergente',
   demandeClient: m.contenu ?? m.description ?? m.summary ?? '', dateAnalyse: m.date_creation ?? new Date().toLocaleDateString('fr-FR'),
   motsCles: [], statut: 'Trouvé', url: m.url ?? m.source_url, score: m.score_pertinence ?? m.score, budgetEstimeAr: normalizeBudget(m.budget),
@@ -133,6 +135,7 @@ class ApiService {
         const detail = (body as any)?.detail ?? (body as any)?.message;
         const message = typeof detail === 'string' ? detail : detail ? JSON.stringify(detail) : `Erreur API ${response.status}`;
         this.connected = response.status !== 0; this.fallback = false; this.errors++; this.notify();
+        reportFrontendError('api', { route: path.split('?')[0], status: response.status });
         throw new ApiError(message, response.status, detail);
       }
       this.connected = true; this.fallback = false; this.notify();
@@ -143,6 +146,7 @@ class ApiService {
       clearTimeout(timeout);
       if (error instanceof ApiError) throw error;
       this.connected = false; this.fallback = true; this.errors++; this.notify();
+      reportFrontendError('network', { route: path.split('?')[0], status: 0 });
       throw new ApiError(error instanceof Error && error.name === 'AbortError' ? 'Le serveur met trop de temps à répondre.' : 'Impossible de joindre le serveur API.', 0, error);
     }
   }
@@ -239,9 +243,63 @@ class ApiService {
     return {
       markets: arr<any>(payload, 'opportunities').concat(arr<any>(payload, 'opportunites'), arr<any>(payload, 'results')).map(mapVeilleMarket),
       total: Number(payload.total ?? 0), status: payload.status ?? 'success',
+      demoMode: payload.demo_mode === true,
       quotaReached: payload.status === 'quota_atteint' || data.status === 'quota_atteint',
       reason: payload.reason ?? payload.notes ?? data.error,
       statistics: payload.statistics ?? {}, queries: arr<any>(payload, 'queries')
+    };
+  }
+  async streamDetection(onEvent: (event: string, data: any) => void, options: { syncBackend?: boolean } = {}): Promise<DetectionResult> {
+    const token = tokenStore.get();
+    if (!token) throw new ApiError('Reconnectez-vous pour lancer la détection.', 401);
+    const params = new URLSearchParams({ sync_backend: String(!!options.syncBackend) });
+    const response = await fetch(`${API_REQUEST_BASE}${API_PREFIX}/ia/veille/detecter/stream?${params}`, {
+      headers: { Accept: 'text/event-stream', Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(120000),
+    });
+    if (!response.ok) {
+      reportFrontendError('api', { route: '/ia/veille/detecter/stream', status: response.status });
+      throw new ApiError(`Le flux de détection a échoué (HTTP ${response.status}).`, response.status);
+    }
+    if (!response.body) throw new ApiError('Le serveur n’a pas ouvert le flux de détection.', 502);
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let final: any = null;
+    let streamError = '';
+    const dispatch = (flush = false) => {
+      const frames = buffer.split(/\r?\n\r?\n/);
+      buffer = flush ? '' : frames.pop() ?? '';
+      for (const frame of frames) {
+        const event = frame.match(/^event:\s*(.+)$/m)?.[1]?.trim();
+        const dataText = frame.split(/\r?\n/).filter(line => line.startsWith('data:')).map(line => line.slice(5).trim()).join('\n');
+        if (!event || !dataText) continue;
+        let data: any;
+        try { data = JSON.parse(dataText); } catch { continue; }
+        onEvent(event, data);
+        if (event === 'erreur') streamError = String(data.message ?? 'Erreur de détection.');
+        if (event === 'fin') final = data;
+      }
+    };
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      dispatch();
+    }
+    buffer += decoder.decode();
+    dispatch(true);
+    if (!final) throw new ApiError(streamError || 'Flux interrompu avant la fin de la détection.', 502);
+    if (['technical_error', 'error', 'quota_atteint', 'in_progress'].includes(final.status)) {
+      throw new ApiError(streamError || 'La détection n’a pas abouti.', final.status === 'in_progress' ? 409 : 503);
+    }
+    const opportunities = arr<any>(final, 'opportunites');
+    const demoMode = opportunities.some((item) => item.demo_data_type === 'archive_reelle' || item.demo_data_type === 'synthetic_fallback');
+    return {
+      markets: opportunities.map(mapVeilleMarket), total: Number(final.total ?? opportunities.length),
+      status: String(final.status ?? 'success'), demoMode, quotaReached: false,
+      statistics: final.statistics ?? { queries_run: final['requêtes'], backend_sync: { enabled: false } },
+      queries: arr<any>(final, 'queries'),
     };
   }
   async getSessions(): Promise<Session[]> {
@@ -292,6 +350,8 @@ class ApiService {
   }
   async generateTrainerContract(body: unknown) { return this.request<any>('/ia/rh/contrat-formateur', this.json('POST', body), { ia: true, timeout: 120000 }); }
   async draftTrainerEmail(body: { type_email: string; destinataire: string; contexte?: Record<string, unknown> }) { return this.request<any>('/ia/rh/email/brouillon', this.json('POST', body), { ia: true, timeout: 120000 }); }
+  async updateTrainerEmailDraft(reviewId: string, body: { objet: string; corps: string }) { return this.request<any>(`/ia/rh/email/brouillon/${encodeURIComponent(reviewId)}`, this.json('PATCH', body), { ia: true }); }
+  async sendTrainerEmail(reviewId: string, email: string) { return this.request<any>('/ia/rh/email/envoyer', this.json('POST', { review_id: reviewId, email_destinataire: email }), { ia: true, timeout: 30000 }); }
   async getApprovedTrainerContracts() { return this.getReviewHistory('approved', 'agent_m4_contrat'); }
   async downloadTrainerContract(reviewId: string) { return this.request<Blob>(`/ia/rh/contrat-formateur/download/${encodeURIComponent(reviewId)}`, {}, { ia: true, timeout: 30000 }); }
   async analyzeTrainerEvaluation(body: unknown) { return this.request<any>('/ia/rh/formateur/evaluer', this.json('POST', body), { ia: true, timeout: 120000 }); }
@@ -369,6 +429,9 @@ class ApiService {
     const path = this.isM3ReviewId(id) ? `/ia/offres/reviews/${id}` : `/ia/formations/reviews/${id}`;
     return this.request<any>(path, {}, { ia: true });
   }
+  async updateReviewDocument(id: string, content: Record<string, unknown>, expectedUpdatedAt: string) {
+    return this.request<any>(`/ia/formations/reviews/${encodeURIComponent(id)}/document`, this.json('PATCH', { content, expected_updated_at: expectedUpdatedAt }), { ia: true, timeout: 120000 });
+  }
   async approveReview(id: string, reviewer_note?: string) {
     if (this.isM3ReviewId(id)) return this.approveOfferReview(id, reviewer_note || 'OK');
     return this.request(`/ia/formations/reviews/${id}/approve`, this.json('POST', { reviewer_note }), { ia: true });
@@ -380,6 +443,7 @@ class ApiService {
   async getRagReviews() { return this.request<any>('/ia/rag/reviews', {}, { ia: true, timeout: 30000 }); }
   async getRagReview(id: string) { return this.request<any>(`/ia/rag/reviews/${id}`, {}, { ia: true }); }
   async deleteReview(id: string) { return this.request<any>(`/ia/formations/reviews/${id}`, { method: 'DELETE' }, { ia: true }); }
+  async deleteHistoryReview(id: string) { return this.request<any>(`/ia/formations/history/${id}`, { method: 'DELETE' }, { ia: true }); }
   async deleteRagReview(id: string) { return this.request<any>(`/ia/rag/reviews/${id}`, { method: 'DELETE' }, { ia: true }); }
   async approveRagReview(id: string, reviewer_note: string) { return this.request(`/ia/rag/reviews/${id}/approve`, this.json('POST', { reviewer_note }), { ia: true }); }
   async rejectRagReview(id: string, reviewer_note: string) { return this.request(`/ia/rag/reviews/${id}/reject`, this.json('POST', { reviewer_note }), { ia: true }); }
@@ -435,6 +499,10 @@ class ApiService {
   }
   async getRagHealth() { return this.request<any>('/ia/rag/health', {}, { ia: true }); }
   async getRagFormations() { return this.request<any>('/ia/rag/formations', {}, { ia: true }); }
+  async getRagConversations() { return this.request<any>('/ia/rag/conversations', {}, { ia: true }); }
+  async getRagConversation(id: string) { return this.request<any>(`/ia/rag/conversations/${id}`, {}, { ia: true }); }
+  async deleteRagConversation(id: string) { return this.request<any>(`/ia/rag/conversations/${id}`, { method: 'DELETE' }, { ia: true }); }
+  async renameRagConversation(id: string, titre: string) { return this.request<any>(`/ia/rag/conversations/${id}/rename`, { method: 'PATCH', body: JSON.stringify({ titre }) }, { ia: true }); }
   async getProjects() { return this.request<any[]>('/projets?skip=0&limit=100'); }
   async createProject(body: unknown) { return this.request<any>('/projets', this.json('POST', body)); }
   async getRooms() { return this.request<any[]>('/salles?skip=0&limit=100'); }

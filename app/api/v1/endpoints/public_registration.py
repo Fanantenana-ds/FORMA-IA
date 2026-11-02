@@ -250,7 +250,7 @@ def _get_link(token: str, db: Session) -> PublicRegistrationLink:
     return link
 
 
-def _public_formation_details(db: Session, session: TrainingSession) -> dict:
+def _public_formation_details(db: Session, session: TrainingSession, *, for_trainer: bool = False) -> dict:
     """Expose only approved, explicitly public-facing TDR fields on a public link."""
     content: dict = {}
     if session.opportunite_id:
@@ -269,6 +269,22 @@ def _public_formation_details(db: Session, session: TrainingSession) -> dict:
                     content = parsed
             except (TypeError, json.JSONDecodeError):
                 pass
+    if for_trainer and not content and session.opportunite_id:
+        # La synchronisation M2 crée parfois un Document EN_ATTENTE côté Backend.
+        # Seule l'approbation HITL de cette même opportunité autorise alors la
+        # publication du profil sur le lien de candidature.
+        from app.services.hitl import get_review as get_hitl_review
+        from app.services.hitl import list_reviews as list_hitl_reviews
+
+        for item in list_hitl_reviews(status="approved", agent_id="agent_m2_tdr"):
+            approved = get_hitl_review(item["review_id"]) or {}
+            brief = ((approved.get("data") or {}).get("_inputs") or {}).get("brief") or {}
+            if str(brief.get("opportunite_id") or "") != str(session.opportunite_id):
+                continue
+            candidate_content = (approved.get("data") or {}).get("data")
+            if approved.get("status") == "approved" and isinstance(candidate_content, dict):
+                content = candidate_content
+                break
 
     def public_text(value, max_length: int = 1500) -> str | None:
         if not isinstance(value, (str, int, float)):
@@ -287,7 +303,7 @@ def _public_formation_details(db: Session, session: TrainingSession) -> dict:
     specific_objectives = public_list(
         content.get("objectifs_specifiques"), content.get("objectif_specifique"), content.get("objectifs")
     )
-    return {
+    details = {
         "titre": public_text(content.get("titre_formation") or content.get("titre"), 180) or session.titre,
         "contexte": public_text(content.get("contexte")),
         "client": public_text(session.client or content.get("client_nom"), 180),
@@ -300,6 +316,9 @@ def _public_formation_details(db: Session, session: TrainingSession) -> dict:
         "date_fin": session.date_fin.isoformat() if session.date_fin else None,
         "lieu": public_text(session.lieu, 180),
     }
+    if for_trainer:
+        details["formateur_profil"] = public_text(content.get("formateur_profil"))
+    return details
 
 
 @router.get("/links/{token}")
@@ -321,7 +340,7 @@ async def get_public_link(token: str, db: Session = Depends(get_db)):
     return {"kind": link.kind, "session": ({"id": str(session.id), "titre": session.titre, "client": session.client,
              "date_debut": session.date_debut.isoformat(), "date_fin": session.date_fin.isoformat() if session.date_fin else None,
              "lieu": session.lieu, "max_participants": session.nb_participants_max} if session else None),
-            "formation_details": _public_formation_details(db, session),
+            "formation_details": _public_formation_details(db, session, for_trainer=link.kind == "formateur"),
             "assessment": public_assessment if link.kind == "participant" else None,
             "post_formation": ({"enabled": True, **public_assessment, "satisfaction_questions": SATISFACTION_QUESTIONS}
                                if link.kind == "post_formation" else None)}
@@ -390,7 +409,7 @@ async def public_participant_registration(token: str, payload: ParticipantRegist
                 correct = selected == question.get("correct_answer")
                 points += 1 if correct else 0
             stored_answers.append({"question_id": question["id"], "answer": selected, "correct": correct})
-        score = int(round((points / maximum) * 100)) if maximum else 0
+        score = round((points / maximum) * 100) if maximum else 0
         level = await _classify_initial_level(session, questions, answer_map, score)
     inscription = Inscription(
         session_id=session.id,
@@ -459,7 +478,7 @@ async def submit_post_formation(token: str, payload: PostFormationSubmission, db
             question_points = 1.0 if correct else 0.0
         points += question_points
         stored_test_answers.append({"question_id": question["id"], "answer": answer, "correct": correct, "points": question_points})
-    score = int(round((points / maximum) * 100)) if maximum else 0
+    score = round((points / maximum) * 100) if maximum else 0
     final_level = await _classify_initial_level(session, questions, answer_map, score, stage="final")
 
     satisfaction_map = {str(item.get("question_id")): str(item.get("answer", "")).strip()
@@ -482,7 +501,7 @@ async def submit_post_formation(token: str, payload: PostFormationSubmission, db
         elif item["id"] == "sat_6" and answer not in {"Oui", "Non"}:
             raise HTTPException(422, "Indiquez si vous recommandez le formateur.")
         normalized_satisfaction.append({"question_id": item["id"], "question": item["label"], "answer": answer[:1500]})
-    satisfaction_score = int(round(sum(scores) / len(scores))) if scores else None
+    satisfaction_score = round(sum(scores) / len(scores)) if scores else None
 
     inscription.reponses_test_final = stored_test_answers
     inscription.score_test_final = score

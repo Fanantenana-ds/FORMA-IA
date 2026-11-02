@@ -51,7 +51,7 @@ SESSION = {"client": "Ministère", "client_id": 1}
 def test_generate_technique_success(orchestrateur, monkeypatch):
     monkeypatch.setattr(
         orchestrateur.offre_technique, "generate",
-        _async(lambda tdr_data, session_info: {"reference": "ALT-OFF-TECH-2026-0001", "_review_id": "HITL-1"}),
+        _async(lambda tdr_data, session_info, feedback=None: {"reference": "ALT-OFF-TECH-2026-0001", "_review_id": "HITL-1"}),
     )
     resultat = run(orchestrateur.generate_technique(TDR, SESSION))
     assert resultat["reference"] == "ALT-OFF-TECH-2026-0001"
@@ -64,7 +64,7 @@ def test_generate_technique_agent_indisponible(orchestrateur):
 
 
 def test_generate_technique_exception_relancee(orchestrateur, monkeypatch):
-    async def echoue(tdr_data, session_info):
+    async def echoue(tdr_data, session_info, feedback=None):
         raise ValueError("Prompt invalide")
 
     monkeypatch.setattr(orchestrateur.offre_technique, "generate", echoue)

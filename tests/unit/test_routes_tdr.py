@@ -12,13 +12,15 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+import app.services.tdr.tdr_document_generator as tdr_gen_module
 from app.api.v1 import routes_tdr
 from app.services.veille.access_service import verify_api_key
 
 
 @pytest.fixture(autouse=True)
 def exports_dir_temporaire(monkeypatch, tmp_path):
-    monkeypatch.setattr(routes_tdr, "EXPORTS_DIR", tmp_path)
+    monkeypatch.setattr(tdr_gen_module, "get_tenant_exports_dir", lambda: tmp_path)
+    monkeypatch.setattr(routes_tdr, "get_tenant_exports_dir", lambda: tmp_path)
 
 
 @pytest.fixture
@@ -182,10 +184,9 @@ def test_download_pdf_success(client, tmp_path):
 
 # ---- GET /ia/tdr/list ----
 
-def test_list_tdr_dossier_absent(client, tmp_path):
+def test_list_tdr_dossier_absent(client, monkeypatch, tmp_path):
     dossier_absent = tmp_path / "n_existe_pas"
-    import app.api.v1.routes_tdr as module
-    module.EXPORTS_DIR = dossier_absent
+    monkeypatch.setattr(routes_tdr, "get_tenant_exports_dir", lambda: dossier_absent)
     resp = client.get("/ia/tdr/list")
     assert resp.status_code == 200
     body = resp.json()
@@ -193,7 +194,7 @@ def test_list_tdr_dossier_absent(client, tmp_path):
     assert body["total"] == 0
 
 
-def test_list_tdr_avec_fichiers(client, tmp_path):
+def test_list_tdr_avec_fichiers(client, monkeypatch, tmp_path):
     (tmp_path / "tdr_a.docx").write_bytes(b"a")
     (tmp_path / "tdr_b.pdf").write_bytes(b"b")
     (tmp_path / "ignore.txt").write_bytes(b"c")  # extension non listée

@@ -107,6 +107,7 @@ export const ViewRouter: React.FC<ViewRouterProps> = ({
           onOpenNewOpportunity={onOpenNewOpportunity}
           onRefreshData={onRefreshData}
           canDeleteOpportunities={currentRole === 'Dir.' || currentRole === 'Assis.'}
+          onNavigateToSection={onNavigateTo}
         />
       );
 
@@ -115,6 +116,7 @@ export const ViewRouter: React.FC<ViewRouterProps> = ({
         <FormateursStaffView
           formateurs={formateurs}
           sessions={sessions}
+          opportunites={opportunites}
           canManage={canManageFormateurs}
           onRefreshData={onRefreshData}
         />
@@ -149,11 +151,12 @@ export const ViewRouter: React.FC<ViewRouterProps> = ({
           sessions={sessions}
           onOpenNewInvoice={onOpenNewInvoice}
           onRefreshData={onRefreshData}
+          onNavigateToSection={onNavigateTo}
         />
       );
 
     case 'espace_ia':
-      return <EspaceIAView readOnly={currentRole === 'Form.'} trainerMode={currentRole === 'Form.'} />;
+      return <EspaceIAView readOnly={currentRole === 'Form.'} trainerMode={currentRole === 'Form.'} onNavigateToSection={onNavigateTo} />;
 
     default:
       return (

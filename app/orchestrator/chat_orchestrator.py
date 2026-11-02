@@ -31,14 +31,21 @@ logger = logging.getLogger(__name__)
 _DOSSIER_PROMPTS = Path(__file__).resolve().parents[1] / "prompts" / "rag"
 MENTION_FIXE = "\n\n*Réponse générée à partir des documents indexés.*"
 ATTENTE_MAX_CHAT_S = 5.0
-GUIDE_DEMARRAGE_PLATEFORME = (
-    "FORMA-IA vous accompagne de la détection d'une opportunité jusqu'au suivi d'une formation. "
-    "Commencez par le module **Veille marché** pour consulter les opportunités, puis préparez un **TDR** "
-    "et une **offre technique et financière**. Dans **Sessions et groupes**, créez et planifiez la session, "
-    "puis suivez les présences et les évaluations. La **Base documentaire RAG** permet de poser des questions "
-    "sur les supports indexés et d'afficher les sources. Enfin, chaque contenu généré doit être relu et validé "
-    "par un humain avant son utilisation. Dites-moi quel module vous souhaitez découvrir en détail."
-)
+GUIDE_DEMARRAGE_PLATEFORME = """\
+**FORMA-IA** guide chaque étape du cycle de vie d'une formation, de la **détection d'une opportunité** jusqu'à la **facturation**. Les modules disponibles :
+
+- **Étape 1 — Veille marché** : détection automatique des appels d'offres, scorés et classés par pertinence
+- **Étape 2 — TDR** : génération des Termes de Référence (objectifs, profil, compétences, calendrier), soumis à **validation humaine**
+- **Étape 3 — Offre technique & financière** : offre complète (méthodologie + budget), passée en **validation avant envoi**
+- **Étape 4 — Préparation** : budget prévisionnel et emploi du temps (séances, horaires, intervenants)
+- **Étape 5 — Sessions & groupes** : gestion des participants, **présences**, évaluations avant/après
+- **Étape 6 — Attestations** : génération automatique des **attestations PDF** par participant
+- **Étape 7 — Facturation** : émission des factures + **relances automatiques** soumises à validation
+- **Base documentaire (RAG)** : questions sur vos supports indexés (PDF, DOCX, PPTX)
+- **Validation IA (HITL)** : chaque contenu généré (TDR, offre, relance, syllabus) doit être **approuvé** avant usage
+
+Quel module souhaitez-vous explorer en détail ?\
+"""
 
 
 def _est_demande_generale_plateforme(message: str) -> bool:
@@ -118,6 +125,7 @@ class ChatOrchestrator:
         allowed_formation_codes: set[str] | None = None,
         allowed_session_ids: set[str] | None = None,
         hide_references: bool = False,
+        user_id: str | None = None,
         on_progress: Callable[[str, str], Awaitable[None]] | None = None,
     ) -> dict[str, Any]:
         async def progress(stage: str, label: str) -> None:
@@ -186,6 +194,8 @@ class ChatOrchestrator:
             formation_resolue = formation_code
         conv = memoire.ajouter_echange(conv, "utilisateur", message)
         conv = memoire.ajouter_echange(conv, "assistant", texte, formation_code=formation_resolue)
+        if user_id:
+            conv.user_id = user_id
         memoire.sauvegarder_conversation(conv)
 
         journal.enregistrer(
@@ -519,12 +529,14 @@ class ChatOrchestrator:
         # Seuil abaissé à 0.35 : les formulations naturelles sans "FORMA-IA"
         # dans la phrase donnent des scores entre 0.35 et 0.50 sur nos guides.
         resultats = await recherche.rechercher(
-            message, collection="aide_plateforme", top_k=5, seuil_min=0.35,
+            message, collection="aide_plateforme", top_k=5, seuil_min=0.20,
             attente_max_s=ATTENTE_MAX_CHAT_S, repository=self.repository,
         )
 
         if not resultats:
-            return "Aucun guide de la plateforme indexé ne permet de répondre à cette question de manière fiable.", [], provider.modele_requete, cache_avant
+            # Fallback sur le guide de démarrage statique pour les questions
+            # très générales (faible similarité avec les guides spécifiques).
+            return GUIDE_DEMARRAGE_PLATEFORME, [], provider.modele_requete, cache_avant
 
         # RAG + LLM : on synthétise les extraits avec une température plus haute
         # pour une prose plus fluide et naturelle.

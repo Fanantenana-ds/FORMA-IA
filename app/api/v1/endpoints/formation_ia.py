@@ -17,8 +17,10 @@ from app.schemas.common import RouteResponse
 from app.services.hitl import approve_review as _approve
 from app.services.hitl import get_review as _get
 from app.services.hitl import get_stats, list_pending, list_reviews
+from app.services.hitl import replace_pending_review_data
 from app.services.hitl import reject_review as _reject
 from app.services.hitl import delete_pending_review as _delete_pending
+from app.services.hitl import delete_review as _delete_any
 from app.core.dependencies import require_role
 from app.utils.security import verify_api_key
 
@@ -424,6 +426,61 @@ async def get_review(review_id: str) -> dict[str, Any]:
         return {"success": False, "review": None}
 
 
+class ManualDocumentEditRequest(BaseModel):
+    content: dict[str, Any] = Field(..., min_length=1)
+    expected_updated_at: str = Field(..., min_length=1)
+
+
+@router.patch("/reviews/{review_id}/document", summary="Modifier un TDR ou une offre avant validation humaine")
+async def modifier_document_en_attente(
+    review_id: str,
+    payload: ManualDocumentEditRequest,
+    _current_user=Depends(require_role("DIRECTION", "ADMIN", "ASSISTANT")),
+) -> dict[str, Any]:
+    from app.services.tdr.tdr_document_generator import TDRDocumentGenerator
+
+    review = _get(review_id)
+    if not review:
+        raise HTTPException(404, detail="Validation introuvable.")
+    agent = review.get("agent_id")
+    allowed = ("agent_m2_tdr", "agent_m3_technique", "agent_m3_financiere")
+    if agent not in allowed:
+        raise HTTPException(403, detail="La modification manuelle est réservée aux documents TDR et offres.")
+    if review.get("status") != "pending_review":
+        raise HTTPException(409, detail="Ce document a déjà été validé ou rejeté.")
+    if review.get("updated_at") != payload.expected_updated_at:
+        raise HTTPException(409, detail="Le document a changé. Rechargez-le avant de modifier.")
+    if len(str(payload.content)) > 1_000_000:
+        raise HTTPException(413, detail="Document trop volumineux.")
+
+    original = review.get("data") or {}
+    if agent == "agent_m2_tdr":
+        previous_content = original.get("data") or {}
+        if set(payload.content) != set(previous_content):
+            raise HTTPException(422, detail="Conservez tous les champs du TDR lors de la modification.")
+        client = (original.get("_inputs") or {}).get("brief", {}).get("client") or "Client"
+        docx, pdf = TDRDocumentGenerator().generate(payload.content, client)
+        if not docx or not pdf:
+            raise HTTPException(500, detail="Impossible de produire les nouveaux fichiers Word et PDF du TDR. Le document reste inchangé.")
+        revised = {**original, "data": payload.content, "files": {"docx": docx, "pdf": pdf}}
+    else:
+        protected = {"success", "metadata"}
+        editable = {key for key in original if not key.startswith("_") and key not in protected}
+        if set(payload.content) != editable:
+            raise HTTPException(422, detail="Conservez tous les champs de l’offre lors de la modification.")
+        revised = {**original, **payload.content}
+
+    try:
+        updated = replace_pending_review_data(review_id, revised, allowed, payload.expected_updated_at)
+    except KeyError as exc:
+        raise HTTPException(404, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(403, detail=str(exc)) from exc
+    except (ValueError, RuntimeError) as exc:
+        raise HTTPException(409, detail=str(exc)) from exc
+    return {"success": True, "review": updated}
+
+
 @router.delete("/reviews/{review_id}", summary="Supprimer une validation encore en attente")
 async def delete_pending_review(review_id: str, _current_user=Depends(require_role("DIRECTION", "ADMIN", "ASSISTANT"))):
     result = _delete_pending(review_id)
@@ -432,6 +489,14 @@ async def delete_pending_review(review_id: str, _current_user=Depends(require_ro
     if result is False:
         raise HTTPException(status_code=409, detail="Cette validation a déjà été traitée et ne peut plus être supprimée.")
     return {"success": True, "message": "Validation en attente supprimée.", "review_id": review_id}
+
+
+@router.delete("/history/{review_id}", summary="Supprimer définitivement une décision de l'historique")
+async def delete_history_review(review_id: str, _current_user=Depends(require_role("DIRECTION", "ADMIN", "ASSISTANT"))):
+    result = _delete_any(review_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Décision introuvable.")
+    return {"success": True, "message": "Décision supprimée de l'historique.", "review_id": review_id}
 
 
 @router.post("/reviews/{review_id}/approve",

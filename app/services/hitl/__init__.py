@@ -26,10 +26,12 @@ __all__ = [
     "list_reviews",
     "get_review",
     "delete_pending_review",
+    "delete_review",
     "approve_review",
     "reject_review",
     "get_stats",
     "patch_review",
+    "replace_pending_review_data",
     "AGENT_CRITICITY",
 ]
 
@@ -39,11 +41,13 @@ from .hitl_helper import (
     approve_review,
     create_review,
     delete_pending_review,
+    delete_review,
     get_review,
     get_stats,
     list_pending,
     list_reviews,
     patch_review,
+    replace_pending_review_data,
     reject_review,
 )
 

@@ -43,6 +43,7 @@ from app.services.storage import get_storage
 from app.services.storage.storage_service import LocalStorageService
 from app.services.rag.trainer_access import assigned_formation_codes, assigned_session_ids, get_accessible_session, is_trainer
 from app.core.dependencies import require_role
+from app.services.rag import conversation_service as conversations
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +62,12 @@ def _session_scope(db: Session, user: User, session_id: str | None):
     return get_accessible_session(db, user, session_id) if session_id else None
 
 
+def _is_direction(user: User) -> bool:
+    role_val = getattr(user, "role", None)
+    role_str = role_val.value if hasattr(role_val, "value") else str(role_val or "")
+    return role_str == "DIRECTION"
+
+
 @router.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest, current_user: User = Depends(get_current_tenant_user), db: Session = Depends(get_db)):
     """Assistant documentaire — route unique pour les 9 types de message
@@ -69,13 +76,16 @@ async def chat(request: ChatRequest, current_user: User = Depends(get_current_te
     formation_code = session.formation_code if session else request.formation_code
     allowed_codes = assigned_formation_codes(db, current_user) if is_trainer(current_user) else None
     allowed_sessions = assigned_session_ids(db, current_user) if is_trainer(current_user) else None
+    # Sources visibles uniquement pour la DIRECTION
+    hide_refs = not _is_direction(current_user)
     try:
         orchestrateur = get_chat_orchestrator()
         resultat = await orchestrateur.traiter_message(
             request.message, request.conversation_id, formation_code,
             session_id=str(session.id) if session else None, module=request.module,
             allowed_formation_codes=allowed_codes, allowed_session_ids=allowed_sessions,
-            hide_references=is_trainer(current_user),
+            hide_references=hide_refs,
+            user_id=str(current_user.id),
         )
         return resultat
     except Exception as exc:
@@ -89,6 +99,8 @@ async def chat_stream(payload: ChatRequest, request: Request, current_user: User
     formation_code = session.formation_code if session else payload.formation_code
     allowed_codes = assigned_formation_codes(db, current_user) if is_trainer(current_user) else None
     allowed_sessions = assigned_session_ids(db, current_user) if is_trainer(current_user) else None
+    # Sources visibles uniquement pour la DIRECTION
+    hide_refs = not _is_direction(current_user)
     orchestrateur = get_chat_orchestrator()
 
     async def produire():
@@ -105,7 +117,8 @@ async def chat_stream(payload: ChatRequest, request: Request, current_user: User
                 payload.message, payload.conversation_id, formation_code,
                 session_id=str(session.id) if session else None, module=payload.module,
                 allowed_formation_codes=allowed_codes, allowed_session_ids=allowed_sessions,
-                hide_references=is_trainer(current_user),
+                hide_references=hide_refs,
+                user_id=str(current_user.id),
                 on_progress=progress,
             )
 
@@ -122,7 +135,7 @@ async def chat_stream(payload: ChatRequest, request: Request, current_user: User
                     continue
 
             resultat = await task
-            if is_trainer(current_user):
+            if hide_refs:
                 resultat["sources"] = []
             yield await envoyer({"type": "status", "message": "Réponse prête. Affichage du résultat…"})
             texte = resultat.get("reponse", "")
@@ -144,6 +157,62 @@ async def chat_stream(payload: ChatRequest, request: Request, current_user: User
         produire(), media_type="text/event-stream",
         headers={"Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no", "Connection": "keep-alive"},
     )
+
+
+# ============================================================
+# GESTION DES CONVERSATIONS (mémoire — max 20 par utilisateur)
+# ============================================================
+
+@router.get("/conversations", summary="Liste des conversations de l'utilisateur (max 20)")
+async def lister_conversations_utilisateur(current_user: User = Depends(get_current_tenant_user)):
+    """Retourne les conversations du plus récent au plus ancien."""
+    user_id = str(current_user.id)
+    data = conversations.lister_conversations(user_id)
+    return {"success": True, "total": len(data), "data": data}
+
+
+@router.get("/conversations/{conversation_id}", summary="Détail d'une conversation (échanges)")
+async def obtenir_conversation(conversation_id: str, current_user: User = Depends(get_current_tenant_user)):
+    """Retourne les échanges d'une conversation pour la reprendre dans l'interface."""
+    conv = conversations.charger_conversation(conversation_id)
+    if conv.user_id and conv.user_id != str(current_user.id):
+        raise HTTPException(status_code=403, detail="Accès refusé à cette conversation.")
+    echanges = [{"role": e.role, "texte": e.texte} for e in conv.echanges]
+    return {
+        "success": True,
+        "conversation_id": conversation_id,
+        "titre": conv.titre or "Nouvelle conversation",
+        "echanges": echanges,
+        "derniere_formation_code": conv.derniere_formation_code,
+        "cree_le": conv.cree_le,
+        "mis_a_jour_le": conv.mis_a_jour_le,
+    }
+
+
+@router.delete("/conversations/{conversation_id}", summary="Supprimer une conversation")
+async def supprimer_conversation(conversation_id: str, current_user: User = Depends(get_current_tenant_user)):
+    user_id = str(current_user.id)
+    supprime = conversations.supprimer_conversation(conversation_id, user_id)
+    if not supprime:
+        raise HTTPException(status_code=404, detail="Conversation introuvable ou accès refusé.")
+    return {"success": True, "message": "Conversation supprimée.", "conversation_id": conversation_id}
+
+
+class RenommerConversationRequest(BaseModel):
+    titre: str
+
+
+@router.patch("/conversations/{conversation_id}/rename", summary="Renommer une conversation")
+async def renommer_conversation(conversation_id: str, body: RenommerConversationRequest, current_user: User = Depends(get_current_tenant_user)):
+    conv = conversations.charger_conversation(conversation_id)
+    if conv.user_id and conv.user_id != str(current_user.id):
+        raise HTTPException(status_code=403, detail="Accès refusé à cette conversation.")
+    titre = body.titre.strip()[:100]
+    if not titre:
+        raise HTTPException(status_code=400, detail="Le titre ne peut pas être vide.")
+    conv.titre = titre
+    conversations.sauvegarder_conversation(conv)
+    return {"success": True, "conversation_id": conversation_id, "titre": titre}
 
 
 @router.get("/documents/{doc_hash}/fichier")

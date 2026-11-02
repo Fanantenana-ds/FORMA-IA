@@ -17,6 +17,11 @@ from app.api.v1 import routes_veille
 from app.services.veille.auto_detection_service import DetectionAutoEnCours
 
 
+@pytest.fixture(autouse=True)
+def desactiver_demo_mode(monkeypatch):
+    monkeypatch.setattr(routes_veille, "DEMO_MODE", False)
+
+
 @pytest.fixture
 def client():
     app = FastAPI()

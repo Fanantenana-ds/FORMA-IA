@@ -93,6 +93,9 @@ def test_preselection_fallback_sans_llm(monkeypatch):
     ))
     assert result["success"] is True
     assert result["decision"] in ("RETENU", "À_DISCUTER", "NON_RETENU")
+    assert result["score_global"] is None
+    assert result["questions_entretien"] == []
+    assert result["metadata"]["source"] == "fallback_template"
     assert "_review_id" in result
     assert result["_review_status"] == "pending_review"
 
@@ -127,6 +130,34 @@ def test_preselection_avec_llm(monkeypatch):
     assert result["decision"] == "RETENU"
     assert result["score_global"] == 82
     assert faux.appels == 1
+
+
+def test_preselection_transmet_les_criteres_de_l_offre_au_llm(monkeypatch):
+    import app.services.rh.cv_preselecteur_service as mod
+    from app.services.rh.cv_preselecteur_service import CvPreselecteurService
+
+    class LlmCapture(FauxLLM):
+        async def generate(self, system_prompt, user_prompt, **kwargs):
+            self.user_prompt = user_prompt
+            return await super().generate(system_prompt, user_prompt, **kwargs)
+
+    faux = LlmCapture(contenu={
+        "nom_candidat": "Andry", "score_global": 72, "decision": "RETENU",
+        "points_forts": ["Python"], "synthese": "CV à vérifier en entretien.",
+        "questions_entretien": ["Quel atelier IA avez-vous animé ?"],
+    })
+    monkeypatch.setattr(mod, "get_llm_provider", lambda: faux)
+    run(CvPreselecteurService().generate(
+        cv_texte="Andry a développé des solutions Python et anime des ateliers de formation." * 2,
+        criteres_poste={
+            "poste": "Formateur IA", "domaine": "Intelligence artificielle",
+            "competences": ["Python", "pédagogie"],
+            "formation": "Formation IA appliquée", "offre_description": "Former les cadres à l'IA générative",
+        },
+    ))
+    assert "Formation IA appliquée" in faux.user_prompt
+    assert "Former les cadres à l'IA générative" in faux.user_prompt
+    assert "Andry a développé" in faux.user_prompt
 
 
 # ============================================================

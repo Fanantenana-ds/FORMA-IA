@@ -28,6 +28,8 @@ tache: |
   4. Les points forts du profil
   5. Les réserves ou points à vérifier en entretien
   6. Une décision de présélection : RETENU / À_DISCUTER / NON_RETENU
+  7. Trois questions d'entretien ciblées sur les écarts ou preuves à vérifier
+     entre le CV, la formation liée et le besoin réel du client
 
 format: |
   Retourne UNIQUEMENT un objet JSON valide (sans markdown, sans texte
@@ -70,4 +72,7 @@ regles:
   - "Le score_global est une moyenne pondérée : domaine (40%) + expérience formation (35%) + compétences (25%)"
   - "RETENU si score >= 70 et décision cohérente, À_DISCUTER si 50-69, NON_RETENU si < 50"
   - "Proposer 3 questions d'entretien pertinentes selon les réserves identifiées"
+  - "Chaque question doit citer une compétence, une expérience ou une exigence réellement présente dans le CV ou l'offre fournie ; si l'offre manque, se limiter au poste et au CV"
+  - "Ne pas transformer une compétence simplement mentionnée dans le CV en expérience de formation démontrée"
+  - "Quand le CV ne prouve pas une exigence de l'offre, poser une question de vérification plutôt que supposer sa maîtrise"
   - "Répondre en français uniquement"

@@ -13,6 +13,7 @@ import {
 import { apiService } from '../../services/api';
 import { describeVeilleError } from '../../services/veilleErrors';
 import { formatRelative } from '../../services/dashboardMapping';
+import { reportFrontendError } from '../../services/frontendErrorReporter';
 import type {
   DetectionStatus,
   DetectionResult,
@@ -53,6 +54,8 @@ export const DetectionAutoPanel: React.FC<DetectionAutoPanelProps> = ({ canTrigg
   const [isRunning, setIsRunning] = useState(false);
   const [runError, setRunError] = useState<string | null>(null);
   const [summary, setSummary] = useState<{ tone: 'ok' | 'warn'; lines: string[] } | null>(null);
+  const [progress, setProgress] = useState<Array<{ type: 'source' | 'result'; title: string; score?: number; url?: string; source?: string; deadline?: string; reference?: string }>>([]);
+  const [streamStage, setStreamStage] = useState('Préparation');
 
   const loadState = useCallback(async (silent = false) => {
     if (!silent) setIsLoading(true);
@@ -87,8 +90,29 @@ export const DetectionAutoPanel: React.FC<DetectionAutoPanelProps> = ({ canTrigg
     setIsRunning(true);
     setRunError(null);
     setSummary(null);
+    setProgress([]);
+    setStreamStage('Préparation');
     try {
-      const result = await apiService.runDetection({ syncBackend: autoSave });
+      const result = await apiService.streamDetection((event, data) => {
+        if (event === 'debut') setStreamStage('Recherche des sources');
+        if (event === 'requete') {
+          setStreamStage('Collecte des avis');
+          setProgress((previous) => [...previous, { type: 'source', title: String(data.query ?? data.message ?? 'Source consultée') }].slice(-16));
+        }
+        if (event === 'analyse') setStreamStage('Analyse des avis');
+        if (event === 'opportunite') {
+          setStreamStage('Résultats disponibles');
+          setProgress((previous) => [...previous, {
+            type: 'result', title: String(data.titre ?? data.title ?? 'Avis sans titre'),
+            score: typeof data.score === 'number' ? data.score : undefined,
+            url: typeof data.source_url === 'string' && /^https:\/\//i.test(data.source_url) ? data.source_url : undefined,
+            source: String(data.organizer ?? data.source_site ?? ''),
+            deadline: typeof data.deadline === 'string' ? data.deadline : undefined,
+            reference: typeof data.reference === 'string' ? data.reference : undefined,
+          }].slice(-16));
+        }
+        if (event === 'fin') setStreamStage('Terminé');
+      }, { syncBackend: autoSave });
 
       if (result.quotaReached) {
         setSummary({
@@ -98,13 +122,17 @@ export const DetectionAutoPanel: React.FC<DetectionAutoPanelProps> = ({ canTrigg
       } else {
         const stats = result.statistics;
         const sync = stats.backend_sync ?? {};
-        const lines: string[] = [
+        const lines: string[] = result.demoMode ? [
+          `${result.total} opportunité(s) à examiner. Sélectionnez celles qui correspondent à votre projet.`,
+        ] : [
           `${result.total} opportunité(s) retenue(s) sur ${stats.queries_run ?? result.queries.length} requête(s)` +
-            (stats.processing_time_seconds ? ` en ${Math.round(stats.processing_time_seconds)} s.` : '.')
+            (stats.processing_time_seconds >= 1 ? ` en ${Math.round(stats.processing_time_seconds)} s.` : '.')
         ];
         let tone: 'ok' | 'warn' = 'ok';
 
-        if (autoSave) {
+        if (result.demoMode) {
+          lines.push('Ces dossiers sont à vérifier avant toute acceptation.');
+        } else if (autoSave) {
           if (sync.enabled === false) {
             tone = 'warn';
             lines.push(
@@ -131,9 +159,10 @@ export const DetectionAutoPanel: React.FC<DetectionAutoPanelProps> = ({ canTrigg
           lines.push("L'analyse IA est momentanément indisponible : résultats limités.");
         }
         setSummary({ tone, lines });
-        await onDetected(result, autoSave);
+        await onDetected(result, autoSave && !result.demoMode);
       }
     } catch (err) {
+      reportFrontendError('component', { route: 'DetectionAutoPanel.handleRun', name: err instanceof Error ? err.name : 'UnknownError' });
       setRunError(describeVeilleError(err, 'detect'));
     } finally {
       setIsRunning(false);
@@ -348,10 +377,39 @@ export const DetectionAutoPanel: React.FC<DetectionAutoPanelProps> = ({ canTrigg
         </>
       )}
 
-      {isRunning && (
-        <div className="p-3 rounded-xl bg-blue-50 border border-blue-200 text-blue-800 text-xs font-semibold flex items-center gap-2">
-          <Loader2 size={14} className="animate-spin shrink-0" />
-          Plusieurs recherches puis analyses IA s'enchaînent : comptez quelques minutes. Vous pouvez rester sur cette page.
+      {(isRunning || progress.length > 0) && (
+        <div aria-live="polite" className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm space-y-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Suivi de la détection</p>
+              <p className="text-sm font-bold text-[#11162A] mt-1">{streamStage}</p>
+            </div>
+            <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-800">
+              {progress.filter(item => item.type === 'result').length} avis repéré(s)
+            </span>
+          </div>
+          <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
+            <div className={`h-full rounded-full bg-[#1B8F6E] transition-all duration-500 ${isRunning ? 'w-2/3 animate-pulse' : 'w-full'}`} />
+          </div>
+          <div className="max-h-72 space-y-2 overflow-y-auto">
+            {progress.filter(item => item.type === 'result').map((item, index) => (
+              <div key={`${item.title}-${index}`} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-xs font-bold leading-5 text-[#11162A]">{item.title}</p>
+                    {item.source && <p className="mt-0.5 text-[11px] text-slate-500">{item.source}</p>}
+                    {(item.reference || item.deadline) && <p className="mt-1 text-[11px] text-slate-500">{item.reference ? `Réf. ${item.reference}` : ''}{item.reference && item.deadline ? ' · ' : ''}{item.deadline ? `Clôture ${item.deadline}` : ''}</p>}
+                  </div>
+                  {item.score !== undefined && <span className="shrink-0 rounded-lg bg-white px-2 py-1 text-[11px] font-bold text-emerald-800">{item.score}/100</span>}
+                </div>
+                {item.url ? <a href={item.url} target="_blank" rel="noopener noreferrer" className="mt-2 inline-block text-[11px] font-semibold text-[#16785c] underline">Voir l’avis original ↗</a>
+                  : <span className="mt-2 block text-[11px] text-amber-700">Aucun lien public fourni</span>}
+              </div>
+            ))}
+            {progress.filter(item => item.type === 'result').length === 0 && (
+              <p className="text-xs text-slate-500">{progress.length ? `${progress.filter(item => item.type === 'source').length} source(s) parcourue(s). Les avis arrivent…` : 'Connexion au flux en cours…'}</p>
+            )}
+          </div>
         </div>
       )}
 

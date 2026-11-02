@@ -87,6 +87,7 @@ class GenerateFinanciereRequest(BaseModel):
         ...,
         description="Offre technique (issue du M3-1)",
     )
+    options: dict[str, Any] = Field(default_factory=dict, description="Paramètres de calcul de l'offre financière")
 
 
 class RectifierTechniqueRequest(BaseModel):

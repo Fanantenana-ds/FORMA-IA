@@ -19,6 +19,8 @@ import app.orchestrator.rag_orchestrator as rag_orch_module
 import app.services.rag.recherche_service as recherche_service_module
 import app.services.rag.registry_service as registry_service_module
 from app.api.v1.endpoints import rag_ia
+from app.core.dependencies import get_current_tenant_user
+from app.database import get_db
 from app.orchestrator.rag_orchestrator import RagOrchestrator
 from app.services.veille.access_service import verify_api_key
 
@@ -140,13 +142,24 @@ def api():
     app = FastAPI()
     app.include_router(rag_ia.router, prefix="/api/v1")
     app.dependency_overrides[verify_api_key] = lambda: None
+    from unittest.mock import MagicMock
+    faux_user = MagicMock()
+    faux_user.role = "DIR."
+    faux_db = MagicMock()
+    # Session factice pour éviter le 404 dans get_accessible_session
+    faux_session = MagicMock()
+    faux_session.id = "00000000-0000-0000-0000-000000000001"
+    faux_session.formation_code = "IA_FONDAMENTAUX"
+    faux_db.query.return_value.filter.return_value.first.return_value = faux_session
+    app.dependency_overrides[get_current_tenant_user] = lambda: faux_user
+    app.dependency_overrides[get_db] = lambda: faux_db
     return TestClient(app)
 
 
 def test_route_indexer_document_planifie_en_arriere_plan(api, fichier_test, monkeypatch):
     appels = []
 
-    async def faux_ingerer_fichier(self, chemin_fichier, formation_code, collection, nom_original):
+    async def faux_ingerer_fichier(self, chemin_fichier, formation_code, collection, nom_original, **kwargs):
         appels.append((chemin_fichier, formation_code, collection, nom_original))
         return {"statut": "indexe"}
 
@@ -154,6 +167,7 @@ def test_route_indexer_document_planifie_en_arriere_plan(api, fichier_test, monk
 
     response = api.post("/api/v1/ia/rag/indexer-document", json={
         "chemin_fichier": str(fichier_test), "formation_code": "IA_FONDAMENTAUX",
+        "session_id": "00000000-0000-0000-0000-000000000001",
     })
 
     assert response.status_code == 200
@@ -172,6 +186,7 @@ def test_route_indexer_document_fichier_introuvable_404(api):
     # (même convention que /documents/{hash}/fichier et /portfolio/{id}/exporter).
     response = api.post("/api/v1/ia/rag/indexer-document", json={
         "chemin_fichier": "/n/existe/pas.pdf",
+        "session_id": "00000000-0000-0000-0000-000000000001",
     })
     assert response.status_code == 404
 

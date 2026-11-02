@@ -434,6 +434,11 @@ def charger_opportunites_demo_reelles() -> list[dict]:
             )
             continue
 
+        date_publication = opportunite.get("date_publication")
+        if date_capture > aujourd_hui or (date_publication and date.fromisoformat(date_publication) > aujourd_hui):
+            logger.info("Avis futur non présenté avant sa date de capture : %s", opportunite.get("reference", "sans référence"))
+            continue
+
         date_heure_limite = opportunite.get("date_heure_limite")
         if date_heure_limite:
             try:

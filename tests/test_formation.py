@@ -24,7 +24,7 @@ def test_creer_session_role_non_autorise(client_role):
 
 
 def test_creer_session_role_autorise(client_role):
-    client = client_role(role="FORMATEUR")
+    client = client_role(role="DIRECTION")
     response = client.post(
         "/api/v1/sessions",
         json={
@@ -44,7 +44,7 @@ def test_creer_session_sans_date_fin_ne_plante_pas(client_role):
     optionnelle : avant correction, l'omettre provoquait un 500
     (NotNullViolation) au lieu d'un 201.
     """
-    client = client_role(role="FORMATEUR")
+    client = client_role(role="DIRECTION")
     response = client.post(
         "/api/v1/sessions",
         json={"titre": "Formation sans date de fin", "date_debut": "2026-10-01"},
@@ -74,7 +74,7 @@ def test_ajouter_seance_session_inexistante(client_role):
 def test_ajouter_seance_sans_theme_ne_plante_pas(client_role):
     """Seance.theme est NOT NULL en base alors que le schéma le déclare
     optionnel — même bug que duree, corrigé de la même façon."""
-    client = client_role(role="FORMATEUR")
+    client = client_role(role="DIRECTION")
     session_id = client.post(
         "/api/v1/sessions",
         json={"titre": "Formation sans thème", "date_debut": "2026-10-01",
@@ -105,7 +105,7 @@ def test_creer_participant_role_autorise(client_role):
 
 
 def test_enregistrer_presence_seance_inexistante(client_role):
-    client = client_role(role="FORMATEUR")
+    client = client_role(role="DIRECTION")
     response = client.post(
         "/api/v1/sessions/seances/00000000-0000-0000-0000-000000000000/presences",
         json={
@@ -117,7 +117,7 @@ def test_enregistrer_presence_seance_inexistante(client_role):
 
 
 def test_flux_complet_session_seance_presence(client_role):
-    client = client_role(role="FORMATEUR")
+    client = client_role(role="DIRECTION")
 
 
     session_resp = client.post(

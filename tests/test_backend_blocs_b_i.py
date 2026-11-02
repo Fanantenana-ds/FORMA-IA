@@ -45,7 +45,7 @@ def creer_facture(client):
 # =============================================================================
 
 def test_patch_session(client_role):
-    client = client_role(role="FORMATEUR")
+    client = client_role(role="DIRECTION")
     session_id = creer_session(client, titre="Session initiale")
 
     r = client.patch(f"/api/v1/sessions/{session_id}", json={"titre": "Session modifiée"})
@@ -54,7 +54,7 @@ def test_patch_session(client_role):
 
 
 def test_patch_session_date_invalide(client_role):
-    client = client_role(role="FORMATEUR")
+    client = client_role(role="DIRECTION")
     session_id = creer_session(client)
 
     r = client.patch(f"/api/v1/sessions/{session_id}", json={
@@ -64,7 +64,7 @@ def test_patch_session_date_invalide(client_role):
 
 
 def test_patch_session_inexistante(client_role):
-    client = client_role(role="FORMATEUR")
+    client = client_role(role="DIRECTION")
     r = client.patch("/api/v1/sessions/00000000-0000-0000-0000-000000000000",
                      json={"titre": "X"})
     assert r.status_code == 404
@@ -118,7 +118,7 @@ def test_lister_sessions_filtre_client(client_role):
 # =============================================================================
 
 def test_patch_seance(client_role):
-    client = client_role(role="FORMATEUR")
+    client = client_role(role="DIRECTION")
     session_id = creer_session(client)
     seance_id = creer_seance(client, session_id)
 
@@ -128,14 +128,14 @@ def test_patch_seance(client_role):
 
 
 def test_patch_seance_inexistante(client_role):
-    client = client_role(role="FORMATEUR")
+    client = client_role(role="DIRECTION")
     r = client.patch("/api/v1/sessions/seances/00000000-0000-0000-0000-000000000000",
                      json={"theme": "X"})
     assert r.status_code == 404
 
 
 def test_delete_seance(client_role):
-    client = client_role(role="FORMATEUR")
+    client = client_role(role="DIRECTION")
     session_id = creer_session(client)
     seance_id = creer_seance(client, session_id)
 
@@ -144,7 +144,7 @@ def test_delete_seance(client_role):
 
 
 def test_delete_seance_inexistante(client_role):
-    client = client_role(role="FORMATEUR")
+    client = client_role(role="DIRECTION")
     r = client.delete("/api/v1/sessions/seances/00000000-0000-0000-0000-000000000000")
     assert r.status_code == 404
 
@@ -154,7 +154,7 @@ def test_delete_seance_inexistante(client_role):
 # =============================================================================
 
 def test_lister_presences_seance_vide(client_role):
-    client = client_role(role="FORMATEUR")
+    client = client_role(role="DIRECTION")
     session_id = creer_session(client)
     seance_id = creer_seance(client, session_id)
 
@@ -171,7 +171,7 @@ def test_lister_presences_seance_inexistante(client_authenticated):
 
 
 def test_patch_presence(client_role):
-    client = client_role(role="FORMATEUR")
+    client = client_role(role="DIRECTION")
     session_id = creer_session(client)
     seance_id = creer_seance(client, session_id)
     participant_id = creer_participant(client)
@@ -188,7 +188,7 @@ def test_patch_presence(client_role):
 
 
 def test_patch_presence_inexistante(client_role):
-    client = client_role(role="FORMATEUR")
+    client = client_role(role="DIRECTION")
     r = client.patch("/api/v1/sessions/seances/presences/00000000-0000-0000-0000-000000000000",
                      json={"statut": "ABSENT"})
     assert r.status_code == 404
@@ -199,7 +199,7 @@ def test_patch_presence_inexistante(client_role):
 # =============================================================================
 
 def test_patch_participant(client_role):
-    client = client_role(role="FORMATEUR")
+    client = client_role(role="DIRECTION")
     participant_id = creer_participant(client, "Andry")
 
     r = client.patch(f"/api/v1/participants/{participant_id}",
@@ -209,7 +209,7 @@ def test_patch_participant(client_role):
 
 
 def test_patch_participant_inexistant(client_role):
-    client = client_role(role="FORMATEUR")
+    client = client_role(role="DIRECTION")
     r = client.patch("/api/v1/participants/00000000-0000-0000-0000-000000000000",
                      json={"nom": "X"})
     assert r.status_code == 404
@@ -240,7 +240,7 @@ def test_delete_participant_role_non_autorise(client_role):
 # =============================================================================
 
 def test_inscrire_et_lister_participants_session(client_role):
-    client = client_role(role="FORMATEUR")
+    client = client_role(role="DIRECTION")
     session_id = creer_session(client)
     p1 = creer_participant(client, "Participant Un")
     p2 = creer_participant(client, "Participant Deux")
@@ -259,7 +259,7 @@ def test_inscrire_et_lister_participants_session(client_role):
 
 
 def test_inscrire_doublon_retourne_409(client_role):
-    client = client_role(role="FORMATEUR")
+    client = client_role(role="DIRECTION")
     session_id = creer_session(client)
     participant_id = creer_participant(client)
 
@@ -272,7 +272,7 @@ def test_inscrire_doublon_retourne_409(client_role):
 
 
 def test_desinscrire_participant(client_role):
-    client = client_role(role="FORMATEUR")
+    client = client_role(role="DIRECTION")
     session_id = creer_session(client)
     participant_id = creer_participant(client)
 
@@ -364,12 +364,12 @@ def test_patch_utilisateur_email_duplique(client_role):
     """Modifier l'email d'un user avec un email déjà pris doit retourner 400."""
     client = client_role(role="DIRECTION")
 
-    u1 = client.post("/api/v1/auth/register", json={
+    u1 = client.post("/api/v1/auth/users", json={
         "nom": "Alice", "email": "alice@test.mg",
         "password": "Passw0rd!", "role": "ASSISTANT"
     }).json()
 
-    u2 = client.post("/api/v1/auth/register", json={
+    u2 = client.post("/api/v1/auth/users", json={
         "nom": "Bob", "email": "bob@test.mg",
         "password": "Passw0rd!", "role": "ASSISTANT"
     }).json()

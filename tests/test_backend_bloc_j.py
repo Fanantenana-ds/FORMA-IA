@@ -35,7 +35,8 @@ def rag_env(db_isolee, tmp_path, monkeypatch):
 
     dossier = tmp_path / "fichiers"
     dossier.mkdir()
-    registry_path = tmp_path / "registry.json"
+    from tests.conftest import FAKE_USER_ID
+    registry_path = tmp_path / "tenants" / FAKE_USER_ID / "registry.json"
 
     # Patch du dossier fichiers dans le module endpoint (liste + suppression)
     import app.api.v1.endpoints.document as doc_module
@@ -54,11 +55,28 @@ def rag_env(db_isolee, tmp_path, monkeypatch):
 
     # Patch du chemin registry dans registry_service
     import app.services.rag.registry_service as reg_module
-    monkeypatch.setattr(reg_module, "CHEMIN_REGISTRE_DEFAUT", registry_path)
+    monkeypatch.setattr(reg_module, "CHEMIN_REGISTRE_DEFAUT", tmp_path / "registry.json")
 
     # Authentification DIRECTION
     app.dependency_overrides[get_current_user] = lambda: FakeUser(role="DIRECTION")
     client = TestClient(app)
+
+    session_response = client.post(
+        "/api/v1/sessions",
+        json={"titre": "Support RAG de test", "date_debut": "2026-11-01", "date_fin": "2026-11-02"},
+    )
+    assert session_response.status_code == 201
+    session_id = session_response.json()["id"]
+    post_original = client.post
+
+    def post_avec_session(url, *args, **kwargs):
+        if url == "/api/v1/documents/upload":
+            data = dict(kwargs.get("data") or {})
+            data.setdefault("session_id", session_id)
+            kwargs["data"] = data
+        return post_original(url, *args, **kwargs)
+
+    monkeypatch.setattr(client, "post", post_avec_session)
 
     yield client, dossier, registry_path
 
@@ -286,15 +304,25 @@ class TestSupprimerSupport:
         reg_path = tmp_path / "r2.json"
         monkeypatch.setattr(doc_module, "DOSSIER_FICHIERS_RAG", dossier)
         monkeypatch.setattr(reg_module, "CHEMIN_REGISTRE_DEFAUT", reg_path)
+        from app.services.storage.storage_service import LocalStorageService
+        storage_test = LocalStorageService.__new__(LocalStorageService)
+        storage_test._dossier = dossier
+        monkeypatch.setattr(doc_module, "get_storage", lambda: storage_test)
 
         app.dependency_overrides[get_current_user] = lambda: FakeUser(role="DIRECTION")
         client_dir = TestClient(app)
+        session_response = client_dir.post(
+            "/api/v1/sessions",
+            json={"titre": "Support de test", "date_debut": "2026-11-01", "date_fin": "2026-11-02"},
+        )
+        assert session_response.status_code == 201
 
         # Upload
         contenu = _contenu_pdf_factice()
         r = client_dir.post("/api/v1/documents/upload",
-                            data={},
+                            data={"session_id": session_response.json()["id"]},
                             files={"fichier": ("cours.pdf", io.BytesIO(contenu), "application/pdf")})
+        assert r.status_code == 201, r.text
         doc_hash = r.json()["hash"]
         app.dependency_overrides.pop(get_current_user, None)
 

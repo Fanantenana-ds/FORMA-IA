@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session as DbSession
 
 from app.core.dependencies import get_current_user
+from app.core.tenant_context import set_tenant_id
 from app.database import engine, get_db
 from app.main import app
 from app.models.user import RoleEnum, User
@@ -19,10 +20,11 @@ from app.utils.security import verify_api_key
 FAKE_USER_ID = "1f12722d-7108-4fc8-9de3-ffb258195f12"
 
 class FakeUser:
-    def __init__(self, id=FAKE_USER_ID, role="DIRECTION", actif=True):
+    def __init__(self, id=FAKE_USER_ID, role="DIRECTION", actif=True, owner_id=None):
         self.id = id
         self.role = role
         self.actif = actif
+        self.owner_id = owner_id
 
 
 @pytest.fixture(autouse=True)
@@ -56,6 +58,7 @@ def db_isolee():
             join_transaction_mode="create_savepoint",
             autoflush=False,
         )
+        db.info["tenant_owner_id"] = uuid.UUID(FAKE_USER_ID)
         try:
             yield db
         finally:
@@ -85,6 +88,7 @@ def db_isolee():
 @pytest.fixture
 def client_authenticated(db_isolee):
     def override_get_current_user():
+        set_tenant_id(uuid.UUID(FAKE_USER_ID))
         return FakeUser()
 
     app.dependency_overrides[get_current_user] = override_get_current_user
@@ -113,6 +117,7 @@ def client_role(db_isolee):
         fake_user = FakeUser(role=role, actif=actif)
 
         def override_get_current_user():
+            set_tenant_id(uuid.UUID(fake_user.id))
             return fake_user
 
         app.dependency_overrides[get_current_user] = override_get_current_user

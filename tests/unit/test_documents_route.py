@@ -25,17 +25,21 @@ import app.models.user
 from app.api.v1.endpoints import document as document_endpoints
 from app.core.dependencies import get_current_user
 from app.database import Base, get_db
+from app.models.document import Document
 from app.models.opportunite import Opportunite, SourceOpportunite
+from app.models.user import User
 from app.services.backend_sync import offre_sync, tdr_sync
 
 UUID_INCONNU = "00000000-0000-0000-0000-000000000000"
+TEST_OWNER_ID = uuid.UUID("1f12722d-7108-4fc8-9de3-ffb258195f12")
 
 
 class FakeUser:
     def __init__(self, role):
-        self.id = uuid.uuid4()
+        self.id = TEST_OWNER_ID
         self.role = role
         self.actif = True
+        self.owner_id = None
 
 
 @pytest.fixture
@@ -45,7 +49,9 @@ def env():
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
-    Base.metadata.create_all(engine)
+    # Cette route ne dépend que de ces tables ; les autres modèles utilisent
+    # des types PostgreSQL (JSONB/pgvector) indisponibles dans SQLite.
+    Base.metadata.create_all(engine, tables=[User.__table__, Opportunite.__table__, Document.__table__])
     session_factory = sessionmaker(bind=engine, autoflush=False)
 
     app = FastAPI()
@@ -71,7 +77,7 @@ def client_as(app, role):
 
 def creer_opportunite(session_factory) -> str:
     with session_factory() as db:
-        opp = Opportunite(source=SourceOpportunite.TEXTE, contenu="AO de test")
+        opp = Opportunite(source=SourceOpportunite.TEXTE, contenu="AO de test", owner_id=TEST_OWNER_ID)
         db.add(opp)
         db.commit()
         return str(opp.id)

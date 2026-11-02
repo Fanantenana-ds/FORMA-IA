@@ -285,9 +285,7 @@ class TDRDocumentGenerator:
                     run.font.color.rgb = RGBColor.from_string(TEAL)
             elif re.match(r"^\d+\.\s", text):
                 paragraph.style = doc.styles["Heading 1"]
-            elif re.match(r"^\d+\.\d+\s", text):
-                paragraph.style = doc.styles["Heading 2"]
-            elif text.startswith("Module ") or text.startswith("TOTAL GÉNÉRAL"):
+            elif re.match(r"^\d+\.\d+\s", text) or text.startswith("Module ") or text.startswith("TOTAL GÉNÉRAL"):
                 paragraph.style = doc.styles["Heading 2"]
 
         for table in doc.tables:

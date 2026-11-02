@@ -45,7 +45,7 @@ class AuthService:
             password = hashed_password,
             role = user_data.role
         )
-        user.owner_id = owner_id or (None if user_data.role == RoleEnum.DIRECTION else None)
+        user.owner_id = owner_id
         if user_data.role == RoleEnum.DIRECTION and user.owner_id is None:
             self.user_repository.db.add(user)
             self.user_repository.db.flush()

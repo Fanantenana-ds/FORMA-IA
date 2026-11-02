@@ -131,7 +131,7 @@ async def chat_stream(payload: ChatRequest, request: Request, current_user: User
                 try:
                     event = await asyncio.wait_for(queue.get(), timeout=0.2)
                     yield await envoyer(event)
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     continue
 
             resultat = await task

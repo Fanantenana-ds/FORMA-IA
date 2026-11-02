@@ -19,7 +19,7 @@ def test_generer_attestations_session_inexistante(client_role):
     assert response.status_code == 404
 
 def test_generer_attestations_flux_complet(client_role):
-    client = client_role(role="FORMATEUR")
+    client = client_role(role="DIRECTION")
 
     # 1. Créer une session
     session_resp = client.post(
@@ -56,12 +56,19 @@ def test_generer_attestations_flux_complet(client_role):
     assert p2_resp.status_code == 201
     p2_id = p2_resp.json()["id"]
 
+    for participant_id in (p1_id, p2_id):
+        inscription_resp = client.post(
+            f"/api/v1/sessions/{session_id}/inscrire",
+            json={"participant_id": participant_id},
+        )
+        assert inscription_resp.status_code == 201
+
     # 4. Enregistrer les présences : p1 présent, p2 absent
     presence1_resp = client.post(
         f"/api/v1/sessions/seances/{seance_id}/presences",
         json={"participant_id": p1_id, "statut": "PRESENT"}
     )
-    assert presence1_resp.status_code == 201
+    assert presence1_resp.status_code == 201, presence1_resp.text
 
     presence2_resp = client.post(
         f"/api/v1/sessions/seances/{seance_id}/presences",
@@ -71,7 +78,7 @@ def test_generer_attestations_flux_complet(client_role):
 
     # 5. Générer les attestations en lot
     attestations_resp = client.post(f"/api/v1/documents/attestations/{session_id}")
-    assert attestations_resp.status_code == 201
+    assert attestations_resp.status_code == 201, attestations_resp.text
     data = attestations_resp.json()
 
     # Seul le participant présent doit avoir une attestation
@@ -83,7 +90,7 @@ def test_generer_attestations_flux_complet(client_role):
 
 
 def test_generer_attestations_idempotent(client_role):
-    client = client_role(role="FORMATEUR")
+    client = client_role(role="DIRECTION")
 
     session_resp = client.post(
         "/api/v1/sessions",
@@ -106,6 +113,12 @@ def test_generer_attestations_idempotent(client_role):
         json={"nom": "Rabe Paul", "email": "paul@example.com"}
     )
     participant_id = participant_resp.json()["id"]
+
+    inscription_resp = client.post(
+        f"/api/v1/sessions/{session_id}/inscrire",
+        json={"participant_id": participant_id},
+    )
+    assert inscription_resp.status_code == 201
 
     client.post(
         f"/api/v1/sessions/seances/{seance_id}/presences",

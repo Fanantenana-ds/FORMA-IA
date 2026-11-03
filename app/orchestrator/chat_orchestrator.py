@@ -74,9 +74,25 @@ def _charger_prompt(nom_fichier: str) -> str:
     return "\n\n".join(s for s in sections if s)
 
 
+MAX_HISTORIQUE_ECHANGES = 6  # 3 tours utilisateur + 3 réponses assistant injectés dans le prompt
+
+
+def _formater_historique(conv: "memoire.Conversation") -> str:
+    """Retourne les N derniers échanges formatés pour injection dans le prompt LLM."""
+    if not conv or not conv.echanges:
+        return ""
+    derniers = conv.echanges[-(MAX_HISTORIQUE_ECHANGES):]
+    lignes = []
+    for e in derniers:
+        role = "Utilisateur" if e.role == "utilisateur" else "Assistant"
+        lignes.append(f"{role} : {e.texte[:400]}")
+    return "\n".join(lignes)
+
+
 async def _appeler_llm_json(
     nom_prompt: str, contenu: str, temperature: float = 0.3,
     consigne_additionnelle: str | None = None,
+    historique: str | None = None,
 ) -> dict[str, Any] | None:
     import json
     try:
@@ -84,16 +100,20 @@ async def _appeler_llm_json(
     except LLMNotAvailableError:
         return None
     try:
+        contexte_historique = (
+            f"\n\nHISTORIQUE DE LA CONVERSATION (pour contexte, ne pas répéter) :\n{historique}"
+            if historique else ""
+        )
         reponse = await llm.generate_with_retry(
             system_prompt=(
                 _charger_prompt(nom_prompt)
                 + "\n\nRÈGLE DE FIABILITÉ : utilise uniquement les informations présentes dans le contexte fourni. "
                 "N'ajoute aucun fait issu de connaissances générales. Si le contexte ne suffit pas, indique clairement la limite."
                 + (f"\n\n{consigne_additionnelle}" if consigne_additionnelle else "")
+                + contexte_historique
             ),
             user_prompt=contenu,
             temperature=temperature, max_tokens=2000, json_mode=True, max_retries=2,
-            # Modèle de raisonnement Groq : voir resume_service.py pour le détail.
             reasoning_effort="low",
         )
         return json.loads(reponse["content"])
@@ -375,6 +395,7 @@ class ChatOrchestrator:
         resultat = await _appeler_llm_json(
             "reponse_contenu_formation.yaml", f"Formation : {formation.titre}\n\n{contexte}",
             consigne_additionnelle=("Ne cite aucun nom de fichier, page ou identifiant de document." if hide_references else None),
+            historique=_formater_historique(conv),
         )
 
         if resultat and resultat.get("reponse"):
@@ -431,6 +452,7 @@ class ChatOrchestrator:
             f"THÈME DEMANDÉ : {message}\n\nCONTEXTE INDEXÉ :\n{contexte}",
             temperature=0.5,
             consigne_additionnelle=("Ne cite aucun nom de fichier, page ou identifiant de document." if hide_references else None),
+            historique=_formater_historique(conv),
         )
 
         texte = resultat["reponse"] if resultat and resultat.get("reponse") else _reponse_mode_strict()
@@ -513,6 +535,7 @@ class ChatOrchestrator:
             f"QUESTION : {message}\n\nEXTRAITS :\n{contexte}",
             temperature=0.5,
             consigne_additionnelle=("Ne cite aucun nom de fichier, page ou identifiant de document." if hide_references else None),
+            historique=_formater_historique(conv),
         )
 
         texte = resultat["reponse"] if resultat and resultat.get("reponse") else _reponse_mode_strict()
@@ -548,6 +571,7 @@ class ChatOrchestrator:
             "reponse_aide_plateforme.yaml",
             f"QUESTION : {message}\n\nEXTRAITS DU GUIDE :\n{contexte}",
             temperature=0.5,
+            historique=_formater_historique(None),
         )
 
         if resultat and resultat.get("reponse"):

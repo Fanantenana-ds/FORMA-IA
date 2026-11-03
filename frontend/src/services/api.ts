@@ -503,6 +503,7 @@ class ApiService {
   async getRagConversation(id: string) { return this.request<any>(`/ia/rag/conversations/${id}`, {}, { ia: true }); }
   async deleteRagConversation(id: string) { return this.request<any>(`/ia/rag/conversations/${id}`, { method: 'DELETE' }, { ia: true }); }
   async renameRagConversation(id: string, titre: string) { return this.request<any>(`/ia/rag/conversations/${id}/rename`, { method: 'PATCH', body: JSON.stringify({ titre }) }, { ia: true }); }
+  async feedbackRagMessage(conversationId: string, indexEchange: number, feedback: 'positif' | 'negatif') { return this.request<any>(`/ia/rag/conversations/${conversationId}/feedback`, { method: 'POST', body: JSON.stringify({ index_echange: indexEchange, feedback }) }, { ia: true }); }
   async getProjects() { return this.request<any[]>('/projets?skip=0&limit=100'); }
   async createProject(body: unknown) { return this.request<any>('/projets', this.json('POST', body)); }
   async getRooms() { return this.request<any[]>('/salles?skip=0&limit=100'); }

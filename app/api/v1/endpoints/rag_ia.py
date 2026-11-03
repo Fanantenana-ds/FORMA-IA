@@ -202,6 +202,11 @@ class RenommerConversationRequest(BaseModel):
     titre: str
 
 
+class FeedbackRequest(BaseModel):
+    index_echange: int
+    feedback: str  # "positif" | "negatif"
+
+
 @router.patch("/conversations/{conversation_id}/rename", summary="Renommer une conversation")
 async def renommer_conversation(conversation_id: str, body: RenommerConversationRequest, current_user: User = Depends(get_current_tenant_user)):
     conv = conversations.charger_conversation(conversation_id)
@@ -213,6 +218,19 @@ async def renommer_conversation(conversation_id: str, body: RenommerConversation
     conv.titre = titre
     conversations.sauvegarder_conversation(conv)
     return {"success": True, "conversation_id": conversation_id, "titre": titre}
+
+
+@router.post("/conversations/{conversation_id}/feedback", summary="Feedback 👍/👎 sur un échange")
+async def noter_message(conversation_id: str, body: FeedbackRequest, current_user: User = Depends(get_current_tenant_user)):
+    conv = conversations.charger_conversation(conversation_id)
+    if conv.user_id and conv.user_id != str(current_user.id):
+        raise HTTPException(status_code=403, detail="Accès refusé à cette conversation.")
+    if body.feedback not in ("positif", "negatif"):
+        raise HTTPException(status_code=400, detail="feedback doit être 'positif' ou 'negatif'.")
+    ok = conversations.noter_echange(conversation_id, body.index_echange, body.feedback)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Échange introuvable ou n'est pas une réponse assistant.")
+    return {"success": True, "conversation_id": conversation_id, "index_echange": body.index_echange, "feedback": body.feedback}
 
 
 @router.get("/documents/{doc_hash}/fichier")

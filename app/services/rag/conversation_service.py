@@ -29,6 +29,7 @@ MAX_CONVERSATIONS_PAR_UTILISATEUR = 20
 class Echange:
     role: str  # "utilisateur" | "assistant"
     texte: str
+    feedback: str | None = None  # "positif" | "negatif" | None
 
 
 @dataclass
@@ -215,3 +216,22 @@ def ajouter_echange(
     if formation_code:
         conversation.derniere_formation_code = formation_code
     return conversation
+
+
+def noter_echange(
+    conversation_id: str,
+    index_echange: int,
+    feedback: str,
+    dossier: Path | None = None,
+) -> bool:
+    """Enregistre un feedback ('positif'|'negatif') sur un échange assistant.
+    Retourne True si l'opération a réussi."""
+    conv = charger_conversation(conversation_id, dossier)
+    if index_echange < 0 or index_echange >= len(conv.echanges):
+        return False
+    echange = conv.echanges[index_echange]
+    if echange.role != "assistant":
+        return False
+    echange.feedback = feedback
+    sauvegarder_conversation(conv, dossier)
+    return True

@@ -483,6 +483,24 @@ async def statut_indexation(doc_hash: str, current_user: User = Depends(get_curr
     return {"success": True, "data": asdict(entree)}
 
 
+@router.get("/stats/cache", summary="Statistiques cache RAG (embeddings + réponses)")
+async def stats_cache(current_user: User = Depends(get_current_tenant_user)):
+    from app.services.rag import query_cache_service as qcache
+    from app.services.rag import response_cache_service as rcache
+    return {
+        "success": True,
+        "cache_embeddings": {"entrees": qcache.taille_cache()},
+        "cache_reponses": rcache.stats(),
+    }
+
+
+@router.delete("/stats/cache", summary="Vider le cache des réponses LLM")
+async def vider_cache_reponses(current_user: User = Depends(get_current_tenant_user)):
+    from app.services.rag import response_cache_service as rcache
+    n = rcache.vider_cache()
+    return {"success": True, "entrees_supprimees": n}
+
+
 @router.get("/health", summary="[C3] État du module RAG")
 async def health_check():
     try:

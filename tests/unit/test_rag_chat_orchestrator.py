@@ -204,7 +204,9 @@ def test_question_fond_success(orchestrateur, monkeypatch):
     assert faux_llm.appels >= 1  # 1 pour la réponse + 1 éventuel pour les suggestions dynamiques
 
 
-def test_question_fond_mode_strict_si_rien_trouve(orchestrateur):
+def test_question_fond_mode_strict_si_rien_trouve(orchestrateur, monkeypatch):
+    import app.orchestrator.chat_orchestrator as chat_module
+    monkeypatch.setattr(chat_module.rcache, "depuis_cache", lambda *a, **kw: None)
     orchestrateur.repository = FauxRepository([])
     resultat = run(orchestrateur.traiter_message("qu'est-ce que le surapprentissage ?", session_id="test-session"))
     assert "Aucun support ALTIORA" in resultat["reponse"] or "Aucun extrait" in resultat["reponse"]

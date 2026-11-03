@@ -859,3 +859,153 @@ async def synchroniser_attestations(
     except Exception as e:
         _handle_exception(e, "synchroniser_attestations")
         return RouteResponse(success=False, message="")
+
+
+# =============================================================================
+# ANALYSE DEPUIS DB — Niveaux et satisfaction via liens internes
+# =============================================================================
+
+@router.post(
+    "/{session_id}/analyser-niveaux-db",
+    response_model=RouteResponse,
+    summary="[M5] Agent 2 — Analyser les niveaux depuis la DB (liens internes)",
+    description=(
+        "Lit les inscriptions avec scores de positionnement et test final "
+        "directement depuis la DB (système /inscription-publique). "
+        "Aucun CSV ni corrigé requis — les scores sont déjà calculés."
+    ),
+)
+async def analyser_niveaux_db(
+    session_id: str,
+    orchestrator: FormationOrchestrator = Depends(get_formation_orchestrator),
+) -> RouteResponse:
+    import datetime as _dt
+    from app.database import SessionLocal
+    from app.models.formation import Inscription, Participant, Session as TrainingSession
+
+    start = time.perf_counter()
+    try:
+        db = SessionLocal()
+        try:
+            session_obj = db.query(TrainingSession).filter(TrainingSession.id == session_id).first()
+            if not session_obj:
+                raise HTTPException(status_code=404, detail="Session introuvable")
+
+            rows = (
+                db.query(Inscription, Participant)
+                .join(Participant, Participant.id == Inscription.participant_id)
+                .filter(Inscription.session_id == session_id)
+                .all()
+            )
+        finally:
+            db.close()
+
+        participants_avec_scores = []
+        for insc, part in rows:
+            if insc.score_positionnement is None and insc.score_test_final is None:
+                continue
+            participants_avec_scores.append({
+                "id": str(insc.participant_id),
+                "nom": f"{part.prenom or ''} {part.nom}".strip() or f"Participant {insc.participant_id}",
+                "reponses_avant": insc.reponses_positionnement or {},
+                "reponses_apres": insc.reponses_test_final or {},
+                "score_avant": insc.score_positionnement,
+                "score_apres": insc.score_test_final,
+                "niveau_initial": insc.niveau_initial,
+                "niveau_final": insc.niveau_final,
+            })
+
+        if not participants_avec_scores:
+            return RouteResponse(
+                success=False,
+                message="Aucune inscription avec scores trouvée pour cette session. "
+                        "Les participants doivent d'abord répondre via le lien d'inscription.",
+                duration_seconds=round(time.perf_counter() - start, 2),
+            )
+
+        session_info = {
+            "session_id": session_id,
+            "titre": session_obj.titre,
+            "formation_code": session_obj.formation_code if hasattr(session_obj, "formation_code") else "",
+            "domaine": session_obj.domaine if hasattr(session_obj, "domaine") else "Formation",
+        }
+        result = await orchestrator.analyze_levels(
+            session_info, participants_avec_scores, {}
+        )
+        elapsed = round(time.perf_counter() - start, 2)
+        vlog(f"✅ [Route IA] analyser-niveaux-db OK en {elapsed}s — {len(participants_avec_scores)} participant(s)")
+        return _build_response(result, f"Analyse niveaux réussie ({len(participants_avec_scores)} participants).", elapsed)
+    except HTTPException:
+        raise
+    except Exception as e:
+        _handle_exception(e, "analyser_niveaux_db")
+        return RouteResponse(success=False, message="")
+
+
+@router.post(
+    "/{session_id}/analyser-satisfaction-db",
+    response_model=RouteResponse,
+    summary="[M5] Agent 3 — Analyser la satisfaction depuis la DB (liens internes)",
+    description=(
+        "Lit les inscriptions avec réponses de satisfaction "
+        "directement depuis la DB (système /inscription-publique). "
+        "Aucun CSV requis — les données sont déjà enregistrées."
+    ),
+)
+async def analyser_satisfaction_db(
+    session_id: str,
+    orchestrator: FormationOrchestrator = Depends(get_formation_orchestrator),
+) -> RouteResponse:
+    from app.database import SessionLocal
+    from app.models.formation import Inscription, Participant, Session as TrainingSession, Formateur
+
+    start = time.perf_counter()
+    try:
+        db = SessionLocal()
+        try:
+            session_obj = db.query(TrainingSession).filter(TrainingSession.id == session_id).first()
+            if not session_obj:
+                raise HTTPException(status_code=404, detail="Session introuvable")
+
+            rows = (
+                db.query(Inscription, Participant)
+                .join(Participant, Participant.id == Inscription.participant_id)
+                .filter(
+                    Inscription.session_id == session_id,
+                    Inscription.reponses_satisfaction.isnot(None),
+                )
+                .all()
+            )
+        finally:
+            db.close()
+
+        if not rows:
+            return RouteResponse(
+                success=False,
+                message="Aucune réponse de satisfaction trouvée pour cette session. "
+                        "Les participants doivent d'abord répondre via le lien post-formation.",
+                duration_seconds=round(time.perf_counter() - start, 2),
+            )
+
+        responses = []
+        for insc, part in rows:
+            rep = insc.reponses_satisfaction or {}
+            rep["_nom"] = f"{part.prenom or ''} {part.nom}".strip()
+            rep["_score"] = insc.score_satisfaction
+            responses.append(rep)
+
+        session_info = {
+            "session_id": session_id,
+            "titre": session_obj.titre,
+            "formation_code": session_obj.formation_code if hasattr(session_obj, "formation_code") else "",
+            "domaine": session_obj.domaine if hasattr(session_obj, "domaine") else "Formation",
+        }
+        result = await orchestrator.analyze_satisfaction(session_info, responses)
+        elapsed = round(time.perf_counter() - start, 2)
+        vlog(f"✅ [Route IA] analyser-satisfaction-db OK en {elapsed}s — {len(responses)} réponse(s)")
+        return _build_response(result, f"Analyse satisfaction réussie ({len(responses)} réponses).", elapsed)
+    except HTTPException:
+        raise
+    except Exception as e:
+        _handle_exception(e, "analyser_satisfaction_db")
+        return RouteResponse(success=False, message="")

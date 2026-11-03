@@ -10,6 +10,7 @@ from __future__ import annotations
 import re
 import asyncio
 import os
+import unicodedata
 from typing import Any
 
 from app.orchestrator.chat_orchestrator import get_chat_orchestrator
@@ -57,6 +58,81 @@ def _voix_courte(texte: str, maximum: int = 260) -> str:
     return synthese
 
 
+def _normaliser_session(value: Any) -> str:
+    raw = unicodedata.normalize("NFKD", str(value or "").casefold())
+    return " ".join("".join(char for char in raw if not unicodedata.combining(char)).split())
+
+
+def _resoudre_session(
+    intention: str,
+    parametres: dict[str, Any],
+    sessions: list[dict[str, Any]],
+) -> tuple[dict[str, Any], str | None]:
+    """Lie une commande à une session fournie par l'interface, sans deviner."""
+    requires_session = {
+        "creer_seance", "generer_formulaires", "analyser_niveaux",
+        "analyser_satisfaction", "analyser_presences", "generer_attestation",
+    }
+    if intention not in requires_session:
+        return parametres, None
+
+    session_id = str(parametres.get("session_id") or "").strip()
+    label = next((
+        str(parametres.get(key) or "").strip()
+        for key in ("nom_formation", "session", "titre_session", "formation")
+        if str(parametres.get(key) or "").strip()
+    ), "")
+    date_session = str(parametres.get("date_debut_session") or "").strip()
+
+    if session_id:
+        candidates = [item for item in sessions if str(item.get("id", "")) == session_id]
+    elif label:
+        normalized_label = _normaliser_session(label)
+        candidates = [
+            item for item in sessions
+            if normalized_label in {
+                _normaliser_session(item.get("titre")),
+                _normaliser_session(item.get("code")),
+            }
+        ]
+        if date_session:
+            candidates = [
+                item for item in candidates
+                if date_session in {
+                    str(item.get("date_debut") or ""),
+                    str(item.get("dates") or ""),
+                }
+            ]
+    else:
+        candidates = []
+
+    if len(candidates) == 1:
+        chosen = candidates[0]
+        resolved = {**parametres, "session_id": str(chosen["id"])}
+        if chosen.get("formation_code"):
+            resolved["formation_code"] = chosen["formation_code"]
+        resolved.setdefault("nom_formation", chosen.get("titre", ""))
+        return resolved, None
+
+    if len(candidates) > 1:
+        choices = "; ".join(
+            f"{item.get('titre', 'Session sans titre')} · {item.get('date_debut') or item.get('dates') or item.get('code') or item.get('id')}"
+            for item in candidates[:5]
+        )
+        return parametres, f"Plusieurs sessions correspondent. Précisez la date ou le code : {choices}."
+
+    available = "; ".join(
+        f"{item.get('titre', 'Session sans titre')} · {item.get('date_debut') or item.get('dates') or item.get('code') or item.get('id')}"
+        for item in sessions[:5]
+    )
+    if not sessions:
+        return parametres, "Je n'ai pas la liste des sessions disponibles. Ouvrez d'abord Sessions et Groupes, puis réessayez."
+    return parametres, (
+        "Je ne peux pas identifier une session exacte dans la liste accessible. "
+        f"Précisez son intitulé, son code ou sa date. Sessions disponibles : {available}."
+    )
+
+
 class AssistantVocalService:
     async def traiter(
         self,
@@ -64,6 +140,7 @@ class AssistantVocalService:
         formations: list[str] | None = None,
         conversation_id: str | None = None,
         contexte_action: list[str] | None = None,
+        sessions_disponibles: list[dict[str, Any]] | None = None,
         owner: str = "internal",
         ecran_actuel: str | None = None,
         formation_code: str | None = None,
@@ -74,17 +151,89 @@ class AssistantVocalService:
             return {"intention": "question_rag", "confiance": 1.0, "parametres": {}, "prefill": {},
                     "parametres_manquants": [], "action_frontend": None, "conversation_id": conversation_id,
                     "suggestions": ["Quelle opportunité examiner en premier ?", "Pourquoi l'analyse est-elle partielle ?"], **explanation}
-        contexte = "\n".join((contexte_action or [])[-8:])
+        sessions = [
+            {key: item.get(key) for key in ("id", "titre", "code", "date_debut", "dates", "formation_code") if item.get(key) is not None}
+            for item in (sessions_disponibles or [])[:50]
+            if isinstance(item, dict) and item.get("id") and item.get("titre")
+        ]
+        contexte_items = list((contexte_action or [])[-7:])
+        if sessions:
+            contexte_items.append("Sessions accessibles (ne sélectionner que par intitulé/code/date exact) : " + str(sessions[:20]))
+        contexte = "\n".join(contexte_items[-8:])
         commande = f"Demande en cours et précisions de l'utilisateur :\n{contexte}\nDernière précision : {texte}" if contexte else texte
         decision = await router_commande(commande, formations or [])
         confiance = float(decision.get("confiance") or 0.0)
         intention = decision.get("intention", "hors_perimetre")
         manquants = decision.get("parametres_manquants") or []
 
+        parametres = decision.get("parametres") or {}
+        parametres_resolus, clarification = _resoudre_session(intention, parametres, sessions)
+        if clarification:
+            resultat = {
+                "intention": intention,
+                "confiance": confiance,
+                "parametres": parametres,
+                "parametres_manquants": ["session_id"],
+                "action_frontend": None,
+                "prefill": {},
+                "conversation_id": conversation_id,
+                "sources": [],
+                "suggestions": [],
+                "texte_affiche": clarification,
+                "texte_a_lire": _voix_courte(clarification),
+                "etat": "a_preciser",
+                "niveau_preuve": "non_applicable",
+                "execution_plan": None,
+            }
+            return resultat
+        decision["parametres"] = parametres_resolus
+        session_fields = {"session_id", "nom_formation", "session", "titre_session", "formation", "date_debut_session"}
+        manquants = [item for item in manquants if item not in session_fields]
+
+        required_fields: dict[str, tuple[tuple[str, ...], ...]] = {
+            "creer_session": (("titre", "intitule", "nom_formation", "session"), ("date_debut", "date")),
+            "creer_seance": (("date", "date_seance"), ("theme", "intitule")),
+            "generer_tdr": (("client",), ("objectifs", "objectif"), ("public",), ("duree",)),
+        }
+        field_labels = {
+            "creer_session": ("intitulé de la formation", "date de début"),
+            "creer_seance": ("date de la séance", "thème de la séance"),
+            "generer_tdr": ("client ou organisme", "objectifs", "public cible", "durée"),
+        }
+        required = required_fields.get(intention, ())
+        missing_required = [
+            keys[0] for keys in required
+            if not any(str(parametres_resolus.get(key) or "").strip() for key in keys)
+        ]
+        if missing_required:
+            labels = field_labels[intention]
+            missing_labels = [labels[index] for index, keys in enumerate(required) if keys[0] in missing_required]
+            question = "Pour préparer cette action, précisez : " + ", ".join(missing_labels) + "."
+            resultat = {
+                "intention": intention,
+                "confiance": confiance,
+                "parametres": parametres_resolus,
+                "parametres_manquants": missing_required,
+                "action_frontend": None,
+                "prefill": {},
+                "conversation_id": conversation_id,
+                "sources": [],
+                "suggestions": [],
+                "texte_affiche": question,
+                "texte_a_lire": _voix_courte(question),
+                "etat": "a_preciser",
+                "niveau_preuve": "non_applicable",
+                "execution_plan": None,
+            }
+            return resultat
+        if required:
+            satisfied_aliases = {key for aliases in required for key in aliases}
+            manquants = [item for item in manquants if item not in satisfied_aliases]
+
         resultat: dict[str, Any] = {
             "intention": intention,
             "confiance": confiance,
-            "parametres": decision.get("parametres") or {},
+            "parametres": parametres_resolus,
             "parametres_manquants": manquants,
             "action_frontend": decision.get("action_frontend"),
             "prefill": decision.get("prefill") or {},
@@ -111,6 +260,7 @@ class AssistantVocalService:
                 "texte_affiche": "Je ne suis pas certain d'avoir bien compris. "
                 "Pouvez-vous reformuler ou confirmer votre demande ?",
                 "texte_a_lire": "Je ne suis pas certain d'avoir bien compris. Pouvez-vous reformuler ?",
+                "execution_plan": None,
             })
             return resultat
 
@@ -120,10 +270,7 @@ class AssistantVocalService:
             resultat["execution_plan"] = None
             return resultat
 
-        if intention in {
-            "generer_formulaires", "analyser_niveaux", "analyser_satisfaction",
-            "analyser_presences", "generer_attestation", "preparer_formation",
-        }:
+        if intention in {"generer_formulaires", "generer_attestation", "preparer_formation", "relance_facture"}:
             from app.services.vocal.prerequisite_service import verifier_action
 
             parametres = resultat["parametres"]
@@ -132,6 +279,12 @@ class AssistantVocalService:
                 or parametres.get("responses_disponibles")
                 or False,
                 "projet_id": parametres.get("projet_id"),
+                "dates_formation": parametres.get("dates_formation") or (parametres.get("date_debut") and parametres.get("date_fin")),
+                "participants": parametres.get("participants") or parametres.get("nombre_participants"),
+                "facture_id": parametres.get("facture_id"),
+                # Les participants éligibles doivent venir d'une lecture métier vérifiée,
+                # jamais d'un champ proposé par le LLM.
+                "participants_eligibles": False,
             }
             prerequis = verifier_action(
                 intention,
@@ -200,12 +353,8 @@ class AssistantVocalService:
                 "Vous pouvez consulter l'écran métier. Cette réponse vocale ne contient pas de données métier vérifiées."
             )
             resultat["texte_a_lire"] = resultat["texte_affiche"]
-            if intention == "afficher_validations":
-                resultat["action_frontend"] = None
-                resultat["etat"] = "integration_requise"
-            else:
-                resultat.update(etat="action_a_executer", execution_demandee=True,
-                                texte_affiche="Je lance la détection dans l'écran de veille." if intention == "veille_marche" else "J'ouvre l'écran demandé.")
+            resultat.update(etat="action_a_executer", execution_demandee=True,
+                            texte_affiche="Je lance la détection dans l'écran de veille." if intention == "veille_marche" else "J'ouvre l'écran demandé.")
 
         return resultat
 

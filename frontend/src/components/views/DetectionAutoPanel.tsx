@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Bot,
   Play,
@@ -14,6 +14,7 @@ import { apiService } from '../../services/api';
 import { describeVeilleError } from '../../services/veilleErrors';
 import { formatRelative } from '../../services/dashboardMapping';
 import { reportFrontendError } from '../../services/frontendErrorReporter';
+import { consumeVoiceActionContext } from '../../services/voiceActionContext';
 import type {
   DetectionStatus,
   DetectionResult,
@@ -56,6 +57,7 @@ export const DetectionAutoPanel: React.FC<DetectionAutoPanelProps> = ({ canTrigg
   const [summary, setSummary] = useState<{ tone: 'ok' | 'warn'; lines: string[] } | null>(null);
   const [progress, setProgress] = useState<Array<{ type: 'source' | 'result'; title: string; score?: number; url?: string; source?: string; deadline?: string; reference?: string }>>([]);
   const [streamStage, setStreamStage] = useState('Préparation');
+  const voiceRunTriggered = useRef(false);
 
   const loadState = useCallback(async (silent = false) => {
     if (!silent) setIsLoading(true);
@@ -169,6 +171,30 @@ export const DetectionAutoPanel: React.FC<DetectionAutoPanelProps> = ({ canTrigg
       loadState(true);
     }
   };
+  const handleRunRef = useRef(handleRun);
+  handleRunRef.current = handleRun;
+
+  useEffect(() => {
+      const trigger = async () => {
+      if (voiceRunTriggered.current) return;
+      voiceRunTriggered.current = true;
+      if (!canTrigger) {
+        setRunError("Votre rôle ne permet pas de lancer la détection du marché.");
+          voiceRunTriggered.current = false;
+        return;
+      }
+        try { await handleRunRef.current(); }
+        finally { voiceRunTriggered.current = false; }
+    };
+    const listener = (event: Event) => {
+      const action = (event as CustomEvent<{ action?: string }>).detail?.action;
+        if (action === 'lancer_veille') void trigger();
+    };
+    window.addEventListener('forma-ia:vocal-action', listener);
+    const pending = consumeVoiceActionContext(['lancer_veille']);
+      if (pending) void trigger();
+    return () => window.removeEventListener('forma-ia:vocal-action', listener);
+  }, [canTrigger]);
 
   const config = status?.configuration;
   const lastRun = status?.derniere_execution ?? null;

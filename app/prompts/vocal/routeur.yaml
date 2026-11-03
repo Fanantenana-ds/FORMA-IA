@@ -88,7 +88,9 @@ tache: |
      analyser_satisfaction, analyser_presences, generer_attestation, preparer_formation,
      relance_facture,
      question_rag,
-     afficher_opportunites, afficher_sessions, afficher_validations, conversationnel, annuler, hors_perimetre
+     afficher_opportunites, afficher_sessions, afficher_validations, ouvrir_tableau_bord,
+     ouvrir_formateurs, ouvrir_evaluation, ouvrir_suivi_presences, ouvrir_espace_ia,
+     conversationnel, annuler, hors_perimetre
   2. Les paramètres extraits de la commande (date, nom_formation, etc.)
   3. Les paramètres manquants nécessaires à l'exécution (demander ensemble les informations manquantes)
   4. Une réponse vocale courte (1-2 phrases maximum) à lire à l'utilisateur
@@ -105,6 +107,11 @@ tache: |
      produire de questionnaire générique présenté comme fondé sur le cours.
   9. Pour analyser niveaux, satisfaction ou présences, exiger la session exacte et
      vérifier que les réponses ou données correspondantes sont disponibles.
+  10. Les commandes de navigation et d'opération sur FORMA-IA ne sont pas des questions documentaires :
+      n'utilise question_rag que lorsque l'utilisateur demande explicitement le contenu d'un support.
+  11. Pour créer une session, demander l'intitulé exact et la date de début si l'un manque.
+  12. Pour créer une séance, identifier une session existante par son intitulé exact ou son code,
+      demander la date de la séance et son thème ; ne jamais choisir une session homonyme au hasard.
 
 securite: |
   Règles absolues de sécurité :
@@ -120,13 +127,14 @@ securite: |
   8. Une question sur les sessions programmées relève de afficher_sessions,
      pas de question_rag. Ne jamais inventer les données opérationnelles.
   9. Distinguer une demande d'ouverture d'écran (afficher_opportunites) d'un lancement de détection (veille_marche).
-  10. Pour creer_session, extraire nom_formation/titre, date_debut (ou date) et date_fin si précisée.
+  10. Pour creer_session, extraire nom_formation/titre et date_debut (ou date) ; demander ces champs s'ils manquent.
       Pour creer_seance, extraire nom_formation (nom exact de session existante), date, duree et theme si donnés.
       En cas de sessions homonymes, date_debut_session identifie la session existante ; date reste la date de la nouvelle séance.
       Les dates sont ISO YYYY-MM-DD, calculées depuis date_actuelle ; ne pas inventer une date ou une formation manquante.
       Si une demande en cours et plusieurs précisions sont fournies, fusionner les informations explicites.
       Une précision récente corrige les précédentes ; « sans horaire » retire heure, sans la conserver.
-      Le serveur demande seulement nom_formation et date pour la séance ; theme et duree sont facultatifs.
+      Le serveur vérifie l'intitulé contre les sessions accessibles ; une session absente ou homonyme demande une précision.
+      Le thème et la date de la séance sont requis pour ouvrir le formulaire prérempli ; ne pas inventer ces valeurs.
   11. Pour generer_tdr, extraire client, objectifs, public, duree et, si exprimés, format, budget, lieu. Demander ce qui manque sans inventer de brief.
   12. Une séance appartient à une session existante. Ne pas confondre séance et session.
 
@@ -176,6 +184,11 @@ format: |
   }
 
   Valeurs possibles pour action_frontend :
+  - "ouvrir_tableau_bord"
+  - "ouvrir_formateurs"
+  - "ouvrir_evaluation"
+  - "ouvrir_suivi_presences"
+  - "ouvrir_espace_ia"
   - "ouvrir_formulaire_session"
   - "ouvrir_formulaire_seance"
   - "ouvrir_formulaires_session"

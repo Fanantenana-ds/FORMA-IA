@@ -1,27 +1,19 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { apiService } from '../../services/api';
+import type { VoiceActionContext } from '../../services/voiceActionContext';
 
 type Attendance = { id: string; statut: 'PRESENT' | 'ABSENT' | 'RETARD' | 'EXCUSE'; heure_arrivee?: string; motif_absence?: string };
 type Person = { id: string; nom: string; prenom?: string };
 
-const parseCsv = (text: string) => {
-  const rows: string[][] = []; let row: string[] = []; let cell = ''; let quoted = false;
-  for (let i=0;i<text.length;i++) { const c=text[i]; if(c==='"'&&text[i+1]==='"'&&quoted){cell+='"';i++;} else if(c==='"') quoted=!quoted; else if(c===','&&!quoted){row.push(cell.trim());cell='';} else if((c==='\n'||c==='\r')&&!quoted){if(c==='\r'&&text[i+1]==='\n')i++;row.push(cell.trim());if(row.some(Boolean))rows.push(row);row=[];cell='';} else cell+=c; }
-  row.push(cell.trim()); if(row.some(Boolean)) rows.push(row);
-  if(rows.length<2) return [];
-  const headers=rows[0].map(h=>h.replace(/^\uFEFF/,''));
-  return rows.slice(1).map(r=>Object.fromEntries(headers.map((h,i)=>[h,r[i]??''])));
-};
 
-export const SessionsM5Panel: React.FC<{ sessionId: string; sessionTitle: string; domain?: string; formationCode?: string; formateurId?: string; tauxPresence?: number; participants: Person[]; trainerMode?: boolean }> = ({ sessionId, sessionTitle, domain, formationCode, formateurId, tauxPresence, participants, trainerMode = false }) => {
+export const SessionsM5Panel: React.FC<{ sessionId: string; sessionTitle: string; domain?: string; formationCode?: string; formateurId?: string; tauxPresence?: number; participants: Person[]; trainerMode?: boolean; voiceAction?: VoiceActionContext | null }> = ({ sessionId, sessionTitle, domain, formationCode, formateurId, tauxPresence, participants, trainerMode = false, voiceAction }) => {
   const [seances, setSeances] = useState<any[]>([]);
   const [attendance, setAttendance] = useState<Record<string, Attendance>>({});
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [start, setStart] = useState('09:00'); const [end, setEnd] = useState('12:00');
   const [theme, setTheme] = useState(''); const [busy, setBusy] = useState(false); const [error, setError] = useState(''); const [notice, setNotice] = useState('');
   const [trainers, setTrainers] = useState<any[]>([]); const [trainer, setTrainer] = useState(formateurId ?? '');
-  const [beforeCsv, setBeforeCsv] = useState<File | null>(null); const [afterCsv, setAfterCsv] = useState<File | null>(null); const [satisfactionCsv, setSatisfactionCsv] = useState<File | null>(null);
-  const [answerKeyText, setAnswerKeyText] = useState('{}'); const [analysis, setAnalysis] = useState<any>(null); const [analysisBusy, setAnalysisBusy] = useState(false);
+  const [analysis, setAnalysis] = useState<any>(null); const [analysisBusy, setAnalysisBusy] = useState(false);
   const load = async () => {
     const list = await apiService.getSeances(sessionId); setSeances(list);
     const rows = await Promise.all(list.map(async (item: any) => [item.id, await apiService.getPresenceForSession(item.id)] as const));
@@ -39,8 +31,31 @@ export const SessionsM5Panel: React.FC<{ sessionId: string; sessionTitle: string
     catch(e) { setError(e instanceof Error ? e.message : 'Enregistrement de présence impossible.'); await load().catch(()=>{}); }
   };
   const rate = (personId:string) => { if(!seances.length) return 0; const ok=seances.filter(s=>['PRESENT','RETARD'].includes(attendance[`${s.id}:${personId}`]?.statut)).length; return Math.round(ok/seances.length*100); };
-  const analyzeLevels = async () => { if(!beforeCsv||!afterCsv) return; setAnalysisBusy(true);setError('');try { const before=parseCsv(await beforeCsv.text()),after=parseCsv(await afterCsv.text()); const keyOf=(r:any)=>String(r.email??r.Email??r.nom??r.Nom??r.name??r.Name??'').trim().toLowerCase(); const afterByKey=new Map(after.map(r=>[keyOf(r),r])); const ignored=new Set(['email','nom','name','prenom','organisation','entreprise','timestamp','horodateur']); const participants=before.map((r,i)=>{const post=afterByKey.get(keyOf(r))??after[i]??{};const answers=(source:any)=>Object.fromEntries(Object.entries(source).filter(([k,v])=>!ignored.has(k.toLowerCase())&&String(v).trim()).map(([k,v])=>[k,String(v)]));return {id:i+1,nom:r.nom??r.Nom??r.name??r.Name??r.email??`Participant ${i+1}`,reponses_avant:answers(r),reponses_apres:answers(post)};});const corrige=JSON.parse(answerKeyText);const result=await apiService.analyzeFormationLevels({session_info:{session_id:sessionId,titre:sessionTitle,formation_code:formationCode,domaine:domain??'Formation'},participants,corrige});setAnalysis(result.data??result);}catch(e){setError(e instanceof Error?e.message:'Analyse des niveaux impossible.');}finally{setAnalysisBusy(false);} };
-  const analyzeSatisfaction = async () => { if(!satisfactionCsv) return;setAnalysisBusy(true);setError('');try{const responses=parseCsv(await satisfactionCsv.text()).map(r=>Object.fromEntries(Object.entries(r).map(([k,v])=>[k.toLowerCase().replaceAll(' ','_'),v])));const linkedTrainer=trainers.find((item:any)=>String(item.userId)===String(formateurId));const result=await apiService.analyzeFormationSatisfaction({session_info:{session_id:sessionId,titre:sessionTitle,formation_code:formationCode,domaine:domain??'Formation',taux_presence:tauxPresence,...(linkedTrainer?{formateur_id:linkedTrainer.id,formateur_nom:`${linkedTrainer.prenom??''} ${linkedTrainer.nom}`.trim()}:{})},responses});setAnalysis(result.data??result);if(linkedTrainer)setNotice('Analyse liée au profil du formateur. Après validation HITL, son rapport M4 sera généré automatiquement.');}catch(e){setError(e instanceof Error?e.message:'Analyse de satisfaction impossible.');}finally{setAnalysisBusy(false);} };
+  const analyzeLevels = async () => { setAnalysisBusy(true);setError('');try{const result=await apiService.analyserNiveauxDb(sessionId);if(!result.success){setError(result.message||'Analyse des niveaux impossible.');return;}setAnalysis(result.data??result);}catch(e){setError(e instanceof Error?e.message:'Analyse des niveaux impossible.');}finally{setAnalysisBusy(false);} };
+  const analyzeSatisfaction = async () => { setAnalysisBusy(true);setError('');try{const result=await apiService.analyserSatisfactionDb(sessionId);if(!result.success){setError(result.message||'Analyse de satisfaction impossible.');return;}const linkedTrainer=trainers.find((item:any)=>String(item.userId)===String(formateurId));setAnalysis(result.data??result);if(linkedTrainer)setNotice('Analyse liée au profil du formateur. Après validation HITL, son rapport M4 sera généré automatiquement.');}catch(e){setError(e instanceof Error?e.message:'Analyse de satisfaction impossible.');}finally{setAnalysisBusy(false);} };
+  useEffect(() => {
+    if (!voiceAction) return;
+    const data = voiceAction.prefill ?? {};
+    if (voiceAction.action === 'ouvrir_formulaire_seance') {
+      if (data.date || data.date_seance) setDate(String(data.date ?? data.date_seance));
+      if (data.heure_debut || data.heure) setStart(String(data.heure_debut ?? data.heure));
+      if (data.heure_fin) setEnd(String(data.heure_fin));
+      if (data.theme || data.intitule) setTheme(String(data.theme ?? data.intitule));
+      setNotice('Séance préparée dans la session sélectionnée. Vérifiez la date et le thème, puis validez sa création.');
+    } else if (voiceAction.action === 'ouvrir_analyse_niveaux') {
+      void analyzeLevels();
+    } else if (voiceAction.action === 'ouvrir_analyse_satisfaction') {
+      void analyzeSatisfaction();
+    } else if (voiceAction.action === 'ouvrir_analyse_presences') {
+      setNotice('La consultation des présences de cette session est ouverte. L’analyse automatique dédiée n’est pas raccordée à cet écran.');
+    } else if (voiceAction.action === 'ouvrir_formulaire_attestation') {
+      setNotice('La session est ouverte. Vérifiez les présences et l’éligibilité avant toute génération d’attestations.');
+    } else if (voiceAction.action === 'ouvrir_formulaires_session') {
+      setNotice('Session sélectionnée. La génération et la publication des formulaires doivent encore être raccordées à cet écran.');
+    }
+  // Le traitement doit s'exécuter une seule fois par commande vocale.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [voiceAction]);
   const allStatuses = useMemo(() => [{v:'PRESENT',l:'Présent'},{v:'ABSENT',l:'Absent'},{v:'RETARD',l:'Retard'},{v:'EXCUSE',l:'Excusé'}] as const, []);
   const renderAttendanceCell = (seance: any, person: Person) => {
     const current = attendance[`${seance.id}:${person.id}`];
@@ -65,7 +80,7 @@ export const SessionsM5Panel: React.FC<{ sessionId: string; sessionTitle: string
         <tbody className="divide-y divide-slate-100">{participants.map(person => <tr key={person.id}><td className="p-3 font-semibold">{person.prenom ? `${person.prenom} ` : ''}{person.nom}</td><td className="p-3 font-bold">{rate(person.id)}%</td>{seances.map(seance => renderAttendanceCell(seance, person))}</tr>)}</tbody>
       </table>
     </div>
-    {!trainerMode && <div className="grid gap-4 border-t border-slate-100 pt-4 lg:grid-cols-2"><div className="space-y-2 rounded-xl bg-slate-50 p-4"><h3 className="font-bold text-slate-800">Analyser la progression avant / après</h3><p className="text-[11px] text-slate-500">Importez les deux exports CSV. Saisissez le corrigé JSON avec les identifiants des colonnes de questions.</p><input type="file" accept=".csv,text/csv" onChange={e=>setBeforeCsv(e.target.files?.[0]??null)} className="block w-full text-xs"/><input type="file" accept=".csv,text/csv" onChange={e=>setAfterCsv(e.target.files?.[0]??null)} className="block w-full text-xs"/><textarea value={answerKeyText} onChange={e=>setAnswerKeyText(e.target.value)} rows={2} placeholder={'{"av_01":"A"}'} className="w-full rounded border p-2 font-mono text-xs"/><button disabled={!beforeCsv||!afterCsv||analysisBusy} onClick={()=>void analyzeLevels()} className="rounded-lg bg-[#11162A] px-3 py-2 text-xs font-bold text-white disabled:opacity-50">Analyser les niveaux</button></div><div className="space-y-2 rounded-xl bg-slate-50 p-4"><h3 className="font-bold text-slate-800">Analyser la satisfaction</h3><p className="text-[11px] text-slate-500">Importez le CSV des réponses Google Forms.</p><input type="file" accept=".csv,text/csv" onChange={e=>setSatisfactionCsv(e.target.files?.[0]??null)} className="block w-full text-xs"/><button disabled={!satisfactionCsv||analysisBusy} onClick={()=>void analyzeSatisfaction()} className="rounded-lg bg-[#11162A] px-3 py-2 text-xs font-bold text-white disabled:opacity-50">Analyser la satisfaction</button></div></div>}
+    {!trainerMode && <div className="grid gap-4 border-t border-slate-100 pt-4 lg:grid-cols-2"><div className="space-y-2 rounded-xl bg-slate-50 p-4"><h3 className="font-bold text-slate-800">Analyser la progression avant / après</h3><p className="text-[11px] text-slate-500">Les scores de positionnement (lien inscription) et de test final (lien post-formation) sont lus directement depuis la base de données.</p><button disabled={analysisBusy} onClick={()=>void analyzeLevels()} className="rounded-lg bg-[#11162A] px-3 py-2 text-xs font-bold text-white disabled:opacity-50">{analysisBusy?'Analyse en cours…':'Analyser les niveaux'}</button></div><div className="space-y-2 rounded-xl bg-slate-50 p-4"><h3 className="font-bold text-slate-800">Analyser la satisfaction</h3><p className="text-[11px] text-slate-500">Les réponses au questionnaire de satisfaction (lien post-formation) sont lues directement depuis la base de données.</p><button disabled={analysisBusy} onClick={()=>void analyzeSatisfaction()} className="rounded-lg bg-[#11162A] px-3 py-2 text-xs font-bold text-white disabled:opacity-50">{analysisBusy?'Analyse en cours…':'Analyser la satisfaction'}</button></div></div>}
     {analysis && <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-xs"><strong>{analysis.resume??'Résultat de l’analyse'}</strong><pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap">{JSON.stringify(analysis,null,2)}</pre></div>}
   </section>;
 };

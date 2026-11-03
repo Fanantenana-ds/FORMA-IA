@@ -658,6 +658,14 @@ export const EspaceIAView: React.FC<{ readOnly?: boolean; trainerMode?: boolean;
       setNotice('Restauration lancée en arrière-plan. Actualisez dans quelques secondes.');
     } catch (e) { setError(errorText(e)); }
   };
+  const handleDelete = async () => {
+    if (!docHash || !window.confirm(`Supprimer définitivement « ${s.fichier ?? s.nom_fichier ?? s.filename ?? 'ce support'} » ? Le fichier et ses éventuels chunks seront supprimés.`)) return;
+    try {
+      await apiService.deleteSupport(docHash);
+      setSupports(prev => prev.filter(sup => (sup.hash ?? sup.doc_hash ?? sup.id) !== docHash));
+      setNotice('Support supprimé, ainsi que son fichier et ses éventuels chunks indexés.');
+    } catch (e) { setError(errorText(e)); }
+  };
   return (
     <div key={docHash ?? i} className={`flex items-start justify-between gap-3 rounded-xl border p-3 ${isArchived ? 'border-slate-200 bg-slate-50 opacity-70' : 'border-slate-200'}`}>
       <div className="min-w-0 flex-1">
@@ -675,6 +683,11 @@ export const EspaceIAView: React.FC<{ readOnly?: boolean; trainerMode?: boolean;
         {!readOnly && isArchived && (
           <button type="button" onClick={handleRestore} title="Restaurer ce support (ré-indexation depuis le fichier conservé)" className="flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-emerald-50 border border-emerald-200 text-emerald-700 hover:bg-emerald-100 transition">
             Restaurer
+          </button>
+        )}
+        {!readOnly && !trainerMode && docHash && status !== 'en_cours' && (
+          <button type="button" onClick={handleDelete} title="Supprimer définitivement ce support et ses éventuels chunks" className="flex items-center gap-1 rounded-md border border-red-200 bg-red-50 px-2 py-0.5 text-[10px] font-semibold text-red-700 transition hover:bg-red-100">
+            <Trash2 size={11} /> Supprimer
           </button>
         )}
       </div>

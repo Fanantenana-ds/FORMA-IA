@@ -454,6 +454,7 @@ class ApiService {
     return this.request('/documents/upload', { method: 'POST', body: form });
   }
   async getSupports(params: Record<string, string> = {}) { return this.request<any>(`/documents/rag/supports${queryString(params)}`); }
+  async deleteSupport(docHash: string) { return this.request<any>(`/documents/rag/supports/${encodeURIComponent(docHash)}`, { method: 'DELETE' }); }
   async getRagSessions() { return this.request<any>('/ia/rag/sessions', {}, { ia: true }); }
   async getRagIndexStatus(hash: string) { return this.request<any>(`/ia/rag/statut/${encodeURIComponent(hash)}`, {}, { ia: true }); }
   async indexSupport(chemin_fichier: string, formation_code: string, session_id: string, module?: string) { return this.request('/ia/rag/indexer-document', this.json('POST', { chemin_fichier, formation_code, session_id, module }), { ia: true }); }

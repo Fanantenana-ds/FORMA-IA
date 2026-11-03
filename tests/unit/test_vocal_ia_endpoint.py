@@ -4,11 +4,12 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.api.v1.endpoints import vocal_ia
+from app.core.dependencies import get_current_user
 from app.services.veille.access_service import verify_api_key
 
 
 class FauxAssistant:
-    async def traiter(self, texte, formations, conversation_id):
+    async def traiter(self, texte, formations, conversation_id, **kwargs):
         return {
             "intention": "question_rag", "confiance": 0.94, "parametres": {},
             "parametres_manquants": [], "action_frontend": "ouvrir_chat_rag", "prefill": {},
@@ -25,6 +26,7 @@ def test_commande_vocale_retourne_le_contrat_rag(monkeypatch):
     app = FastAPI()
     app.include_router(vocal_ia.router)
     app.dependency_overrides[verify_api_key] = lambda: None
+    app.dependency_overrides[get_current_user] = lambda: type("User", (), {"id": "u1", "role": "DIRECTION"})()
     monkeypatch.setattr(vocal_ia, "get_assistant_vocal_service", lambda: FauxAssistant())
 
     response = TestClient(app).post("/ia/vocal/commande", json={

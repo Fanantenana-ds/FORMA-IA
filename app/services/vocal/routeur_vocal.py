@@ -53,6 +53,37 @@ def _reponse_locale(commande: str) -> dict | None:
                 "parametres": {}, "parametres_manquants": [], "prefill": {},
                 "action_frontend": "lancer_veille" if launch else "afficher_opportunites",
                 "reponse_vocale": "Je lance la détection." if launch else "J'ouvre la veille marché."}
+    navigation = {
+        "tableau de bord": ("ouvrir_tableau_bord", "J'ouvre le tableau de bord."),
+        "dashboard": ("ouvrir_tableau_bord", "J'ouvre le tableau de bord."),
+        "formateurs": ("ouvrir_formateurs", "J'ouvre l'espace des formateurs."),
+        "formateurs et staff": ("ouvrir_formateurs", "J'ouvre l'espace des formateurs et du personnel."),
+        "evaluation des competences": ("ouvrir_evaluation", "J'ouvre l'évaluation des compétences."),
+        "evaluation competences": ("ouvrir_evaluation", "J'ouvre l'évaluation des compétences."),
+        "suivi des presences": ("ouvrir_suivi_presences", "J'ouvre le suivi des présences."),
+        "facturation": ("ouvrir_facturation", "J'ouvre la facturation et les devis."),
+        "facturation et devis": ("ouvrir_facturation", "J'ouvre la facturation et les devis."),
+        "facturation et les devis": ("ouvrir_facturation", "J'ouvre la facturation et les devis."),
+        "base documentaire": ("ouvrir_espace_ia", "J'ouvre l'espace documentaire et IA."),
+        "espace ia": ("ouvrir_espace_ia", "J'ouvre l'espace IA."),
+        "validations": ("afficher_validations", "J'ouvre les validations humaines."),
+        "sessions": ("afficher_sessions", "J'ouvre les sessions de formation."),
+        "opportunites": ("afficher_opportunites", "J'ouvre les opportunités du marché."),
+        "opportunites du marche": ("afficher_opportunites", "J'ouvre les opportunités du marché."),
+        "veille marche": ("afficher_opportunites", "J'ouvre la veille marché."),
+    }
+    if simple.startswith(("ouvre ", "ouvre-moi ", "affiche ", "montre ", "va dans ", "ouvre l'", "ouvre la ", "ouvre le ")):
+        cible = simple
+        for prefix in ("ouvre-moi ", "ouvre ", "affiche ", "montre ", "va dans "):
+            if cible.startswith(prefix):
+                cible = cible[len(prefix):]
+                break
+        cible = cible.removeprefix("l'").removeprefix("la ").removeprefix("le ").removeprefix("les ")
+        if cible in navigation:
+            action, spoken = navigation[cible]
+            return {"intention": action, "confiance": 1.0, "parametres": {},
+                    "parametres_manquants": [], "prefill": {}, "action_frontend": action,
+                    "reponse_vocale": spoken}
     if texte in {"annule", "annuler", "stop", "arrête", "arrete"}:
         return {
             "intention": "annuler",
@@ -167,6 +198,9 @@ async def router_commande(commande: str, formations: list[str] | None = None) ->
             "generer_attestation": "ouvrir_formulaire_attestation", "relance_facture": "ouvrir_facturation",
             "question_rag": "ouvrir_chat_rag", "afficher_opportunites": "afficher_opportunites",
             "afficher_sessions": "afficher_sessions", "afficher_validations": "afficher_validations",
+            "ouvrir_tableau_bord": "ouvrir_tableau_bord", "ouvrir_formateurs": "ouvrir_formateurs",
+            "ouvrir_evaluation": "ouvrir_evaluation", "ouvrir_suivi_presences": "ouvrir_suivi_presences",
+            "ouvrir_espace_ia": "ouvrir_espace_ia",
             "hors_perimetre": None,
             "conversationnel": None, "annuler": None,
         }

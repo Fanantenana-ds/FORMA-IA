@@ -409,7 +409,9 @@ export default function App() {
         sessions={sessions}
       />
       <VocalAssistant
+        currentRole={currentRole}
         currentSection={currentSection}
+        sessions={sessions}
         onNavigate={setCurrentSection}
         onCreateSession={() => setIsNewSessionModalOpen(true)}
         onCreateOpportunity={() => setIsNewOppModalOpen(true)}

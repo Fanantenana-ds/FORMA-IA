@@ -63,29 +63,30 @@ def verifier_action(
                 message="J'ai besoin de la session et de la formation exacte avant de générer les formulaires.",
             )
 
-    if intention in {"analyser_niveaux", "analyser_satisfaction"}:
-        if not session_id:
-            return PrerequisiteResult(
-                ok=False,
-                missing=["session_id"],
-                message="Précisez la session à analyser pour éviter de mélanger les réponses.",
-            )
-        if not contexte.get("reponses_disponibles"):
-            return PrerequisiteResult(
-                ok=False,
-                missing=["reponses_google_forms"],
-                message=(
-                    "Je ne peux pas lancer cette analyse : les réponses Google Forms "
-                    "de cette session ne sont pas encore disponibles."
-                ),
-                redirect_action="ouvrir_formulaires_session",
-            )
-
     if intention in {"analyser_presences", "generer_attestations"} and not session_id:
         return PrerequisiteResult(
             ok=False,
             missing=["session_id"],
             message="Précisez la session concernée avant de traiter les présences ou les attestations.",
+        )
+
+    if intention == "analyser_satisfaction" and not contexte.get("reponses_disponibles"):
+        return PrerequisiteResult(
+            ok=False,
+            missing=["reponses_google_forms"],
+            message="Aucune réponse de satisfaction vérifiée n'est disponible pour cette session.",
+            redirect_action="ouvrir_analyse_satisfaction",
+        )
+
+    if intention == "generer_attestation" and not contexte.get("participants_eligibles"):
+        return PrerequisiteResult(
+            ok=False,
+            missing=["participants_eligibles"],
+            message=(
+                "Je ne peux pas préparer les attestations tant que les participants "
+                "éligibles n'ont pas été vérifiés à partir des présences de cette session."
+            ),
+            redirect_action="ouvrir_formulaire_attestation",
         )
 
     if intention == "preparer_formation" and not contexte.get("projet_id"):
@@ -94,6 +95,28 @@ def verifier_action(
             missing=["projet_id"],
             message="Précisez le projet ou l'opportunité acceptée avant de préparer la formation.",
             redirect_action="ouvrir_preparation",
+        )
+
+    if intention == "preparer_formation":
+        missing = []
+        if not contexte.get("dates_formation"):
+            missing.append("dates_formation")
+        if not contexte.get("participants"):
+            missing.append("participants")
+        if missing:
+            return PrerequisiteResult(
+                ok=False,
+                missing=missing,
+                message="Précisez les dates de formation et le nombre de participants pour préparer le budget et le planning.",
+                redirect_action="ouvrir_preparation",
+            )
+
+    if intention == "relance_facture" and not contexte.get("facture_id"):
+        return PrerequisiteResult(
+            ok=False,
+            missing=["facture_id"],
+            message="Indiquez la référence exacte de la facture à vérifier avant de préparer une relance.",
+            redirect_action="ouvrir_facturation",
         )
 
     return PrerequisiteResult(ok=True)

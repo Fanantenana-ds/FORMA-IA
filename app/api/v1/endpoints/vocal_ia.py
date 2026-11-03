@@ -13,6 +13,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
+from app.core.dependencies import get_current_user
 from app.services.vocal.assistant_vocal_service import get_assistant_vocal_service
 from app.services.veille.access_service import verify_api_key
 
@@ -51,6 +52,7 @@ class CommandeVocaleRequest(BaseModel):
         None, description="Identifiant de la conversation RAG vocale précédente"
     )
     contexte_action: list[str] = Field(default_factory=list, max_length=8)
+    sessions_disponibles: list[dict[str, Any]] = Field(default_factory=list, max_length=50)
     ecran_actuel: str | None = Field(default=None, max_length=64)
     formation_code: str | None = Field(default=None, max_length=100)
 
@@ -105,7 +107,7 @@ class ExecutionVocaleResponse(BaseModel):
         "l'action à exécuter sur le frontend et la réponse à lire à voix haute."
     ),
 )
-async def analyser_commande(req: CommandeVocaleRequest, principal=Depends(verify_api_key)) -> CommandeVocaleResponse:
+async def analyser_commande(req: CommandeVocaleRequest, principal=Depends(get_current_user)) -> CommandeVocaleResponse:
     debut = time.time()
     logger.info("🎤 Commande vocale reçue : '%s'", req.texte[:80])
 
@@ -115,6 +117,7 @@ async def analyser_commande(req: CommandeVocaleRequest, principal=Depends(verify
             formations=req.formations_disponibles,
             conversation_id=req.conversation_id,
             **({"contexte_action": [text[:500] for text in req.contexte_action]} if req.contexte_action else {}),
+            **({"sessions_disponibles": req.sessions_disponibles} if req.sessions_disponibles else {}),
             **({"owner": str(principal.id)} if getattr(principal, "id", None) is not None else {}),
             **({"ecran_actuel": req.ecran_actuel} if req.ecran_actuel else {}),
             **({"formation_code": req.formation_code} if req.formation_code else {}),
@@ -163,7 +166,7 @@ async def analyser_commande(req: CommandeVocaleRequest, principal=Depends(verify
 )
 async def executer_commande_vocale(
     req: ExecutionVocaleRequest,
-    principal=Depends(verify_api_key),
+    principal=Depends(get_current_user),
 ) -> ExecutionVocaleResponse:
     if not req.confirmer:
         return ExecutionVocaleResponse(
@@ -173,12 +176,36 @@ async def executer_commande_vocale(
 
     action = req.action
     try:
+        from app.services.vocal.action_plan_service import plan_for
+        if plan_for(action) is None:
+            return ExecutionVocaleResponse(
+                success=False, action=action, etat="integration_requise",
+                message="Cette opération n'est pas encore raccordée à une action vocale exécutable.",
+            )
+        if principal is not None:
+            role = getattr(principal, "role", None)
+            role = role.value if hasattr(role, "value") else str(role or "")
+            allowed_actions = {
+                "DIRECTION": {"generer_formulaires", "generer_attestation", "preparer_formation", "relance_facture"},
+                "ASSISTANT": {"generer_formulaires", "generer_attestation"},
+                "COMPTABLE": {"relance_facture"},
+            }
+            if action not in allowed_actions.get(role.upper(), set()):
+                return ExecutionVocaleResponse(
+                    success=False, action=action, etat="acces_refuse",
+                    message="Votre rôle ne permet pas d'exécuter cette action.",
+                )
         from app.services.vocal.prerequisite_service import verifier_action
         intention_for_check = action
         check_context = {
             "reponses_disponibles": bool(req.payload.get("responses")),
             "projet_id": req.payload.get("projet_info", {}).get("id")
-            if isinstance(req.payload.get("projet_info"), dict) else None,
+            if isinstance(req.payload.get("projet_info"), dict)
+            else req.payload.get("projet_id") or req.session_info.get("projet_id"),
+            "dates_formation": req.payload.get("dates_formation") or req.payload.get("date_debut") and req.payload.get("date_fin"),
+            "participants": req.payload.get("participants") or req.payload.get("nombre_participants"),
+            "participants_eligibles": bool(req.payload.get("eligible_participants")),
+            "facture_id": req.payload.get("facture_id") or req.session_info.get("facture_id"),
         }
         prerequis = verifier_action(
             intention_for_check,
@@ -233,14 +260,30 @@ async def executer_commande_vocale(
                 success=False, action=action, etat="action_inconnue",
                 message="Cette action vocale n'est pas encore raccordée à un service métier.",
             )
+        if not isinstance(result, dict):
+            return ExecutionVocaleResponse(
+                success=False, action=action, etat="resultat_invalide",
+                message="Le service n'a pas retourné un résultat vérifiable.",
+            )
+        if result.get("success") is False:
+            return ExecutionVocaleResponse(
+                success=False, action=action, etat="action_echouee",
+                message=str(result.get("message") or result.get("raison") or "Le service métier a signalé un échec."),
+                data=result,
+            )
+        if result.get("_review_status") == "pending_review":
+            etat = "en_attente_validation"
+            message = "Résultat généré et transmis à la validation humaine."
+        elif result.get("necessaire") is False:
+            etat = "aucune_action_requise"
+            message = str(result.get("raison") or "Aucune action n'est nécessaire selon les données de la facture.")
+        else:
+            etat = "termine_a_verifier"
+            message = "Le service a retourné un résultat. Vérifiez-le dans l'écran métier avant toute diffusion."
         return ExecutionVocaleResponse(
             success=True, action=action,
-            etat="en_attente_validation" if result.get("_review_status") == "pending_review" else "termine",
-            message=(
-                "Résultat généré et envoyé à la validation humaine."
-                if result.get("_review_status") == "pending_review"
-                else "Action exécutée et résultat vérifié."
-            ),
+            etat=etat,
+            message=message,
             data=result,
         )
     except (ValueError, RuntimeError) as exc:

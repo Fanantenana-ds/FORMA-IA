@@ -257,8 +257,22 @@ class TestRoutePublishForms:
     """Tests sur la route POST /ia/formations/reviews/{id}/publish-forms."""
 
     @pytest.fixture
+    def client_ia(self):
+        """Fixture autonome — bypass verify_api_key sans dépendance conftest."""
+        from app.main import app
+        from app.utils.security import verify_api_key
+        from starlette.testclient import TestClient
+
+        async def _no_api_key_check():
+            return None
+
+        app.dependency_overrides[verify_api_key] = _no_api_key_check
+        yield TestClient(app)
+        app.dependency_overrides.pop(verify_api_key, None)
+
+    @pytest.fixture
     def client(self, client_ia):
-        # Route protégée par verify_api_key : client_ia (conftest) la contourne.
+        # Route protégée par verify_api_key : client_ia la contourne.
         return client_ia
 
     def test_review_inexistante_retourne_404(self, client):

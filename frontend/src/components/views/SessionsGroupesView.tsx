@@ -19,6 +19,7 @@ import {
 import { Session, PresenceRecord } from '../../types';
 import { apiService } from '../../services/api';
 import { SessionsM5Panel } from './SessionsM5Panel';
+import { listenForVoiceAction, type VoiceActionContext } from '../../services/voiceActionContext';
 
 interface SessionsGroupesViewProps {
   sessions: Session[];
@@ -51,6 +52,27 @@ export const SessionsGroupesView: React.FC<SessionsGroupesViewProps> = ({
 }) => {
   // Navigation State: null = list of sessions, session ID = detail view
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+  const [voiceAction, setVoiceAction] = useState<VoiceActionContext | null>(null);
+  const sessionsRef = useRef(sessions);
+  sessionsRef.current = sessions;
+
+  useEffect(() => listenForVoiceAction([
+    'ouvrir_formulaire_seance', 'ouvrir_formulaires_session', 'ouvrir_analyse_niveaux',
+    'ouvrir_analyse_satisfaction', 'ouvrir_analyse_presences', 'ouvrir_formulaire_attestation',
+  ], context => {
+    const prefill = context.prefill ?? {};
+    const requestedId = String(prefill.session_id ?? '');
+    let match = sessionsRef.current.find(session => session.id === requestedId);
+    if (!match) {
+      const requestedTitle = String(prefill.nom_formation ?? prefill.session ?? prefill.titre_session ?? '').trim().toLocaleLowerCase('fr-FR');
+      if (requestedTitle) {
+        const matches = sessionsRef.current.filter(session => session.intitule.trim().toLocaleLowerCase('fr-FR') === requestedTitle);
+        if (matches.length === 1) match = matches[0];
+      }
+    }
+    if (match) setSelectedSessionId(match.id);
+    setVoiceAction(context);
+  }), []);
 
   // Local state for participants across sessions
   const [presencesList, setPresencesList] = useState<PresenceRecord[]>(initialPresencesProps);
@@ -572,7 +594,7 @@ export const SessionsGroupesView: React.FC<SessionsGroupesViewProps> = ({
               </div>
             </div>
           </div>
-          <SessionsM5Panel sessionId={activeSession.id} sessionTitle={activeSession.intitule} domain={activeSession.domaine} formationCode={activeSession.formationCode} formateurId={activeSession.formateurId} tauxPresence={activeSession.tauxPresence} participants={sessionParticipants.map(p => ({ id:p.id, nom:p.apprenantNom, prenom:(p as any).prenom }))} trainerMode={readOnly} />
+          <SessionsM5Panel sessionId={activeSession.id} sessionTitle={activeSession.intitule} domain={activeSession.domaine} formationCode={activeSession.formationCode} formateurId={activeSession.formateurId} tauxPresence={activeSession.tauxPresence} participants={sessionParticipants.map(p => ({ id:p.id, nom:p.apprenantNom, prenom:(p as any).prenom }))} trainerMode={readOnly} voiceAction={voiceAction} />
         </div>
       )}
 

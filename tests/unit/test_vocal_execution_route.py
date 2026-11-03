@@ -31,3 +31,22 @@ def test_execution_vocale_refuse_support_absent(monkeypatch):
     ))
     assert result.success is False
     assert result.etat == "prerequis_manquant"
+
+
+def test_execution_vocale_refuse_une_action_non_raccordee():
+    result = run(executer_commande_vocale(
+        ExecutionVocaleRequest(action="analyser_niveaux", confirmer=True),
+        principal=None,
+    ))
+    assert result.success is False
+    assert result.etat == "integration_requise"
+
+
+def test_execution_vocale_verifie_le_role_avant_le_prerequis():
+    assistant = type("User", (), {"role": "ASSISTANT"})()
+    result = run(executer_commande_vocale(
+        ExecutionVocaleRequest(action="preparer_formation", confirmer=True),
+        principal=assistant,
+    ))
+    assert result.success is False
+    assert result.etat == "acces_refuse"

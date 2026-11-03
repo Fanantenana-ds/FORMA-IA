@@ -55,19 +55,63 @@ def test_action_complete_transmet_commande_sans_fausse_confirmation(monkeypatch)
     async def routeur(*args, **kwargs):
         return {
             "intention": "creer_seance", "confiance": 0.93,
-            "parametres": {"nom_formation": "Python", "date": "2026-10-29"},
+            "parametres": {"nom_formation": "Python avancé", "date": "2026-10-29", "theme": "Introduction"},
             "parametres_manquants": [], "reponse_vocale": "Je prépare le formulaire.",
             "action_frontend": "ouvrir_formulaire_seance",
             "prefill": {"intitule": "Python", "dates": "2026-10-29"},
         }
 
     monkeypatch.setattr(module, "router_commande", routeur)
-    resultat = run(module.AssistantVocalService().traiter("Crée une séance Python jeudi"))
+    resultat = run(module.AssistantVocalService().traiter(
+        "Crée une séance Python avancé jeudi",
+        sessions_disponibles=[{"id": "session-1", "titre": "Python avancé", "date_debut": "2026-10-20"}],
+    ))
 
     assert resultat["etat"] == "action_a_executer"
     assert resultat["action_frontend"] == "ouvrir_formulaire_seance"
     assert resultat["execution_demandee"] is True
     assert "créée" not in resultat["texte_a_lire"]
+    assert resultat["prefill"]["session_id"] == "session-1"
+
+
+def test_session_homonyme_demande_une_precision_sans_ouvrir_un_ecran(monkeypatch):
+    async def routeur(*args, **kwargs):
+        return {
+            "intention": "creer_seance", "confiance": 0.95,
+            "parametres": {"nom_formation": "Python", "date": "2026-11-05", "theme": "Boucles"},
+            "parametres_manquants": [], "reponse_vocale": "Je prépare la séance.",
+            "action_frontend": "ouvrir_formulaire_seance", "prefill": {},
+        }
+
+    monkeypatch.setattr(module, "router_commande", routeur)
+    result = run(module.AssistantVocalService().traiter(
+        "Crée une séance Python jeudi",
+        sessions_disponibles=[
+            {"id": "s1", "titre": "Python", "date_debut": "2026-10-01"},
+            {"id": "s2", "titre": "Python", "date_debut": "2026-11-01"},
+        ],
+    ))
+
+    assert result["etat"] == "a_preciser"
+    assert result["action_frontend"] is None
+    assert "Plusieurs sessions correspondent" in result["texte_affiche"]
+
+
+def test_creation_session_incomplete_demande_les_champs_requis(monkeypatch):
+    async def routeur(*args, **kwargs):
+        return {
+            "intention": "creer_session", "confiance": 0.95, "parametres": {},
+            "parametres_manquants": [], "reponse_vocale": "Je prépare la session.",
+            "action_frontend": "ouvrir_formulaire_session", "prefill": {},
+        }
+
+    monkeypatch.setattr(module, "router_commande", routeur)
+    result = run(module.AssistantVocalService().traiter("Crée une session"))
+
+    assert result["etat"] == "a_preciser"
+    assert result["action_frontend"] is None
+    assert "intitulé de la formation" in result["texte_affiche"]
+    assert "date de début" in result["texte_affiche"]
 
 
 def test_faible_confiance_demande_reformulation(monkeypatch):

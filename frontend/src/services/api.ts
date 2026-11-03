@@ -355,7 +355,7 @@ class ApiService {
   async getApprovedTrainerContracts() { return this.getReviewHistory('approved', 'agent_m4_contrat'); }
   async downloadTrainerContract(reviewId: string) { return this.request<Blob>(`/ia/rh/contrat-formateur/download/${encodeURIComponent(reviewId)}`, {}, { ia: true, timeout: 30000 }); }
   async analyzeTrainerEvaluation(body: unknown) { return this.request<any>('/ia/rh/formateur/evaluer', this.json('POST', body), { ia: true, timeout: 120000 }); }
-  async sendVoiceCommand(body: { texte: string; ecran_actuel?: string; formations_disponibles?: string[] }) {
+  async sendVoiceCommand(body: { texte: string; ecran_actuel?: string; formations_disponibles?: string[]; contexte_action?: string[]; sessions_disponibles?: Array<{ id: string; titre: string; code: string; date_debut?: string; dates: string; formation_code?: string }> }) {
     return this.request<any>('/ia/vocal/commande', this.json('POST', body), { ia: true, timeout: 60000 });
   }
   async executeVoiceAction(action: string, session_info: Record<string, unknown>, payload: Record<string, unknown> = {}) {
@@ -424,6 +424,8 @@ class ApiService {
   async generateFormationForms(body: unknown) { return this.request<any>('/ia/formations/generate-forms', this.json('POST', body), { ia: true, timeout: 120000 }); }
   async analyzeFormationLevels(body: unknown) { return this.request<any>('/ia/formations/analyze-levels', this.json('POST', body), { ia: true, timeout: 120000 }); }
   async analyzeFormationSatisfaction(body: unknown) { return this.request<any>('/ia/formations/analyze-satisfaction', this.json('POST', body), { ia: true, timeout: 120000 }); }
+  async analyserNiveauxDb(sessionId: string) { return this.request<any>(`/ia/formations/${sessionId}/analyser-niveaux-db`, this.json('POST', {}), { ia: true, timeout: 120000 }); }
+  async analyserSatisfactionDb(sessionId: string) { return this.request<any>(`/ia/formations/${sessionId}/analyser-satisfaction-db`, this.json('POST', {}), { ia: true, timeout: 120000 }); }
   async publishFormationForms(reviewId: string, session_titre: string) { return this.request<any>(`/ia/formations/reviews/${reviewId}/publish-forms`, this.json('POST', { session_titre }), { ia: true, timeout: 120000 }); }
   private isM3ReviewId(id: string) { return /(?:^|-)AM3(?:-|$)/i.test(id); }
   async getReview(id: string) {

@@ -92,16 +92,44 @@ def _ensure_ten_assessment_questions(link: PublicRegistrationLink, session: Trai
     return questions
 
 
+async def _rag_context_for_formation(formation_code: str | None, titre: str) -> str:
+    """Retrieve up to 5 relevant chunks from the RAG for this formation, or '' if none."""
+    try:
+        from app.services.rag.recherche_service import rechercher
+        query = f"contenu pédagogique objectifs compétences {titre}"
+        results = await rechercher(
+            requete=query,
+            top_k=5,
+            collection="support",
+            formation_code=formation_code or None,
+            seuil_min=0.45,
+            attente_max_s=3.0,
+        )
+        if not results:
+            return ""
+        passages = [f"[Extrait {i+1}] {r.contenu[:600]}" for i, r in enumerate(results[:5])]
+        return "\n\n".join(passages)
+    except Exception:
+        logger.debug("RAG non disponible pour _generate_assessment — génération sans contexte.")
+        return ""
+
+
 async def _generate_assessment(session: TrainingSession, stage: str = "initial") -> list[dict]:
     """Generate a private, answer-key questionnaire for a training stage."""
     topic = session.formation_code or session.titre
+    rag_context = await _rag_context_for_formation(session.formation_code, session.titre)
+    context_block = (
+        f"\n\nCONTENU PÉDAGOGIQUE INDEXÉ (extraits réels des supports de la formation) :\n{rag_context}\n\n"
+        "Base tes questions sur ce contenu en priorité."
+        if rag_context else ""
+    )
     try:
         response = await get_llm_provider().generate(
             system_prompt=("Tu es un concepteur d'évaluations de formation. Tu produis des questions à choix multiple en français, adaptées au thème. "
                            "Le questionnaire de fin mesure les compétences acquises; il ne note pas la valeur de la personne." if stage == "final" else
                            "Tu es un concepteur de tests diagnostiques de formation. Tu produis des questions à choix multiple en français, adaptées au thème. Le test évalue le niveau initial, il ne note pas la valeur de la personne."),
             user_prompt=(f"Crée 10 questions de {'validation des acquis après la formation' if stage == 'final' else 'positionnement avant la formation'} pour la formation « {session.titre} » "
-                         f"(code/domaine : {topic}). Retourne uniquement un objet JSON avec une clé questions. "
+                         f"(code/domaine : {topic}).{context_block} Retourne uniquement un objet JSON avec une clé questions. "
                          "Chaque question doit avoir id (q1...), competence, enonce, options (4 objets id A-D et label), "
                          "correct_answer (A-D). Questions concrètes et progressives, une seule bonne réponse."),
             temperature=0.2, max_tokens=3500, json_mode=True,
@@ -581,14 +609,28 @@ async def public_trainer_application(
     score = None
     try:
         from app.orchestrator.rh_orchestrator import get_rh_orchestrator
+        # Enrichir les critères avec le profil TDR de la session si disponible
+        session_for_criteria = db.query(TrainingSession).filter(TrainingSession.id == candidate.session_id).first() if candidate.session_id else None
+        criteres: dict = {
+            "domaine": specialite.strip(),
+            "poste": specialite.strip(),
+            "competences": [item.strip() for item in specialite.split(",") if item.strip()],
+            "niveau": "à évaluer",
+        }
+        if session_for_criteria:
+            details = _public_formation_details(db, session_for_criteria, for_trainer=True)
+            if details.get("formateur_profil"):
+                criteres["profil_recherche"] = details["formateur_profil"]
+            if details.get("competences_requises"):
+                existing = set(criteres["competences"])
+                criteres["competences"] = list(existing | set(details["competences_requises"]))
+            if details.get("objectif_general"):
+                criteres["contexte_mission"] = details["objectif_general"]
+            if details.get("titre"):
+                criteres["titre_formation"] = details["titre"]
         result = await get_rh_orchestrator().preselectionner_cv(
             cv_texte=cv_text,
-            criteres_poste={
-                "domaine": specialite.strip(),
-                "poste": specialite.strip(),
-                "competences": [item.strip() for item in specialite.split(",") if item.strip()],
-                "niveau": "à évaluer",
-            },
+            criteres_poste=criteres,
         )
         review_id = result.get("_review_id")
         score = result.get("score_global")

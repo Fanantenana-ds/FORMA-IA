@@ -9,6 +9,7 @@ import {
 import { MenuSection, OpportuniteCRM } from '../../types';
 import { AcceptedMarket } from '../../types/tdr';
 import { AcceptedMarketsList } from '../tdr/AcceptedMarketsList';
+import { listenForVoiceAction, type VoiceActionContext } from '../../services/voiceActionContext';
 
 const markdownFor = (value: unknown): string => {
   if (value == null) return '';
@@ -190,6 +191,32 @@ export const OpportunitesCrmView: React.FC<OpportunitesCrmViewProps> = ({
   const [deletingOpportunityId, setDeletingOpportunityId] = useState('');
   const restoredWorkflowMarket = useRef('');
   const skipWorkflowWrite = useRef(false);
+  const voicePrefillRef = useRef<Record<string, unknown> | null>(null);
+  const acceptedMarketsRef = useRef(acceptedMarkets);
+  acceptedMarketsRef.current = acceptedMarkets;
+
+  const applyVoiceAction = (context: VoiceActionContext) => {
+    const prefill = context.prefill ?? {};
+    const targetId = String(prefill.opportunite_id ?? prefill.opportunity_id ?? prefill.market_id ?? '');
+    const targetLabel = String(prefill.objectifs ?? prefill.titre ?? prefill.opportunite ?? '');
+    let match = acceptedMarketsRef.current.find(market => market.id === targetId);
+    if (!match && targetLabel) {
+      const normalized = targetLabel.toLocaleLowerCase('fr-FR').trim();
+      const matches = acceptedMarketsRef.current.filter(market => market.titre.toLocaleLowerCase('fr-FR').trim() === normalized);
+      if (matches.length === 1) match = matches[0];
+    }
+    if (match) setSelectedMarketId(match.id);
+    const brief = Object.fromEntries(
+      ['client', 'objectifs', 'public', 'duree', 'format', 'budget', 'lieu', 'deadline']
+        .filter(key => prefill[key] != null && String(prefill[key]).trim())
+        .map(key => [key, String(prefill[key])]),
+    );
+    voicePrefillRef.current = brief;
+    if (Object.keys(brief).length) setTdrBrief(previous => ({ ...previous, ...brief }));
+    setDocTab(context.action === 'ouvrir_formulaire_offre' ? 'technical' : 'tdr');
+  };
+
+  useEffect(() => listenForVoiceAction(['ouvrir_formulaire_tdr', 'ouvrir_formulaire_offre'], applyVoiceAction), []);
   const pendingDocumentReview = docTab === 'tdr' && !tdrApproved ? tdrReviewId
     : docTab === 'technical' && !techniqueApproved ? techniqueReviewId
       : docTab === 'financial' && !financeApproved ? financeReviewId : '';
@@ -240,15 +267,16 @@ export const OpportunitesCrmView: React.FC<OpportunitesCrmViewProps> = ({
     apiService.getTdrBriefFromOpportunity(activeMarket.id).then((result) => {
       if (cancelled || restored?.tdrBrief) return;
       const brief = result.brief ?? {};
-      setTdrBrief({
+        setTdrBrief({
         client: activeMarket.client || brief.client || '',
         objectifs: brief.objectifs || activeMarket.titre,
         public: brief.public || '', duree: brief.duree || '', format: brief.format || 'Présentiel',
         budget: brief.budget || (activeMarket.budgetAr ? String(activeMarket.budgetAr) : ''),
-        lieu: brief.lieu || '', deadline: brief.deadline || ''
-      });
+        lieu: brief.lieu || '', deadline: brief.deadline || '',
+        ...(voicePrefillRef.current ?? {}),
+        });
     }).catch(() => {
-      if (!cancelled) setTdrBrief({ client: activeMarket.client, objectifs: `${activeMarket.titre}\n\n${opportunites.find(o => o.id === activeMarket.id)?.besoinFormation ?? ''}`.trim(), public: '', duree: '', format: 'Présentiel', budget: activeMarket.budgetAr ? String(activeMarket.budgetAr) : '', lieu: '', deadline: '' });
+      if (!cancelled) setTdrBrief({ client: activeMarket.client, objectifs: `${activeMarket.titre}\n\n${opportunites.find(o => o.id === activeMarket.id)?.besoinFormation ?? ''}`.trim(), public: '', duree: '', format: 'Présentiel', budget: activeMarket.budgetAr ? String(activeMarket.budgetAr) : '', lieu: '', deadline: '', ...(voicePrefillRef.current ?? {}) });
     });
     return () => { cancelled = true; };
   }, [selectedMarketId, activeMarket?.id]);

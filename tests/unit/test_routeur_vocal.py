@@ -145,3 +145,19 @@ def test_identite_explique_aussi_la_raison_metier_de_la_plateforme(monkeypatch):
     assert result["intention"] == "conversationnel"
     assert "opportunité" in result["reponse_vocale"]
     assert "factur" in result["reponse_vocale"]
+
+
+@pytest.mark.parametrize(("commande", "action"), [
+    ("Ouvre le tableau de bord", "ouvrir_tableau_bord"),
+    ("Ouvre les formateurs", "ouvrir_formateurs"),
+    ("Ouvre le suivi des présences", "ouvrir_suivi_presences"),
+    ("Ouvre la base documentaire", "ouvrir_espace_ia"),
+    ("Ouvre la facturation et les devis", "ouvrir_facturation"),
+])
+def test_navigation_locale_ouvre_un_module_sans_appel_llm(monkeypatch, commande, action):
+    def forbidden():
+        raise AssertionError("La navigation déterministe ne doit pas consommer Groq")
+
+    monkeypatch.setattr(vocal, "get_llm_provider", forbidden)
+    result = run(vocal.router_commande(commande))
+    assert result["action_frontend"] == action

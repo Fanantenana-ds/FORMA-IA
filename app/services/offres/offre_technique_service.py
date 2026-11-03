@@ -111,6 +111,16 @@ class OffreTechniqueGeneratorService:
             "",
             "Retourne UNIQUEMENT le JSON valide, sans texte autour.",
         ]
+        references_portfolio = session_info.get("references_portfolio") or []
+        if references_portfolio:
+            lignes_refs = [f"  - {r.get('intitule', '')} ({r.get('client', '')} — {r.get('annee', '')})" for r in references_portfolio]
+            lines[-1:-1] = [
+                "=== RÉFÉRENCES PORTFOLIO ALTIORA (à intégrer dans annexes.references) ===",
+                *lignes_refs,
+                "Ces références sont des formations réelles réalisées par ALTIORA. "
+                "Utilise-les pour enrichir la section références de l'annexe.",
+                "",
+            ]
         if feedback and feedback.strip():
             # Régénération après rejet HITL : le réviseur humain a demandé
             # des corrections (bloc placé avant la consigne de format).
@@ -215,6 +225,19 @@ class OffreTechniqueGeneratorService:
                 "agent_id": AGENT_ID,
             },
         }
+
+        # Injection des références portfolio RAG (C3 → M3)
+        references_portfolio = session_info.get("references_portfolio") or []
+        if references_portfolio:
+            annexes = result.setdefault("annexes", {})
+            existing = annexes.get("references") or []
+            # Déduplique par intitulé
+            intitules_existants = {r.get("intitule", "") for r in existing if isinstance(r, dict)}
+            nouvelles = [r for r in references_portfolio if r.get("intitule", "") not in intitules_existants]
+            annexes["references"] = existing + nouvelles
+            result["metadata"]["references_portfolio_injectees"] = len(nouvelles)
+            vlog(f"   📎 {len(nouvelles)} référence(s) portfolio RAG injectée(s) dans l'offre.")
+
         if feedback and feedback.strip():
             # Le gabarit Python de secours ne sait pas exploiter le feedback
             result["metadata"]["feedback"] = feedback.strip()

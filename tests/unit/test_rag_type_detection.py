@@ -121,3 +121,82 @@ def test_detecter_type_llm_type_hors_liste_utilise_le_repli(monkeypatch):
 
     resultat = run(detection.detecter_type("combien de documents avez-vous indexés ?"))
     assert resultat == "inventaire"
+
+
+# ---- Abréviations conversationnelles ----
+
+@pytest.mark.parametrize("message", [
+    "bjr", "bjr !", "Bjr", "bsr", "slt", "slut", "cc", "wesh", "hey",
+    "mrc", "thks", "tchao", "ciao",
+])
+def test_abreviations_reconnues_comme_conversationnel(message):
+    """Les abréviations de salutation/remerciement doivent être détectées
+    par le filtre Python sans passer par le LLM."""
+    assert detection.filtre_conversationnel_evident(message) is True
+
+
+@pytest.mark.parametrize("message", [
+    "bjr, c'est quoi le deep learning ?",
+    "slt comment valider une facture ?",
+    "slut, liste les formations disponibles",
+])
+def test_abreviation_salutation_avec_question_pas_conversationnel(message):
+    """Abréviation de salutation SUIVIE d'une vraie question → pas conversationnel."""
+    assert detection.filtre_conversationnel_evident(message) is False
+
+
+# ---- Messages inintelligibles ----
+
+@pytest.mark.parametrize("message", [
+    "azerty", "qsdf", "lkjhg", "xwz", "zzzz",
+    # "azerty formation" n'est pas inintelligible car "formation" est un vrai mot
+    # → le LLM ou le repli par règles le gère comme question_fond
+])
+def test_est_inintelligible_frappe_aleatoire(message):
+    assert detection._est_inintelligible(message) is True
+
+
+@pytest.mark.parametrize("message", [
+    "bjr",           # abréviation connue → pas inintelligible
+    "slt",           # abréviation connue
+    "rag",           # terme du domaine métier
+    "tdr",           # terme du domaine métier
+    "ia",            # terme du domaine métier
+    "quelles formations proposez-vous ?",   # phrase normale
+    "formation 2025",   # contient un chiffre
+])
+def test_pas_inintelligible_cas_legaux(message):
+    assert detection._est_inintelligible(message) is False
+
+
+def test_detecter_type_incomprehensible():
+    """Un message de frappe aléatoire est classé incomprehensible sans appel LLM."""
+    resultat = run(detection.detecter_type("qsdfgh"))
+    assert resultat == "incomprehensible"
+
+
+def test_detecter_type_incomprehensible_ne_devient_pas_question_fond():
+    """Un message inintelligible ne doit pas déclencher la recherche vectorielle."""
+    resultat = run(detection.detecter_type("lkjhg"))
+    assert resultat == "incomprehensible"
+
+
+# ---- Handler incomprehensible dans le chat orchestrator ----
+
+def test_handler_incomprehensible_dans_orchestrateur():
+    """Le chat orchestrateur retourne une réponse de clarification professionnelle."""
+    import asyncio
+    from app.orchestrator.chat_orchestrator import ChatOrchestrator
+
+    class FauxRepo:
+        def modeles_presents(self, collection=None): return []
+        def rechercher_par_similarite(self, *a, **kw): return []
+
+    orch = ChatOrchestrator(repository=FauxRepo())
+
+    # Bypass detection → forcer le type directement
+    reponse = orch._repondre_incomprehensible("qsdfgh")
+    assert "reformuler" in reponse.lower() or "compris" in reponse.lower()
+    # Pas de sources → pas d'hallucination
+    assert isinstance(reponse, str)
+    assert len(reponse) > 20

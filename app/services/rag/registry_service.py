@@ -35,7 +35,7 @@ def _chemin_registre_actif() -> Path:
 
 STATUTS_VALIDES = (
     "en_attente", "en_cours", "indexe", "erreur",
-    "non_indexable_image", "ocr_necessaire",
+    "non_indexable_image", "ocr_necessaire", "archive",
 )
 
 

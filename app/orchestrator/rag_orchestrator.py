@@ -366,6 +366,67 @@ class RagOrchestrator:
     # SUPPRESSION D'UN DOCUMENT
     # ========================================================
 
+    async def archiver_document(self, hash_fichier: str) -> dict[str, Any]:
+        """Archive un document : retire ses chunks de knowledge_base et marque
+        le registre 'archive'. Le fichier original et l'entrée sont conservés
+        pour permettre une restauration (ré-indexation sans re-upload).
+
+        Différence avec supprimer_document :
+          - supprimer : retire l'entrée ET le fichier — irréversible
+          - archiver  : conserve l'entrée et le fichier — restaurable
+        """
+        entree = registre.obtenir_entree(hash_fichier)
+        if entree is None:
+            return {"hash": hash_fichier, "statut": "introuvable"}
+        if entree.statut == "archive":
+            return {"hash": hash_fichier, "statut": "deja_archive"}
+
+        nb_supprimes = self.repository.supprimer_par_hash(hash_fichier)
+        entree.statut = "archive"
+        entree.message = "Archivé manuellement — chunks retirés, fichier conservé."
+        registre.enregistrer_entree(entree)
+
+        logger.info(f"📦 Document archivé : {entree.fichier} ({nb_supprimes} chunk(s) retirés)")
+        return {
+            "hash": hash_fichier,
+            "statut": "archive",
+            "fichier": entree.fichier,
+            "nb_chunks_retires": nb_supprimes,
+        }
+
+    async def restaurer_document(self, hash_fichier: str) -> dict[str, Any]:
+        """Restaure un document archivé en le ré-indexant depuis le fichier conservé.
+        Échoue proprement si le fichier original n'existe plus sur disque."""
+        entree = registre.obtenir_entree(hash_fichier)
+        if entree is None:
+            return {"hash": hash_fichier, "statut": "introuvable"}
+        if entree.statut != "archive":
+            return {"hash": hash_fichier, "statut": "non_archive", "message": "Ce document n'est pas archivé."}
+
+        suffix = Path(entree.fichier).suffix.lstrip(".")
+        chemin_original = DOSSIER_FICHIERS_ORIGINAUX / f"{hash_fichier}.{suffix}"
+        if not chemin_original.exists():
+            return {
+                "hash": hash_fichier,
+                "statut": "fichier_manquant",
+                "message": "Le fichier original a été supprimé — ré-upload nécessaire.",
+            }
+
+        entree.statut = "en_attente"
+        entree.message = "Restauration en cours…"
+        registre.enregistrer_entree(entree)
+
+        await self.ingerer_fichier(
+            str(chemin_original),
+            entree.formation_code,
+            entree.collection,
+            entree.fichier,
+            session_id=entree.session_id,
+            module=entree.module,
+        )
+        logger.info(f"♻️ Document restauré : {entree.fichier}")
+        return {"hash": hash_fichier, "statut": "restaure", "fichier": entree.fichier}
+
     async def supprimer_document(self, hash_fichier: str) -> dict[str, Any]:
         """Supprime les chunks d'un document de knowledge_base, retire son
         entrée du registre, met à jour le résumé de sa formation."""
@@ -627,6 +688,115 @@ class RagOrchestrator:
             nb_questions_max=nb_questions_max, repository=self.repository,
         )
         return {"success": True, "formation_code": formation_code, **resultat}
+
+    async def exporter_questions_m5(
+        self,
+        formation_code: str,
+        nb_questions_max: int = 10,
+    ) -> dict[str, Any]:
+        """Génère les questions RAG et les structure au format M5
+        (test_avant / test_apres) prêt à injecter dans FormGeneratorService.
+
+        Format retourné :
+          {
+            "formation_code": "...",
+            "test_avant": [{"id": "av_01", "label": "...", "type": "qcm",
+                            "options": [...], "correct_answer": "A"}],
+            "test_apres": [...],   # miroir du test_avant (IDs ap_XX)
+            "nb_questions": N,
+            "supports_resume": "..."   # résumé texte à injecter comme `supports`
+          }
+        """
+        formation = obtenir_formation(formation_code)
+        if not formation:
+            raise ValueError(f"Formation '{formation_code}' introuvable au catalogue.")
+
+        resultat = await questions_service.generer_questions(
+            formation_code, formation.titre, appeler_llm_json,
+            nb_questions_max=nb_questions_max, repository=self.repository,
+        )
+        questions_brutes = resultat.get("questions", [])
+        if not questions_brutes:
+            return {
+                "success": False,
+                "formation_code": formation_code,
+                "message": resultat.get("message", "Aucune question générée."),
+                "test_avant": [], "test_apres": [], "nb_questions": 0,
+            }
+
+        test_avant = []
+        test_apres = []
+        for i, q in enumerate(questions_brutes, start=1):
+            base = {
+                "id": f"av_{i:02d}",
+                "label": q.get("question", q.get("label", "")),
+                "type": q.get("type", "qcm"),
+                "options": q.get("options", []),
+                "correct_answer": q.get("correct_answer", q.get("reponse_correcte", "")),
+                "source": q.get("source", ""),
+            }
+            test_avant.append(base)
+            test_apres.append({**base, "id": f"ap_{i:02d}"})
+
+        supports_resume = "\n".join(
+            f"Q{i}: {q['label']}" for i, q in enumerate(test_avant, 1)
+        )
+
+        return {
+            "success": True,
+            "formation_code": formation_code,
+            "formation_titre": formation.titre,
+            "test_avant": test_avant,
+            "test_apres": test_apres,
+            "nb_questions": len(test_avant),
+            "supports_resume": supports_resume,
+        }
+
+    async def exporter_portfolio_m3(self, review_id: str) -> dict[str, Any]:
+        """Exporte un portfolio APPROUVÉ au format M3 (offre technique).
+
+        Le portfolio HITL approuvé est transformé en une liste de références
+        prête à injecter dans le champ ``annexes.references`` de l'offre
+        technique (``offre_technique_service.py``, ligne ~403).
+
+        Format retourné :
+          {
+            "review_id": "...",
+            "references": [
+              {"intitule": "...", "client": "...", "annee": "...",
+               "nb_participants": N, "duree_jours": N, "domaine": "..."}
+            ],
+            "nb_references": N
+          }
+        """
+        review = review_sync.load_approved_review(review_id, agent_ids=("agent_rag_portfolio",))
+        donnees = review.get("data") or {}
+        fiches = donnees.get("fiches_reference", [])
+
+        references = []
+        for fiche in fiches:
+            ref = {
+                "intitule": fiche.get("intitule", ""),
+                "client": fiche.get("client", ""),
+                "annee": fiche.get("annee", ""),
+                "nb_participants": fiche.get("nb_participants"),
+                "duree_jours": fiche.get("duree_jours"),
+                "domaine": fiche.get("domaine", ""),
+                "contenus_cles": fiche.get("contenus_cles", []),
+            }
+            if ref["intitule"]:
+                references.append(ref)
+
+        return {
+            "success": True,
+            "review_id": review_id,
+            "references": references,
+            "nb_references": len(references),
+            "usage": (
+                "Injecter dans annexes.references de l'offre technique "
+                "(POST /ia/offres/generer, champ session_info.references_portfolio)."
+            ),
+        }
 
 
 _orchestrateur_instance: RagOrchestrator | None = None

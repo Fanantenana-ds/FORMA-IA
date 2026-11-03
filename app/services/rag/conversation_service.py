@@ -30,6 +30,7 @@ class Echange:
     role: str  # "utilisateur" | "assistant"
     texte: str
     feedback: str | None = None  # "positif" | "negatif" | None
+    type_reponse: str | None = None  # type détecté (aide_plateforme, question_fond, etc.)
 
 
 @dataclass
@@ -60,9 +61,10 @@ def charger_conversation(conversation_id: str, dossier: Path | None = None) -> C
     try:
         with open(chemin, "r", encoding="utf-8") as f:
             data = json.load(f)
+        champs_echange = {f for f in Echange.__dataclass_fields__}
         return Conversation(
             conversation_id=conversation_id,
-            echanges=[Echange(**e) for e in data.get("echanges", [])],
+            echanges=[Echange(**{k: v for k, v in e.items() if k in champs_echange}) for e in data.get("echanges", [])],
             derniere_formation_code=data.get("derniere_formation_code"),
             user_id=data.get("user_id"),
             titre=data.get("titre"),
@@ -209,9 +211,10 @@ def purger_conversations_expirees(
 def ajouter_echange(
     conversation: Conversation, role: str, texte: str,
     formation_code: str | None = None,
+    type_reponse: str | None = None,
 ) -> Conversation:
     """Ajoute un échange, ne garde que les NB_ECHANGES_MEMORISES derniers."""
-    conversation.echanges.append(Echange(role=role, texte=texte))
+    conversation.echanges.append(Echange(role=role, texte=texte, type_reponse=type_reponse))
     conversation.echanges = conversation.echanges[-NB_ECHANGES_MEMORISES:]
     if formation_code:
         conversation.derniere_formation_code = formation_code

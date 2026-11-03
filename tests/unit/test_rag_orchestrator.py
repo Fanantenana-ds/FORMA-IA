@@ -346,3 +346,90 @@ def test_ingerer_zip_bombe_refuse_avant_extraction(orchestrateur, tmp_path, monk
 
     assert resultat["statut"] == "refuse"
     assert orchestrateur.embedding_provider.appels_documents == 0
+
+
+# ============================================================
+# LIAISON C3 → M5 — exporter_questions_m5
+# ============================================================
+
+def _fausse_formation(code="TEST_M5", titre="Test formation"):
+    from types import SimpleNamespace
+    return SimpleNamespace(code=code, titre=titre, domaine="Test")
+
+
+def test_exporter_questions_m5_aucun_support(orchestrateur, monkeypatch):
+    """Sans supports indexés : retourne success=False + listes vides."""
+    import app.services.rag.questions_service as qsvc
+
+    monkeypatch.setattr(rag_orch_module, "obtenir_formation", lambda code: _fausse_formation(code))
+
+    async def faux_generer(*a, **kw):
+        return {"questions": [], "message": "Aucun support indexé."}
+    monkeypatch.setattr(qsvc, "generer_questions", faux_generer)
+
+    resultat = run(orchestrateur.exporter_questions_m5("TEST_M5"))
+    assert resultat["success"] is False
+    assert resultat["test_avant"] == []
+    assert resultat["test_apres"] == []
+
+
+def test_exporter_questions_m5_avec_questions(orchestrateur, monkeypatch):
+    """Avec questions générées : retourne test_avant + test_apres structurés."""
+    import app.services.rag.questions_service as qsvc
+
+    monkeypatch.setattr(rag_orch_module, "obtenir_formation", lambda code: _fausse_formation(code))
+
+    fausses_questions = [
+        {"question": "Qu'est-ce que X ?", "type": "qcm", "options": ["A. a", "B. b"], "correct_answer": "A"},
+        {"question": "Définir Y.", "type": "qcm", "options": ["A. c", "B. d"], "correct_answer": "B"},
+    ]
+
+    async def faux_generer(*a, **kw):
+        return {"questions": fausses_questions, "message": None}
+    monkeypatch.setattr(qsvc, "generer_questions", faux_generer)
+
+    resultat = run(orchestrateur.exporter_questions_m5("TEST_M5", nb_questions_max=5))
+    assert resultat["success"] is True
+    assert resultat["nb_questions"] == 2
+    assert len(resultat["test_avant"]) == 2
+    assert len(resultat["test_apres"]) == 2
+    assert resultat["test_avant"][0]["id"] == "av_01"
+    assert resultat["test_apres"][0]["id"] == "ap_01"
+    assert "Qu'est-ce que X" in resultat["supports_resume"]
+
+
+# ============================================================
+# LIAISON C3 → M3 — exporter_portfolio_m3
+# ============================================================
+
+def test_exporter_portfolio_m3_review_non_approuve(orchestrateur, monkeypatch):
+    """Un review non approuvé lève une exception."""
+    from app.services.backend_sync import review_sync as rsync
+
+    def faux_load_approved(review_id, agent_ids=None):
+        raise ValueError("Review non approuvé ou introuvable.")
+    monkeypatch.setattr(rsync, "load_approved_review", faux_load_approved)
+
+    with pytest.raises(ValueError, match="non approuvé"):
+        run(orchestrateur.exporter_portfolio_m3("review-inexistant"))
+
+
+def test_exporter_portfolio_m3_avec_fiches(orchestrateur, monkeypatch):
+    """Avec un review approuvé contenant des fiches : retourne la liste de références M3."""
+    from app.services.backend_sync import review_sync as rsync
+
+    fiches = [
+        {"intitule": "Formation IA", "client": "ONG X", "annee": "2025", "nb_participants": 20, "duree_jours": 3, "domaine": "IA"},
+        {"intitule": "Formation Data", "client": "Entreprise Y", "annee": "2024", "nb_participants": 15, "duree_jours": 2, "domaine": "Data"},
+    ]
+
+    def faux_load_approved(review_id, agent_ids=None):
+        return {"data": {"fiches_reference": fiches}}
+    monkeypatch.setattr(rsync, "load_approved_review", faux_load_approved)
+
+    resultat = run(orchestrateur.exporter_portfolio_m3("review-approuve-123"))
+    assert resultat["success"] is True
+    assert resultat["nb_references"] == 2
+    assert resultat["references"][0]["intitule"] == "Formation IA"
+    assert resultat["references"][1]["client"] == "Entreprise Y"
+    assert "usage" in resultat

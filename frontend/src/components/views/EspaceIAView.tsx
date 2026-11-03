@@ -19,11 +19,13 @@ const supportStatusStyle: Record<string, string> = {
   en_attente: 'bg-slate-100 text-slate-600', en_cours: 'bg-blue-50 text-blue-700',
   indexe: 'bg-emerald-50 text-emerald-700', deja_indexe: 'bg-emerald-50 text-emerald-700',
   erreur: 'bg-red-50 text-red-700', ocr_necessaire: 'bg-amber-50 text-amber-800',
-  non_indexable_image: 'bg-amber-50 text-amber-800'
+  non_indexable_image: 'bg-amber-50 text-amber-800',
+  archive: 'bg-slate-200 text-slate-500',
 };
 const supportStatusLabel: Record<string, string> = {
   en_attente: 'En attente', en_cours: 'Indexation en cours', indexe: 'Indexé', deja_indexe: 'Déjà indexé',
-  erreur: "Erreur d'indexation", ocr_necessaire: 'OCR nécessaire', non_indexable_image: 'Image non indexable'
+  erreur: "Erreur d'indexation", ocr_necessaire: 'OCR nécessaire', non_indexable_image: 'Image non indexable',
+  archive: 'Archivé',
 };
 const labels: Record<string, string> = {
   resume: 'Résumé', synthese: 'Synthèse', progression: 'Progression', competences: 'Compétences',
@@ -633,7 +635,52 @@ export const EspaceIAView: React.FC<{ readOnly?: boolean; trainerMode?: boolean;
 
     {tab === 'supports' && <div className="grid lg:grid-cols-[minmax(280px,0.8fr)_minmax(0,1.2fr)] gap-4">
       {(!readOnly || trainerMode) && <form onSubmit={upload} className={`${panel} space-y-4`}><div><h2 className="font-extrabold text-[#11162A]">Ajouter un support de formation</h2><p className="mt-1 text-[11px] leading-relaxed text-slate-500">{trainerMode ? 'Choisissez une session qui vous est affectée ; le document ne sera visible que dans celle-ci.' : 'Chaque support est classé par session puis par module pour éviter de mélanger les contenus.'}</p></div><div><label className="block font-bold text-slate-600 text-[11px] uppercase mb-1">Session de formation *</label><select required value={sessionId} onChange={e => { const id = e.target.value; setSessionId(id); setFormationCode(sessions.find((item: any) => item.id === id)?.formation_code ?? ''); setModule(''); }} className="w-full px-3 py-2.5 border border-slate-300 bg-slate-50 rounded-xl text-sm"><option value="">Sélectionner une session</option>{sessions.map((item: any) => <option key={item.id} value={item.id}>{item.titre}{item.formation_code ? ` — ${item.formation_code}` : ''}</option>)}</select></div><div><label className="block font-bold text-slate-600 text-[11px] uppercase mb-1">Séance / module pédagogique *</label><input required list="rag-session-modules" value={module} onChange={e => setModule(e.target.value)} placeholder="Choisir une séance ou saisir un module" className="w-full px-3 py-2.5 border border-slate-300 bg-slate-50 rounded-xl text-sm" /><datalist id="rag-session-modules">{(sessions.find((item: any) => item.id === sessionId)?.modules ?? []).map((name: string) => <option key={name} value={name} />)}</datalist><p className="mt-1 text-[10px] text-slate-500">Les thèmes des séances planifiées et les modules déjà classés sont proposés. Vous pouvez aussi saisir un autre module.</p></div><label className="flex items-center gap-3 border border-dashed border-slate-300 rounded-xl p-4 cursor-pointer hover:border-[#1B8F6E]"><Upload size={18} className="text-[#1B8F6E]" /><span className="text-xs text-slate-600">{file?.name ?? 'Choisir un PDF, DOCX, PPTX, XLSX, TXT ou MD'}</span><input type="file" accept=".pdf,.docx,.pptx,.xlsx,.txt,.md" className="hidden" onChange={e => setFile(e.target.files?.[0] ?? null)} /></label><button disabled={busy || !file || !sessionId || !module.trim()} className="w-full py-2.5 bg-[#1B8F6E] text-white rounded-xl text-xs font-bold flex justify-center gap-2 items-center">{busy ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} />}Indexer dans cette session</button></form>}
-      <section className={panel}><div className="flex justify-between items-center mb-4"><div><h2 className="font-extrabold text-[#11162A]">Supports de formation</h2><p className="mt-1 text-[10px] text-slate-500">Chaque document est isolé par session et repéré par son module pédagogique.</p></div><button onClick={() => loadSupports().catch(e => setError(errorText(e)))} className="text-xs font-bold text-[#1B8F6E]">Actualiser</button></div>{sessions.length > 0 && <div className="mb-4 flex flex-wrap gap-2"><button onClick={() => { setSessionId(''); setFormationCode(''); }} className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${sessionId ? 'bg-slate-100 text-slate-600' : 'bg-[#11162A] text-white'}`}>Toutes les sessions</button>{sessions.map((item: any) => <button key={item.id} onClick={() => { setSessionId(item.id); setFormationCode(item.formation_code ?? ''); }} className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${sessionId === item.id ? 'bg-emerald-700 text-white' : 'bg-emerald-50 text-emerald-800'}`}>{item.titre}</button>)}</div>}{supports.length ? <div className="max-h-[440px] space-y-2 overflow-auto">{supports.map((s: any, i) => { const status = s.statut_indexation ?? s.statut ?? 'en_attente'; const course = formations.find((f: any) => f.code === s.formation_code); const trainingSession = sessions.find((item: any) => item.id === s.session_id); return <div key={s.hash ?? s.doc_hash ?? s.id ?? i} className="flex items-start justify-between gap-3 rounded-xl border border-slate-200 p-3"><div className="min-w-0"><div className="truncate font-bold text-sm text-[#11162A]">{s.fichier ?? s.nom_fichier ?? s.filename ?? 'Support'}</div><div className="mt-1 text-[11px] font-semibold text-emerald-800">{trainingSession?.titre ?? s.session_id ?? 'Session non classée'}{s.formation_code ? ` · ${s.formation_code}` : ''}{course?.titre ? ` — ${course.titre}` : ''}{s.module ? ` · ${s.module}` : ''}</div>{s.message && <p className="mt-1 text-[10px] text-slate-500">{s.message}</p>}</div><span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-bold ${supportStatusStyle[status] ?? 'bg-slate-100 text-slate-600'}`}>{supportStatusLabel[status] ?? status}</span></div>; })}</div> : <p className="rounded-xl bg-slate-50 p-4 text-xs text-slate-500">{sessionId ? `Aucun support enregistré pour la session sélectionnée.` : 'Aucun support disponible.'}</p>}</section>
+      <section className={panel}><div className="flex justify-between items-center mb-4"><div><h2 className="font-extrabold text-[#11162A]">Supports de formation</h2><p className="mt-1 text-[10px] text-slate-500">Chaque document est isolé par session et repéré par son module pédagogique.</p></div><button onClick={() => loadSupports().catch(e => setError(errorText(e)))} className="text-xs font-bold text-[#1B8F6E]">Actualiser</button></div>{sessions.length > 0 && <div className="mb-4 flex flex-wrap gap-2"><button onClick={() => { setSessionId(''); setFormationCode(''); }} className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${sessionId ? 'bg-slate-100 text-slate-600' : 'bg-[#11162A] text-white'}`}>Toutes les sessions</button>{sessions.map((item: any) => <button key={item.id} onClick={() => { setSessionId(item.id); setFormationCode(item.formation_code ?? ''); }} className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${sessionId === item.id ? 'bg-emerald-700 text-white' : 'bg-emerald-50 text-emerald-800'}`}>{item.titre}</button>)}</div>}{supports.length ? <div className="max-h-[440px] space-y-2 overflow-auto">{supports.map((s: any, i) => {
+  const status = s.statut_indexation ?? s.statut ?? 'en_attente';
+  const docHash = s.hash ?? s.doc_hash ?? s.id;
+  const course = formations.find((f: any) => f.code === s.formation_code);
+  const trainingSession = sessions.find((item: any) => item.id === s.session_id);
+  const isArchived = status === 'archive';
+  const canArchive = status === 'indexe' || status === 'deja_indexe';
+  const handleArchive = async () => {
+    if (!docHash) return;
+    try {
+      await apiService.archiveSupport(docHash);
+      setSupports(prev => prev.map(sup => (sup.hash ?? sup.doc_hash) === docHash ? { ...sup, statut: 'archive', message: 'Archivé — chunks retirés, fichier conservé.' } : sup));
+      setNotice('Support archivé. Les recherches ne l\'utiliseront plus. Vous pouvez le restaurer à tout moment.');
+    } catch (e) { setError(errorText(e)); }
+  };
+  const handleRestore = async () => {
+    if (!docHash) return;
+    try {
+      await apiService.restoreSupport(docHash);
+      setSupports(prev => prev.map(sup => (sup.hash ?? sup.doc_hash) === docHash ? { ...sup, statut: 'en_cours', message: 'Restauration en cours…' } : sup));
+      setNotice('Restauration lancée en arrière-plan. Actualisez dans quelques secondes.');
+    } catch (e) { setError(errorText(e)); }
+  };
+  return (
+    <div key={docHash ?? i} className={`flex items-start justify-between gap-3 rounded-xl border p-3 ${isArchived ? 'border-slate-200 bg-slate-50 opacity-70' : 'border-slate-200'}`}>
+      <div className="min-w-0 flex-1">
+        <div className={`truncate font-bold text-sm ${isArchived ? 'text-slate-400 line-through' : 'text-[#11162A]'}`}>{s.fichier ?? s.nom_fichier ?? s.filename ?? 'Support'}</div>
+        <div className="mt-1 text-[11px] font-semibold text-emerald-800">{trainingSession?.titre ?? s.session_id ?? 'Session non classée'}{s.formation_code ? ` · ${s.formation_code}` : ''}{course?.titre ? ` — ${course.titre}` : ''}{s.module ? ` · ${s.module}` : ''}</div>
+        {s.message && <p className="mt-1 text-[10px] text-slate-500">{s.message}</p>}
+      </div>
+      <div className="flex flex-col items-end gap-1.5 shrink-0">
+        <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${supportStatusStyle[status] ?? 'bg-slate-100 text-slate-600'}`}>{supportStatusLabel[status] ?? status}</span>
+        {!readOnly && canArchive && (
+          <button type="button" onClick={handleArchive} title="Archiver ce support (retire les chunks, fichier conservé)" className="flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-amber-50 border border-amber-200 text-amber-700 hover:bg-amber-100 transition">
+            Archiver
+          </button>
+        )}
+        {!readOnly && isArchived && (
+          <button type="button" onClick={handleRestore} title="Restaurer ce support (ré-indexation depuis le fichier conservé)" className="flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-emerald-50 border border-emerald-200 text-emerald-700 hover:bg-emerald-100 transition">
+            Restaurer
+          </button>
+        )}
+      </div>
+    </div>
+  );
+})}</div> : <p className="rounded-xl bg-slate-50 p-4 text-xs text-slate-500">{sessionId ? `Aucun support enregistré pour la session sélectionnée.` : 'Aucun support disponible.'}</p>}</section>
     </div>}
 
     {tab === 'chat' && <div className={`grid gap-4 ${ragConversations.length > 0 ? 'lg:grid-cols-[220px_minmax(0,1fr)]' : ''}`}>
@@ -720,7 +767,7 @@ export const EspaceIAView: React.FC<{ readOnly?: boolean; trainerMode?: boolean;
                     ? <span className="flex items-center gap-1.5 text-slate-400 italic"><span className="flex gap-0.5">{[0,1,2].map(d => <span key={d} className="w-1.5 h-1.5 rounded-full bg-slate-400 animate-bounce" style={{animationDelay:`${d*120}ms`}}/>)}</span>{streamingStatus || 'Préparation de la réponse…'}</span>
                     : ''}
                 {m.text && !isStreaming && (
-                  <div className={`absolute -bottom-5 ${isUser ? 'right-0' : 'left-0'} flex items-center gap-1 opacity-0 group-hover:opacity-100 transition`}>
+                  <div className={`absolute -bottom-5 ${isUser ? 'right-0' : 'left-0'} flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition`}>
                     <button type="button" onClick={() => copyMessage(m.text, i)} title="Copier" className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-white border border-slate-200 text-[10px] text-slate-500 hover:text-[#1B8F6E] hover:border-[#1B8F6E] shadow-sm transition">
                       {copiedMsgIdx === i ? <Check size={10} className="text-emerald-600" /> : <Copy size={10} />}
                       {copiedMsgIdx === i ? 'Copié' : 'Copier'}

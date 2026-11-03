@@ -26,13 +26,19 @@ tache: |
     "comment fonctionne un réseau de neurones ?").
   - aide_plateforme : question sur L'UTILISATION DE FORMA-IA elle-même,
     ses modules, ses workflows, ses routes, ses validations.
-  - conversationnel : salutation PURE, remerciement PUR, ou question sur
-    l'assistant lui-même (jamais une vraie question de connaissance,
-    même précédée d'un "bonjour").
+  - conversationnel : salutation PURE (bjr, slt, bonjour, salut, cc, hey…),
+    remerciement PUR (merci, mrc…), ou question sur l'assistant lui-même
+    (jamais une vraie question de connaissance, même précédée d'un "bonjour").
+    Abréviations fréquentes reconnues comme salutations : bjr, bsr, slt, cc,
+    wesh, hey, mrc, thks, tchao, ciao.
   - hors_sujet : sujet clairement SANS RAPPORT avec les formations ALTIORA
     ou FORMA-IA (blockchain, cuisine, sport, politique, etc.).
     Les demandes de météo, d'actualité générale, de recettes ou de résultats
     sportifs sont toujours hors_sujet, même si un support pédagogique existe.
+  - incomprehensible : message que tu ne peux pas interpréter avec certitude
+    (suite de lettres sans sens, frappe aléatoire, abréviation inconnue isolée).
+    N'invente JAMAIS une intention. Classe incomprehensible plutôt que de
+    supposer.
 
   ═══════════════════════════════════════════════════════════════
   RÈGLE CRITIQUE — DISTINGUER aide_plateforme DE question_fond
@@ -71,12 +77,30 @@ tache: |
 
   Un message qui commence par une salutation MAIS contient une vraie
   question N'EST JAMAIS "conversationnel" : classe la question elle-même
-  (selon les règles ci-dessus).
+  (selon les règles ci-dessus). Abréviations valides comme salutations :
+  bjr, bsr, slt, slut, cc, wesh, hey, yoo, yo.
 
   "bonjour" seul → conversationnel
-  "bonjour, c'est quoi le deep learning ?" → question_fond
-  "salut, comment valider une facture ?" → aide_plateforme
+  "bjr" seul → conversationnel
+  "slt" seul → conversationnel
+  "bjr, c'est quoi le deep learning ?" → question_fond
+  "slt, comment valider une facture ?" → aide_plateforme
   "merci" seul → conversationnel
+  "mrc" seul → conversationnel
+
+  ═══════════════════════════════════════════════════════════════
+  RÈGLE — MESSAGES INCOMPRÉHENSIBLES
+  ═══════════════════════════════════════════════════════════════
+
+  Si le message est une suite de lettres sans sens ("azerty", "qsdf",
+  "lkjhg"), une abréviation totalement inconnue, ou une frappe manifestement
+  aléatoire — et que tu ne peux PAS deviner l'intention — classe
+  incomprehensible. Ne suppose jamais une intention à partir de rien.
+
+  "azerty" → incomprehensible
+  "qsdf formation" → incomprehensible
+  "pls" seul → incomprehensible (trop ambigu hors contexte)
+  "slut" seul → conversationnel (abréviation de "salut")
 
 format: |
   Retourne UNIQUEMENT un objet JSON valide, sans texte autour :
@@ -109,13 +133,29 @@ exemples: |
   "explique-moi la régression logistique" -> {"type": "question_fond"}
   "comment fonctionne un réseau de neurones ?" -> {"type": "question_fond"}
 
-  # Conversationnel
+  # Conversationnel (orthographe correcte ou abréviations reconnues)
   "bonjour" -> {"type": "conversationnel"}
+  "bjr" -> {"type": "conversationnel"}
+  "slt" -> {"type": "conversationnel"}
+  "slut" -> {"type": "conversationnel"}
+  "cc" -> {"type": "conversationnel"}
   "merci beaucoup" -> {"type": "conversationnel"}
+  "mrc" -> {"type": "conversationnel"}
   "qui es-tu ?" -> {"type": "conversationnel"}
+  "bjr, koi de nv ?" -> {"type": "conversationnel"}
+
+  # Salutation + vraie question → classer la question
+  "bjr, c'est quoi le deep learning ?" -> {"type": "question_fond"}
+  "slt comment valider une facture ?" -> {"type": "aide_plateforme"}
 
   # Hors sujet
   "qu'est-ce que la blockchain ?" -> {"type": "hors_sujet"}
   "comment cuisiner une pizza ?" -> {"type": "hors_sujet"}
   "qui a gagné la Coupe du monde 2022 ?" -> {"type": "hors_sujet"}
   "Quelle est la météo à Antananarivo ?" -> {"type": "hors_sujet"}
+
+  # Incompréhensible
+  "azerty" -> {"type": "incomprehensible"}
+  "qsdfgh" -> {"type": "incomprehensible"}
+  "lkjh formation" -> {"type": "incomprehensible"}
+  "pls" -> {"type": "incomprehensible"}

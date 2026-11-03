@@ -457,6 +457,8 @@ class ApiService {
   async getRagSessions() { return this.request<any>('/ia/rag/sessions', {}, { ia: true }); }
   async getRagIndexStatus(hash: string) { return this.request<any>(`/ia/rag/statut/${encodeURIComponent(hash)}`, {}, { ia: true }); }
   async indexSupport(chemin_fichier: string, formation_code: string, session_id: string, module?: string) { return this.request('/ia/rag/indexer-document', this.json('POST', { chemin_fichier, formation_code, session_id, module }), { ia: true }); }
+  async archiveSupport(docHash: string) { return this.request<any>(`/ia/rag/documents/${docHash}/archiver`, this.json('PATCH', {}), { ia: true }); }
+  async restoreSupport(docHash: string) { return this.request<any>(`/ia/rag/documents/${docHash}/restaurer`, this.json('PATCH', {}), { ia: true }); }
   async chatRag(body: { message: string; conversation_id?: string | null; formation_code?: string | null; session_id?: string | null; module?: string | null }) { return this.request<any>('/ia/rag/chat', this.json('POST', body), { ia: true, timeout: 120000 }); }
   async chatRagStream(
     body: { message: string; conversation_id?: string | null; formation_code?: string | null; session_id?: string | null; module?: string | null },

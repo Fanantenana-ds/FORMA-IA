@@ -8,7 +8,7 @@ function renderMarkdown(text: string): string {
     .replace(/^(\d+)\. (.+)$/gm, '<li>$2</li>')
     .replace(/\n/g, '<br />');
 }
-import { AlertCircle, Check, Copy, FileText, Loader2, MessageCircle, Paperclip, Pencil, PlusCircle, Send, ShieldCheck, Trash2, Upload, X } from 'lucide-react';
+import { AlertCircle, Check, Copy, FileText, Loader2, MessageCircle, Paperclip, Pencil, PlusCircle, Send, ShieldCheck, ThumbsDown, ThumbsUp, Trash2, Upload, X } from 'lucide-react';
 import { apiService } from '../../services/api';
 import { MenuSection } from '../../types';
 
@@ -153,6 +153,7 @@ export const EspaceIAView: React.FC<{ readOnly?: boolean; trainerMode?: boolean;
   const [renamingConvId, setRenamingConvId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const [copiedMsgIdx, setCopiedMsgIdx] = useState<number | null>(null);
+  const [feedbacks, setFeedbacks] = useState<Record<number, 'positif' | 'negatif'>>({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [draft, setDraft] = useState('');
   const [reviewNote, setReviewNote] = useState('');
@@ -201,6 +202,7 @@ export const EspaceIAView: React.FC<{ readOnly?: boolean; trainerMode?: boolean;
     setDraft('');
     setError('');
     setStreamingStatus('');
+    setFeedbacks({});
   };
 
   const resumeConversation = async (conv: any) => {
@@ -244,6 +246,14 @@ export const EspaceIAView: React.FC<{ readOnly?: boolean; trainerMode?: boolean;
     void navigator.clipboard.writeText(text);
     setCopiedMsgIdx(idx);
     setTimeout(() => setCopiedMsgIdx(null), 1500);
+  };
+
+  const sendFeedback = async (idx: number, fb: 'positif' | 'negatif') => {
+    if (!conversationId) return;
+    setFeedbacks(prev => ({ ...prev, [idx]: fb }));
+    try {
+      await apiService.feedbackRagMessage(conversationId, idx, fb);
+    } catch (_) { /* feedback non bloquant */ }
   };
 
 
@@ -703,15 +713,29 @@ export const EspaceIAView: React.FC<{ readOnly?: boolean; trainerMode?: boolean;
                 {m.text
                   ? isUser
                     ? <>{m.text}{isStreaming && <span className="inline-block w-0.5 h-3 bg-white ml-0.5 align-middle animate-pulse" />}</>
-                    : <><span dangerouslySetInnerHTML={{ __html: renderMarkdown(m.text) }} />{isStreaming && <span className="inline-block w-0.5 h-3 bg-[#1B8F6E] ml-0.5 align-middle animate-pulse" />}</>
+                    : isStreaming
+                      ? <>{m.text}<span className="inline-block w-0.5 h-3 bg-[#1B8F6E] ml-0.5 align-middle animate-pulse" /></>
+                      : <span dangerouslySetInnerHTML={{ __html: renderMarkdown(m.text) }} />
                   : isStreaming
                     ? <span className="flex items-center gap-1.5 text-slate-400 italic"><span className="flex gap-0.5">{[0,1,2].map(d => <span key={d} className="w-1.5 h-1.5 rounded-full bg-slate-400 animate-bounce" style={{animationDelay:`${d*120}ms`}}/>)}</span>{streamingStatus || 'Préparation de la réponse…'}</span>
                     : ''}
                 {m.text && !isStreaming && (
-                  <button type="button" onClick={() => copyMessage(m.text, i)} title="Copier" className={`absolute -bottom-5 ${isUser ? 'right-0' : 'left-0'} flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-white border border-slate-200 text-[10px] text-slate-500 hover:text-[#1B8F6E] hover:border-[#1B8F6E] shadow-sm transition opacity-0 group-hover:opacity-100`}>
-                    {copiedMsgIdx === i ? <Check size={10} className="text-emerald-600" /> : <Copy size={10} />}
-                    {copiedMsgIdx === i ? 'Copié' : 'Copier'}
-                  </button>
+                  <div className={`absolute -bottom-5 ${isUser ? 'right-0' : 'left-0'} flex items-center gap-1 opacity-0 group-hover:opacity-100 transition`}>
+                    <button type="button" onClick={() => copyMessage(m.text, i)} title="Copier" className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-white border border-slate-200 text-[10px] text-slate-500 hover:text-[#1B8F6E] hover:border-[#1B8F6E] shadow-sm transition">
+                      {copiedMsgIdx === i ? <Check size={10} className="text-emerald-600" /> : <Copy size={10} />}
+                      {copiedMsgIdx === i ? 'Copié' : 'Copier'}
+                    </button>
+                    {!isUser && (
+                      <>
+                        <button type="button" onClick={() => void sendFeedback(i, 'positif')} title="Bonne réponse" className={`p-0.5 rounded-md border shadow-sm transition ${feedbacks[i] === 'positif' ? 'bg-emerald-50 border-emerald-400 text-emerald-600' : 'bg-white border-slate-200 text-slate-400 hover:text-emerald-600 hover:border-emerald-300'}`}>
+                          <ThumbsUp size={10} />
+                        </button>
+                        <button type="button" onClick={() => void sendFeedback(i, 'negatif')} title="Mauvaise réponse" className={`p-0.5 rounded-md border shadow-sm transition ${feedbacks[i] === 'negatif' ? 'bg-red-50 border-red-400 text-red-600' : 'bg-white border-slate-200 text-slate-400 hover:text-red-500 hover:border-red-300'}`}>
+                          <ThumbsDown size={10} />
+                        </button>
+                      </>
+                    )}
+                  </div>
                 )}
               </div>
               {/* Sources — visibles uniquement si retournées par le backend (rôle DIRECTION) */}

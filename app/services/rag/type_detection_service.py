@@ -13,7 +13,7 @@ import logging
 import re
 import unicodedata
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 import yaml
 
@@ -23,7 +23,8 @@ logger = logging.getLogger(__name__)
 
 TYPES_VALIDES = (
     "catalogue", "inventaire", "contenu_formation", "synthese_thematique",
-    "localisation", "question_fond", "aide_plateforme", "conversationnel", "hors_sujet",
+    "localisation", "question_fond", "aide_plateforme", "conversationnel",
+    "hors_sujet", "incomprehensible",
 )
 
 _DOSSIER_PROMPTS = Path(__file__).resolve().parents[2] / "prompts" / "rag"
@@ -34,14 +35,21 @@ _DOSSIER_PROMPTS = Path(__file__).resolve().parents[2] / "prompts" / "rag"
 _PATTERNS_CONVERSATIONNEL = [
     r"(quel(le)?s? (est|sont) (ton|tes) roles?|quelles ton roles?|ton role|tes roles)",
     r"(tu es creer? (pourquoi|pour quoi|pouauoi)|pourquoi as[ -]tu ete cree)",
-    r"(bonjour|salut|bonsoir|coucou|hello|hi|bonne journ[ée]e|bonne soir[ée]e)",
-    r"(merci( beaucoup| bien)?)",
-    r"(au revoir|[àa] bient[ôo]t|bye|[àa] plus)",
+    # Salutations orthographiées + abréviations courantes (bjr, slt, slut=salut, bsr, cc, bonne journée)
+    r"(bonjour|salut|bonsoir|coucou|hello|hi|bonne journ[ée]e|bonne soir[ée]e|bjr|bsr|slt|slut|salu|cc|wesh|hey)",
+    r"(merci( beaucoup| bien)?|mrc|thks|thank(s| you))",
+    r"(au revoir|[àa] bient[ôo]t|bye|[àa] plus|a \+|a plus|tchao|tchau|ciao)",
     r"(qui es[ -]tu|que (sais|peux)[ -]tu faire|comment (tu fonctionnes|[çc]a marche)|"
     r"(c'est quoi|qu'est-ce que) (toi|cet assistant))",
 ]
 _REGEX_CONVERSATIONNEL = re.compile(
     "^(" + "|".join(_PATTERNS_CONVERSATIONNEL) + r")[\s!?.,]*$", re.IGNORECASE,
+)
+
+# Messages trop courts / inintelligibles (≤ 3 mots, aucun mot reconnaissable)
+# On détecte : séquences de touches aléatoires, abréviations inconnues seules.
+_REGEX_ININTELLIGIBLE = re.compile(
+    r"^[a-z]{1,4}(\s[a-z]{1,4}){0,2}[!?.,\s]*$", re.IGNORECASE,
 )
 
 
@@ -64,15 +72,32 @@ def _charger_prompt() -> str:
     return "\n\n".join(s for s in sections if s)
 
 
-async def _detecter_via_llm(message: str) -> str | None:
+async def _detecter_via_llm(message: str, conv: Any = None) -> str | None:
     try:
         llm = get_llm_provider()
     except LLMNotAvailableError:
         return None
 
     try:
+        # Injecter le contexte de la conversation pour éviter les déclassements
+        # (ex : "explique l'étape 4" après une réponse aide_plateforme)
+        contexte_conv = ""
+        if conv and conv.echanges:
+            derniers = conv.echanges[-4:]  # 2 derniers tours max
+            lignes = []
+            for e in derniers:
+                role = "Utilisateur" if e.role == "utilisateur" else "Assistant"
+                lignes.append(f"{role} : {e.texte[:200]}")
+            if lignes:
+                contexte_conv = (
+                    "\n\nCONTEXTE DE LA CONVERSATION (pour bien classer la suite) :\n"
+                    + "\n".join(lignes)
+                    + "\n\nSi le message actuel est une relance ou un approfondissement "
+                    "du sujet précédent, classe-le dans le même type que la réponse précédente."
+                )
+
         reponse = await llm.generate_with_retry(
-            system_prompt=_charger_prompt(),
+            system_prompt=_charger_prompt() + contexte_conv,
             user_prompt=f"Message : {message}",
             temperature=0.0,
             max_tokens=300,  # modèle de raisonnement Groq : 50 était insuffisant (voir resume_service.py)
@@ -110,10 +135,102 @@ def detecter_type_regles(message: str) -> str:
     return "question_fond"
 
 
-async def detecter_type(message: str) -> str:
-    """Point d'entrée : filtre Python -> LLM -> repli par règles."""
+def _est_inintelligible(message: str) -> bool:
+    """True si le message est trop court ou ne contient que des séquences
+    de lettres sans signification après normalisation (sans accents, minuscules).
+
+    Un message ≤ 4 caractères hors espaces qui n'est pas une abréviation connue
+    (ni salutation, ni remerciement) est probablement une faute de frappe grave
+    ou une séquence aléatoire.
+    """
+    normalise = _normaliser(message)
+    stripped = normalise.strip()
+    # Vide ou mono-caractère
+    if len(stripped) <= 1:
+        return True
+    # Correspondance avec les patterns de salutation → pas inintelligible
+    if _REGEX_CONVERSATIONNEL.match(stripped):
+        return False
+    # Contient un chiffre → probablement une vraie demande (référence, code, année)
+    if re.search(r"\d", stripped):
+        return False
+    # Si le message est court (≤ 3 tokens) et ne contient que de petits mots
+    tokens = stripped.split()
+    # Court (≤ 3 tokens) avec tous les tokens ≤ 6 lettres (azerty=6, lkjhg=5…)
+    if len(tokens) <= 3 and all(len(t) <= 6 for t in tokens):
+        # Vérifie qu'aucun token ne ressemble à un mot du domaine métier ou une
+        # abréviation de salutation déjà gérée
+        mots_domaine = {
+            "rag", "tdr", "pdf", "llm", "ia", "m1", "m2", "m3", "m5", "m6", "m7",
+            "hitl", "doc", "ocr", "api",
+        }
+        mots_salutation = {
+            "bjr", "bsr", "slt", "slut", "salu", "cc", "wesh", "hey", "hi",
+            "mrc", "thks", "tchao", "tchau", "ciao", "bonjour", "salut",
+            "merci", "bonsoir", "coucou", "hello", "bye",
+        }
+        if not any(t in mots_domaine or t in mots_salutation for t in tokens):
+            # Teste aussi que le message ne correspond pas à un pattern connu
+            mots_courants = {
+                "aide", "aide-moi", "help", "oui", "non", "ok", "super",
+                "bien", "voila", "voilà", "parfait", "compris",
+            }
+            if not any(t in mots_courants for t in tokens):
+                return True
+    return False
+
+
+def _dernier_type_conversation(conv: Any) -> str | None:
+    """Retourne le type_reponse du dernier échange assistant dans la conversation."""
+    if not conv or not conv.echanges:
+        return None
+    for echange in reversed(conv.echanges):
+        if echange.role == "assistant" and hasattr(echange, "type_reponse") and echange.type_reponse:
+            return echange.type_reponse
+    return None
+
+
+def _est_relance_contextuelle(message: str) -> bool:
+    """True si le message est un approfondissement sans sujet propre
+    (numéro seul, 'explique', 'détaille', 'et le X', 'parle moi du X')."""
+    normalise = _normaliser(message)
+    tokens = normalise.strip().split()
+    if len(tokens) > 8:
+        return False
+    patterns_relance = re.compile(
+        r"^(explique|detaille|developpe|parle moi (de|du)|qu.est[ -]ce que|c.est quoi|"
+        r"et (le|la|les|l.)|dis moi (plus sur|comment)|comment (fonctionne|marche)|"
+        r"c.est (quoi|quoi exactement))[\s\w]{0,40}$",
+        re.IGNORECASE,
+    )
+    # Message court avec un chiffre seul ou "étape X"
+    if re.match(r"^(etape\s*)?\d+[\s!?.,]*$", normalise.strip()):
+        return True
+    return bool(patterns_relance.match(normalise.strip()))
+
+
+async def detecter_type(message: str, conv: Any = None) -> str:
+    """Point d'entrée : filtre Python -> contexte conversation -> LLM -> repli par règles.
+
+    Le paramètre ``conv`` (Conversation) est utilisé pour détecter les relances
+    contextuelles (ex : « explique l'étape 4 » après une réponse aide_plateforme).
+    """
     if filtre_conversationnel_evident(message):
         return "conversationnel"
+
+    # Message inintelligible (frappe aléatoire, trop court, incompréhensible) :
+    # ne pas appeler Voyage ni le LLM — demander poliment une reformulation.
+    if _est_inintelligible(message):
+        return "incomprehensible"
+
+    # Relance contextuelle : si le dernier échange était aide_plateforme et que
+    # le message est un approfondissement sans sujet propre → rester aide_plateforme.
+    if conv and _est_relance_contextuelle(message):
+        dernier = _dernier_type_conversation(conv)
+        if dernier in ("aide_plateforme", "conversationnel"):
+            return "aide_plateforme"
+        if dernier in ("question_fond", "localisation", "synthese_thematique", "contenu_formation"):
+            return dernier  # reste dans le même domaine
 
     # Les questions de fonctionnement de FORMA-IA sont fréquentes à l'oral,
     # parfois transcrites « platforme ». Elles ne nécessitent pas de LLM pour
@@ -122,7 +239,7 @@ async def detecter_type(message: str) -> str:
     if "platform" in normalise or "forma-ia" in normalise or "forma ia" in normalise:
         return "aide_plateforme"
 
-    type_llm = await _detecter_via_llm(message)
+    type_llm = await _detecter_via_llm(message, conv=conv)
     if type_llm:
         return type_llm
 

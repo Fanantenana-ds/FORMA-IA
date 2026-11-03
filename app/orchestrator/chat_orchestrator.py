@@ -158,7 +158,7 @@ class ChatOrchestrator:
         conv = memoire.charger_conversation(conversation_id)
 
         await progress("status", "Analyse de votre question…")
-        type_detecte = await detecter_type(message)
+        type_detecte = await detecter_type(message, conv=conv)
         await progress("status", f"Question reconnue : {type_detecte.replace('_', ' ')}. Préparation de la recherche…")
 
         reponse_depuis_cache = False
@@ -196,11 +196,13 @@ class ChatOrchestrator:
                 if cache_utilise is True and not await self._cache_utilise_pour(message):
                     reponse_depuis_cache = True
             elif type_detecte == "aide_plateforme":
-                texte, sources, modele_requete, cache_utilise = await self._repondre_aide_plateforme(message, hide_references)
+                texte, sources, modele_requete, cache_utilise = await self._repondre_aide_plateforme(message, hide_references, conv=conv)
                 if cache_utilise is True and not await self._cache_utilise_pour(message):
                     reponse_depuis_cache = True
             elif type_detecte == "conversationnel":
-                texte, sources = await self._repondre_conversationnel(message)
+                texte, sources = await self._repondre_conversationnel(message, conv=conv)
+            elif type_detecte == "incomprehensible":
+                texte, sources = self._repondre_incomprehensible(message), []
             else:  # hors_sujet
                 texte, sources = _reponse_mode_strict(), []
         except DelaiDepasseError as exc:
@@ -210,7 +212,7 @@ class ChatOrchestrator:
 
         await progress("status", "Structuration de la réponse…")
 
-        if type_detecte != "hors_sujet" and sources and not hide_references:
+        if type_detecte not in ("hors_sujet", "incomprehensible") and sources and not hide_references:
             texte += MENTION_FIXE
         if hide_references:
             sources = []
@@ -220,7 +222,7 @@ class ChatOrchestrator:
         if formation_code:
             formation_resolue = formation_code
         conv = memoire.ajouter_echange(conv, "utilisateur", message)
-        conv = memoire.ajouter_echange(conv, "assistant", texte, formation_code=formation_resolue)
+        conv = memoire.ajouter_echange(conv, "assistant", texte, formation_code=formation_resolue, type_reponse=type_detecte)
         if user_id:
             conv.user_id = user_id
         memoire.sauvegarder_conversation(conv)
@@ -334,21 +336,51 @@ class ChatOrchestrator:
             )
         return texte, []
 
-    async def _repondre_conversationnel(self, message: str = ""):
-        fallback, sources = self._reponse_conversationnelle_locale(message)
+    def _repondre_incomprehensible(self, message: str = "") -> str:
+        """Réponse professionnelle lorsque le message n'est pas interprétable.
+        Aucun appel Voyage ni LLM — pas de risque d'hallucination."""
+        return (
+            "Je n'ai pas bien compris votre message. "
+            "Pourriez-vous reformuler votre question en quelques mots ?\n\n"
+            "Par exemple :\n"
+            "- « Quelles formations proposez-vous ? »\n"
+            "- « Comment fonctionne le module TDR ? »\n"
+            "- « Où est expliqué le deep learning ? »"
+        )
+
+    async def _repondre_conversationnel(self, message: str = "", conv: "memoire.Conversation | None" = None):
+        # Si l'utilisateur a déjà échangé dans cette conversation,
+        # ne pas répéter l'intro complète : réponse courte et contextualisée.
+        deja_salue = conv and len(conv.echanges) >= 2
+        if deja_salue:
+            fallback = "Comment puis-je vous aider ?"
+        else:
+            fallback, _ = self._reponse_conversationnelle_locale(message)
+        sources: list = []
         try:
             llm = get_llm_provider()
+            historique_txt = _formater_historique(conv) if conv else ""
+            contexte_hist = (
+                f"\n\nHISTORIQUE (ne pas répéter, juste s'en souvenir) :\n{historique_txt}"
+                if historique_txt else ""
+            )
             reponse = await llm.generate_with_retry(
                 system_prompt=(
                     "Tu es l'assistant conversationnel FORMA-IA d'ALTIORA PREST. "
-                    "Réponds en français, avec un ton professionnel et cordial, en une à trois phrases. "
-                    "Tu connais seulement le cadre général suivant : FORMA-IA accompagne la veille marché, "
-                    "la préparation TDR et offres, les sessions de formation, les présences, les évaluations, "
-                    "la base documentaire RAG et la facturation. N'invente ni données, ni résultats, ni fonction. "
-                    'Retourne uniquement un objet JSON de forme {"reponse":"..."}.'
+                    "Réponds en français, avec un ton professionnel et cordial.\n"
+                    "RÈGLES :\n"
+                    "- Si l'utilisateur a DÉJÀ reçu la présentation de l'assistant, "
+                    "réponds en UNE phrase courte et naturelle (pas l'intro complète).\n"
+                    "- Si c'est le premier échange, présente-toi brièvement en 2 phrases max.\n"
+                    "- Abréviations fréquentes : bjr=bonjour, slt/slut=salut, cc=coucou, "
+                    "mrc=merci, bsr=bonsoir. Interprète-les naturellement.\n"
+                    "- N'invente aucune donnée, résultat ou fonctionnalité.\n"
+                    "- FORMA-IA accompagne : veille, TDR, offres, sessions, attestations, facturation, RAG.\n"
+                    'Retourne UNIQUEMENT {"reponse":"..."}.'
+                    + contexte_hist
                 ),
-                user_prompt=f"Message : {message}\nRéponse de référence autorisée : {fallback}",
-                temperature=0.25, max_tokens=300, json_mode=True, max_retries=1,
+                user_prompt=f"Message : {message}",
+                temperature=0.25, max_tokens=200, json_mode=True, max_retries=1,
                 reasoning_effort="low",
             )
             import json
@@ -565,11 +597,11 @@ class ChatOrchestrator:
         rcache.mettre_en_cache(message, "support", {"texte": texte, "sources": sources, "hide_references": hide_references}, formation_code, session_id)
         return texte, sources, provider.modele_requete, cache_avant
 
-    async def _repondre_aide_plateforme(self, message, hide_references=False):
+    async def _repondre_aide_plateforme(self, message, hide_references=False, conv=None):
         cache_avant = await self._cache_utilise_pour(message)
         provider = get_embedding_provider()
 
-        # Cache de réponse LLM
+        # Cache de réponse LLM (clé inclut la question uniquement — pas la conv)
         cache_reponse = rcache.depuis_cache(message, "aide_plateforme")
         if cache_reponse:
             return cache_reponse["texte"], cache_reponse["sources"], provider.modele_requete, True
@@ -579,8 +611,23 @@ class ChatOrchestrator:
             attente_max_s=ATTENTE_MAX_CHAT_S, repository=self.repository,
         )
 
+        historique = _formater_historique(conv)
+
         if not resultats:
-            return GUIDE_DEMARRAGE_PLATEFORME, [], provider.modele_requete, cache_avant
+            # Aucun document indexé : utiliser le guide statique + historique pour répondre
+            # à des relances contextuelles ("explique l'étape 4" après avoir vu le guide).
+            contexte_guide = GUIDE_DEMARRAGE_PLATEFORME
+            resultat = await _appeler_llm_json(
+                "reponse_aide_plateforme.yaml",
+                f"QUESTION : {message}\n\nGUIDE FORMA-IA :\n{contexte_guide}",
+                temperature=0.4,
+                historique=historique,
+            )
+            if resultat and resultat.get("reponse"):
+                texte = resultat["reponse"]
+            else:
+                texte = GUIDE_DEMARRAGE_PLATEFORME
+            return texte, [], provider.modele_requete, cache_avant
 
         contexte = "\n\n".join(
             r.contenu if hide_references else f"[{r.fichier}]\n{r.contenu}"
@@ -589,8 +636,8 @@ class ChatOrchestrator:
         resultat = await _appeler_llm_json(
             "reponse_aide_plateforme.yaml",
             f"QUESTION : {message}\n\nEXTRAITS DU GUIDE :\n{contexte}",
-            temperature=0.5,
-            historique=_formater_historique(None),
+            temperature=0.4,
+            historique=historique,
         )
 
         if resultat and resultat.get("reponse"):
@@ -620,6 +667,10 @@ class ChatOrchestrator:
         "aide_plateforme": ["Poser une autre question sur la plateforme"],
         "conversationnel": ["Voir le catalogue des formations", "Poser une question sur un support"],
         "hors_sujet": ["Voir le catalogue des formations disponibles"],
+        "incomprehensible": [
+            "Voir le catalogue des formations",
+            "Poser une question sur la plateforme FORMA-IA",
+        ],
     }
 
     @staticmethod
@@ -634,7 +685,7 @@ class ChatOrchestrator:
         Retombe sur le gabarit statique si le LLM échoue ou est trop lent."""
         import asyncio
         import json as _json
-        if type_detecte in ("hors_sujet", "inventaire", "catalogue", "conversationnel"):
+        if type_detecte in ("hors_sujet", "inventaire", "catalogue", "conversationnel", "incomprehensible"):
             return ChatOrchestrator._GABARITS_SUGGESTIONS.get(type_detecte, [])[:2]
         prompt_sys = (
             "Tu es FORMA-IA. À partir de la question de l'utilisateur et de ta réponse, "

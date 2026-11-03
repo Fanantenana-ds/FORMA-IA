@@ -392,6 +392,52 @@ async def generer_questions(request: GenererQuestionsRequest):
         _gerer_erreur(e, "generer_questions")
 
 
+@router.post(
+    "/questions/exporter-m5",
+    summary="[C3→M5] Export questions RAG → format test_avant/test_apres pour FormGeneratorService",
+)
+async def exporter_questions_m5(request: GenererQuestionsRequest):
+    """Génère les questions de révision depuis les supports indexés et les
+    structure au format M5 (test_avant / test_apres). Résultat injectable
+    directement dans le champ ``supports`` de FormGeneratorService.
+
+    Flux recommandé :
+      1. Indexer les supports de la formation via POST /ia/rag/indexer-document
+      2. Appeler ce endpoint pour obtenir test_avant + test_apres
+      3. Injecter ``supports_resume`` dans ``session_info.supports`` lors
+         de la génération des formulaires (POST /ia/formations/generer-formulaires)
+    """
+    try:
+        orchestrateur = get_rag_orchestrator()
+        return await orchestrateur.exporter_questions_m5(
+            request.formation_code, request.nb_questions_max
+        )
+    except Exception as e:
+        _gerer_erreur(e, "exporter_questions_m5")
+
+
+@router.post(
+    "/portfolio/{review_id}/exporter-m3",
+    summary="[C3→M3] Export portfolio APPROUVÉ → références pour offre technique",
+)
+async def exporter_portfolio_m3(review_id: str):
+    """Exporte un portfolio HITL approuvé au format M3 (champ references
+    de l'annexe de l'offre technique).
+
+    Flux recommandé :
+      1. Générer le portfolio via POST /ia/rag/portfolio
+      2. Approuver via POST /ia/rag/reviews/{review_id}/approve
+      3. Appeler ce endpoint pour obtenir la liste des références
+      4. Injecter ``references`` dans ``session_info.references_portfolio``
+         lors de la génération de l'offre (POST /ia/offres/generer)
+    """
+    try:
+        orchestrateur = get_rag_orchestrator()
+        return await orchestrateur.exporter_portfolio_m3(review_id)
+    except Exception as e:
+        _gerer_erreur(e, "exporter_portfolio_m3")
+
+
 # ============================================================
 # ÉTAPE H — Ingestion en arrière-plan, recherche, statut, santé
 # ============================================================
@@ -481,6 +527,59 @@ async def statut_indexation(doc_hash: str, current_user: User = Depends(get_curr
         raise HTTPException(status_code=404, detail="Ce support n’est pas classé dans une session accessible.")
 
     return {"success": True, "data": asdict(entree)}
+
+
+@router.patch(
+    "/documents/{doc_hash}/archiver",
+    summary="[C3] Archiver un support (chunks retirés, fichier conservé — restaurable)",
+)
+async def archiver_document(doc_hash: str, background_tasks: BackgroundTasks, current_user: User = Depends(get_current_tenant_user), db: Session = Depends(get_db)):
+    """Retire les chunks de la base vectorielle mais garde le fichier original.
+    Le support peut être restauré (ré-indexé) sans re-upload.
+    Réservé à DIRECTION et ADMIN."""
+    if not doc_hash.isalnum() or len(doc_hash) != 64:
+        raise HTTPException(status_code=400, detail="Hash de document invalide.")
+    role_val = getattr(current_user, "role", None)
+    role_str = role_val.value if hasattr(role_val, "value") else str(role_val or "")
+    if role_str not in ("DIRECTION", "ADMIN"):
+        raise HTTPException(status_code=403, detail="Seuls DIRECTION et ADMIN peuvent archiver un document.")
+    entree = registre.obtenir_entree(doc_hash)
+    if entree is None:
+        raise HTTPException(status_code=404, detail="Document introuvable dans le registre.")
+    if entree.session_id:
+        _session_scope(db, current_user, entree.session_id)
+    try:
+        orchestrateur = get_rag_orchestrator()
+        resultat = await orchestrateur.archiver_document(doc_hash)
+        return {"success": True, **resultat}
+    except Exception as e:
+        _gerer_erreur(e, "archiver_document")
+
+
+@router.patch(
+    "/documents/{doc_hash}/restaurer",
+    summary="[C3] Restaurer un support archivé (ré-indexation depuis le fichier conservé)",
+)
+async def restaurer_document(doc_hash: str, background_tasks: BackgroundTasks, current_user: User = Depends(get_current_tenant_user), db: Session = Depends(get_db)):
+    """Ré-indexe un document archivé depuis son fichier original conservé.
+    Échoue proprement si le fichier a été supprimé (ré-upload nécessaire).
+    Réservé à DIRECTION et ADMIN."""
+    if not doc_hash.isalnum() or len(doc_hash) != 64:
+        raise HTTPException(status_code=400, detail="Hash de document invalide.")
+    role_val = getattr(current_user, "role", None)
+    role_str = role_val.value if hasattr(role_val, "value") else str(role_val or "")
+    if role_str not in ("DIRECTION", "ADMIN"):
+        raise HTTPException(status_code=403, detail="Seuls DIRECTION et ADMIN peuvent restaurer un document.")
+    entree = registre.obtenir_entree(doc_hash)
+    if entree is None:
+        raise HTTPException(status_code=404, detail="Document introuvable dans le registre.")
+    try:
+        orchestrateur = get_rag_orchestrator()
+        background_tasks.add_task(orchestrateur.restaurer_document, doc_hash)
+        return {"success": True, "hash": doc_hash, "statut": "restauration_en_cours",
+                "message": "La ré-indexation est lancée en arrière-plan. Suivre via GET /ia/rag/statut/{hash}."}
+    except Exception as e:
+        _gerer_erreur(e, "restaurer_document")
 
 
 @router.get("/stats/cache", summary="Statistiques cache RAG (embeddings + réponses)")

@@ -20,6 +20,7 @@ from app.services.rag import chat_log_service as journal
 from app.services.rag import conversation_service as memoire
 from app.services.rag import recherche_service as recherche
 from app.services.rag import registry_service as registre
+from app.services.rag import response_cache_service as rcache
 from app.services.rag.embedding_provider import get_embedding_provider
 from app.services.rag.formation_resolver_service import resoudre_formation
 from app.services.rag.knowledge_repository import KnowledgeRepository
@@ -160,6 +161,8 @@ class ChatOrchestrator:
         type_detecte = await detecter_type(message)
         await progress("status", f"Question reconnue : {type_detecte.replace('_', ' ')}. Préparation de la recherche…")
 
+        reponse_depuis_cache = False
+
         modele_requete = None
         cache_utilise = None
         formation_resolue: str | None = None
@@ -190,8 +193,12 @@ class ChatOrchestrator:
                 texte, sources, modele_requete, cache_utilise = await self._repondre_localisation(message, formation_code, session_id, module, hide_references)
             elif type_detecte == "question_fond":
                 texte, sources, modele_requete, cache_utilise = await self._repondre_question_fond(message, conv, formation_code, session_id, module, hide_references)
+                if cache_utilise is True and not await self._cache_utilise_pour(message):
+                    reponse_depuis_cache = True
             elif type_detecte == "aide_plateforme":
                 texte, sources, modele_requete, cache_utilise = await self._repondre_aide_plateforme(message, hide_references)
+                if cache_utilise is True and not await self._cache_utilise_pour(message):
+                    reponse_depuis_cache = True
             elif type_detecte == "conversationnel":
                 texte, sources = await self._repondre_conversationnel(message)
             else:  # hors_sujet
@@ -236,6 +243,11 @@ class ChatOrchestrator:
             "formation_resolue": formation_resolue or conv.derniere_formation_code,
             "suggestions": suggestions,
             "duree_ms": round(duree_ms, 1),
+            "trace": {
+                "cache_reponse": reponse_depuis_cache,
+                "cache_embedding": bool(cache_utilise),
+                "voyage_appele": not bool(cache_utilise) and not reponse_depuis_cache,
+            },
         }
 
     # ========================================================
@@ -509,6 +521,13 @@ class ChatOrchestrator:
         cache_avant = await self._cache_utilise_pour(message)
         provider = get_embedding_provider()
 
+        # Cache de réponse LLM
+        cache_reponse = rcache.depuis_cache(message, "support", formation_code, session_id)
+        if cache_reponse and hide_references != cache_reponse.get("hide_references"):
+            cache_reponse = None
+        if cache_reponse:
+            return cache_reponse["texte"], cache_reponse["sources"], provider.modele_requete, True
+
         resultats = await recherche.rechercher(
             message, collection="support", top_k=8,
             formation_code=formation_code,
@@ -543,26 +562,26 @@ class ChatOrchestrator:
             {"fichier": r.fichier, "formation": r.formation_titre, "page": r.page_debut, "score": r.score}
             for r in resultats
         ]
+        rcache.mettre_en_cache(message, "support", {"texte": texte, "sources": sources, "hide_references": hide_references}, formation_code, session_id)
         return texte, sources, provider.modele_requete, cache_avant
 
     async def _repondre_aide_plateforme(self, message, hide_references=False):
         cache_avant = await self._cache_utilise_pour(message)
         provider = get_embedding_provider()
 
-        # Seuil abaissé à 0.35 : les formulations naturelles sans "FORMA-IA"
-        # dans la phrase donnent des scores entre 0.35 et 0.50 sur nos guides.
+        # Cache de réponse LLM
+        cache_reponse = rcache.depuis_cache(message, "aide_plateforme")
+        if cache_reponse:
+            return cache_reponse["texte"], cache_reponse["sources"], provider.modele_requete, True
+
         resultats = await recherche.rechercher(
             message, collection="aide_plateforme", top_k=5, seuil_min=0.20,
             attente_max_s=ATTENTE_MAX_CHAT_S, repository=self.repository,
         )
 
         if not resultats:
-            # Fallback sur le guide de démarrage statique pour les questions
-            # très générales (faible similarité avec les guides spécifiques).
             return GUIDE_DEMARRAGE_PLATEFORME, [], provider.modele_requete, cache_avant
 
-        # RAG + LLM : on synthétise les extraits avec une température plus haute
-        # pour une prose plus fluide et naturelle.
         contexte = "\n\n".join(
             r.contenu if hide_references else f"[{r.fichier}]\n{r.contenu}"
             for r in resultats
@@ -577,7 +596,6 @@ class ChatOrchestrator:
         if resultat and resultat.get("reponse"):
             texte = resultat["reponse"]
         else:
-            # Fallback lisible si le LLM échoue : résumé des extraits trouvés
             lignes = [
                 (r.contenu[:250] if hide_references else f"**{r.fichier}** : {r.contenu[:200]}…")
                 for r in resultats[:3]
@@ -585,6 +603,7 @@ class ChatOrchestrator:
             texte = "Voici ce que j'ai trouvé dans le guide :\n\n" + "\n\n".join(lignes)
 
         sources = [{"fichier": r.fichier, "formation": None, "page": r.page_debut, "score": r.score} for r in resultats]
+        rcache.mettre_en_cache(message, "aide_plateforme", {"texte": texte, "sources": sources})
         return texte, ([] if hide_references else sources), provider.modele_requete, cache_avant
 
     # ========================================================

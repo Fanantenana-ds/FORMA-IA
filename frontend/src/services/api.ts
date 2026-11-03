@@ -390,6 +390,7 @@ class ApiService {
     return this.request<any>(`/public/links/${encodeURIComponent(token)}/formateur`, {method:'POST',body:form}, {auth:false});
   }
   async getCandidates() { return this.request<any[]>('/rh/candidats'); }
+  async getRecentCandidatures(heures = 48) { return this.request<any>(`/ia/rh/candidatures/recentes?heures=${heures}`, {}, { ia: true }); }
   async updateCandidate(id: string, payload: Record<string, unknown>) { return this.request<any>(`/rh/candidats/${encodeURIComponent(id)}`, this.json('PATCH', payload)); }
   async preselectTrainerCv(body: { cv_texte: string; criteres_poste: Record<string, unknown> }) { return this.request<any>('/ia/rh/preselection', this.json('POST', body), { ia: true, timeout: 120000 }); }
   async getCandidateCv(id:string) { return this.request<any>(`/rh/candidats/${encodeURIComponent(id)}/cv`); }

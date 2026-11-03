@@ -24,7 +24,7 @@ import os
 import time
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import Response
 from docx import Document as WordDocument
 from app.services.document_design import apply_docx_branding, add_metadata_table
@@ -41,6 +41,7 @@ from app.schemas.rh_ia import (
     PreselectionCvRequest,
 )
 from app.utils.security import verify_api_key
+from app.core.dependencies import require_role
 
 logger = logging.getLogger(__name__)
 VERBOSE = os.getenv("VERBOSE_LOGS", "true").lower() == "true"
@@ -488,6 +489,64 @@ async def traiter_candidatures_email(
         "duration_seconds": elapsed,
         "resultats": resultats,
     }
+
+
+# =============================================================================
+# ROUTE 0g — GET /candidatures/recentes  (Notification Bell RH)
+# =============================================================================
+
+@router.get(
+    "/candidatures/recentes",
+    summary="[M4] Candidatures récentes — notification Bell RH",
+    description=(
+        "Retourne les candidats soumis au cours des 48 dernières heures, "
+        "avec leur score de présélection et leur décision.\n\n"
+        "Destiné à alimenter la cloche de notification dans le Header : "
+        "badge = nombre de candidats avec `decision_preselection = 'A_DISCUTER'`."
+    ),
+)
+async def candidatures_recentes(
+    heures: int = Query(default=48, ge=1, le=168, description="Fenêtre temporelle en heures (défaut 48h)"),
+    _current_user=Depends(require_role("DIRECTION", "ASSISTANT")),
+) -> dict[str, Any]:
+    from app.database import SessionLocal
+    from app.models.rh import Candidat, DecisionPreselection
+    import datetime as _dt
+
+    db = SessionLocal()
+    try:
+        cutoff = _dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(hours=heures)
+        rows = (
+            db.query(Candidat)
+            .filter(Candidat.date_creation >= cutoff)
+            .order_by(Candidat.date_creation.desc())
+            .limit(50)
+            .all()
+        )
+        candidatures = []
+        for c in rows:
+            candidatures.append({
+                "id": str(c.id),
+                "nom": c.nom,
+                "prenom": c.prenom,
+                "poste_vise": c.poste_vise,
+                "score_preselection": c.score_preselection,
+                "decision": c.decision_preselection.value if c.decision_preselection else None,
+                "date_soumission": c.date_creation.isoformat() if c.date_creation else None,
+                "a_traiter": c.decision_preselection == DecisionPreselection.A_DISCUTER,
+            })
+        non_traites = sum(1 for c in candidatures if c["a_traiter"])
+        return {
+            "success": True,
+            "total": len(candidatures),
+            "non_traites": non_traites,
+            "candidatures": candidatures,
+        }
+    except Exception as e:
+        logger.exception("❌ [M4] candidatures_recentes : %s", e)
+        return {"success": False, "total": 0, "non_traites": 0, "candidatures": []}
+    finally:
+        db.close()
 
 
 # =============================================================================

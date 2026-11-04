@@ -1,10 +1,17 @@
 import logging
 import os
 import time
+import uuid
+import zipfile
+from datetime import datetime
+from io import BytesIO
+from pathlib import Path
 from typing import Any, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
 
 from app.api.v1.endpoints._helpers import build_response as _build_resp
 from app.api.v1.endpoints._helpers import handle_exception as _handle_exc
@@ -21,7 +28,12 @@ from app.services.hitl import replace_pending_review_data
 from app.services.hitl import reject_review as _reject
 from app.services.hitl import delete_pending_review as _delete_pending
 from app.services.hitl import delete_review as _delete_any
-from app.core.dependencies import require_role
+from app.core.dependencies import get_current_tenant_user, require_role
+from app.database import get_db
+from app.models.formation import Inscription, Participant, Presence, Seance, Session as TrainingSession, StatutPresence
+from app.models.rh import Formateur
+from app.services.formations.attestation_generator_service import AttestationGeneratorService
+from app.services.formations.presence_analyzer_service import SEUIL_ELIGIBILITE_ATTESTATION
 from app.utils.security import verify_api_key
 
 logger = logging.getLogger(__name__)
@@ -295,15 +307,23 @@ async def analyze_presences(
              summary="[M5] Agent 5 — Générer les attestations")
 async def generate_attestations(
     payload: GenerateAttestationsRequest,
+    current_user=Depends(require_role("DIRECTION", "ADMIN", "ASSISTANT")),
+    db: Session = Depends(get_db),
     orchestrator: FormationOrchestrator = Depends(get_formation_orchestrator),
 ) -> RouteResponse:
+    session_id = payload.session_data.get("id") or payload.session_data.get("session_id")
+    if not session_id:
+        raise HTTPException(status_code=422, detail="Identifiant de session obligatoire.")
+    session_data, _, eligible_participants, incomplete = _attestation_session_data(str(session_id), current_user, db)
+    if incomplete:
+        raise HTTPException(status_code=409, detail="Complétez tous les pointages avant de générer les attestations.")
     _log_request("POST", "/ia/formations/generate-attestations",
-                 Session=payload.session_data.get("titre", "N/A"),
-                 Éligibles=len(payload.eligible_participants))
+                 Session=session_data.get("titre", "N/A"),
+                 Éligibles=len(eligible_participants))
     start = time.perf_counter()
     try:
         result = await orchestrator.generate_attestations(
-            payload.session_data, payload.eligible_participants
+            session_data, eligible_participants
         )
         elapsed = round(time.perf_counter() - start, 2)
         vlog(f"✅ [Route IA] generate-attestations OK en {elapsed}s")
@@ -311,6 +331,243 @@ async def generate_attestations(
     except Exception as e:
         _handle_exception(e, "generate_attestations")
         return RouteResponse(success=False, message="")
+
+
+def _attestation_session_data(
+    session_id: str,
+    current_user: Any,
+    db: Session,
+) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]], int]:
+    """Lit les inscriptions et présences réelles sous le tenant authentifié."""
+    try:
+        session_uuid = uuid.UUID(session_id)
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(status_code=422, detail="Identifiant de session invalide.") from exc
+
+    owner_id = current_user.owner_id or current_user.id
+    session = db.query(TrainingSession).filter(
+        TrainingSession.id == session_uuid,
+        TrainingSession.owner_id == owner_id,
+    ).first()
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session introuvable dans votre espace.")
+
+    seances = db.query(Seance).filter(
+        Seance.session_id == session.id,
+        Seance.owner_id == owner_id,
+    ).order_by(Seance.date, Seance.heure_debut).all()
+    if not seances:
+        raise HTTPException(status_code=409, detail="Ajoutez au moins une séance avant d’évaluer l’éligibilité.")
+
+    inscriptions = db.query(Inscription).filter(
+        Inscription.session_id == session.id,
+        Inscription.owner_id == owner_id,
+    ).all()
+    participant_ids = [item.participant_id for item in inscriptions]
+    participants_db = db.query(Participant).filter(
+        Participant.id.in_(participant_ids), Participant.owner_id == owner_id,
+    ).all() if participant_ids else []
+    participant_by_id = {str(item.id): item for item in participants_db}
+
+    seance_ids = [item.id for item in seances]
+    presences = db.query(Presence).filter(
+        Presence.seance_id.in_(seance_ids), Presence.owner_id == owner_id,
+    ).all()
+    presence_by_pair = {
+        (str(item.seance_id), str(item.participant_id)): item
+        for item in presences
+    }
+
+    rows: list[dict[str, Any]] = []
+    eligible: list[dict[str, Any]] = []
+    incomplete = 0
+    for inscription in inscriptions:
+        participant = participant_by_id.get(str(inscription.participant_id))
+        if participant is None:
+            continue
+        marked = [
+            presence_by_pair.get((str(seance.id), str(participant.id)))
+            for seance in seances
+        ]
+        missing = sum(item is None for item in marked)
+        incomplete += missing
+        present_count = sum(
+            item is not None and item.statut in {StatutPresence.PRESENT, StatutPresence.RETARD}
+            for item in marked
+        )
+        rate = round(present_count / len(seances) * 100, 1)
+        is_eligible = missing == 0 and rate >= SEUIL_ELIGIBILITE_ATTESTATION
+        name = " ".join(part for part in (participant.prenom, participant.nom) if part)
+        row = {
+            "id": str(participant.id),
+            "nom": name,
+            "email": participant.email,
+            "entreprise": participant.entreprise,
+            "nb_presences": present_count,
+            "nb_seances": len(seances),
+            "taux_presence": rate,
+            "eligible_attestation": is_eligible,
+            "pointages_manquants": missing,
+        }
+        rows.append(row)
+        if is_eligible:
+            eligible.append(row)
+
+    trainer = db.query(Formateur).filter(
+        Formateur.id == session.formateur_id,
+        Formateur.owner_id == owner_id,
+    ).first() if session.formateur_id else None
+    themes = list(dict.fromkeys(item.theme for item in seances if item.theme))
+    duration_hours = 0.0
+    for seance in seances:
+        try:
+            start = datetime.strptime(seance.heure_debut, "%H:%M")
+            end = datetime.strptime(seance.heure_fin, "%H:%M")
+            hours = (end - start).total_seconds() / 3600
+            if 0 < hours <= 16:
+                duration_hours += hours
+        except (TypeError, ValueError):
+            continue
+    session_info = {
+        "id": str(session.id),
+        "session_id": str(session.id),
+        "titre": session.titre,
+        "domaine": session.formation_code or "Formation",
+        "formation_code": session.formation_code,
+        "date_debut": session.date_debut.isoformat() if session.date_debut else "",
+        "date_fin": session.date_fin.isoformat() if session.date_fin else "",
+        "lieu": session.lieu or "À préciser",
+        "formateur": " ".join(part for part in (trainer.prenom, trainer.nom) if part) if trainer else "À préciser",
+        "formateur_id": str(session.formateur_id) if session.formateur_id else None,
+        "duree_jours": len({item.date for item in seances}),
+        "duree_heures": round(duration_hours, 1) if duration_hours else None,
+        "themes": themes,
+        "require_grounded_competencies": True,
+    }
+    return session_info, rows, eligible, incomplete
+
+
+@router.get("/sessions/{session_id}/attestations/eligibilite", summary="[M6] Vérifier l'éligibilité à partir des présences enregistrées")
+async def verifier_eligibilite_attestations(
+    session_id: str,
+    current_user=Depends(require_role("DIRECTION", "ADMIN", "ASSISTANT")),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    session_info, participants, eligible, incomplete = _attestation_session_data(session_id, current_user, db)
+    return {
+        "success": True,
+        "session": session_info,
+        "seuil_presence": SEUIL_ELIGIBILITE_ATTESTATION,
+        "pointages_complets": incomplete == 0,
+        "pointages_manquants": incomplete,
+        "total_participants": len(participants),
+        "total_eligible": len(eligible),
+        "participants": participants,
+    }
+
+
+@router.post("/sessions/{session_id}/attestations/generer", summary="[M6] Générer les attestations PDF des participants éligibles")
+async def generer_attestations_session(
+    session_id: str,
+    current_user=Depends(require_role("DIRECTION", "ADMIN", "ASSISTANT")),
+    db: Session = Depends(get_db),
+    orchestrator: FormationOrchestrator = Depends(get_formation_orchestrator),
+) -> dict[str, Any]:
+    session_info, participants, eligible, incomplete = _attestation_session_data(session_id, current_user, db)
+    if incomplete:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Complétez les {incomplete} pointage(s) manquant(s) avant la génération. Aucun pointage absent n'est supposé.",
+        )
+    if not participants:
+        raise HTTPException(status_code=409, detail="Aucun participant inscrit à cette session.")
+    if session_info.get("lieu") == "À préciser" or session_info.get("formateur") == "À préciser":
+        raise HTTPException(status_code=409, detail="Renseignez le lieu et le formateur de la session avant la génération.")
+    if not eligible:
+        return {"success": True, "message": "Aucun participant n'atteint le seuil de 75 %.", "data": {"total_eligible": 0, "attestations": []}}
+    for pending in list_pending(agent_id="agent_5_attestations"):
+        existing = _get(pending.get("review_id", "")) or {}
+        if str((existing.get("meta") or {}).get("session_id")) == str(session_id):
+            raise HTTPException(status_code=409, detail="Un lot d'attestations attend déjà sa validation pour cette session.")
+    for existing_item in list_reviews(status="approved", agent_id="agent_5_attestations"):
+        existing = _get(existing_item.get("review_id", "")) or {}
+        if str((existing.get("meta") or {}).get("session_id")) == str(session_id):
+            raise HTTPException(status_code=409, detail="Des attestations ont déjà été approuvées pour cette session.")
+
+    result = await orchestrator.generate_attestations(session_info, eligible)
+    return _build_response(result, "Attestations générées pour validation humaine.", float(result.get("duration_seconds", 0)))
+
+
+def _attestation_review(review_id: str, numero: str, *, approved_only: bool = False) -> tuple[dict[str, Any], dict[str, Any]]:
+    review = _get(review_id)
+    if not review or review.get("agent_id") != "agent_5_attestations":
+        raise HTTPException(status_code=404, detail="Dossier d'attestations introuvable.")
+    data = review.get("data") or {}
+    attestation = next((item for item in data.get("attestations", []) if item.get("numero_unique") == numero), None)
+    if not attestation:
+        raise HTTPException(status_code=404, detail="Attestation introuvable dans ce dossier.")
+    if approved_only and attestation.get("approval_status") != "approved":
+        raise HTTPException(status_code=403, detail="Le téléchargement est disponible après approbation humaine.")
+    path = Path(str(attestation.get("pdf_path") or "")).resolve()
+    output_dir = AttestationGeneratorService.OUTPUT_DIR.resolve()
+    if output_dir not in path.parents or path.suffix.lower() != ".pdf" or not path.is_file():
+        raise HTTPException(status_code=404, detail="Fichier PDF indisponible.")
+    return review, attestation
+
+
+@router.get("/reviews/{review_id}/attestations/{numero}/preview", summary="[M6] Prévisualiser un PDF en attente de validation")
+async def preview_attestation(review_id: str, numero: str, _current_user=Depends(require_role("DIRECTION", "ADMIN", "ASSISTANT"))):
+    _, item = _attestation_review(review_id, numero)
+    return FileResponse(item["pdf_path"], media_type="application/pdf", headers={"Content-Disposition": "inline"})
+
+
+@router.get("/reviews/{review_id}/attestations/{numero}/download", summary="[M6] Télécharger un PDF approuvé")
+async def telecharger_attestation(review_id: str, numero: str, _current_user=Depends(require_role("DIRECTION", "ADMIN", "ASSISTANT"))):
+    _, item = _attestation_review(review_id, numero, approved_only=True)
+    return FileResponse(item["pdf_path"], media_type="application/pdf", filename=f"{numero}.pdf")
+
+
+@router.post("/reviews/{review_id}/attestations/{numero}/approve", summary="[M6] Approuver une attestation dans le lot")
+async def approuver_attestation(review_id: str, numero: str, payload: ApproveReviewRequest, _current_user=Depends(require_role("DIRECTION", "ADMIN", "ASSISTANT"))):
+    review = _get(review_id)
+    if not review or review.get("agent_id") != "agent_5_attestations":
+        raise HTTPException(status_code=404, detail="Dossier d'attestations introuvable.")
+    if review.get("status") != "pending_review":
+        raise HTTPException(status_code=409, detail="Ce lot a déjà été traité.")
+    data = dict(review.get("data") or {})
+    items = list(data.get("attestations") or [])
+    target = next((item for item in items if item.get("numero_unique") == numero), None)
+    if not target:
+        raise HTTPException(status_code=404, detail="Attestation introuvable dans ce lot.")
+    target["approval_status"] = "approved"
+    target["reviewer_note"] = payload.reviewer_note
+    data["attestations"] = items
+    replace_pending_review_data(review_id, data, ("agent_5_attestations",), review.get("updated_at", ""))
+    all_approved = all(item.get("approval_status") == "approved" for item in items)
+    if all_approved:
+        approved = _approve(review_id=review_id, reviewer_note="Toutes les attestations du lot ont été approuvées.")
+        return {"success": True, "lot_approved": True, "review": approved}
+    return {"success": True, "lot_approved": False, "approved_count": sum(item.get("approval_status") == "approved" for item in items)}
+
+
+@router.get("/reviews/{review_id}/attestations.zip", summary="[M6] Télécharger le lot d'attestations approuvé en ZIP")
+async def telecharger_lot_attestations(review_id: str, _current_user=Depends(require_role("DIRECTION", "ADMIN", "ASSISTANT"))):
+    review = _get(review_id)
+    if not review or review.get("agent_id") != "agent_5_attestations":
+        raise HTTPException(status_code=404, detail="Dossier d'attestations introuvable.")
+    if review.get("status") != "approved":
+        raise HTTPException(status_code=403, detail="Le lot ZIP est disponible après approbation de toutes les attestations.")
+    archive = BytesIO()
+    with zipfile.ZipFile(archive, mode="w", compression=zipfile.ZIP_DEFLATED) as zip_file:
+        count = 0
+        for item in (review.get("data") or {}).get("attestations", []):
+            _, approved_item = _attestation_review(review_id, item.get("numero_unique", ""), approved_only=True)
+            zip_file.write(approved_item["pdf_path"], arcname=f"{approved_item['numero_unique']}.pdf")
+            count += 1
+    if not count:
+        raise HTTPException(status_code=404, detail="Aucun PDF disponible dans ce lot.")
+    archive.seek(0)
+    return StreamingResponse(archive, media_type="application/zip", headers={"Content-Disposition": f'attachment; filename="attestations-{review_id}.zip"'})
 
 
 @router.post("/generate-report", response_model=RouteResponse,
@@ -505,11 +762,21 @@ async def delete_history_review(review_id: str, _current_user=Depends(require_ro
 async def approve_review(
     review_id: str,
     payload: ApproveReviewRequest,
+    _current_user=Depends(require_role("DIRECTION", "ADMIN", "ASSISTANT")),
 ) -> ReviewResponse:
     _log_request("POST", f"/ia/formations/reviews/{review_id}/approve",
                  Note=payload.reviewer_note or "Aucune")
     try:
         
+        current = _get(review_id)
+        if current and current.get("agent_id") == "agent_5_attestations":
+            data = dict(current.get("data") or {})
+            attestations = list(data.get("attestations") or [])
+            for item in attestations:
+                item["approval_status"] = "approved"
+                item["reviewer_note"] = payload.reviewer_note
+            data["attestations"] = attestations
+            replace_pending_review_data(review_id, data, ("agent_5_attestations",), current.get("updated_at", ""))
         review = _approve(review_id=review_id, reviewer_note=payload.reviewer_note)
         if not review:
             raise HTTPException(404, detail=f"Review '{review_id}' non trouvée")
@@ -531,6 +798,7 @@ async def approve_review(
 async def reject_review(
     review_id: str,
     payload: RejectReviewRequest,
+    _current_user=Depends(require_role("DIRECTION", "ADMIN", "ASSISTANT")),
 ) -> ReviewResponse:
     _log_request("POST", f"/ia/formations/reviews/{review_id}/reject",
                  Raison=payload.reason)

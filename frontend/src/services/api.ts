@@ -422,6 +422,12 @@ class ApiService {
   async getPendingReviews() { return this.request<any>('/ia/formations/pending-reviews', {}, { ia: true, timeout: 30000 }); }
   async getReviewHistory(status: 'approved' | 'rejected', agentId?: string) { const params = new URLSearchParams({ status }); if (agentId) params.set('agent_id', agentId); return this.request<any>(`/ia/formations/reviews?${params}`, {}, { ia: true, timeout: 30000 }); }
   async generateFormationForms(body: unknown) { return this.request<any>('/ia/formations/generate-forms', this.json('POST', body), { ia: true, timeout: 120000 }); }
+  async getM6Eligibility(sessionId: string) { return this.request<any>(`/ia/formations/sessions/${encodeURIComponent(sessionId)}/attestations/eligibilite`, {}, { ia: true, timeout: 30000 }); }
+  async generateSessionAttestations(sessionId: string) { return this.request<any>(`/ia/formations/sessions/${encodeURIComponent(sessionId)}/attestations/generer`, this.json('POST', {}), { ia: true, timeout: 120000 }); }
+  async previewAttestation(reviewId: string, numero: string) { return this.request<Blob>(`/ia/formations/reviews/${encodeURIComponent(reviewId)}/attestations/${encodeURIComponent(numero)}/preview`, {}, { ia: true }); }
+  async downloadAttestation(reviewId: string, numero: string) { return this.request<Blob>(`/ia/formations/reviews/${encodeURIComponent(reviewId)}/attestations/${encodeURIComponent(numero)}/download`, {}, { ia: true }); }
+  async downloadAttestationsZip(reviewId: string) { return this.request<Blob>(`/ia/formations/reviews/${encodeURIComponent(reviewId)}/attestations.zip`, {}, { ia: true }); }
+  async approveAttestationInBatch(reviewId: string, numero: string, reviewer_note?: string) { return this.request<any>(`/ia/formations/reviews/${encodeURIComponent(reviewId)}/attestations/${encodeURIComponent(numero)}/approve`, this.json('POST', { reviewer_note }), { ia: true }); }
   async analyzeFormationLevels(body: unknown) { return this.request<any>('/ia/formations/analyze-levels', this.json('POST', body), { ia: true, timeout: 120000 }); }
   async analyzeFormationSatisfaction(body: unknown) { return this.request<any>('/ia/formations/analyze-satisfaction', this.json('POST', body), { ia: true, timeout: 120000 }); }
   async analyserNiveauxDb(sessionId: string) { return this.request<any>(`/ia/formations/${sessionId}/analyser-niveaux-db`, this.json('POST', {}), { ia: true, timeout: 120000 }); }

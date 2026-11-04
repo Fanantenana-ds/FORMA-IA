@@ -70,7 +70,7 @@ Transverse  Assistance RH (bonus)        M4
 | **Préparation** | EDT (gabarit Python, LLM optionnel), budget en Python pur, HITL ; projet, EDT et budget envoyés au Backend (`/projets`, `/projets/{id}/budget`) | 🟢 |
 | **C3** RAG | Ingestion, embeddings Voyage AI, recherche pgvector, chat MODE STRICT, portfolio, syllabus, questions | ✅ Validé de bout en bout le 10/10/2026 |
 | **M5** Formations | 6 agents (formulaires, niveaux, satisfaction, présences, attestations, rapport), publication Google Forms (OAuth2) après HITL | ✅ |
-| **M6** Attestations | Attestations PDF, seuil de présence 80 % revérifié | ✅ |
+| **M6** Attestations | Seuil 75 % recalculé depuis les séances/pointages Backend, PDF paysage une page, validation individuelle ou par lot et téléchargement PDF/ZIP après approbation | 🟢 Parcours raccordé ; recette sur une base locale avec données métier à rejouer |
 | **M7** Facturation | Montants en Python, relances LLM à 3 niveaux, HITL `critical`, relances approuvées enregistrées (`POST /factures/{id}/relances`) | 🟢 |
 | **M8a** Dashboard | `GET /api/v1/dashboard/statistiques` | 🟡 Non raccordé au frontend |
 | **M4** RH (bonus) | Extraction et présélection de CV, entretiens, contrats et évaluation des formateurs, e-mails RH | 🟢 |
@@ -136,7 +136,7 @@ Notes Groq : `reasoning_effort="low"` est obligatoire pour les modèles de raiso
 | 2 | LevelAnalyzer — niveaux avant/après | Groq + pandas | medium |
 | 3 | SatisfactionAnalyzer | Groq + pandas | medium |
 | 4 | PresenceAnalyzer — anomalies de présence | Python pur | critical |
-| 5 | AttestationGenerator — seuil 80 % revérifié | Python + reportlab | critical |
+| 5 | AttestationGenerator — seuil 75 % revérifié, PDF M6 | Python + reportlab | critical |
 | 6 | ReportGenerator — rapport final | Groq + reportlab | critical |
 
 ### Autres modules

@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 # ============================================================
 # CONFIG
 # ============================================================
-SEUIL_ELIGIBILITE_ATTESTATION = 80  # % présence minimum
+SEUIL_ELIGIBILITE_ATTESTATION = 75  # % présence minimum
 PLAGE_HORAIRE_VALIDE = (dtime(6, 0), dtime(20, 0))  # 06:00 - 20:00
 
 

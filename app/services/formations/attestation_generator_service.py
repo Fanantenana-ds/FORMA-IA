@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -107,7 +108,8 @@ class AttestationGeneratorService:
             f"- Date fin : {session_info.get('date_fin', 'N/A')}",
             f"- Lieu : {session_info.get('lieu', 'N/A')}",
             f"- Formateur : {session_info.get('formateur', 'N/A')}",
-            f"- Durée (jours) : {session_info.get('duree_jours', 2)}",
+            f"- Durée : {session_info.get('duree_jours', 0)} jour(s)",
+            f"- Durée totale observée : {session_info.get('duree_heures') or 'Non renseignée'} heure(s)",
             "",
             "=== PARTICIPANT ===",
             f"- Nom : {participant.get('nom', 'N/A')}",
@@ -118,11 +120,19 @@ class AttestationGeneratorService:
         if contexte_rag:
             lines += [
                 "",
-                "=== CONTENU DE LA FORMATION (extraits des supports indexés) ===",
+                "=== CONTENU DE RÉFÉRENCE DE LA FORMATION ===",
                 contexte_rag,
                 "",
                 "→ Utilise ces extraits pour rédiger des compétences précises et "
                 "spécifiques aux thèmes, outils et techniques abordés.",
+            ]
+        elif session_info.get("require_grounded_competencies") and session_info.get("themes"):
+            lines += [
+                "",
+                "=== THÈMES CONSIGNÉS AUX SÉANCES ===",
+                *[f"- {theme}" for theme in session_info["themes"]],
+                "",
+                "Base les compétences uniquement sur ces thèmes enregistrés.",
             ]
 
         lines += ["", "Retourne UNIQUEMENT le JSON valide, sans texte autour."]
@@ -170,6 +180,49 @@ class AttestationGeneratorService:
         except Exception as exc:
             logger.warning(f"   ⚠️  [AttestationAgent] RAG non disponible : {exc}")
 
+        session_themes = [
+            str(theme).strip()
+            for theme in session_info.get("themes", [])
+            if str(theme).strip()
+        ]
+        syllabus_competencies: list[str] = []
+        formation_code = session_info.get("formation_code") or session_info.get("code")
+        if not contexte_rag and formation_code:
+            try:
+                from app.services.hitl import get_review, list_reviews
+
+                for review_info in list_reviews(status="approved", agent_id="agent_rag_syllabus"):
+                    review = get_review(review_info.get("review_id", "")) or {}
+                    syllabus = review.get("data") or {}
+                    if str(syllabus.get("code", "")) != str(formation_code):
+                        continue
+                    syllabus_competencies = [
+                        str(value).strip()
+                        for value in syllabus.get("competences", [])
+                        if str(value).strip()
+                    ]
+                    if not syllabus_competencies:
+                        syllabus_competencies = [
+                            str(module.get("titre", "")).strip()
+                            for module in syllabus.get("modules", [])
+                            if isinstance(module, dict) and str(module.get("titre", "")).strip()
+                        ]
+                    if syllabus_competencies:
+                        contexte_rag = "Syllabus approuvé par validation humaine :\n" + "\n".join(
+                            f"- {value}" for value in syllabus_competencies
+                        )
+                        break
+            except Exception as exc:
+                logger.warning("   ⚠️ Syllabus approuvé indisponible : %s", type(exc).__name__)
+        grounded_competencies = list(dict.fromkeys(syllabus_competencies + [
+            f"Contenu travaillé : {theme}" for theme in session_themes
+        ]))
+        if session_info.get("require_grounded_competencies") and not contexte_rag and len(grounded_competencies) < 3:
+            raise ValueError(
+                "Aucun support RAG indexé ni thème de séance enregistré : "
+                "au moins trois éléments de contenu vérifiables sont requis."
+            )
+
         content = None
         source = "fallback_template"
 
@@ -190,7 +243,16 @@ class AttestationGeneratorService:
 
         # ── ÉTAPE 2 : FALLBACK ──
         if content is None:
-            content = self._generate_with_template(session_info, participant)
+            if session_info.get("require_grounded_competencies") and len(grounded_competencies) < 3:
+                raise ValueError(
+                    "La génération automatique a échoué et les sources de formation "
+                    "ne permettent pas de rédiger trois compétences vérifiables."
+                )
+            content = self._generate_with_template(
+                {**session_info, "syllabus_competencies": grounded_competencies},
+                participant,
+                session_themes=session_themes,
+            )
             vlog("   ✅ Contenu généré par template Python (fallback)")
 
         elapsed = round((datetime.now() - start).total_seconds(), 2)
@@ -205,6 +267,11 @@ class AttestationGeneratorService:
                 "duration_seconds": elapsed,
                 "participant_id": participant.get("id"),
                 "session_id": session_info.get("id"),
+                "competencies_source": (
+                    "approved_syllabus" if contexte_rag.startswith("Syllabus approuvé") else
+                    "rag_supports" if contexte_rag else
+                    "session_themes" if session_themes else "generic_fallback"
+                ),
             },
         }
 
@@ -218,16 +285,17 @@ class AttestationGeneratorService:
     def _verifier_eligibilite(self, participant: dict[str, Any]) -> "tuple[bool, str | None]":
         """
         Retourne (eligible, raison_du_refus). `eligible_attestation`
-        (booléen déjà calculé par l'Agent 4) fait foi s'il est présent —
-        sinon on retombe sur `taux_presence` (chaîne "85.0%" ou nombre).
+        un booléen négatif de l'Agent 4 fait foi. Un booléen positif est
+        revérifié contre `taux_presence` lorsqu'il est fourni.
         Aucune donnée manquante n'est supposée éligible par défaut.
         """
         if "eligible_attestation" in participant:
             valeur = participant["eligible_attestation"]
             if isinstance(valeur, bool):
-                if valeur:
+                if not valeur:
+                    return False, f"Sous le seuil de {SEUIL_ELIGIBILITE_ATTESTATION}% de présence (calcul Agent 4)."
+                if participant.get("taux_presence") is None:
                     return True, None
-                return False, f"Sous le seuil de {SEUIL_ELIGIBILITE_ATTESTATION}% de présence (calcul Agent 4)."
 
         taux_brut = participant.get("taux_presence")
         if taux_brut is None:
@@ -373,6 +441,7 @@ class AttestationGeneratorService:
         self,
         session_info: dict[str, Any],
         participant: dict[str, Any],
+        session_themes: list[str] | None = None,
     ) -> dict[str, Any]:
         nom = participant.get("nom", "Participant")
         genre = (participant.get("genre") or "").lower()
@@ -383,28 +452,38 @@ class AttestationGeneratorService:
         dates_str = self._format_date_range(date_debut, date_fin)
 
         duree_jours = session_info.get("duree_jours", 2)
-        heures = duree_jours * 7
-        duree_str = f"{duree_jours} jour{'s' if duree_jours > 1 else ''} ({heures} heures)"
+        heures = session_info.get("duree_heures")
+        duree_str = f"{duree_jours} jour{'s' if duree_jours > 1 else ''}"
+        if heures:
+            duree_str += f" ({heures:g} heures)"
 
         domaine = session_info.get("domaine", "Formation")
         formateur = session_info.get("formateur", "Formateur")
 
-        competences = [
-            f"Maîtriser les concepts fondamentaux en {domaine}",
-            f"Appliquer les méthodes et outils essentiels du domaine {domaine}",
-            f"Analyser des cas pratiques liés à {domaine}",
-        ]
+        if session_info.get("require_grounded_competencies"):
+            competences = (session_info.get("syllabus_competencies") or [])[:5]
+            if not competences:
+                competences = [
+                    f"Contenu travaillé : {theme}"
+                    for theme in (session_themes or [])[:5]
+                ]
+        else:
+            competences = [
+                f"Maîtriser les concepts fondamentaux en {domaine}",
+                f"Appliquer les méthodes et outils essentiels du domaine {domaine}",
+                f"Analyser des cas pratiques liés à {domaine}",
+            ]
 
         return {
             "titre_attestation": "ATTESTATION DE FORMATION",
-            "introduction": f"Le Directeur d'ALTIORA Solutions atteste que {civilite} {nom}",
-            "corps": "a suivi avec assiduité et succès la formation professionnelle intitulée :",
+            "introduction": f"Le Directeur d'ALTIORA PREST atteste que {civilite} {nom}",
+            "corps": "a suivi la formation professionnelle intitulée :",
             "details": {
                 "formation": session_info.get("titre", "Formation professionnelle"),
                 "dates": dates_str,
                 "lieu": f"{session_info.get('lieu', 'Antananarivo')}, Madagascar",
                 "duree": duree_str,
-                "formateur": f"Monsieur {formateur}",
+                "formateur": formateur,
                 "domaine": domaine,
                 "niveau": session_info.get("niveau_cible", "Intermédiaire"),
             },
@@ -424,7 +503,18 @@ class AttestationGeneratorService:
         year = datetime.now().year
         domaine = session_info.get("domaine", "GEN")
         code = self.DOMAIN_CODES.get(domaine, domaine[:3].upper() if domaine else "GEN")
-        return f"ALT-{year}-{code}-{index:04d}"
+        code = re.sub(r"[^A-Z0-9]", "", str(code).upper())[:8] or "GEN"
+        registry = self.OUTPUT_DIR / ".numero_registry"
+        registry.mkdir(parents=True, exist_ok=True)
+        for serial in range(1, 1_000_000):
+            numero = f"ALT-{year}-{code}-{serial:04d}"
+            reservation = registry / f"{numero}.reserve"
+            try:
+                reservation.touch(exist_ok=False)
+                return numero
+            except FileExistsError:
+                continue
+        raise RuntimeError("Espace de numérotation des attestations épuisé.")
 
     def _format_date_range(self, date_debut: str, date_fin: str) -> str:
         MOIS_FR = [
@@ -455,18 +545,8 @@ class AttestationGeneratorService:
             self.OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
             numero = attestation_result["numero_unique"]
             pdf_path = self.OUTPUT_DIR / f"attestation_{numero}.pdf"
-
-            if self.TEMPLATE_PATH.exists():
-                try:
-                    return self._build_pdf_from_template(attestation_result, pdf_path)
-                except Exception as e:
-                    logger.warning(
-                        f"   ⚠️  Template Word échoué ({type(e).__name__}: {e}). "
-                        f"Bascule reportlab."
-                    )
-            else:
-                vlog("   ℹ️  Template absent. Utilisation reportlab direct.")
-
+            # ReportLab est utilisé pour garantir la page paysage unique même
+            # lorsque le contenu pédagogique généré est long.
             return self._build_pdf_with_reportlab(attestation_result, pdf_path)
 
         except Exception as e:
@@ -507,12 +587,14 @@ class AttestationGeneratorService:
         return str(pdf_path)
 
     def _build_pdf_with_reportlab(self, result: dict[str, Any], pdf_path: Path) -> str:
+        from xml.sax.saxutils import escape
+
         from reportlab.lib import colors
         from reportlab.lib.enums import TA_CENTER, TA_RIGHT
         from reportlab.lib.pagesizes import A4, landscape
         from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
         from reportlab.lib.units import cm
-        from reportlab.platypus import Image as RLImage, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+        from reportlab.platypus import KeepInFrame, Image as RLImage, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
         content = result["content"]
         d = content["details"]
@@ -549,10 +631,10 @@ class AttestationGeneratorService:
             Paragraph("ALTIORA PREST", header_st),
             Paragraph("Antananarivo, Madagascar", sub_st),
             Spacer(1, 0.5*cm),
-            Paragraph(content["titre_attestation"], title_st),
+            Paragraph(escape(content["titre_attestation"]), title_st),
             Spacer(1, 0.5*cm),
-            Paragraph(content["introduction"], body_st),
-            Paragraph(content["corps"], body_st),
+            Paragraph(escape(content["introduction"]), body_st),
+            Paragraph(escape(content["corps"]), body_st),
             Spacer(1, 0.5*cm),
         ]
 
@@ -575,24 +657,26 @@ class AttestationGeneratorService:
         story.append(t)
         story.append(Spacer(1, 0.7*cm))
 
-        story.append(Paragraph("<b>Compétences acquises :</b>", small_st))
+        story.append(Paragraph("<b>Contenus et compétences abordés :</b>", small_st))
         for c in content["competences"]:
-            story.append(Paragraph(f"• {c}", small_st))
+            story.append(Paragraph(f"• {escape(str(c))}", small_st))
         story.append(Spacer(1, 0.7*cm))
-        story.append(Paragraph(f"<i>{content['cloture']}</i>", small_st))
+        story.append(Paragraph(f"<i>{escape(content['cloture'])}</i>", small_st))
         story.append(Spacer(1, 1*cm))
 
         sig_st = ParagraphStyle("Sig", parent=styles["Normal"], fontSize=11, alignment=TA_RIGHT)
         story.append(Paragraph(
-            f"Fait à {content['lieu_emission']}, le {content['date_emission']}", sig_st
+            f"Fait à {escape(content['lieu_emission'])}, le {escape(content['date_emission'])}", sig_st
         ))
-        story.append(Paragraph("<b>Le Directeur<br/>ALTIORA PREST</b>", sig_st))
+        story.append(Paragraph("<b>Le Directeur<br/>ALTIORA PREST</b><br/><u>Signature et cachet</u>", sig_st))
         story.append(Spacer(1, 0.5*cm))
 
         num_st = ParagraphStyle("N", parent=styles["Normal"], fontSize=9, textColor=colors.grey)
         story.append(Paragraph(f"N° {result['numero_unique']}", num_st))
 
-        doc.build(story)
+        # Une attestation tient toujours sur une seule page paysage. KeepInFrame
+        # réduit proportionnellement le contenu si les textes générés sont longs.
+        doc.build([KeepInFrame(doc.width, doc.height, story, mode="shrink")])
         vlog(f"   ✅ PDF (reportlab) : {pdf_path.name}")
         return str(pdf_path)
 
@@ -604,28 +688,31 @@ class AttestationGeneratorService:
         session_info: dict[str, Any],
         participant: dict[str, Any],
         index: int = 1,
+        create_individual_review: bool = True,
     ) -> dict[str, Any]:
         result = await self.generate_one(session_info, participant, index)
         pdf_path = self._build_attestation_pdf(result, participant)
 
         result["pdf_path"] = pdf_path
         result["pdf_generated"] = pdf_path is not None
+        result["approval_status"] = "pending_review"
         result["metadata"]["pdf_generated"] = pdf_path is not None
         if pdf_path:
             result["metadata"]["pdf_path"] = pdf_path
 
-        review_id = create_review(
-            agent_id="agent_5_attestations",
-            data=result,
-            summary=(
-                f"Attestation {result['numero_unique']} — "
-                f"{participant.get('nom', 'N/A')} — à valider avant envoi"
-            ),
-            criticity="critical",
-        )
-        result["_review_id"] = review_id
-        result["_review_status"] = "pending_review"
-        vlog(f"⏳ [HITL] Review créé : {review_id}")
+        if create_individual_review:
+            review_id = create_review(
+                agent_id="agent_5_attestations",
+                data=result,
+                summary=(
+                    f"Attestation {result['numero_unique']} — "
+                    f"{participant.get('nom', 'N/A')} — à valider avant envoi"
+                ),
+                criticity="critical",
+            )
+            result["_review_id"] = review_id
+            result["_review_status"] = "pending_review"
+            vlog(f"⏳ [HITL] Review créé : {review_id}")
 
         return result
 
@@ -645,7 +732,9 @@ class AttestationGeneratorService:
 
         async def _generer_pdf(index: int, p: dict[str, Any]):
             async with semaphore:
-                return await self.generate_one_with_pdf(session_info, p, index=index)
+                return await self.generate_one_with_pdf(
+                    session_info, p, index=index, create_individual_review=False
+                )
 
         resultats = await asyncio.gather(
             *[_generer_pdf(i, p) for i, p in enumerate(verifies, start=1)],
@@ -657,6 +746,11 @@ class AttestationGeneratorService:
             if isinstance(res, Exception):
                 logger.error(f"   ❌ Échec {p.get('nom')} : {res}")
                 failed.append({"participant": p, "error": str(res)})
+            elif not res.get("pdf_generated"):
+                failed.append({
+                    "participant": p,
+                    "error": "Le PDF n'a pas pu être généré ; aucune validation n'a été créée.",
+                })
             else:
                 attestations.append(res)
 

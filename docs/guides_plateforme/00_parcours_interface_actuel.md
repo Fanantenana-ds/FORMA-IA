@@ -54,11 +54,12 @@ Les droits Backend peuvent refuser une création même si le texte est complet.
 
 ## Attestations M6 et facturation M7
 
-Les agents Backend de présence, niveaux, satisfaction, attestations, rapport et
-relances ne doivent pas être confondus avec une interface entièrement raccordée.
-Les contenus destinés à l'extérieur requièrent une validation humaine. Les
-paiements, présences, montants et relances courants doivent venir des services
-métier ; les guides et documents indexés ne prouvent pas leur état actuel.
+Dans la session M5, M6 relit les inscriptions, séances et présences enregistrées
+côté Backend. Le seuil est de 75 % ; un pointage manquant bloque la génération,
+il n'est jamais transformé automatiquement en absence. La direction prévisualise
+les PDF dans Espace IA, approuve un certificat ou le lot, puis télécharge les
+documents approuvés individuellement ou en ZIP. Pour les autres agents M5 et M7,
+vérifier leur écran et leur raccordement réel séparément.
 
 ## Base documentaire C3
 

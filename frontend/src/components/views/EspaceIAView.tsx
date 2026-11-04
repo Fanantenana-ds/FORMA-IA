@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 
 function renderMarkdown(text: string): string {
   return text
@@ -8,7 +8,7 @@ function renderMarkdown(text: string): string {
     .replace(/^(\d+)\. (.+)$/gm, '<li>$2</li>')
     .replace(/\n/g, '<br />');
 }
-import { AlertCircle, Check, Copy, FileText, Loader2, MessageCircle, Paperclip, Pencil, PlusCircle, Send, ShieldCheck, ThumbsDown, ThumbsUp, Trash2, Upload, X } from 'lucide-react';
+import { AlertCircle, Archive, Award, Check, CheckCheck, Copy, Download, Eye, FileText, Loader2, MessageCircle, Paperclip, Pencil, PlusCircle, Send, ShieldCheck, ThumbsDown, ThumbsUp, Trash2, Upload, X } from 'lucide-react';
 import { apiService } from '../../services/api';
 import { MenuSection } from '../../types';
 
@@ -137,6 +137,8 @@ export const EspaceIAView: React.FC<{ readOnly?: boolean; trainerMode?: boolean;
   const [history, setHistory] = useState<any[]>([]);
   const [historyStatus, setHistoryStatus] = useState<'all' | 'approved' | 'rejected'>('all');
   const [selected, setSelected] = useState<any>(null);
+  const [attestationPreview, setAttestationPreview] = useState<{ numero: string; url: string } | null>(null);
+  const [attestationBusy, setAttestationBusy] = useState('');
   const [reviewLoading, setReviewLoading] = useState(false);
   const [deletingReviewId, setDeletingReviewId] = useState('');
   const [supports, setSupports] = useState<any[]>([]);
@@ -278,6 +280,7 @@ export const EspaceIAView: React.FC<{ readOnly?: boolean; trainerMode?: boolean;
 
   const openReview = async (item: any) => {
     setSelected(item); setReviewLoading(true); setError(''); setDocumentEdit(null);
+    setAttestationPreview(current => { if (current) URL.revokeObjectURL(current.url); return null; });
     try {
       const id = item.review_id ?? item.id;
       const isRag = String(item.agent_id ?? '').startsWith('agent_rag_');
@@ -489,6 +492,55 @@ export const EspaceIAView: React.FC<{ readOnly?: boolean; trainerMode?: boolean;
       setNotice(approve ? (actionNotice || (wasSynced ? 'Contenu approuvé et synchronisé avec le backend.' : 'Contenu approuvé.')) : 'Contenu rejeté.'); setSelected(null); setReviewNote(''); await loadReviews();
     } catch (e) { setError(errorText(e)); } finally { setBusy(false); }
   };
+
+  const saveBlob = (blob: Blob, filename: string) => {
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url; anchor.download = filename; anchor.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+  const previewAttestation = async (item: any) => {
+    const reviewId = String(selected?.review_id ?? selected?.id ?? '');
+    const numero = String(item?.numero_unique ?? '');
+    if (!reviewId || !numero) return;
+    setAttestationBusy(numero); setError('');
+    try {
+      const blob = await apiService.previewAttestation(reviewId, numero);
+      setAttestationPreview(current => { if (current) URL.revokeObjectURL(current.url); return { numero, url: URL.createObjectURL(blob) }; });
+    } catch (e) { setError(errorText(e)); }
+    finally { setAttestationBusy(''); }
+  };
+  const downloadAttestation = async (item: any) => {
+    const reviewId = String(selected?.review_id ?? selected?.id ?? '');
+    const numero = String(item?.numero_unique ?? '');
+    if (!reviewId || !numero) return;
+    setAttestationBusy(numero); setError('');
+    try { saveBlob(await apiService.downloadAttestation(reviewId, numero), `${numero}.pdf`); }
+    catch (e) { setError(errorText(e)); }
+    finally { setAttestationBusy(''); }
+  };
+  const downloadAttestationZip = async () => {
+    const reviewId = String(selected?.review_id ?? selected?.id ?? '');
+    if (!reviewId) return;
+    setAttestationBusy('zip'); setError('');
+    try { saveBlob(await apiService.downloadAttestationsZip(reviewId), `attestations-${reviewId}.zip`); }
+    catch (e) { setError(errorText(e)); }
+    finally { setAttestationBusy(''); }
+  };
+  const approveOneAttestation = async (item: any) => {
+    const reviewId = String(selected?.review_id ?? selected?.id ?? '');
+    const numero = String(item?.numero_unique ?? '');
+    if (!reviewId || !numero) return;
+    setAttestationBusy(numero); setError('');
+    try {
+      const result = await apiService.approveAttestationInBatch(reviewId, numero, reviewNote.trim() || 'Validée par la direction');
+      setNotice(result.lot_approved ? 'Toutes les attestations du lot sont approuvées. Le téléchargement est disponible.' : `Attestation ${numero} approuvée.`);
+      setReviewNote('');
+      await loadReviews();
+      await openReview({ review_id: reviewId, agent_id: 'agent_5_attestations' });
+    } catch (e) { setError(errorText(e)); }
+    finally { setAttestationBusy(''); }
+  };
   const deleteReview = async (item: any) => {
     const id = String(item.review_id ?? item.id ?? '');
     if (!id || deletingReviewId) return;
@@ -611,7 +663,7 @@ export const EspaceIAView: React.FC<{ readOnly?: boolean; trainerMode?: boolean;
       <section className={panel}><div className="mb-4 flex flex-wrap items-center justify-between gap-3"><h2 className="font-extrabold text-[#11162A]">À valider</h2><span className="text-xs bg-emerald-50 text-emerald-700 rounded-full px-2.5 py-1 font-bold">{reviews.length}</span></div>
         {reviews.length ? <div className="space-y-2">{reviews.map((r, i) => { const id = String(r.review_id ?? r.id ?? i); return <div key={id} className={`flex items-center gap-2 rounded-xl border p-2 ${selected?.review_id === id ? 'border-[#1B8F6E] bg-emerald-50/50' : 'border-slate-200 hover:border-slate-300'}`}><button onClick={() => openReview(r)} className="min-w-0 flex-1 p-1 text-left"><div className="truncate font-bold text-sm text-[#11162A]">{r.title ?? r.titre ?? r.summary ?? r.agent_id ?? 'Contenu généré'}</div><div className="mt-1 truncate text-[11px] text-slate-500">{r.agent_id ?? r.type ?? 'Agent IA'} · {r.created_at ? new Date(r.created_at).toLocaleString('fr-FR') : r.date_creation ?? ''}</div></button><button type="button" aria-label={`Supprimer la validation ${id}`} title="Supprimer cette validation" disabled={deletingReviewId !== '' || busy} onClick={() => void deleteReview(r)} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-red-100 bg-red-50 text-red-600 transition hover:bg-red-100 disabled:cursor-wait disabled:opacity-50">{deletingReviewId === id ? <Loader2 size={15} className="animate-spin" /> : <Trash2 size={15} />}</button></div>; })}</div> : <p className="text-xs text-slate-500">Aucun contenu en attente de validation.</p>}
       </section>
-      <section className={panel}>{selected ? <><div className="flex items-start justify-between gap-3"><div><h2 className="font-extrabold text-[#11162A]">{selected.summary ?? selected.title ?? 'Aperçu du contenu à valider'}</h2><p className="text-[11px] text-slate-500 mt-1">{selected.agent_id ?? selected.type ?? selected.review_id} · {selected.criticity ?? ''} · {selected.created_at ? new Date(selected.created_at).toLocaleString('fr-FR') : ''}</p></div><button onClick={() => setSelected(null)} className="p-1.5 text-slate-400 hover:text-slate-700"><X size={16} /></button></div>{!reviewLoading && !documentEdit && editableDocument(selected) && <button type="button" onClick={() => setDocumentEdit(structuredClone(editableDocument(selected)))} className="mt-3 rounded-lg bg-slate-100 px-3 py-2 text-xs font-bold text-slate-700">Modifier manuellement</button>}{reviewLoading ? <div className="mt-6 flex min-h-48 items-center justify-center gap-2 text-sm font-semibold text-slate-500"><Loader2 size={18} className="animate-spin text-[#1B8F6E]" />Chargement de l'aperçu complet…</div> : <>{documentEdit ? <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 p-3"><p className="mb-3 text-xs text-blue-900">Modifiez les champs, enregistrez, puis approuvez la version mise à jour. Les montants calculés de l'offre financière restent à ajuster dans le dossier marché.</p><div className="max-h-[560px] overflow-auto rounded-lg bg-white p-3"><DocumentFields value={documentEdit} onChange={(path, value) => setDocumentEdit(current => current ? setDocumentField(current, path, value) : null)} allowNumbers={selected.agent_id !== 'agent_m3_financiere'} /></div><div className="mt-3 flex justify-end gap-2"><button type="button" onClick={() => setDocumentEdit(null)} className="rounded-lg bg-white px-3 py-2 text-xs font-bold text-slate-700">Annuler</button><button type="button" disabled={busy} onClick={() => void saveManualDocument()} className="rounded-lg bg-blue-800 px-3 py-2 text-xs font-bold text-white disabled:opacity-50">Enregistrer les modifications</button></div></div> : <div className="mt-4"><ReviewContent value={selected} /></div>}<textarea disabled={documentEdit !== null} value={reviewNote} onChange={e => setReviewNote(e.target.value)} placeholder="Note de validation, motif de rejet ou correction demandée à l'IA" rows={2} className="mt-3 w-full p-3 bg-white border border-slate-300 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#1B8F6E]" /><div className="flex justify-end gap-2 mt-3"><button disabled={busy || documentEdit !== null} onClick={() => reviewAction(false)} className="px-4 py-2 bg-red-50 text-red-700 rounded-lg text-xs font-bold">Rejeter</button>{['agent_m2_tdr', 'agent_m3_technique', 'agent_m3_financiere'].includes(String(selected.agent_id)) && <button disabled={busy || reviewLoading || documentEdit !== null} onClick={() => void correctDocument()} className="px-4 py-2 bg-blue-50 text-blue-800 rounded-lg text-xs font-bold">Demander une correction à l'IA</button>}<button disabled={busy || documentEdit !== null} onClick={() => reviewAction(true)} className="px-4 py-2 bg-[#1B8F6E] text-white rounded-lg text-xs font-bold flex gap-1.5 items-center">{busy ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}Approuver</button></div></>}</> : <div className="h-full min-h-56 flex flex-col items-center justify-center text-center text-slate-400"><FileText size={30} className="mb-2" /><p className="text-xs font-semibold">Sélectionnez un contenu pour le consulter.</p></div>}</section>
+      <section className={panel}>{selected ? <><div className="flex items-start justify-between gap-3"><div><h2 className="font-extrabold text-[#11162A]">{selected.summary ?? selected.title ?? 'Aperçu du contenu à valider'}</h2><p className="text-[11px] text-slate-500 mt-1">{selected.agent_id ?? selected.type ?? selected.review_id} · {selected.criticity ?? ''} · {selected.created_at ? new Date(selected.created_at).toLocaleString('fr-FR') : ''}</p></div><div className="flex items-center gap-2">{selected.agent_id === 'agent_5_attestations' && selected.status === 'approved' && <button type="button" disabled={attestationBusy !== ''} onClick={()=>void downloadAttestationZip()} className="flex items-center gap-1.5 rounded-lg bg-[#11162A] px-3 py-2 text-[11px] font-bold text-white disabled:opacity-50"><Archive size={14}/>Télécharger le ZIP</button>}<button onClick={() => setSelected(null)} className="p-1.5 text-slate-400 hover:text-slate-700"><X size={16} /></button></div></div>{!reviewLoading && !documentEdit && editableDocument(selected) && <button type="button" onClick={() => setDocumentEdit(structuredClone(editableDocument(selected)))} className="mt-3 rounded-lg bg-slate-100 px-3 py-2 text-xs font-bold text-slate-700">Modifier manuellement</button>}{reviewLoading ? <div className="mt-6 flex min-h-48 items-center justify-center gap-2 text-sm font-semibold text-slate-500"><Loader2 size={18} className="animate-spin text-[#1B8F6E]" />Chargement du dossier…</div> : <>{documentEdit ? <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 p-3"><p className="mb-3 text-xs text-blue-900">Modifiez les champs, enregistrez, puis approuvez la version mise à jour. Les montants calculés de l'offre financière restent à ajuster dans le dossier marché.</p><div className="max-h-[560px] overflow-auto rounded-lg bg-white p-3"><DocumentFields value={documentEdit} onChange={(path, value) => setDocumentEdit(current => current ? setDocumentField(current, path, value) : null)} allowNumbers={selected.agent_id !== 'agent_m3_financiere'} /></div><div className="mt-3 flex justify-end gap-2"><button type="button" onClick={() => setDocumentEdit(null)} className="rounded-lg bg-white px-3 py-2 text-xs font-bold text-slate-700">Annuler</button><button type="button" disabled={busy} onClick={() => void saveManualDocument()} className="rounded-lg bg-blue-800 px-3 py-2 text-xs font-bold text-white disabled:opacity-50">Enregistrer les modifications</button></div></div> : selected.agent_id === 'agent_5_attestations' ? <div className="mt-4 space-y-4"><div className="grid gap-3 sm:grid-cols-3"><div className="rounded-xl bg-emerald-50 p-3"><div className="text-[10px] font-bold uppercase text-emerald-700">Attestations préparées</div><div className="mt-1 text-2xl font-extrabold text-emerald-800">{selected.data?.total_pdf_generated ?? selected.data?.attestations?.length ?? 0}</div></div><div className="rounded-xl bg-slate-50 p-3"><div className="text-[10px] font-bold uppercase text-slate-500">Lot de formation</div><div className="mt-1 truncate text-sm font-extrabold text-[#11162A]">{selected.meta?.session_title ?? selected.data?.session_id ?? 'Session'}</div></div><div className="rounded-xl bg-amber-50 p-3"><div className="text-[10px] font-bold uppercase text-amber-700">Validation</div><div className="mt-1 text-sm font-extrabold text-amber-800">{selected.status === 'approved' ? 'Lot approuvé' : 'Requise avant remise'}</div></div></div><div className="space-y-3">{(selected.data?.attestations ?? []).map((item:any)=><article key={item.numero_unique} className="overflow-hidden rounded-2xl border border-slate-200 bg-white"><div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 p-4"><div><div className="flex flex-wrap items-center gap-2"><h3 className="font-extrabold text-[#11162A]">{[item.participant?.prenom,item.participant?.nom].filter(Boolean).join(' ') || item.participant?.nom}</h3><span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-extrabold text-emerald-800">{item.participant?.taux_presence != null ? `${item.participant.taux_presence}% de présence` : 'Éligible · ≥75%'}</span><span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${item.approval_status === 'approved' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>{item.approval_status === 'approved' ? 'Approuvée' : 'À valider'}</span></div><p className="mt-1 text-[11px] text-slate-500">{item.numero_unique} · {item.content?.details?.formation ?? ''}</p></div><div className="flex flex-wrap gap-2"><button type="button" disabled={attestationBusy!==''} onClick={()=>void previewAttestation(item)} className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-[11px] font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50"><Eye size={14}/>{attestationBusy===item.numero_unique?'Ouverture…':'Aperçu PDF'}</button>{item.approval_status === 'approved' ? <button type="button" disabled={attestationBusy!==''} onClick={()=>void downloadAttestation(item)} className="flex items-center gap-1.5 rounded-lg bg-emerald-700 px-3 py-2 text-[11px] font-bold text-white disabled:opacity-50"><Download size={14}/>Télécharger</button> : item.approval_status !== 'approved' && <button type="button" disabled={attestationBusy!==''} onClick={()=>void approveOneAttestation(item)} className="flex items-center gap-1.5 rounded-lg bg-[#1B8F6E] px-3 py-2 text-[11px] font-bold text-white disabled:opacity-50"><Check size={14}/>{attestationBusy===item.numero_unique?'Validation…':'Approuver'}</button>}</div></div>{attestationPreview?.numero === item.numero_unique && <iframe title={`Aperçu ${item.numero_unique}`} src={attestationPreview.url} className="h-[520px] w-full bg-slate-100"/>}</article>)}</div><div className="rounded-xl border border-blue-100 bg-blue-50/70 p-3 text-[11px] leading-relaxed text-blue-900">Vérifiez le nom, les dates, les compétences et le numéro de chaque document. Les téléchargements individuels et le ZIP sont ouverts après validation.</div></div> : <div className="mt-4"><ReviewContent value={selected} /></div>}<textarea disabled={documentEdit !== null} value={reviewNote} onChange={e => setReviewNote(e.target.value)} placeholder="Note de validation, motif de rejet ou correction demandée" rows={2} className="mt-3 w-full p-3 bg-white border border-slate-300 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#1B8F6E]" /><div className="flex justify-end gap-2 mt-3"><button disabled={busy || documentEdit !== null} onClick={() => reviewAction(false)} className="px-4 py-2 bg-red-50 text-red-700 rounded-lg text-xs font-bold">Rejeter</button>{['agent_m2_tdr', 'agent_m3_technique', 'agent_m3_financiere'].includes(String(selected.agent_id)) && <button disabled={busy || reviewLoading || documentEdit !== null} onClick={() => void correctDocument()} className="px-4 py-2 bg-blue-50 text-blue-800 rounded-lg text-xs font-bold">Demander une correction à l'IA</button>}<button disabled={busy || documentEdit !== null} onClick={() => reviewAction(true)} className="px-4 py-2 bg-[#1B8F6E] text-white rounded-lg text-xs font-bold flex gap-1.5 items-center">{busy ? <Loader2 size={14} className="animate-spin" /> : selected.agent_id === 'agent_5_attestations' ? <CheckCheck size={14}/> : <Check size={14} />}{selected.agent_id === 'agent_5_attestations' ? 'Approuver toutes' : 'Approuver'}</button></div></>}</> : <div className="h-full min-h-56 flex flex-col items-center justify-center text-center text-slate-400"><FileText size={30} className="mb-2" /><p className="text-xs font-semibold">Sélectionnez un contenu pour le consulter.</p></div>}</section>
     </div>}
 
     {tab === 'history' && <div className="grid gap-4 lg:grid-cols-[minmax(260px,0.8fr)_minmax(0,1.2fr)]">

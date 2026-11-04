@@ -317,11 +317,11 @@ class PresenceAnalysisResponse(BaseModel):
     anomalies: list[PresenceAnomaly] = []
     eligibles_attestation: list[str] = Field(
         default_factory=list,
-        description="Noms des participants éligibles (≥ 80%)",
+        description="Noms des participants éligibles (≥ 75%)",
     )
     non_eligibles_attestation: list[str] = Field(
         default_factory=list,
-        description="Noms des participants non éligibles (< 80%)",
+        description="Noms des participants non éligibles (< 75%)",
     )
     recommandations: list[str] = []
     metadata: PresenceAnalysisMetadata

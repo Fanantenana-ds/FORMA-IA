@@ -97,6 +97,48 @@ def test_detecter_type_utilise_le_repli_si_llm_indisponible():
     assert resultat == "catalogue"
 
 
+@pytest.mark.parametrize(("message", "attendu"), [
+    (
+        "a partir de ces document creer moi des exercice que je peux poser oralement au participant de cette formations",
+        "question_fond",
+    ),
+    ("je vous parle sur les support de cours que je veux indexer", "contenu_formation"),
+])
+def test_demande_claire_sur_supports_ne_devient_pas_incomprehensible(message, attendu, monkeypatch):
+    async def classifier_incomprehensible(*_args, **_kwargs):
+        return "incomprehensible"
+
+    monkeypatch.setattr(detection, "_detecter_via_llm", classifier_incomprehensible)
+
+    assert run(detection.detecter_type(message)) == attendu
+
+
+def test_session_active_garde_une_demande_pedagogique_generale_dans_le_rag(monkeypatch):
+    async def classifier_incomprehensible(*_args, **_kwargs):
+        return "incomprehensible"
+
+    monkeypatch.setattr(detection, "_detecter_via_llm", classifier_incomprehensible)
+    message = "Propose une activité pour vérifier ce que les apprenants ont retenu."
+
+    assert run(detection.detecter_type(message, session_id="session-ia")) == "question_fond"
+    assert run(detection.detecter_type(message)) == "incomprehensible"
+
+
+@pytest.mark.parametrize("mauvais_type", ["conversationnel", "hors_sujet", "catalogue", "inventaire"])
+def test_session_active_recadre_une_question_documentaire_mal_classee(mauvais_type, monkeypatch):
+    async def classifier_errone(*_args, **_kwargs):
+        return mauvais_type
+
+    monkeypatch.setattr(detection, "_detecter_via_llm", classifier_errone)
+    message = "Bonjour chat, explique-moi la reconnaissance des objets du cours."
+
+    assert run(detection.detecter_type(message, session_id="session-ia")) == "question_fond"
+
+
+def test_salutation_pure_reste_conversationnelle_meme_avec_session():
+    assert run(detection.detecter_type("bonjour", session_id="session-ia")) == "conversationnel"
+
+
 # ---- Niveau 2 — LLM (faux provider, aucun réseau) ----
 
 def test_detecter_type_via_llm(monkeypatch):

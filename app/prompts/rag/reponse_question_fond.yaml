@@ -13,6 +13,12 @@ tache: |
   au format [nom_du_fichier, p. X] (ou [nom_du_fichier, diapo X] pour un
   PPTX).
 
+  Si l'utilisateur demande des exercices, un quiz ou des questions à poser
+  oralement, crée-les à partir des notions présentes dans les extraits. Pour
+  chaque question, donne une réponse attendue courte et cite le support source.
+  Adapte la forme demandée (oral, QCM, exercice pratique) sans introduire de
+  notions absentes des documents.
+
   RÈGLE ABSOLUE (MODE STRICT) : si les extraits fournis ne permettent pas
   de répondre complètement, dis-le explicitement au lieu d'utiliser des
   connaissances générales. N'invente JAMAIS une source ou un numéro de

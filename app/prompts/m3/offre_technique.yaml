@@ -97,26 +97,14 @@ format: |
       "outils_supports": ["Outil 1", "Outil 2"],
       "innovations": ["Approche 1", "Approche 2"]
     },
-    "architecture_technique": {
-      "stack": {
-        "frontend": "...",
-        "backend": "...",
-        "base_donnees": "...",
-        "ia_ml": "..."
-      },
-      "composants": [
-        {"nom": "LLM Provider", "role": "Génération de contenu"}
-      ],
-      "securite": ["Authentification JWT", "HTTPS"],
-      "conformite": ["RGPD"]
-    },
+    "architecture_technique": null,
     "programme": {
-      "duree_totale": "2 jours (14 heures)",
+      "duree_totale": "2 jours (volume horaire à confirmer)",
       "modules": [
         {
           "numero": 1,
           "titre": "Introduction à l'IA",
-          "duree": "3h",
+          "duree": "À répartir selon le calendrier validé",
           "objectifs": ["...", "..."],
           "contenu": ["...", "..."],
           "methode": "Cours + démo"
@@ -125,22 +113,22 @@ format: |
     },
     "ressources": {
       "formateur": {
-        "nom": "...",
-        "profil": "...",
-        "expertise": ["...", "..."]
+          "nom": "Formateur à mobiliser après attribution",
+          "profil": "Profil du TDR ; identité et disponibilité à confirmer",
+          "expertise": []
       },
       "support_technique": "...",
       "materiel": ["...", "..."]
     },
     "planning": {
-      "dates_proposees": ["2026-10-15", "2026-10-16"],
+      "dates_proposees": [],
       "jalons": [
         {"date": "...", "livrable": "..."}
       ],
       "livrables": ["...", "..."]
     },
     "garanties": {
-      "qualite": "Satisfaction garantie ≥ 85%",
+      "qualite": "Critères qualité à convenir avec le client",
       "suivi": "...",
       "confidentialite": "..."
     },
@@ -181,9 +169,9 @@ exemples:
         "reference": "ALT-OFF-TECH-2026-0001",
         "date_emission": "2026-09-15",
         "presentation_structure": {
-          "nom": "ALTIORA Prest",
-          "description": "ALTIORA Prest est une startup technologique malgache spécialisée dans l'IA et la formation professionnelle.",
-          "domaines_expertise": ["Intelligence Artificielle", "Data Science", "Formation professionnelle"]
+            "nom": "ALTIORA PREST",
+            "description": "Cabinet de conseil et de formation basé à Antananarivo, Madagascar.",
+            "domaines_expertise": ["Conseil", "Formation professionnelle"]
         },
         "comprehension_besoin": {
           "objectifs_client": [
@@ -203,27 +191,14 @@ exemples:
           "outils_supports": ["Slides interactifs", "Notebooks Jupyter", "Cas pratiques"],
           "innovations": ["Apprentissage par projet", "Évaluation continue"]
         },
-        "architecture_technique": {
-          "stack": {
-            "frontend": "N/A",
-            "backend": "Python 3.11+",
-            "base_donnees": "PostgreSQL",
-            "ia_ml": "Groq API, LangChain (RAG)"
-          },
-          "composants": [
-            {"nom": "LLM Provider", "role": "Génération de contenu"},
-            {"nom": "RAG", "role": "Recherche documentaire"}
-          ],
-          "securite": ["Authentification JWT", "HTTPS"],
-          "conformite": ["RGPD", "Loi malgache sur les données"]
-        },
+        "architecture_technique": null,
         "programme": {
-          "duree_totale": "2 jours (14 heures)",
+          "duree_totale": "2 jours (volume horaire à confirmer)",
           "modules": [
             {
               "numero": 1,
               "titre": "Introduction à l'IA",
-              "duree": "3h",
+              "duree": "À répartir selon le calendrier validé",
               "objectifs": ["Comprendre les concepts clés", "Distinguer IA faible et forte"],
               "contenu": ["Historique", "Types d'IA", "Applications"],
               "methode": "Cours + démo"
@@ -232,32 +207,28 @@ exemples:
         },
         "ressources": {
           "formateur": {
-            "nom": "M. RANAIVOSOA S.",
-            "profil": "Expert IA et Prompt Engineering",
-            "expertise": ["LLM", "Prompt Engineering", "Architecture IA"]
+            "nom": "Formateur à mobiliser après attribution",
+            "profil": "Profil conforme au TDR ; identité et disponibilité à confirmer",
+            "expertise": []
           },
           "support_technique": "Assistant technique pour les exercices",
           "materiel": ["Salle équipée", "20 postes", "Connexion internet"]
         },
         "planning": {
-          "dates_proposees": ["2026-10-15", "2026-10-16"],
-          "jalons": [
-            {"date": "2026-10-01", "livrable": "Supports validés"},
-            {"date": "2026-10-15", "livrable": "Démarrage formation"}
-          ],
+          "dates_proposees": [],
+          "jalons": [],
           "livrables": ["Supports PDF", "Attestations", "Rapport final"]
         },
         "garanties": {
-          "qualite": "Satisfaction garantie ≥ 85%",
-          "suivi": "Suivi post-formation de 30 jours",
-          "confidentialite": "Engagement de confidentialité signé"
+          "qualite": "Critères de qualité à convenir avec le client",
+          "suivi": null,
+          "confidentialite": "Modalités à préciser dans les documents contractuels"
         },
         "annexes": {
-          "cv_formateur": "Disponible sur demande",
-          "references": ["Formation IA pour BOA Madagascar", "IA pour Telma"]
+          "cv_formateur": "CV à joindre après désignation du formateur",
+          "references": []
         },
         "points_forts": [
-          "Formateur expert en IA",
           "Approche pratique",
           "Supports modernes"
         ],
@@ -269,12 +240,17 @@ regles: |
   2. Structure RESPECTÉE : les 11 clés sont OBLIGATOIRES
   3. Le champ "reference" suit : ALT-OFF-TECH-YYYY-NNNN
   4. Les dates sont au format YYYY-MM-DD
-  5. La présentation entreprise : 2-3 phrases maximum
-  6. Le programme : 3 à 8 modules selon la durée
+  5. La présentation entreprise est limitée aux informations établies sur ALTIORA PREST ; aucune forme juridique, ancienneté, référence ou certification ne doit être inventée.
+  6. Le programme comprend 3 à 8 modules seulement si le TDR fournit assez d'éléments ; la somme des durées des modules doit correspondre à la durée totale.
   7. Chaque module a : numero, titre, duree, objectifs, contenu, methode
-  8. Les garanties doivent être RÉALISTES (pas de "100%")
+  8. Ne promets aucun taux de satisfaction, suivi, pénalité ou engagement non présent dans les sources.
   9. Le ton est factuel, pas marketing
   10. La langue est FRANÇAIS professionnel
   11. AUCUNE mention de prix (c'est la partie financière)
-  12. Si le TDR manque d'info, utilise "N/A" ou généralise
+  12. Si une information manque, indique "À confirmer" ; ne transforme jamais le titre de l'appel en nom du client.
   13. Le JSON doit être STRICTEMENT conforme au format ci-dessus
+  14. Le nom du formateur reste à mobiliser après attribution, sauf si session_info fournit un formateur explicitement confirmé.
+  15. Présente le profil depuis le TDR. La direction vérifie d'abord l'adéquation et la disponibilité d'un formateur interne ALTIORA ; si elles ne sont pas confirmées, le recrutement externe commence après attribution du marché.
+  16. N'invente ni le nom de M. RANAIVOSOA, ni son expérience, son CV ou une certification.
+  17. L'architecture logiciel (frontend/backend/base de données/LLM) est null pour une prestation de formation, sauf demande explicite du TDR.
+  18. Les références proviennent uniquement des références structurées transmises dans references_portfolio.

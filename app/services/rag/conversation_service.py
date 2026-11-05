@@ -31,6 +31,9 @@ class Echange:
     texte: str
     feedback: str | None = None  # "positif" | "negatif" | None
     type_reponse: str | None = None  # type détecté (aide_plateforme, question_fond, etc.)
+    # Périmètre documentaire du tour ; les anciens JSON sans ces champs restent lisibles.
+    session_id: str | None = None
+    module: str | None = None
 
 
 @dataclass
@@ -212,13 +215,31 @@ def ajouter_echange(
     conversation: Conversation, role: str, texte: str,
     formation_code: str | None = None,
     type_reponse: str | None = None,
+    session_id: str | None = None,
+    module: str | None = None,
 ) -> Conversation:
     """Ajoute un échange, ne garde que les NB_ECHANGES_MEMORISES derniers."""
-    conversation.echanges.append(Echange(role=role, texte=texte, type_reponse=type_reponse))
+    conversation.echanges.append(Echange(
+        role=role, texte=texte, type_reponse=type_reponse,
+        session_id=str(session_id) if session_id else None,
+        module=module,
+    ))
     conversation.echanges = conversation.echanges[-NB_ECHANGES_MEMORISES:]
     if formation_code:
         conversation.derniere_formation_code = formation_code
     return conversation
+
+
+def contexte_pour_session(conversation: Conversation, session_id: str | None) -> Conversation:
+    """Return only turns belonging to the selected session to prevent cross-session memory."""
+    import copy
+
+    contexte = copy.copy(conversation)
+    contexte.echanges = [
+        echange for echange in conversation.echanges
+        if echange.session_id == (str(session_id) if session_id else None)
+    ]
+    return contexte
 
 
 def noter_echange(

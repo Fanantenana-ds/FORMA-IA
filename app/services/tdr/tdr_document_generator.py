@@ -58,6 +58,7 @@ ALTIORA_RESPONSABLE = os.getenv(
     "ALTIORA_RESPONSABLE",
     "M. RANAIVOSOA Sandamampianina"
 )
+FORMATEUR_A_DESIGNER = "À désigner après sélection des candidatures"
 
 
 # ============================================================
@@ -181,8 +182,13 @@ class TDRDocumentGenerator:
         docx_filename = f"{base_filename}.docx"
         pdf_filename = f"{base_filename}.pdf"
 
-        docx_path = self.exports_dir / docx_filename
-        pdf_path = self.exports_dir / pdf_filename
+        # L'orchestrateur est initialisé au démarrage, avant qu'un tenant
+        # soit connu. Résoudre le dossier au moment de la génération pour
+        # enregistrer le document dans le même espace que son review HITL.
+        exports_dir = get_tenant_exports_dir()
+        exports_dir.mkdir(parents=True, exist_ok=True)
+        docx_path = exports_dir / docx_filename
+        pdf_path = exports_dir / pdf_filename
 
         # ============================================================
         # 4. GÉNÉRATION WORD
@@ -418,7 +424,10 @@ class TDRDocumentGenerator:
             "modules": modules,
 
             # Section 5
-            "formateur_nom": tdr_content.get("formateur_nom", ALTIORA_RESPONSABLE),
+            # Le responsable ALTIORA est le signataire du cabinet, pas le
+            # formateur affecté. Le nom de l'intervenant est décidé après
+            # l'appel aux candidatures.
+            "formateur_nom": tdr_content.get("formateur_nom") or FORMATEUR_A_DESIGNER,
             "formateur_profil": tdr_content.get("formateur_profil", ""),
             "modalites_pedagogiques": tdr_content.get("methodologie", ""),
             "moyens_pedagogiques": tdr_content.get("moyens_materiels", []),
@@ -587,7 +596,7 @@ class TDRDocumentGenerator:
                 )),
             ]),
             ("5. Intervenant, modalités pédagogiques et évaluation", [
-                ("Intervenant", tdr_content.get("formateur_nom", "")),
+                ("Intervenant", tdr_content.get("formateur_nom") or FORMATEUR_A_DESIGNER),
                 ("Profil", tdr_content.get("formateur_profil", "")),
                 ("Modalités pédagogiques", tdr_content.get("methodologie", "")),
                 ("Moyens et supports", self._format_list(

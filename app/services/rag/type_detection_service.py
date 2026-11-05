@@ -72,7 +72,9 @@ def _charger_prompt() -> str:
     return "\n\n".join(s for s in sections if s)
 
 
-async def _detecter_via_llm(message: str, conv: Any = None) -> str | None:
+async def _detecter_via_llm(
+    message: str, conv: Any = None, session_id: str | None = None,
+) -> str | None:
     try:
         llm = get_llm_provider()
     except LLMNotAvailableError:
@@ -93,8 +95,17 @@ async def _detecter_via_llm(message: str, conv: Any = None) -> str | None:
                     "\n\nCONTEXTE DE LA CONVERSATION (pour bien classer la suite) :\n"
                     + "\n".join(lignes)
                     + "\n\nSi le message actuel est une relance ou un approfondissement "
-                    "du sujet précédent, classe-le dans le même type que la réponse précédente."
+                    "du sujet précédent, classe-le dans le même type que la réponse précédente. "
+                    "Les lignes assistant incluent le type de réponse précédent."
                 )
+        if session_id:
+            contexte_conv += (
+                "\n\nCONTEXTE RAG : une session de formation précise est sélectionnée dans l'interface. "
+                "Une demande cohérente de l'utilisateur porte probablement sur les supports de cette session. "
+                "Ne classe pas une demande compréhensible comme incompréhensible ; utilise question_fond "
+                "si elle demande une explication, un exemple, un exercice ou une application pédagogique. "
+                "Garde inventaire/catalogue uniquement si ces demandes sont explicites."
+            )
 
         reponse = await llm.generate_with_retry(
             system_prompt=_charger_prompt() + contexte_conv,
@@ -139,8 +150,27 @@ def detecter_type_regles(message: str) -> str:
     normalise = _normaliser(message)
     termes_support = ("support", "supports", "cours", "document", "documents")
     termes_resume = ("resume", "resumer", "synthese", "contenu", "contient")
+    termes_exercices = ("exercice", "exercices", "question", "questions", "quiz", "oral", "participant")
+    demande_inventaire = (
+        "inventaire" in normalise
+        or "combien" in normalise and any(terme in normalise for terme in termes_support)
+        or "liste des supports" in normalise
+        or "liste des documents" in normalise
+        or "quels documents sont indexes" in normalise
+        or "quels supports sont indexes" in normalise
+    )
+    if demande_inventaire:
+        return "inventaire"
+    if any(terme in normalise for terme in termes_support) and any(
+        terme in normalise for terme in termes_exercices
+    ):
+        return "question_fond"
     if any(terme in normalise for terme in termes_support) and any(
         terme in normalise for terme in termes_resume
+    ):
+        return "contenu_formation"
+    if any(terme in normalise for terme in termes_support) and any(
+        terme in normalise for terme in ("indexer", "indexe", "indexee", "je vous parle", "je veux dire", "ces documents", "ces supports")
     ):
         return "contenu_formation"
     for type_cible, mots in _MOTS_CLES.items():
@@ -226,7 +256,9 @@ def _est_relance_contextuelle(message: str) -> bool:
     return bool(patterns_relance.match(normalise.strip()))
 
 
-async def detecter_type(message: str, conv: Any = None) -> str:
+async def detecter_type(
+    message: str, conv: Any = None, session_id: str | None = None,
+) -> str:
     """Point d'entrée : filtre Python -> contexte conversation -> LLM -> repli par règles.
 
     Le paramètre ``conv`` (Conversation) est utilisé pour détecter les relances
@@ -256,8 +288,30 @@ async def detecter_type(message: str, conv: Any = None) -> str:
     if "platform" in normalise or "forma-ia" in normalise or "forma ia" in normalise:
         return "aide_plateforme"
 
-    type_llm = await _detecter_via_llm(message, conv=conv)
+    # Une demande documentaire claire ne doit pas être rétrogradée en
+    # « incompréhensible » ou inventaire par une classification LLM variable.
+    type_documentaire = detecter_type_regles(message)
+    termes_documentaires = ("support", "supports", "cours", "document", "documents")
+    if any(terme in normalise for terme in termes_documentaires) and type_documentaire in {
+        "contenu_formation", "question_fond", "synthese_thematique", "inventaire",
+    }:
+        return type_documentaire
+
+    type_llm = await _detecter_via_llm(message, conv=conv, session_id=session_id)
     if type_llm:
+        if session_id and type_llm in {
+            "incomprehensible", "inventaire", "catalogue", "conversationnel", "hors_sujet",
+        }:
+            # Une salutation pure a déjà été traitée avant l'appel au LLM.
+            # Dans une session choisie, une classification vague ou erronée ne
+            # doit pas détourner une demande documentaire du corpus. Les demandes
+            # explicites catalogue/inventaire restent distinctes.
+            type_regle = detecter_type_regles(message)
+            if type_regle in {"catalogue", "inventaire"}:
+                return type_regle
+            if type_regle in {"contenu_formation", "question_fond", "synthese_thematique", "localisation"}:
+                return type_regle
+            return "question_fond"
         return type_llm
 
     return detecter_type_regles(message)

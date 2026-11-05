@@ -56,7 +56,43 @@ export default function App() {
 
   // Navigation
   const [currentSection, setCurrentSection] = useState<MenuSection>('tableau_de_bord');
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  const [isDesktopViewport, setIsDesktopViewport] = useState(() => window.matchMedia('(min-width: 768px)').matches);
   const currentRole: UserRole = authUser?.role ?? 'Dir.';
+
+  useEffect(() => {
+    const desktopQuery = window.matchMedia('(min-width: 768px)');
+    const updateViewport = (event: MediaQueryListEvent) => {
+      setIsDesktopViewport(event.matches);
+      if (event.matches) setIsMobileSidebarOpen(false);
+    };
+    desktopQuery.addEventListener('change', updateViewport);
+    return () => desktopQuery.removeEventListener('change', updateViewport);
+  }, []);
+
+  useEffect(() => {
+    if (!isMobileSidebarOpen) return;
+    const mobileQuery = window.matchMedia('(max-width: 767px)');
+    if (!mobileQuery.matches) {
+      setIsMobileSidebarOpen(false);
+      return;
+    }
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setIsMobileSidebarOpen(false);
+    };
+    const closeOnDesktop = (event: MediaQueryListEvent) => {
+      if (!event.matches) setIsMobileSidebarOpen(false);
+    };
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', closeOnEscape);
+    mobileQuery.addEventListener('change', closeOnDesktop);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', closeOnEscape);
+      mobileQuery.removeEventListener('change', closeOnDesktop);
+    };
+  }, [isMobileSidebarOpen]);
 
   useEffect(() => {
     if (!authUser || canAccessSection(authUser.role, currentSection)) return;
@@ -345,9 +381,19 @@ export default function App() {
       )}
 
       {/* Sidebar Menu Lateral */}
+      {isMobileSidebarOpen && (
+        <button
+          type="button"
+          aria-label="Fermer le menu de navigation"
+          onClick={() => setIsMobileSidebarOpen(false)}
+          className="fixed inset-0 z-30 bg-slate-950/55 backdrop-blur-[1px] transition-opacity md:hidden"
+        />
+      )}
       <Sidebar
         currentSection={currentSection}
-        onSelectSection={setCurrentSection}
+        isOpen={isDesktopViewport || isMobileSidebarOpen}
+        onClose={() => setIsMobileSidebarOpen(false)}
+        onSelectSection={(section) => { setCurrentSection(section); setIsMobileSidebarOpen(false); }}
         currentRole={currentRole}
         authUser={authUser}
         onOpenAuthModal={handleOpenAuthModal}
@@ -359,6 +405,8 @@ export default function App() {
       <div className="flex-1 flex flex-col min-w-0">
         <Header
           authUser={authUser}
+          isSidebarOpen={isMobileSidebarOpen}
+          onToggleSidebar={() => setIsMobileSidebarOpen((open) => !open)}
           onOpenAuthModal={handleOpenAuthModal}
           onLogout={handleLogout}
           onQuickNewOpportunity={() => setIsNewOppModalOpen(true)}
@@ -367,7 +415,7 @@ export default function App() {
           onNavigateToFormateurs={() => setCurrentSection('formateurs_staff')}
         />
 
-        <main className="flex-1 w-full max-w-[1600px] 2xl:max-w-[1760px] mx-auto p-5 sm:p-6 lg:p-7 2xl:px-9 overflow-y-auto">
+        <main className="flex-1 w-full max-w-[1600px] 2xl:max-w-[1760px] mx-auto p-3 sm:p-6 lg:p-7 2xl:px-9 overflow-y-auto">
           <ViewRouter
             currentSection={currentSection}
             currentRole={currentRole}

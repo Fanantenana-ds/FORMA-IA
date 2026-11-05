@@ -14,13 +14,17 @@ import {
   UserPlus,
   LogOut,
   BrainCircuit,
-  UserCog
+  UserCog,
+  X,
+  Workflow
 } from 'lucide-react';
 import { MenuSection, UserRole, AuthUser, ROLE_LABELS, canAccessSection } from '../types';
 
 interface SidebarProps {
   currentSection: MenuSection;
   onSelectSection: (section: MenuSection) => void;
+  isOpen: boolean;
+  onClose: () => void;
   currentRole: UserRole;
   authUser?: AuthUser | null;
   onOpenAuthModal?: (mode?: 'login' | 'register') => void;
@@ -31,6 +35,8 @@ interface SidebarProps {
 export const Sidebar: React.FC<SidebarProps> = ({
   currentSection,
   onSelectSection,
+  isOpen,
+  onClose,
   currentRole,
   authUser,
   onOpenAuthModal,
@@ -50,7 +56,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     return (
       <button
         key={id}
-        onClick={() => onSelectSection(id)}
+        onClick={() => { onSelectSection(id); onClose(); }}
         className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 ${
           isActive
             ? 'bg-[#1B8F6E] text-white shadow-md shadow-[#1B8F6E]/20 font-semibold'
@@ -78,14 +84,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
   };
 
   return (
-    <aside className="w-72 bg-[#11162A] text-white flex flex-col h-screen sticky top-0 border-r border-slate-800/60 shrink-0 select-none z-30">
+    <aside
+      id="primary-navigation"
+      aria-label="Navigation principale"
+      aria-hidden={!isOpen}
+      inert={!isOpen}
+      className={`fixed inset-y-0 left-0 z-40 flex h-[100dvh] w-72 shrink-0 select-none flex-col border-r border-slate-800/60 bg-[#11162A] text-white shadow-2xl transition-transform duration-300 ease-in-out md:sticky md:top-0 md:z-30 md:h-screen md:translate-x-0 md:shadow-none ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}
+    >
       {/* Top Header Logo Section */}
       <div className="p-5 border-b border-slate-800/60">
         <div className="flex items-center gap-3">
-          <div className="w-11 h-11 rounded-xl bg-[#1B8F6E] flex items-center justify-center font-bold text-lg text-white shadow-lg shadow-[#1B8F6E]/30 tracking-wider border border-white/10">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-[#1B8F6E] text-lg font-bold tracking-wider text-white shadow-lg shadow-[#1B8F6E]/30">
             FA
           </div>
-          <div>
+          <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5">
               <h1 className="font-extrabold text-xl tracking-tight text-white">
                 FORMA-IA
@@ -96,6 +108,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
               Plateforme de gestion IA
             </p>
           </div>
+          <button type="button" onClick={onClose} aria-label="Fermer le menu" className="rounded-lg p-2 text-slate-300 transition-colors hover:bg-slate-800 hover:text-white md:hidden">
+            <X size={19} />
+          </button>
         </div>
 
         {/* Role connecte section */}
@@ -124,6 +139,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
             Pilotage & Veille
           </div>
           <div className="space-y-1">
+            {navItem(
+              'dossiers_formation',
+              'Dossiers de formation',
+              <Workflow size={18} />
+            )}
             {navItem(
               'tableau_de_bord',
               'Tableau de bord',

@@ -118,7 +118,7 @@ class ApiService {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), opts.timeout ?? (opts.ia ? 120000 : 20000));
     const headers = new Headers(init.headers);
-    if (!(init.body instanceof FormData) && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
+    if (init.body != null && !(init.body instanceof FormData) && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
     headers.set('Accept', 'application/json');
     // Pour les appels IA, préférer la session JWT déjà ouverte dans le front.
     // La clé interne reste un recours pour les intégrations sans session.
@@ -147,7 +147,7 @@ class ApiService {
       if (error instanceof ApiError) throw error;
       this.connected = false; this.fallback = true; this.errors++; this.notify();
       reportFrontendError('network', { route: path.split('?')[0], status: 0 });
-      throw new ApiError(error instanceof Error && error.name === 'AbortError' ? 'Le serveur met trop de temps à répondre.' : 'Impossible de joindre le serveur API.', 0, error);
+      throw new ApiError(error instanceof Error && error.name === 'AbortError' ? 'Le service met plus de temps que prévu. Réessayez dans un instant.' : 'La connexion au service est momentanément indisponible. Vérifiez que le serveur est démarré, puis actualisez la page.', 0, error);
     }
   }
   private json(method: string, body?: unknown): RequestInit { return { method, ...(body === undefined ? {} : { body: JSON.stringify(body) }) }; }
@@ -319,6 +319,9 @@ class ApiService {
     return mapSession(raw, trainer ? formateurFullName(trainer) : form.formateur);
   }
   async getFactures(): Promise<DevisFacture[]> { return arr<any>(await this.request('/factures?skip=0&limit=100')).map(mapInvoice); }
+  async getOffersByOpportunity(opportunityId: string) {
+    return this.request<any>(`/offres${queryString({ opportunite_id: opportunityId, skip: '0', limit: '100' })}`);
+  }
   async createFacture(form: Partial<DevisFacture>) {
     const raw = await this.request<any>('/factures', this.json('POST', {
       client: form.client?.trim() || undefined,
@@ -381,6 +384,7 @@ class ApiService {
   async deleteOpportunity(id: string) { return this.request(`/opportunites/${encodeURIComponent(id)}`, this.json('DELETE')); }
   async createPublicRegistrationLink(kind: 'participant' | 'formateur' | 'post_formation', session_id?: string) { return this.request<{token:string;path:string;kind:string;assessment_question_count?:number}>('/public/links', this.json('POST', { kind, ...(session_id ? {session_id} : {}) })); }
   async getSessionPublicLinks(sessionId: string) { return this.request<{participant?:{token:string;path:string};formateur?:{token:string;path:string};post_formation?:{token:string;path:string}}>(`/public/links/session/${encodeURIComponent(sessionId)}`); }
+  async revokePublicRegistrationLink(token: string) { return this.request<any>(`/public/links/${encodeURIComponent(token)}`, { method: 'DELETE' }); }
   async getPublicRegistration(token: string) { return this.request<any>(`/public/links/${encodeURIComponent(token)}`, {}, {auth:false}); }
   async submitPublicParticipant(token: string, data: {nom:string;prenom:string;email:string;organisation?:string;poste?:string;assessment_attempt_id?:string;answers?:Array<{question_id:string;answer:string}>}) { return this.request<any>(`/public/links/${encodeURIComponent(token)}/participant`, this.json('POST', data), {auth:false}); }
   async submitPostFormation(token: string, data: {email:string;assessment_attempt_id:string;answers:Array<{question_id:string;answer:string}>;satisfaction_answers:Array<{question_id:string;answer:string}>}) { return this.request<any>(`/public/links/${encodeURIComponent(token)}/post-formation`, this.json('POST', data), {auth:false}); }

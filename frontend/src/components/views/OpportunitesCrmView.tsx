@@ -250,14 +250,14 @@ export const OpportunitesCrmView: React.FC<OpportunitesCrmViewProps> = ({
     restoredWorkflowMarket.current = activeMarket.id;
     skipWorkflowWrite.current = true;
     if (restored) {
-      setDocTab(restored.docTab ?? 'tdr'); setTdrBrief(restored.tdrBrief ?? { client: activeMarket.client, objectifs: activeMarket.titre, public: '', duree: '', format: 'Présentiel', budget: '', lieu: '', deadline: '' });
+      setDocTab(restored.docTab ?? 'tdr'); setTdrBrief(restored.tdrBrief ?? { client: '', objectifs: activeMarket.titre, public: '', duree: '', format: 'Présentiel', budget: '', lieu: '', deadline: '' });
       setEnrichFromRag(!!restored.enrichFromRag); setGeneratedTdr(restored.generatedTdr ?? null); setTdrEditMode(false); setTdrFiles(restored.tdrFiles ?? {}); setTdrReviewId(restored.tdrReviewId ?? ''); setTdrApproved(!!restored.tdrApproved); setTdrSynchronized(!!restored.tdrSynchronized); setTdrReviewNote(restored.tdrReviewNote ?? '');
       setTechniqueDocument(restored.techniqueDocument ?? null); setTechniqueRequest(restored.techniqueRequest ?? null); setTechniqueEditMode(false); setTechniqueReviewId(restored.techniqueReviewId ?? ''); setTechniqueApproved(!!restored.techniqueApproved);
       setFinanceDocument(restored.financeDocument ?? null); setFinanceReviewId(restored.financeReviewId ?? ''); setFinanceApproved(!!restored.financeApproved); setOfferSaved(!!restored.offerSaved);
       setFinanceInputs(restored.financeInputs ?? { trainerRate: 0, trainerDays: 0, roomRate: 0, roomDays: 0, supportRate: 0, participants: 0, logistics: 0, adminPercent: 0 });
       setOfferOptions(restored.offerOptions ?? { participants: 20, trainerType: 'senior', roomType: 'standard', vat: true, logistics: true, administration: true }); setIncludePortfolioRag(!!restored.includePortfolioRag); setReviewNote(restored.reviewNote ?? '');
     } else {
-      setDocTab('tdr'); setTdrBrief({ client: activeMarket.client, objectifs: activeMarket.titre, public: '', duree: '', format: 'Présentiel', budget: activeMarket.budgetAr ? String(activeMarket.budgetAr) : '', lieu: '', deadline: '' });
+      setDocTab('tdr'); setTdrBrief({ client: '', objectifs: activeMarket.titre, public: '', duree: '', format: 'Présentiel', budget: activeMarket.budgetAr ? String(activeMarket.budgetAr) : '', lieu: '', deadline: '' });
       setEnrichFromRag(false); setGeneratedTdr(null); setTdrEditMode(false); setTdrFiles({}); setTdrReviewId(''); setTdrApproved(false); setTdrSynchronized(false); setTdrReviewNote('');
       setTechniqueDocument(null); setTechniqueRequest(null); setTechniqueEditMode(false); setTechniqueReviewId(''); setTechniqueApproved(false); setFinanceDocument(null); setFinanceReviewId(''); setFinanceApproved(false); setOfferSaved(false);
       setFinanceInputs({ trainerRate: 0, trainerDays: 0, roomRate: 0, roomDays: 0, supportRate: 0, participants: 0, logistics: 0, adminPercent: 0 }); setOfferOptions({ participants: 20, trainerType: 'senior', roomType: 'standard', vat: true, logistics: true, administration: true }); setIncludePortfolioRag(false); setReviewNote('');
@@ -268,7 +268,10 @@ export const OpportunitesCrmView: React.FC<OpportunitesCrmViewProps> = ({
       if (cancelled || restored?.tdrBrief) return;
       const brief = result.brief ?? {};
         setTdrBrief({
-        client: activeMarket.client || brief.client || '',
+        // Seul l'organisme explicite de l'avis préremplit le client. Le titre
+        // de l'appel n'est pas un nom d'organisation ; si la source ne le
+        // fournit pas, le champ reste à confirmer par la direction.
+        client: brief.client ?? '',
         objectifs: brief.objectifs || activeMarket.titre,
         public: brief.public || '', duree: brief.duree || '', format: brief.format || 'Présentiel',
         budget: brief.budget || (activeMarket.budgetAr ? String(activeMarket.budgetAr) : ''),
@@ -276,7 +279,7 @@ export const OpportunitesCrmView: React.FC<OpportunitesCrmViewProps> = ({
         ...(voicePrefillRef.current ?? {}),
         });
     }).catch(() => {
-      if (!cancelled) setTdrBrief({ client: activeMarket.client, objectifs: `${activeMarket.titre}\n\n${opportunites.find(o => o.id === activeMarket.id)?.besoinFormation ?? ''}`.trim(), public: '', duree: '', format: 'Présentiel', budget: activeMarket.budgetAr ? String(activeMarket.budgetAr) : '', lieu: '', deadline: '', ...(voicePrefillRef.current ?? {}) });
+      if (!cancelled) setTdrBrief({ client: '', objectifs: `${activeMarket.titre}\n\n${opportunites.find(o => o.id === activeMarket.id)?.besoinFormation ?? ''}`.trim(), public: '', duree: '', format: 'Présentiel', budget: activeMarket.budgetAr ? String(activeMarket.budgetAr) : '', lieu: '', deadline: '', ...(voicePrefillRef.current ?? {}) });
     });
     return () => { cancelled = true; };
   }, [selectedMarketId, activeMarket?.id]);

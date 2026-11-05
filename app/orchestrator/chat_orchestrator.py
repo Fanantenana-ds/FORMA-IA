@@ -8,6 +8,7 @@
 # ============================================================
 
 import logging
+import re
 import time
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, List, Optional
@@ -31,7 +32,7 @@ logger = logging.getLogger(__name__)
 
 _DOSSIER_PROMPTS = Path(__file__).resolve().parents[1] / "prompts" / "rag"
 MENTION_FIXE = "\n\n*Réponse générée à partir des documents indexés.*"
-ATTENTE_MAX_CHAT_S = 5.0
+ATTENTE_MAX_CHAT_S = 3.0
 GUIDE_DEMARRAGE_PLATEFORME = """\
 **FORMA-IA** guide chaque étape du cycle de vie d'une formation, de la **détection d'une opportunité** jusqu'à la **facturation**. Les modules disponibles :
 
@@ -75,7 +76,7 @@ def _charger_prompt(nom_fichier: str) -> str:
     return "\n\n".join(s for s in sections if s)
 
 
-MAX_HISTORIQUE_ECHANGES = 6  # 3 tours utilisateur + 3 réponses assistant injectés dans le prompt
+MAX_HISTORIQUE_ECHANGES = 20  # 10 tours utilisateur + 10 réponses assistant
 
 
 def _formater_historique(conv: "memoire.Conversation") -> str:
@@ -157,6 +158,7 @@ class ChatOrchestrator:
         conversation_id = conversation_id or memoire.nouveau_id()
         conv = memoire.charger_conversation(conversation_id)
 
+        message_original = message
         await progress("status", "Analyse de votre question…")
         type_detecte = await detecter_type(message, conv=conv)
         await progress("status", f"Question reconnue : {type_detecte.replace('_', ' ')}. Préparation de la recherche…")
@@ -174,6 +176,35 @@ class ChatOrchestrator:
             await progress("status", "Vérification des formations qui possèdent des supports indexés…")
         elif type_detecte == "inventaire":
             await progress("status", "Comptage des supports réellement indexés…")
+
+        # Fix relance : "refaire"/"retry"/"encore" rejoue la dernière question réelle
+        import unicodedata as _ud
+        _msg_norm = "".join(
+            c for c in _ud.normalize("NFKD", message.lower().strip())
+            if not _ud.combining(c)
+        )
+        _MOTS_RELANCE = {
+            "refaire", "refais", "retry", "reessai", "recommence", "recommencer",
+            "encore", "suite", "continuer", "again", "refaire le resume",
+            "refais le resume", "refaire la synthese", "refais la synthese",
+        }
+        est_relance = _msg_norm in _MOTS_RELANCE or bool(
+            re.match(r"^(refais?|recommence|retry|again)\b", _msg_norm)
+        )
+        if est_relance and conv and conv.echanges:
+            # Chercher le dernier message utilisateur non-relance
+            for _e in reversed(conv.echanges):
+                if _e.role == "utilisateur" and _e.texte != message_original:
+                    _e_norm = "".join(
+                        c for c in _ud.normalize("NFKD", _e.texte.lower().strip())
+                        if not _ud.combining(c)
+                    )
+                    if _e_norm not in _MOTS_RELANCE and not re.match(
+                        r"^(refais?|recommence|retry|again)\b", _e_norm
+                    ):
+                        message = _e.texte
+                        type_detecte = await detecter_type(message, conv=conv)
+                        break
 
         try:
             if type_detecte == "catalogue":
@@ -209,6 +240,14 @@ class ChatOrchestrator:
             texte = f"Limite de débit Voyage atteinte, réessayez dans {exc.temps_restant_s:.0f} s."
             sources = []
             statut = "limite_debit"
+        except Exception as exc:
+            logger.exception("❌ Chat : erreur inattendue (%s) : %s", type(exc).__name__, exc)
+            texte = (
+                "Une erreur est survenue pendant la préparation de la réponse. "
+                "Veuillez reformuler votre question ou réessayer dans quelques instants."
+            )
+            sources = []
+            statut = "erreur"
 
         await progress("status", "Structuration de la réponse…")
 
@@ -221,7 +260,7 @@ class ChatOrchestrator:
 
         if formation_code:
             formation_resolue = formation_code
-        conv = memoire.ajouter_echange(conv, "utilisateur", message)
+        conv = memoire.ajouter_echange(conv, "utilisateur", message_original)
         conv = memoire.ajouter_echange(conv, "assistant", texte, formation_code=formation_resolue, type_reponse=type_detecte)
         if user_id:
             conv.user_id = user_id
@@ -235,7 +274,7 @@ class ChatOrchestrator:
         )
 
         await progress("status", "Réponse préparée à partir des supports autorisés…")
-        suggestions = await self._suggestions_dynamiques(type_detecte, message, texte)
+        suggestions = self._suggestions(type_detecte)
 
         return {
             "conversation_id": conversation_id,

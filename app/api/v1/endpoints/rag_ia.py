@@ -13,7 +13,7 @@ import json
 import logging
 from dataclasses import asdict
 from pathlib import Path
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse, StreamingResponse
@@ -104,6 +104,7 @@ async def chat_stream(payload: ChatRequest, request: Request, current_user: User
     orchestrateur = get_chat_orchestrator()
 
     async def produire():
+        trace_id = uuid4().hex[:12]
         queue: asyncio.Queue[dict] = asyncio.Queue()
 
         async def progress(stage: str, label: str):
@@ -139,19 +140,24 @@ async def chat_stream(payload: ChatRequest, request: Request, current_user: User
                 resultat["sources"] = []
             yield await envoyer({"type": "status", "message": "Réponse prête. Affichage du résultat…"})
             texte = resultat.get("reponse", "")
-            for debut in range(0, len(texte), 48):
-                if await request.is_disconnected():
-                    return
-                yield await envoyer({"type": "token", "text": texte[debut:debut + 48]})
-                await asyncio.sleep(0.015)
+            if await request.is_disconnected():
+                return
+            # Le provider produit actuellement une réponse complète (JSON) en
+            # un seul appel. Ne pas simuler un flux de tokens en découpant le
+            # texte et en ajoutant un délai : transmettre le contenu aussitôt.
+            yield await envoyer({"type": "token", "text": texte})
             yield await envoyer({"type": "meta", "data": {k: resultat.get(k) for k in ("conversation_id", "type_reponse", "sources", "formation_resolue", "suggestions", "duree_ms")}})
             yield await envoyer({"type": "done"})
         except asyncio.CancelledError:
             task.cancel()
             raise
         except Exception as exc:
-            logger.exception("Erreur pendant le chat RAG en flux : %s", exc)
-            yield await envoyer({"type": "error", "message": "Une erreur est survenue pendant la préparation de la réponse."})
+            logger.exception("Erreur chat RAG SSE [%s] : %s", trace_id, exc)
+            yield await envoyer({
+                "type": "error",
+                "message": "La réponse documentaire n’a pas pu être préparée. Réessayez ou transmettez le code au support.",
+                "trace_id": trace_id,
+            })
 
     return StreamingResponse(
         produire(), media_type="text/event-stream",

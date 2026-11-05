@@ -117,9 +117,17 @@ _MOTS_CLES = {
     "hors_sujet": ("météo", "meteo", "température à", "temperature a", "recette de", "horoscope", "résultat du match", "resultat du match", "actualité politique"),
     "catalogue": ("catalogue", "quelles formations", "liste des formations", "formations disponibles", "formations proposez"),
     "inventaire": ("inventaire", "documents indexes", "supports indexes", "combien de documents", "combien de supports"),
-    "synthese_thematique": ("resume des formations", "formations concernant", "thematique", "synthese"),
+    "synthese_thematique": (
+        "resume", "resumer", "fais un resume", "faire un resume",
+        "donne moi le resume", "donne moi la resume", "synthese",
+        "formations concernant", "thematique",
+    ),
     "localisation": ("ou est", "ou se trouve", "ou est explique", "quelle page", "quelle diapositive"),
-    "contenu_formation": ("contenu de", "contenus de", "supports de la formation", "que contient la formation"),
+    "contenu_formation": (
+        "contenu de", "contenus de", "supports de la formation",
+        "support du cours", "supports du cours", "supports de cours",
+        "documents du cours", "que contient la formation",
+    ),
     "aide_plateforme": ("valider", "hitl", "relance", "facture", "plateforme", "forma-ia", "comment faire pour"),
 }
 
@@ -129,6 +137,12 @@ def detecter_type_regles(message: str) -> str:
     question_fond (la recherche vectorielle + le mode strict géreront
     naturellement les cas hors sujet en l'absence de contexte pertinent)."""
     normalise = _normaliser(message)
+    termes_support = ("support", "supports", "cours", "document", "documents")
+    termes_resume = ("resume", "resumer", "synthese", "contenu", "contient")
+    if any(terme in normalise for terme in termes_support) and any(
+        terme in normalise for terme in termes_resume
+    ):
+        return "contenu_formation"
     for type_cible, mots in _MOTS_CLES.items():
         if any(mot in normalise for mot in mots):
             return type_cible
@@ -174,6 +188,8 @@ def _est_inintelligible(message: str) -> bool:
             mots_courants = {
                 "aide", "aide-moi", "help", "oui", "non", "ok", "super",
                 "bien", "voila", "voilà", "parfait", "compris",
+                "refaire", "retry", "reessai", "again", "encore", "suite",
+                "resume", "resumer", "detail", "continuer",
             }
             if not any(t in mots_courants for t in tokens):
                 return True
@@ -200,7 +216,8 @@ def _est_relance_contextuelle(message: str) -> bool:
     patterns_relance = re.compile(
         r"^(explique|detaille|developpe|parle moi (de|du)|qu.est[ -]ce que|c.est quoi|"
         r"et (le|la|les|l.)|dis moi (plus sur|comment)|comment (fonctionne|marche)|"
-        r"c.est (quoi|quoi exactement))[\s\w]{0,40}$",
+        r"c.est (quoi|quoi exactement)|refaire|reessai|retry|recommence|encore|suite|"
+        r"resumer?|faire un resume|donne (moi )?(la |le |un |une )?resume)[\s\w]{0,40}$",
         re.IGNORECASE,
     )
     # Message court avec un chiffre seul ou "étape X"

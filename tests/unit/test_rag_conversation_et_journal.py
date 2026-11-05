@@ -69,3 +69,13 @@ def test_enregistrer_et_relire(tmp_path):
 
 def test_journal_inexistant_retourne_liste_vide(tmp_path):
     assert journal.lire_toutes_les_lignes(tmp_path / "n_existe_pas.jsonl") == []
+
+
+def test_journal_signale_une_question_similaire_dans_la_meme_formation(tmp_path):
+    chemin = tmp_path / "chat_logs.jsonl"
+    commun = dict(nb_sources=1, modele_requete="voyage", cache_utilise=False, duree_ms=100, statut="ok", chemin=chemin)
+    journal.enregistrer(question="Donne le résumé des supports du cours", type_detecte="synthese_thematique", formation_code="IA", **commun)
+    journal.enregistrer(question="Donne-moi le resume des supports du cours", type_detecte="synthese_thematique", formation_code="IA", **commun)
+    lignes = journal.lire_toutes_les_lignes(chemin)
+    assert lignes[1]["question_similaire"] is not None
+    assert lignes[1]["question_similaire"]["ratio"] >= 0.78

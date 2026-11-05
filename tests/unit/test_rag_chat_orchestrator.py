@@ -108,6 +108,9 @@ def isole(monkeypatch, tmp_path, chemin_catalogue):
     monkeypatch.setattr(journal, "CHEMIN_JOURNAL_DEFAUT", tmp_path / "chat_logs.jsonl")
     monkeypatch.setattr(chat_module.journal, "CHEMIN_JOURNAL_DEFAUT", tmp_path / "chat_logs.jsonl")
     monkeypatch.setattr(recherche, "CHEMIN_CACHE_DEFAUT", tmp_path / "cache.json")
+    monkeypatch.setattr(chat_module.rcache, "CHEMIN_CACHE_DEFAUT", tmp_path / "response_cache.json", raising=False)
+    monkeypatch.setattr(chat_module.rcache, "depuis_cache", lambda *a, **kw: None)
+    monkeypatch.setattr(chat_module.rcache, "mettre_en_cache", lambda *a, **kw: None)
 
     # Par défaut : aucun LLM disponible (force le repli par règles / gabarit).
     def pas_de_llm():

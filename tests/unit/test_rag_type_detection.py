@@ -75,6 +75,15 @@ def test_repli_synthese_thematique():
     assert detection.detecter_type_regles("résumé des formations concernant la data") == "synthese_thematique"
 
 
+@pytest.mark.parametrize("message", [
+    "DONNE MOI LA RESUME DE SUPPORT DU COURS ACTUELLEMENT",
+    "résume les supports de cette session",
+    "refaire le résumé de ces supports",
+])
+def test_repli_reconnait_demande_resume_support(message):
+    assert detection.detecter_type_regles(message) == "contenu_formation"
+
+
 def test_repli_aide_plateforme():
     assert detection.detecter_type_regles("comment valider une relance de facture ?") == "aide_plateforme"
 

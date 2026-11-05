@@ -207,6 +207,7 @@ export type MenuSection =
   | 'sessions_groupes'
   | 'suivi_presences'
   | 'facturation_devis'
+  | 'dossiers_formation'
   | 'espace_ia'
   | 'gestion_utilisateurs';
 

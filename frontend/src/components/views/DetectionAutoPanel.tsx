@@ -55,7 +55,7 @@ export const DetectionAutoPanel: React.FC<DetectionAutoPanelProps> = ({ canTrigg
   const [isRunning, setIsRunning] = useState(false);
   const [runError, setRunError] = useState<string | null>(null);
   const [summary, setSummary] = useState<{ tone: 'ok' | 'warn'; lines: string[] } | null>(null);
-  const [progress, setProgress] = useState<Array<{ type: 'source' | 'result'; title: string; score?: number; url?: string; source?: string; deadline?: string; reference?: string }>>([]);
+  const [progress, setProgress] = useState<Array<{ type: 'source' | 'result'; title: string; score?: number; url?: string; source?: string; deadline?: string; reference?: string; status?: string; capturedAt?: string }>>([]);
   const [streamStage, setStreamStage] = useState('Préparation');
   const voiceRunTriggered = useRef(false);
 
@@ -111,6 +111,8 @@ export const DetectionAutoPanel: React.FC<DetectionAutoPanelProps> = ({ canTrigg
             source: String(data.organizer ?? data.source_site ?? ''),
             deadline: typeof data.deadline === 'string' ? data.deadline : undefined,
             reference: typeof data.reference === 'string' ? data.reference : undefined,
+            status: typeof data.current_status === 'string' ? data.current_status : undefined,
+            capturedAt: typeof data.date_capture === 'string' ? data.date_capture : undefined,
           }].slice(-16));
         }
         if (event === 'fin') setStreamStage('Terminé');
@@ -424,9 +426,9 @@ export const DetectionAutoPanel: React.FC<DetectionAutoPanelProps> = ({ canTrigg
                   <div className="min-w-0">
                     <p className="text-xs font-bold leading-5 text-[#11162A]">{item.title}</p>
                     {item.source && <p className="mt-0.5 text-[11px] text-slate-500">{item.source}</p>}
-                    {(item.reference || item.deadline) && <p className="mt-1 text-[11px] text-slate-500">{item.reference ? `Réf. ${item.reference}` : ''}{item.reference && item.deadline ? ' · ' : ''}{item.deadline ? `Clôture ${item.deadline}` : ''}</p>}
+                    {(item.reference || item.deadline || item.capturedAt) && <p className="mt-1 text-[11px] text-slate-500">{item.reference ? `Réf. ${item.reference}` : ''}{item.reference && (item.deadline || item.capturedAt) ? ' · ' : ''}{item.deadline ? `Échéance ${item.deadline}` : ''}{item.deadline && item.capturedAt ? ' · ' : ''}{item.capturedAt ? `Capturé le ${item.capturedAt}` : ''}</p>}
                   </div>
-                  {item.score !== undefined && <span className="shrink-0 rounded-lg bg-white px-2 py-1 text-[11px] font-bold text-emerald-800">{item.score}/100</span>}
+                  <div className="flex shrink-0 flex-col items-end gap-1">{item.score !== undefined && <span className="rounded-lg bg-white px-2 py-1 text-[11px] font-bold text-emerald-800">{item.score}/100</span>}{item.status && <span className={`rounded-full px-2 py-1 text-[10px] font-bold ${item.status === 'ouverte' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-700'}`}>{item.status}</span>}</div>
                 </div>
                 {item.url ? <a href={item.url} target="_blank" rel="noopener noreferrer" className="mt-2 inline-block text-[11px] font-semibold text-[#16785c] underline">Voir l’avis original ↗</a>
                   : <span className="mt-2 block text-[11px] text-amber-700">Aucun lien public fourni</span>}

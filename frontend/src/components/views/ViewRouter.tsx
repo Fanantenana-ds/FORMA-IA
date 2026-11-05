@@ -9,6 +9,7 @@ import { SuiviPresencesView } from './SuiviPresencesView';
 import { FacturationDevisView } from './FacturationDevisView';
 import { EspaceIAView } from './EspaceIAView';
 import { GestionUtilisateursView } from './GestionUtilisateursView';
+import { DossiersFormationView } from './DossiersFormationView';
 import {
   MenuSection,
   UserRole,
@@ -152,6 +153,18 @@ export const ViewRouter: React.FC<ViewRouterProps> = ({
           onOpenNewInvoice={onOpenNewInvoice}
           onRefreshData={onRefreshData}
           onNavigateToSection={onNavigateTo}
+        />
+      );
+
+    case 'dossiers_formation':
+      return currentRole === 'Form.' ? null : (
+        <DossiersFormationView
+          opportunites={opportunites}
+          sessions={sessions}
+          formateurs={formateurs}
+          factures={factures}
+          onRefreshData={onRefreshData}
+          onNavigateTo={onNavigateTo}
         />
       );
 

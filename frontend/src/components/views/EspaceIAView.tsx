@@ -27,6 +27,11 @@ const supportStatusLabel: Record<string, string> = {
   erreur: "Erreur d'indexation", ocr_necessaire: 'OCR nécessaire', non_indexable_image: 'Image non indexable',
   archive: 'Archivé',
 };
+const indexingStageLabel: Record<string, string> = {
+  extraction: 'Extraction du texte', decoupage: 'Nettoyage et découpage',
+  vectorisation: 'Création des vecteurs', enregistrement: 'Enregistrement des passages',
+  termine: 'Indexation terminée',
+};
 const labels: Record<string, string> = {
   resume: 'Résumé', synthese: 'Synthèse', progression: 'Progression', competences: 'Compétences',
   points_forts: 'Points forts', axes_amelioration: "Axes d'amélioration", recommandations: 'Recommandations',
@@ -140,6 +145,7 @@ export const EspaceIAView: React.FC<{ readOnly?: boolean; trainerMode?: boolean;
   const [attestationPreview, setAttestationPreview] = useState<{ numero: string; url: string } | null>(null);
   const [attestationBusy, setAttestationBusy] = useState('');
   const [reviewLoading, setReviewLoading] = useState(false);
+  const [reviewsLoading, setReviewsLoading] = useState(false);
   const [deletingReviewId, setDeletingReviewId] = useState('');
   const [supports, setSupports] = useState<any[]>([]);
   const [formations, setFormations] = useState<any[]>([]);
@@ -167,22 +173,44 @@ export const EspaceIAView: React.FC<{ readOnly?: boolean; trainerMode?: boolean;
   const [notice, setNotice] = useState('');
   const [continueMarket, setContinueMarket] = useState(false);
   const [streamingStatus, setStreamingStatus] = useState('');
+  const streamBufferRef = useRef('');
+  const streamDrainRef = useRef(false);
+
+  const waitForStreamDrain = async () => {
+    while (streamDrainRef.current || streamBufferRef.current) {
+      await new Promise(resolve => window.setTimeout(resolve, 16));
+    }
+  };
 
   const loadReviews = async () => {
-    const responses = await Promise.allSettled([apiService.getPendingReviews(), apiService.getRagReviews(), apiService.getOfferReviews()]);
-    if (responses.every(result => result.status === 'rejected')) throw new Error('Impossible de charger les validations. Vérifiez la connexion au backend.');
-    const backend = responses[0].status === 'fulfilled' ? responses[0].value : { reviews: [] };
-    const rag = responses[1].status === 'fulfilled' ? responses[1].value : { data: [] };
-    const offers = responses[2].status === 'fulfilled' ? responses[2].value : { data: [] };
+    // La revue M2 est la source principale : l'afficher sans attendre les
+    // listes complémentaires RAG/M3, qui ne doivent pas bloquer le TDR.
+    const backend = await apiService.getPendingReviews();
+    if (backend?.success === false) throw new Error(backend.error ?? 'Le backend n’a pas pu charger les validations en attente.');
+    const regularReviews = (backend.reviews ?? []).filter((item: any) => !String(item.agent_id ?? '').startsWith('agent_rag_'));
+    setReviews(regularReviews);
+
+    const [ragResult, offerResult] = await Promise.allSettled([apiService.getRagReviews(), apiService.getOfferReviews()]);
+    const rag = ragResult.status === 'fulfilled' ? ragResult.value : { data: [] };
+    const offers = offerResult.status === 'fulfilled' ? offerResult.value : { data: [] };
     // Toutes les validations doivent être consultables ici, y compris TDR,
     // offres technique/financière et contenus RAG. Les retirer de la liste
     // faisait apparaître un compteur sans aperçu correspondant.
-    const regularReviews = (backend.reviews ?? []).filter((item: any) => !String(item.agent_id ?? '').startsWith('agent_rag_'));
     const ragReviews = Array.isArray(rag.data) ? rag.data : [];
     const offerReviews = Array.isArray(offers.data) ? offers.data : [];
     const unique = new Map<string, any>();
-    [...regularReviews, ...offerReviews, ...ragReviews].forEach((item: any) => unique.set(String(item.review_id ?? item.id), item));
+    [...regularReviews, ...offerReviews, ...ragReviews].forEach((item: any) => {
+      const id = item.review_id ?? item.id;
+      if (id != null) unique.set(String(id), item);
+    });
     setReviews([...unique.values()]);
+  };
+  const refreshReviews = async () => {
+    setReviewsLoading(true);
+    setError('');
+    try { await loadReviews(); }
+    catch (e) { setError(errorText(e)); }
+    finally { setReviewsLoading(false); }
   };
   const loadHistory = async () => {
     const [approved, rejected] = await Promise.all([
@@ -246,10 +274,32 @@ export const EspaceIAView: React.FC<{ readOnly?: boolean; trainerMode?: boolean;
     setRenamingConvId(null);
   };
 
-  const copyMessage = (text: string, idx: number) => {
-    void navigator.clipboard.writeText(text);
-    setCopiedMsgIdx(idx);
-    setTimeout(() => setCopiedMsgIdx(null), 1500);
+  const copyMessage = async (text: string, idx: number) => {
+    try {
+      let copied = false;
+      if (navigator.clipboard?.writeText) {
+        try {
+          await navigator.clipboard.writeText(text);
+          copied = true;
+        } catch { /* Essayer le mécanisme compatible avec les contextes HTTP locaux. */ }
+      }
+      if (!copied) {
+        const temporary = document.createElement('textarea');
+        temporary.value = text;
+        temporary.setAttribute('readonly', '');
+        temporary.style.position = 'fixed';
+        temporary.style.opacity = '0';
+        document.body.appendChild(temporary);
+        temporary.select();
+        const copied = document.execCommand('copy');
+        temporary.remove();
+        if (!copied) throw new Error('Copie refusée par le navigateur.');
+      }
+      setCopiedMsgIdx(idx);
+      window.setTimeout(() => setCopiedMsgIdx(current => current === idx ? null : current), 1800);
+    } catch {
+      setError('La copie a échoué. Autorisez le presse-papiers dans le navigateur puis réessayez.');
+    }
   };
 
   const sendFeedback = async (idx: number, fb: 'positif' | 'negatif') => {
@@ -274,7 +324,37 @@ export const EspaceIAView: React.FC<{ readOnly?: boolean; trainerMode?: boolean;
       setFormationCode(sessionRows[0].formation_code ?? '');
     }
   };
-  useEffect(() => { setError(''); setNotice(''); if (tab === 'reviews') loadReviews().catch(e => setError(errorText(e))); if (tab === 'history') loadHistory().catch(e => setError(errorText(e))); if (tab === 'supports' || tab === 'chat') loadSupports().catch(e => setError(errorText(e))); if (tab === 'chat') loadRagConversations(); if (tab === 'syllabus') apiService.getRagFormations().then(data => setFormations(Array.isArray(data) ? data : data.data ?? data.formations ?? [])).catch(e => setError(errorText(e))); }, [tab, formationCode, sessionId]);
+  useEffect(() => { setError(''); setNotice(''); if (tab === 'reviews') void refreshReviews(); if (tab === 'history') loadHistory().catch(e => setError(errorText(e))); if (tab === 'supports' || tab === 'chat') loadSupports().catch(e => setError(errorText(e))); if (tab === 'chat') loadRagConversations(); if (tab === 'syllabus') apiService.getRagFormations().then(data => setFormations(Array.isArray(data) ? data : data.data ?? data.formations ?? [])).catch(e => setError(errorText(e))); }, [tab, formationCode, sessionId]);
+  // Continue à refléter les étapes réellement enregistrées côté backend,
+  // y compris lorsque l'indexation dépasse le délai d'attente de l'upload.
+  useEffect(() => {
+    if (tab !== 'supports') return;
+    const pending = supports.filter(s => (s.statut_indexation ?? s.statut) === 'en_cours' && (s.hash ?? s.doc_hash));
+    if (!pending.length) return;
+    let cancelled = false;
+    const refresh = async () => {
+      const results = await Promise.allSettled(pending.map(async support => {
+        const hash = support.hash ?? support.doc_hash;
+        const response: any = await apiService.getRagIndexStatus(hash);
+        const entry = response?.data ?? response;
+        return { hash, entry };
+      }));
+      if (cancelled) return;
+      setSupports(previous => {
+        const latest = new Map<string, any>(results.filter((r): r is PromiseFulfilledResult<{hash: string; entry: any}> => r.status === 'fulfilled').map(r => [r.value.hash, r.value.entry]));
+        return previous.map(support => {
+          const update = latest.get(support.hash ?? support.doc_hash);
+          return update ? {
+            ...support,
+            ...update,
+            statut_indexation: update.statut ?? update.statut_indexation ?? support.statut_indexation,
+          } : support;
+        });
+      });
+    };
+    const timer = window.setInterval(() => { void refresh(); }, 2200);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, [tab, supports]);
   // Scroll automatique vers le bas à chaque nouveau message
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
 
@@ -296,10 +376,30 @@ export const EspaceIAView: React.FC<{ readOnly?: boolean; trainerMode?: boolean;
     if (!reviews.length) return;
     let focusId = '';
     try { focusId = sessionStorage.getItem('formaia-review-focus') ?? ''; } catch { return; }
+    // Une ouverture ciblée n'est demandée qu'après une génération explicite.
+    // Sans identifiant, ne jamais appeler /reviews/ (qui redirige et provoque
+    // un préflight CORS inutile dans certaines configurations locales).
+    if (!focusId) return;
     const item = reviews.find(review => String(review.review_id ?? review.id) === focusId);
-    if (!item) return;
     sessionStorage.removeItem('formaia-review-focus');
-    void openReview(item);
+    if (item) {
+      void openReview(item);
+      return;
+    }
+    // Si la liste n'a pas encore reçu la nouvelle revue, demander son détail
+    // avec l'identifiant retourné par la génération TDR au lieu d'ouvrir un
+    // panneau vide.
+    setReviewLoading(true);
+    apiService.getReview(focusId)
+      .then(response => {
+        const detail = unwrapReview(response);
+        if (!detail || detail.success === false || !(detail.review_id ?? detail.id)) {
+          throw new Error(`La validation ${focusId} n’est pas disponible dans le backend.`);
+        }
+        setSelected(detail);
+      })
+      .catch(e => setError(errorText(e)))
+      .finally(() => setReviewLoading(false));
   }, [reviews]);
   const saveManualDocument = async () => {
     const id = String(selected?.review_id ?? selected?.id ?? '');
@@ -606,15 +706,32 @@ export const EspaceIAView: React.FC<{ readOnly?: boolean; trainerMode?: boolean;
   const sendMessage = async (text = draft) => {
     const message = text.trim(); if (!message || busy) return;
     if (trainerMode && !sessionId) { setError("Sélectionnez d'abord une session qui vous est affectée."); return; }
+    streamBufferRef.current = '';
+    streamDrainRef.current = false;
     setMessages(prev => [...prev, { role: 'user', text: message }, { role: 'assistant', text: '' }]); setDraft(''); setBusy(true); setError(''); setStreamingStatus("Connexion à l'assistant documentaire…");
     try {
       await apiService.chatRagStream({ message, conversation_id: conversationId, formation_code: formationCode || null, session_id: sessionId || null, module: chatModule || null }, event => {
         if (event.type === 'status') setStreamingStatus(event.message ?? 'Préparation de la réponse…');
-        if (event.type === 'token') setMessages(previous => {
-          const next = [...previous]; const last = next[next.length - 1];
-          if (last?.role === 'assistant') next[next.length - 1] = { ...last, text: last.text + (event.text ?? '') };
-          return next;
-        });
+        if (event.type === 'token') {
+          streamBufferRef.current += event.text ?? '';
+          if (!streamDrainRef.current) {
+            streamDrainRef.current = true;
+            void (async () => {
+              while (streamBufferRef.current) {
+                const fragment = streamBufferRef.current.slice(0, 28);
+                streamBufferRef.current = streamBufferRef.current.slice(fragment.length);
+                setMessages(previous => {
+                  const next = [...previous]; const last = next[next.length - 1];
+                  if (last?.role === 'assistant') next[next.length - 1] = { ...last, text: last.text + fragment };
+                  return next;
+                });
+                await new Promise(resolve => window.setTimeout(resolve, 18));
+              }
+              streamDrainRef.current = false;
+            })();
+          }
+          setStreamingStatus('Rédaction de la réponse…');
+        }
         if (event.type === 'meta') {
           const data = event.data ?? {};
           if (data.conversation_id) setConversationId(data.conversation_id);
@@ -625,7 +742,8 @@ export const EspaceIAView: React.FC<{ readOnly?: boolean; trainerMode?: boolean;
           });
         }
         if (event.type === 'error') {
-          const messageErreur = event.message ?? 'Erreur pendant la génération de la réponse.';
+          const referenceDiagnostic = event.trace_id ? ` (référence ${event.trace_id})` : '';
+          const messageErreur = `${event.message ?? 'Erreur pendant la génération de la réponse.'}${referenceDiagnostic}`;
           setError(messageErreur);
           setMessages(previous => {
             const next = [...previous]; const last = next[next.length - 1];
@@ -634,7 +752,9 @@ export const EspaceIAView: React.FC<{ readOnly?: boolean; trainerMode?: boolean;
           });
         }
       });
+      await waitForStreamDrain();
     } catch (e) {
+      await waitForStreamDrain();
       setError(errorText(e));
       setMessages(previous => previous.filter((item, index) => !(index === previous.length - 1 && item.role === 'assistant' && !item.text)));
     } finally {
@@ -660,8 +780,8 @@ export const EspaceIAView: React.FC<{ readOnly?: boolean; trainerMode?: boolean;
     {notice && <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold"><span>{notice}</span>{continueMarket && <button type="button" onClick={() => onNavigateToSection?.('opportunites_crm')} className="rounded-lg bg-emerald-700 px-3 py-2 font-bold text-white">Continuer le dossier du marché</button>}</div>}
 
     {tab === 'reviews' && <div className="grid lg:grid-cols-[minmax(260px,0.8fr)_minmax(0,1.2fr)] gap-4">
-      <section className={panel}><div className="mb-4 flex flex-wrap items-center justify-between gap-3"><h2 className="font-extrabold text-[#11162A]">À valider</h2><span className="text-xs bg-emerald-50 text-emerald-700 rounded-full px-2.5 py-1 font-bold">{reviews.length}</span></div>
-        {reviews.length ? <div className="space-y-2">{reviews.map((r, i) => { const id = String(r.review_id ?? r.id ?? i); return <div key={id} className={`flex items-center gap-2 rounded-xl border p-2 ${selected?.review_id === id ? 'border-[#1B8F6E] bg-emerald-50/50' : 'border-slate-200 hover:border-slate-300'}`}><button onClick={() => openReview(r)} className="min-w-0 flex-1 p-1 text-left"><div className="truncate font-bold text-sm text-[#11162A]">{r.title ?? r.titre ?? r.summary ?? r.agent_id ?? 'Contenu généré'}</div><div className="mt-1 truncate text-[11px] text-slate-500">{r.agent_id ?? r.type ?? 'Agent IA'} · {r.created_at ? new Date(r.created_at).toLocaleString('fr-FR') : r.date_creation ?? ''}</div></button><button type="button" aria-label={`Supprimer la validation ${id}`} title="Supprimer cette validation" disabled={deletingReviewId !== '' || busy} onClick={() => void deleteReview(r)} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-red-100 bg-red-50 text-red-600 transition hover:bg-red-100 disabled:cursor-wait disabled:opacity-50">{deletingReviewId === id ? <Loader2 size={15} className="animate-spin" /> : <Trash2 size={15} />}</button></div>; })}</div> : <p className="text-xs text-slate-500">Aucun contenu en attente de validation.</p>}
+      <section className={panel}><div className="mb-4 flex flex-wrap items-center justify-between gap-3"><h2 className="font-extrabold text-[#11162A]">À valider</h2><div className="flex items-center gap-2"><span className="text-xs bg-emerald-50 text-emerald-700 rounded-full px-2.5 py-1 font-bold">{reviews.length}</span><button type="button" onClick={() => void refreshReviews()} disabled={reviewsLoading} className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-[11px] font-bold text-slate-600 disabled:opacity-50">{reviewsLoading ? 'Actualisation…' : 'Actualiser'}</button></div></div>
+        {reviews.length ? <div className="space-y-2">{reviews.map((r, i) => { const id = String(r.review_id ?? r.id ?? i); return <div key={id} className={`flex items-center gap-2 rounded-xl border p-2 ${selected?.review_id === id ? 'border-[#1B8F6E] bg-emerald-50/50' : 'border-slate-200 hover:border-slate-300'}`}><button onClick={() => openReview(r)} className="min-w-0 flex-1 p-1 text-left"><div className="truncate font-bold text-sm text-[#11162A]">{r.title ?? r.titre ?? r.summary ?? r.agent_id ?? 'Contenu généré'}</div><div className="mt-1 truncate text-[11px] text-slate-500">{r.agent_id ?? r.type ?? 'Agent IA'} · {r.created_at ? new Date(r.created_at).toLocaleString('fr-FR') : r.date_creation ?? ''}</div></button><button type="button" aria-label={`Supprimer la validation ${id}`} title="Supprimer cette validation" disabled={deletingReviewId !== '' || busy} onClick={() => void deleteReview(r)} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-red-100 bg-red-50 text-red-600 transition hover:bg-red-100 disabled:cursor-wait disabled:opacity-50">{deletingReviewId === id ? <Loader2 size={15} className="animate-spin" /> : <Trash2 size={15} />}</button></div>; })}</div> : reviewsLoading ? <p className="text-xs text-slate-500">Chargement des validations…</p> : <p className="text-xs text-slate-500">Aucun contenu en attente de validation.</p>}
       </section>
       <section className={panel}>{selected ? <><div className="flex items-start justify-between gap-3"><div><h2 className="font-extrabold text-[#11162A]">{selected.summary ?? selected.title ?? 'Aperçu du contenu à valider'}</h2><p className="text-[11px] text-slate-500 mt-1">{selected.agent_id ?? selected.type ?? selected.review_id} · {selected.criticity ?? ''} · {selected.created_at ? new Date(selected.created_at).toLocaleString('fr-FR') : ''}</p></div><div className="flex items-center gap-2">{selected.agent_id === 'agent_5_attestations' && selected.status === 'approved' && <button type="button" disabled={attestationBusy !== ''} onClick={()=>void downloadAttestationZip()} className="flex items-center gap-1.5 rounded-lg bg-[#11162A] px-3 py-2 text-[11px] font-bold text-white disabled:opacity-50"><Archive size={14}/>Télécharger le ZIP</button>}<button onClick={() => setSelected(null)} className="p-1.5 text-slate-400 hover:text-slate-700"><X size={16} /></button></div></div>{!reviewLoading && !documentEdit && editableDocument(selected) && <button type="button" onClick={() => setDocumentEdit(structuredClone(editableDocument(selected)))} className="mt-3 rounded-lg bg-slate-100 px-3 py-2 text-xs font-bold text-slate-700">Modifier manuellement</button>}{reviewLoading ? <div className="mt-6 flex min-h-48 items-center justify-center gap-2 text-sm font-semibold text-slate-500"><Loader2 size={18} className="animate-spin text-[#1B8F6E]" />Chargement du dossier…</div> : <>{documentEdit ? <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 p-3"><p className="mb-3 text-xs text-blue-900">Modifiez les champs, enregistrez, puis approuvez la version mise à jour. Les montants calculés de l'offre financière restent à ajuster dans le dossier marché.</p><div className="max-h-[560px] overflow-auto rounded-lg bg-white p-3"><DocumentFields value={documentEdit} onChange={(path, value) => setDocumentEdit(current => current ? setDocumentField(current, path, value) : null)} allowNumbers={selected.agent_id !== 'agent_m3_financiere'} /></div><div className="mt-3 flex justify-end gap-2"><button type="button" onClick={() => setDocumentEdit(null)} className="rounded-lg bg-white px-3 py-2 text-xs font-bold text-slate-700">Annuler</button><button type="button" disabled={busy} onClick={() => void saveManualDocument()} className="rounded-lg bg-blue-800 px-3 py-2 text-xs font-bold text-white disabled:opacity-50">Enregistrer les modifications</button></div></div> : selected.agent_id === 'agent_5_attestations' ? <div className="mt-4 space-y-4"><div className="grid gap-3 sm:grid-cols-3"><div className="rounded-xl bg-emerald-50 p-3"><div className="text-[10px] font-bold uppercase text-emerald-700">Attestations préparées</div><div className="mt-1 text-2xl font-extrabold text-emerald-800">{selected.data?.total_pdf_generated ?? selected.data?.attestations?.length ?? 0}</div></div><div className="rounded-xl bg-slate-50 p-3"><div className="text-[10px] font-bold uppercase text-slate-500">Lot de formation</div><div className="mt-1 truncate text-sm font-extrabold text-[#11162A]">{selected.meta?.session_title ?? selected.data?.session_id ?? 'Session'}</div></div><div className="rounded-xl bg-amber-50 p-3"><div className="text-[10px] font-bold uppercase text-amber-700">Validation</div><div className="mt-1 text-sm font-extrabold text-amber-800">{selected.status === 'approved' ? 'Lot approuvé' : 'Requise avant remise'}</div></div></div><div className="space-y-3">{(selected.data?.attestations ?? []).map((item:any)=><article key={item.numero_unique} className="overflow-hidden rounded-2xl border border-slate-200 bg-white"><div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 p-4"><div><div className="flex flex-wrap items-center gap-2"><h3 className="font-extrabold text-[#11162A]">{[item.participant?.prenom,item.participant?.nom].filter(Boolean).join(' ') || item.participant?.nom}</h3><span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-extrabold text-emerald-800">{item.participant?.taux_presence != null ? `${item.participant.taux_presence}% de présence` : 'Éligible · ≥75%'}</span><span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${item.approval_status === 'approved' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>{item.approval_status === 'approved' ? 'Approuvée' : 'À valider'}</span></div><p className="mt-1 text-[11px] text-slate-500">{item.numero_unique} · {item.content?.details?.formation ?? ''}</p></div><div className="flex flex-wrap gap-2"><button type="button" disabled={attestationBusy!==''} onClick={()=>void previewAttestation(item)} className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-[11px] font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50"><Eye size={14}/>{attestationBusy===item.numero_unique?'Ouverture…':'Aperçu PDF'}</button>{item.approval_status === 'approved' ? <button type="button" disabled={attestationBusy!==''} onClick={()=>void downloadAttestation(item)} className="flex items-center gap-1.5 rounded-lg bg-emerald-700 px-3 py-2 text-[11px] font-bold text-white disabled:opacity-50"><Download size={14}/>Télécharger</button> : item.approval_status !== 'approved' && <button type="button" disabled={attestationBusy!==''} onClick={()=>void approveOneAttestation(item)} className="flex items-center gap-1.5 rounded-lg bg-[#1B8F6E] px-3 py-2 text-[11px] font-bold text-white disabled:opacity-50"><Check size={14}/>{attestationBusy===item.numero_unique?'Validation…':'Approuver'}</button>}</div></div>{attestationPreview?.numero === item.numero_unique && <iframe title={`Aperçu ${item.numero_unique}`} src={attestationPreview.url} className="h-[520px] w-full bg-slate-100"/>}</article>)}</div><div className="rounded-xl border border-blue-100 bg-blue-50/70 p-3 text-[11px] leading-relaxed text-blue-900">Vérifiez le nom, les dates, les compétences et le numéro de chaque document. Les téléchargements individuels et le ZIP sont ouverts après validation.</div></div> : <div className="mt-4"><ReviewContent value={selected} /></div>}<textarea disabled={documentEdit !== null} value={reviewNote} onChange={e => setReviewNote(e.target.value)} placeholder="Note de validation, motif de rejet ou correction demandée" rows={2} className="mt-3 w-full p-3 bg-white border border-slate-300 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#1B8F6E]" /><div className="flex justify-end gap-2 mt-3"><button disabled={busy || documentEdit !== null} onClick={() => reviewAction(false)} className="px-4 py-2 bg-red-50 text-red-700 rounded-lg text-xs font-bold">Rejeter</button>{['agent_m2_tdr', 'agent_m3_technique', 'agent_m3_financiere'].includes(String(selected.agent_id)) && <button disabled={busy || reviewLoading || documentEdit !== null} onClick={() => void correctDocument()} className="px-4 py-2 bg-blue-50 text-blue-800 rounded-lg text-xs font-bold">Demander une correction à l'IA</button>}<button disabled={busy || documentEdit !== null} onClick={() => reviewAction(true)} className="px-4 py-2 bg-[#1B8F6E] text-white rounded-lg text-xs font-bold flex gap-1.5 items-center">{busy ? <Loader2 size={14} className="animate-spin" /> : selected.agent_id === 'agent_5_attestations' ? <CheckCheck size={14}/> : <Check size={14} />}{selected.agent_id === 'agent_5_attestations' ? 'Approuver toutes' : 'Approuver'}</button></div></>}</> : <div className="h-full min-h-56 flex flex-col items-center justify-center text-center text-slate-400"><FileText size={30} className="mb-2" /><p className="text-xs font-semibold">Sélectionnez un contenu pour le consulter.</p></div>}</section>
     </div>}
@@ -689,6 +809,12 @@ export const EspaceIAView: React.FC<{ readOnly?: boolean; trainerMode?: boolean;
       {(!readOnly || trainerMode) && <form onSubmit={upload} className={`${panel} space-y-4`}><div><h2 className="font-extrabold text-[#11162A]">Ajouter un support de formation</h2><p className="mt-1 text-[11px] leading-relaxed text-slate-500">{trainerMode ? 'Choisissez une session qui vous est affectée ; le document ne sera visible que dans celle-ci.' : 'Chaque support est classé par session puis par module pour éviter de mélanger les contenus.'}</p></div><div><label className="block font-bold text-slate-600 text-[11px] uppercase mb-1">Session de formation *</label><select required value={sessionId} onChange={e => { const id = e.target.value; setSessionId(id); setFormationCode(sessions.find((item: any) => item.id === id)?.formation_code ?? ''); setModule(''); }} className="w-full px-3 py-2.5 border border-slate-300 bg-slate-50 rounded-xl text-sm"><option value="">Sélectionner une session</option>{sessions.map((item: any) => <option key={item.id} value={item.id}>{item.titre}{item.formation_code ? ` — ${item.formation_code}` : ''}</option>)}</select></div><div><label className="block font-bold text-slate-600 text-[11px] uppercase mb-1">Séance / module pédagogique *</label><input required list="rag-session-modules" value={module} onChange={e => setModule(e.target.value)} placeholder="Choisir une séance ou saisir un module" className="w-full px-3 py-2.5 border border-slate-300 bg-slate-50 rounded-xl text-sm" /><datalist id="rag-session-modules">{(sessions.find((item: any) => item.id === sessionId)?.modules ?? []).map((name: string) => <option key={name} value={name} />)}</datalist><p className="mt-1 text-[10px] text-slate-500">Les thèmes des séances planifiées et les modules déjà classés sont proposés. Vous pouvez aussi saisir un autre module.</p></div><label className="flex items-center gap-3 border border-dashed border-slate-300 rounded-xl p-4 cursor-pointer hover:border-[#1B8F6E]"><Upload size={18} className="text-[#1B8F6E]" /><span className="text-xs text-slate-600">{file?.name ?? 'Choisir un PDF, DOCX, PPTX, XLSX, TXT ou MD'}</span><input type="file" accept=".pdf,.docx,.pptx,.xlsx,.txt,.md" className="hidden" onChange={e => setFile(e.target.files?.[0] ?? null)} /></label><button disabled={busy || !file || !sessionId || !module.trim()} className="w-full py-2.5 bg-[#1B8F6E] text-white rounded-xl text-xs font-bold flex justify-center gap-2 items-center">{busy ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} />}Indexer dans cette session</button></form>}
       <section className={panel}><div className="flex justify-between items-center mb-4"><div><h2 className="font-extrabold text-[#11162A]">Supports de formation</h2><p className="mt-1 text-[10px] text-slate-500">Chaque document est isolé par session et repéré par son module pédagogique.</p></div><button onClick={() => loadSupports().catch(e => setError(errorText(e)))} className="text-xs font-bold text-[#1B8F6E]">Actualiser</button></div>{sessions.length > 0 && <div className="mb-4 flex flex-wrap gap-2"><button onClick={() => { setSessionId(''); setFormationCode(''); }} className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${sessionId ? 'bg-slate-100 text-slate-600' : 'bg-[#11162A] text-white'}`}>Toutes les sessions</button>{sessions.map((item: any) => <button key={item.id} onClick={() => { setSessionId(item.id); setFormationCode(item.formation_code ?? ''); }} className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${sessionId === item.id ? 'bg-emerald-700 text-white' : 'bg-emerald-50 text-emerald-800'}`}>{item.titre}</button>)}</div>}{supports.length ? <div className="max-h-[440px] space-y-2 overflow-auto">{supports.map((s: any, i) => {
   const status = s.statut_indexation ?? s.statut ?? 'en_attente';
+  const progress = s.progression && typeof s.progression === 'object' ? s.progression : {};
+  const chunksPrepared = Number(progress.chunks_prepares ?? 0);
+  const chunksIndexed = Number(progress.chunks_indexes ?? 0);
+  const hasChunkProgress = chunksPrepared > 0 && Number.isFinite(chunksPrepared) && Number.isFinite(chunksIndexed);
+  const progressPercent = hasChunkProgress ? Math.min(100, Math.round(chunksIndexed / chunksPrepared * 100)) : null;
+  const stage = indexingStageLabel[String(progress.etape ?? '')] ?? (status === 'en_cours' ? 'Préparation de l’indexation' : '');
   const docHash = s.hash ?? s.doc_hash ?? s.id;
   const course = formations.find((f: any) => f.code === s.formation_code);
   const trainingSession = sessions.find((item: any) => item.id === s.session_id);
@@ -724,6 +850,11 @@ export const EspaceIAView: React.FC<{ readOnly?: boolean; trainerMode?: boolean;
         <div className={`truncate font-bold text-sm ${isArchived ? 'text-slate-400 line-through' : 'text-[#11162A]'}`}>{s.fichier ?? s.nom_fichier ?? s.filename ?? 'Support'}</div>
         <div className="mt-1 text-[11px] font-semibold text-emerald-800">{trainingSession?.titre ?? s.session_id ?? 'Session non classée'}{s.formation_code ? ` · ${s.formation_code}` : ''}{course?.titre ? ` — ${course.titre}` : ''}{s.module ? ` · ${s.module}` : ''}</div>
         {s.message && <p className="mt-1 text-[10px] text-slate-500">{s.message}</p>}
+        {status === 'en_cours' && <div className="mt-3 max-w-xl rounded-lg border border-blue-100 bg-blue-50/60 p-2.5" aria-live="polite">
+          <div className="flex items-center justify-between gap-3 text-[10px] font-semibold text-blue-900"><span className="flex items-center gap-1.5"><Loader2 size={12} className="animate-spin" />{stage}</span>{progressPercent !== null && <span>{progressPercent}%</span>}</div>
+          <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-blue-100">{progressPercent !== null ? <div className="h-full rounded-full bg-blue-600 transition-[width] duration-500" style={{ width: `${progressPercent}%` }} /> : <div className="h-full w-1/3 animate-pulse rounded-full bg-blue-600" />}</div>
+          <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-[9px] text-blue-800">{Number.isFinite(Number(progress.nb_pages)) && progress.nb_pages != null && <span>{progress.nb_pages} page(s) lues</span>}{hasChunkProgress && <span>{chunksIndexed}/{chunksPrepared} passages vectorisés</span>}{progress.lots_total != null && <span>{progress.lots_indexes ?? 0}/{progress.lots_total} lots enregistrés</span>}{progress.modele_embed && <span>Modèle : {progress.modele_embed}</span>}</div>
+        </div>}
       </div>
       <div className="flex flex-col items-end gap-1.5 shrink-0">
         <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${supportStatusStyle[status] ?? 'bg-slate-100 text-slate-600'}`}>{supportStatusLabel[status] ?? status}</span>
@@ -819,20 +950,48 @@ export const EspaceIAView: React.FC<{ readOnly?: boolean; trainerMode?: boolean;
           {messages.map((m, i) => {
             const isStreaming = busy && i === messages.length - 1 && m.role === 'assistant';
             const isUser = m.role === 'user';
+            const progressLabel = streamingStatus.toLocaleLowerCase();
+            const activeStage = /rédaction|redaction|réponse prête|reponse prete|finalisation/.test(progressLabel) || (isStreaming && Boolean(m.text))
+              ? 2
+              : /recherche|passage|support|document/.test(progressLabel)
+                ? 1
+                : 0;
             return (
             <div key={i} className={`group max-w-[88%] mb-6 ${isUser ? 'ml-auto' : 'mr-auto'}`}>
               <div className={`relative p-3.5 rounded-2xl text-xs leading-relaxed ${isUser ? 'bg-[#1B8F6E] text-white rounded-br-sm whitespace-pre-wrap' : 'bg-slate-50 text-slate-800 border border-slate-200 rounded-bl-sm'}`}>
+                {isStreaming && !m.text ? (
+                  <div className="min-w-64 space-y-3" role="status" aria-live="polite">
+                    <div className="flex items-center gap-2 text-xs font-semibold text-slate-700">
+                      <Loader2 size={14} className="animate-spin text-[#1B8F6E]" />
+                      <span>{streamingStatus || 'Préparation de la réponse…'}</span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 text-[10px]">
+                      {['Compréhension', 'Recherche RAG', 'Rédaction'].map((stage, stageIndex) => (
+                        <div key={stage} className={`rounded-lg border px-2 py-1.5 transition-colors ${stageIndex < activeStage ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : stageIndex === activeStage ? 'border-emerald-300 bg-white font-semibold text-[#167a60]' : 'border-slate-200 bg-slate-100 text-slate-400'}`}>
+                          <span className="mr-1">{stageIndex < activeStage ? '✓' : stageIndex === activeStage ? '●' : '○'}</span>{stage}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : <>
+                  {isStreaming && m.text && (
+                    <div className="mb-2 flex items-center gap-1.5 text-[10px] font-semibold text-[#167a60]" role="status" aria-live="polite">
+                      <span className="relative flex h-2 w-2"><span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60" /><span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-600" /></span>
+                      Réponse en cours de rédaction
+                    </div>
+                  )}
                 {m.text
                   ? isUser
                     ? <>{m.text}{isStreaming && <span className="inline-block w-0.5 h-3 bg-white ml-0.5 align-middle animate-pulse" />}</>
                     : isStreaming
-                      ? <>{m.text}<span className="inline-block w-0.5 h-3 bg-[#1B8F6E] ml-0.5 align-middle animate-pulse" /></>
+                      ? <span className="whitespace-pre-wrap">{m.text}<span className="inline-block w-0.5 h-3 bg-[#1B8F6E] ml-0.5 align-middle animate-pulse" /></span>
                       : <span dangerouslySetInnerHTML={{ __html: renderMarkdown(m.text) }} />
                   : isStreaming
-                    ? <span className="flex items-center gap-1.5 text-slate-400 italic"><span className="flex gap-0.5">{[0,1,2].map(d => <span key={d} className="w-1.5 h-1.5 rounded-full bg-slate-400 animate-bounce" style={{animationDelay:`${d*120}ms`}}/>)}</span>{streamingStatus || 'Préparation de la réponse…'}</span>
+                    ? null
                     : ''}
+                </>}
                 {m.text && !isStreaming && (
-                  <div className={`absolute -bottom-5 ${isUser ? 'right-0' : 'left-0'} flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition`}>
+                  <div className={`absolute -bottom-5 ${isUser ? 'right-0' : 'left-0'} flex items-center gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 focus-within:opacity-100 transition`}>
                     <button type="button" onClick={() => copyMessage(m.text, i)} title="Copier" className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-white border border-slate-200 text-[10px] text-slate-500 hover:text-[#1B8F6E] hover:border-[#1B8F6E] shadow-sm transition">
                       {copiedMsgIdx === i ? <Check size={10} className="text-emerald-600" /> : <Copy size={10} />}
                       {copiedMsgIdx === i ? 'Copié' : 'Copier'}
@@ -878,11 +1037,6 @@ export const EspaceIAView: React.FC<{ readOnly?: boolean; trainerMode?: boolean;
           <div ref={messagesEndRef} />
         </div>
 
-        {busy && streamingStatus && (
-          <div className="mb-2 flex items-center gap-2 text-[11px] text-slate-500">
-            <Loader2 size={13} className="animate-spin text-[#1B8F6E]" />{streamingStatus}
-          </div>
-        )}
         <form onSubmit={e => { e.preventDefault(); void sendMessage(); }} className="flex gap-2 border-t border-slate-100 pt-3">
           <input value={draft} onChange={e => setDraft(e.target.value)} placeholder="Votre question sur les supports…" className="flex-1 min-w-0 px-3 py-2.5 border border-slate-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-[#1B8F6E]" />
           <button disabled={busy || !draft.trim() || (trainerMode && !sessionId)} className="px-4 py-2.5 bg-[#1B8F6E] text-white rounded-xl text-xs font-bold flex items-center gap-1.5 disabled:opacity-50">

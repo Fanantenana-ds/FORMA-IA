@@ -111,37 +111,79 @@ export const SessionsGroupesView: React.FC<SessionsGroupesViewProps> = ({
   const [editFormateurId, setEditFormateurId] = useState('');
   const [formsFeedback, setFormsFeedback] = useState<{ id: string; text: string; error?: boolean } | null>(null);
   const [publicLinks, setPublicLinks] = useState<{ participant?: string; formateur?: string; post_formation?: string }>({});
+  const [publicLinkTokens, setPublicLinkTokens] = useState<{ participant?: string; formateur?: string; post_formation?: string }>({});
   const [publicLinkBusy, setPublicLinkBusy] = useState(false);
+  const [deletingLinkKind, setDeletingLinkKind] = useState<'participant' | 'formateur' | 'post_formation' | null>(null);
   const [publicLinkError, setPublicLinkError] = useState('');
+  const [publicLinkNotice, setPublicLinkNotice] = useState('');
+  const [sessionSupports, setSessionSupports] = useState<any[]>([]);
+  const [supportsLoading, setSupportsLoading] = useState(false);
+  const [supportsError, setSupportsError] = useState('');
   const participantCsvInput = useRef<HTMLInputElement>(null);
+  const activeSession = sessions.find((s) => s.id === selectedSessionId);
+  const pedagogicalSupports = sessionSupports.filter(item => item.collection === 'support');
+  const assessmentSupportReady = pedagogicalSupports.length > 0 && pedagogicalSupports.every(item => item.statut === 'indexe' && Number(item.nb_chunks) > 0);
+  const indexedSupportChunks = pedagogicalSupports.reduce((sum, item) => sum + (item.statut === 'indexe' ? Number(item.nb_chunks ?? 0) : 0), 0);
 
   const generatePublicLink = async (kind: 'participant' | 'formateur' | 'post_formation') => {
-    setPublicLinkBusy(true); setPublicLinkError('');
+    setPublicLinkBusy(true); setPublicLinkError(''); setPublicLinkNotice('');
     try {
       if (!activeSession?.id) throw new Error('Sélectionnez une session avant de générer ce lien.');
+      if (kind !== 'formateur' && !assessmentSupportReady) {
+        throw new Error('Indexez tous les supports pédagogiques de cette session avant de générer un lien d’évaluation.');
+      }
       const result = await apiService.createPublicRegistrationLink(kind, activeSession.id);
       const url = new URL(result.path, window.location.origin).toString();
       setPublicLinks(prev => ({ ...prev, [kind]: url }));
+      setPublicLinkTokens(prev => ({ ...prev, [kind]: result.token }));
       try { await navigator.clipboard?.writeText(url); } catch { /* Le lien reste affiché avec son bouton Copier dédié. */ }
     } catch (error) { setPublicLinkError(error instanceof Error ? error.message : 'Génération du lien impossible.'); }
     finally { setPublicLinkBusy(false); }
   };
 
-  // Selected session object
-  const activeSession = sessions.find((s) => s.id === selectedSessionId);
+  const revokePublicLink = async (kind: 'participant' | 'formateur' | 'post_formation') => {
+    const token = publicLinkTokens[kind];
+    if (!token) { setPublicLinkError('Le jeton de révocation de ce lien est indisponible. Actualisez la session puis réessayez.'); return; }
+    const label = kind === 'participant' ? 'inscription participants' : kind === 'formateur' ? 'candidature formateur' : 'évaluation post-formation';
+    if (!window.confirm(`Désactiver le lien « ${label} » ? L’URL ne sera plus accessible. Les inscriptions et réponses déjà reçues seront conservées.`)) return;
+    setDeletingLinkKind(kind); setPublicLinkError('');
+    try {
+      await apiService.revokePublicRegistrationLink(token);
+      setPublicLinks(previous => ({ ...previous, [kind]: undefined }));
+      setPublicLinkTokens(previous => ({ ...previous, [kind]: undefined }));
+      setPublicLinkNotice(`Le lien « ${label} » a été désactivé. Les réponses déjà reçues sont conservées.`);
+    } catch (error) {
+      setPublicLinkError(error instanceof Error ? error.message : 'La désactivation du lien a échoué.');
+    } finally { setDeletingLinkKind(null); }
+  };
 
   useEffect(() => {
     if (!selectedSessionId) return;
     let cancelled = false;
     setPublicLinks({});
-    apiService.getSessionPublicLinks(selectedSessionId).then((links) => {
+    setPublicLinkTokens({});
+    setPublicLinkError(''); setPublicLinkNotice('');
+    setSessionSupports([]); setSupportsError(''); setSupportsLoading(true);
+    void Promise.allSettled([
+      apiService.getSessionPublicLinks(selectedSessionId),
+      apiService.getSupports({ session_id: selectedSessionId }),
+    ]).then(([linksResult, supportsResult]) => {
       if (cancelled) return;
-      setPublicLinks({
-        participant: links.participant ? new URL(links.participant.path, window.location.origin).toString() : undefined,
-        formateur: links.formateur ? new URL(links.formateur.path, window.location.origin).toString() : undefined,
-        post_formation: links.post_formation ? new URL(links.post_formation.path, window.location.origin).toString() : undefined,
-      });
-    }).catch(() => { if (!cancelled) setPublicLinks({}); });
+      if (linksResult.status === 'fulfilled') {
+        const links = linksResult.value;
+        setPublicLinks({
+          participant: links.participant ? new URL(links.participant.path, window.location.origin).toString() : undefined,
+          formateur: links.formateur ? new URL(links.formateur.path, window.location.origin).toString() : undefined,
+          post_formation: links.post_formation ? new URL(links.post_formation.path, window.location.origin).toString() : undefined,
+        });
+        setPublicLinkTokens({ participant: links.participant?.token, formateur: links.formateur?.token, post_formation: links.post_formation?.token });
+      } else setPublicLinkError('Les liens publics existants n’ont pas pu être chargés.');
+      if (supportsResult.status === 'fulfilled') {
+        const data = supportsResult.value?.data;
+        setSessionSupports(Array.isArray(data) ? data : []);
+      } else setSupportsError('Le statut des supports de cette session n’a pas pu être vérifié.');
+      setSupportsLoading(false);
+    });
     return () => { cancelled = true; };
   }, [selectedSessionId]);
 
@@ -516,14 +558,34 @@ export const SessionsGroupesView: React.FC<SessionsGroupesViewProps> = ({
               </div>
 
               <div className="flex flex-wrap gap-2">
-                {!readOnly && <><button onClick={() => void openAddParticipant()} className="px-4 py-2.5 bg-[#1B8F6E] hover:bg-[#16785c] text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-sm transition-colors cursor-pointer"><UserPlus size={16} /><span>Ajouter un participant retenu</span></button>
-                <input ref={participantCsvInput} type="file" accept=".csv,text/csv" className="hidden" onChange={e=>void importParticipantsCsv(e.target.files?.[0])}/><button onClick={()=>participantCsvInput.current?.click()} className="px-4 py-2.5 bg-slate-100 text-slate-700 rounded-xl text-xs font-bold">Importer CSV</button>
-                <button disabled={publicLinkBusy} onClick={() => void generatePublicLink('participant')} className="px-4 py-2.5 bg-blue-50 text-blue-800 rounded-xl text-xs font-bold disabled:opacity-50">Lien public participants</button>
-                <button disabled={publicLinkBusy} onClick={() => void generatePublicLink('post_formation')} className="px-4 py-2.5 bg-emerald-50 text-emerald-800 rounded-xl text-xs font-bold disabled:opacity-50">Lien d’évaluation post-formation</button>
-                <button disabled={publicLinkBusy} onClick={() => void generatePublicLink('formateur')} className="px-4 py-2.5 bg-violet-50 text-violet-800 rounded-xl text-xs font-bold disabled:opacity-50">Lien candidature formateur</button></>}
+                {!readOnly && <>
+                  <button onClick={() => void openAddParticipant()} className="px-4 py-2.5 bg-[#1B8F6E] hover:bg-[#16785c] text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-sm transition-colors cursor-pointer"><UserPlus size={16} /><span>Ajouter un participant retenu</span></button>
+                  <input ref={participantCsvInput} type="file" accept=".csv,text/csv" className="hidden" onChange={e=>void importParticipantsCsv(e.target.files?.[0])}/><button onClick={()=>participantCsvInput.current?.click()} className="px-4 py-2.5 bg-slate-100 text-slate-700 rounded-xl text-xs font-bold">Importer CSV</button>
+                  <button disabled={publicLinkBusy || supportsLoading || !assessmentSupportReady} title={assessmentSupportReady ? 'Créer le lien avec les supports indexés de cette session' : 'Indexez d’abord les supports pédagogiques de cette session'} onClick={() => void generatePublicLink('participant')} className="px-4 py-2.5 bg-blue-50 text-blue-800 rounded-xl text-xs font-bold disabled:cursor-not-allowed disabled:opacity-50">Lien public participants</button>
+                  <button disabled={publicLinkBusy || supportsLoading || !assessmentSupportReady} title={assessmentSupportReady ? 'Créer l’évaluation post-formation à partir des supports indexés' : 'Indexez d’abord les supports pédagogiques de cette session'} onClick={() => void generatePublicLink('post_formation')} className="px-4 py-2.5 bg-emerald-50 text-emerald-800 rounded-xl text-xs font-bold disabled:cursor-not-allowed disabled:opacity-50">Lien d’évaluation post-formation</button>
+                  <button disabled={publicLinkBusy} onClick={() => void generatePublicLink('formateur')} className="px-4 py-2.5 bg-violet-50 text-violet-800 rounded-xl text-xs font-bold disabled:opacity-50">Lien candidature formateur</button>
+                </>}
               </div>
             </div>
-            {(publicLinks.participant || publicLinks.formateur || publicLinks.post_formation || publicLinkError) && <div className="mt-3 space-y-2">{publicLinkError && <p role="alert" className="text-xs text-red-700">{publicLinkError}</p>}{(['participant','post_formation','formateur'] as const).map(kind => publicLinks[kind] && <div key={kind} className="flex flex-wrap items-center gap-2 rounded-lg bg-slate-50 p-2 text-xs"><strong>{kind === 'participant' ? 'Inscription participants' : kind === 'formateur' ? 'Candidatures formateur' : 'Évaluation post-formation'} :</strong><a className="break-all text-blue-700 underline" href={publicLinks[kind]} target="_blank" rel="noreferrer">{publicLinks[kind]}</a><button onClick={() => void navigator.clipboard?.writeText(publicLinks[kind]!)} className="rounded bg-white px-2 py-1 font-bold">Copier</button></div>)}{publicLinks.formateur && <p className="text-xs text-slate-600">Avant de partager ce lien, vérifiez sur la page publique le lieu, les dates et le profil issu du TDR validé.</p>}</div>}
+            {!readOnly && <div className={`mt-4 rounded-xl border p-3 text-xs ${assessmentSupportReady ? 'border-emerald-200 bg-emerald-50 text-emerald-900' : 'border-amber-200 bg-amber-50 text-amber-900'}`}>
+              <div className="font-bold">Prérequis des tests participants</div>
+              {supportsLoading ? <p className="mt-1">Vérification des supports de cette session…</p>
+                : supportsError ? <p role="alert" className="mt-1">{supportsError} Les liens d’évaluation restent désactivés tant que leur état ne peut pas être confirmé.</p>
+                : assessmentSupportReady ? <p className="mt-1">{pedagogicalSupports.length} support(s) indexé(s), {indexedSupportChunks} passage(s) vectorisé(s). Les liens d’évaluation peuvent être générés.</p>
+                : pedagogicalSupports.length === 0 ? <p className="mt-1">Aucun support pédagogique n’est rattaché à cette session. Les liens d’évaluation restent désactivés.</p>
+                  : <p className="mt-1">{pedagogicalSupports.filter(item => item.statut !== 'indexe' || Number(item.nb_chunks) <= 0).length} support(s) attendent encore une indexation complète. Les liens d’évaluation restent désactivés.</p>}
+            </div>}
+            {(publicLinks.participant || publicLinks.formateur || publicLinks.post_formation || publicLinkError || publicLinkNotice) && <div className="mt-3 space-y-2">
+              {publicLinkError && <p role="alert" className="text-xs text-red-700">{publicLinkError}</p>}
+              {publicLinkNotice && <p role="status" className="text-xs font-semibold text-emerald-700">{publicLinkNotice}</p>}
+              {(['participant','post_formation','formateur'] as const).map(kind => publicLinks[kind] && <div key={kind} className="flex flex-wrap items-center gap-2 rounded-lg bg-slate-50 p-2 text-xs">
+                <strong>{kind === 'participant' ? 'Inscription participants' : kind === 'formateur' ? 'Candidatures formateur' : 'Évaluation post-formation'} :</strong>
+                <a className="min-w-0 flex-1 break-all text-blue-700 underline" href={publicLinks[kind]} target="_blank" rel="noreferrer">{publicLinks[kind]}</a>
+                <button onClick={() => void navigator.clipboard?.writeText(publicLinks[kind]!)} className="rounded bg-white px-2 py-1 font-bold">Copier</button>
+                {!readOnly && <button type="button" title="Désactiver ce lien public" aria-label={`Désactiver le lien ${kind}`} disabled={!publicLinkTokens[kind] || deletingLinkKind === kind} onClick={() => void revokePublicLink(kind)} className="inline-flex items-center gap-1 rounded bg-red-50 px-2 py-1 font-bold text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"><Trash2 size={13} />{deletingLinkKind === kind ? 'Désactivation…' : 'Supprimer le lien'}</button>}
+              </div>)}
+              {publicLinks.formateur && <p className="text-xs text-slate-600">Avant de partager ce lien, vérifiez sur la page publique le lieu, les dates et le profil issu du TDR validé.</p>}
+            </div>}
 
             {/* Session Stats Bar */}
             <div className="grid grid-cols-3 gap-3 mt-6 pt-5 border-t border-slate-100">

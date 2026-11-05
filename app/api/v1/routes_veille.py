@@ -186,16 +186,15 @@ def _normalize_result(
 
 
 def _opportunites_demo_visibles(limit: int) -> list[dict]:
-    """Varie les avis publics ouverts et vérifiables de l'archive."""
+    """Varie les avis archivés vérifiables, ouverts ou clôturés."""
     archive = charger_opportunites_demo_reelles()
-    actives = [
+    verifiables = [
         item for item in archive
-        if isinstance(item, dict) and item.get("is_actionable", True)
+        if isinstance(item, dict) and (item.get("source_url") or item.get("url"))
     ]
-    verifies = [item for item in actives if item.get("source_url") or item.get("url")]
-    if verifies:
+    if verifiables:
         import random
-        return random.sample(verifies, min(limit, len(verifies)))
+        return random.sample(verifiables, min(limit, len(verifiables)))
     return []
 
 
@@ -309,8 +308,8 @@ async def detecter_opportunites(
     """
     Lance les requêtes du profil ALTIORA (VEILLE_AUTO_QUERIES ou défaut),
     fusionne, dédoublonne, garde les meilleurs scores et enregistre dans le
-    Backend celles qui n'y sont pas déjà. En mode démo, renvoie des exemples
-    actifs sans lancer Tavily/Groq ni enregistrer de données fictives.
+    Backend celles qui n'y sont pas déjà. En mode démo, renvoie des avis archivés
+    sourcés (ouverts ou clôturés) sans lancer Tavily/Groq ni enregistrer de données.
     """
     request = request or DetectionAutoRequest()
 
@@ -332,7 +331,7 @@ async def detecter_opportunites(
                 "opportunities": opportunites,
                 "total": len(opportunites),
                 "queries": queries,
-                "notes": "Mode démo : exemples actifs affichés, aucune donnée fictive enregistrée automatiquement.",
+                    "notes": "Mode démo : avis archivés affichés avec leur état courant, aucune donnée enregistrée automatiquement.",
                 "statistics": {
                     "queries_run": len(queries),
                     "processing_time_seconds": elapsed,
@@ -662,8 +661,13 @@ async def _stream_detection(min_score: int, limit: int, sync_backend: bool, owne
                 "deadline": opp.get("deadline") or opp.get("date_limite"),
                 "summary": opp.get("summary", ""),
                 "source_url": opp.get("source_url") or opp.get("url"),
+                "source_site": opp.get("source_site"),
                 "reference": opp.get("reference"),
+                "date_capture": opp.get("date_capture"),
+                "date_derniere_verification": opp.get("date_derniere_verification"),
+                "status_at_capture": opp.get("status_at_capture"),
                 "current_status": opp.get("current_status", ""),
+                "capture_type": opp.get("capture_type"),
                 "message": f"✅ {opp.get('title', '')} — score {opp.get('score', 0)}/100",
             })
             await asyncio.sleep(0.8)

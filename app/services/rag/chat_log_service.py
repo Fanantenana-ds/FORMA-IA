@@ -6,6 +6,9 @@
 import json
 import logging
 import os
+import re
+from difflib import SequenceMatcher
+from collections import deque
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -29,6 +32,34 @@ def enregistrer(
     chemin = chemin or CHEMIN_JOURNAL_DEFAUT
     chemin.parent.mkdir(parents=True, exist_ok=True)
 
+    # Regroupe les formulations proches pour diagnostiquer les questions
+    # répétées sans recalculer embeddings/LLM ni ralentir le chemin RAG.
+    normaliser = lambda valeur: " ".join(re.findall(r"[a-z0-9]+", valeur.lower()))
+    question_normalisee = normaliser(question)
+    question_similaire = None
+    if chemin.exists() and question_normalisee:
+        try:
+            with open(chemin, "r", encoding="utf-8") as journal:
+                precedentes = deque(journal, maxlen=300)
+            for brute in reversed(precedentes):
+                try:
+                    precedente = json.loads(brute)
+                except json.JSONDecodeError:
+                    continue
+                if precedente.get("formation_code") != formation_code:
+                    continue
+                texte_precedent = normaliser(precedente.get("question", ""))
+                ratio = SequenceMatcher(None, question_normalisee, texte_precedent).ratio()
+                if ratio >= 0.78:
+                    question_similaire = {
+                        "date": precedente.get("date"),
+                        "ratio": round(ratio, 2),
+                        "statut_precedent": precedente.get("statut"),
+                    }
+                    break
+        except OSError:
+            logger.debug("Lecture du journal RAG similaire indisponible.", exc_info=True)
+
     ligne = {
         "date": datetime.now().isoformat(),
         "question": question,
@@ -39,6 +70,7 @@ def enregistrer(
         "cache_utilise": cache_utilise,
         "duree_ms": round(duree_ms, 1),
         "statut": statut,
+        "question_similaire": question_similaire,
     }
     with open(chemin, "a", encoding="utf-8") as f:
         f.write(json.dumps(ligne, ensure_ascii=False) + "\n")

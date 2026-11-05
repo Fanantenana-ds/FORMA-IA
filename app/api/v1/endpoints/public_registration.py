@@ -3,6 +3,8 @@ import uuid
 import logging
 import json
 import random
+import re
+import unicodedata
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
@@ -20,10 +22,36 @@ from app.models.public_registration import PublicAssessmentAttempt, PublicRegist
 from app.models.document import Document, StatutValidation, TypeDocument
 from app.models.rh import Candidat, DecisionPreselection, Formateur, RecommandationEvaluation
 from app.models.user import User
-from app.services.llm import get_llm_provider
+from app.services.llm import LLMRateLimitError, get_llm_provider
 
 router = APIRouter(prefix="/public", tags=["Inscriptions publiques"])
 logger = logging.getLogger(__name__)
+
+
+async def _generate_llm_with_tpm_retry(provider, **kwargs):
+    """Retry once only for a short per-minute TPM window, never for daily quota."""
+    try:
+        return await provider.generate(**kwargs)
+    except LLMRateLimitError as exc:
+        message = str(exc).lower()
+        if "tokens per minute" not in message and "(tpm)" not in message:
+            raise
+        match = re.search(
+            r"try again in\s+([0-9]+(?:\.[0-9]+)?)\s*(ms|milliseconds?|s|seconds?)\b",
+            message,
+        )
+        if not match:
+            raise
+        delay_seconds = float(match.group(1))
+        if match.group(2).startswith("m"):
+            delay_seconds /= 1000
+        if delay_seconds < 0 or delay_seconds > 8:
+            raise
+        import asyncio
+
+        logger.info("Limite TPM temporaire ; reprise unique après %.3f s.", delay_seconds)
+        await asyncio.sleep(delay_seconds + 0.1)
+        return await provider.generate(**kwargs)
 
 
 class CreateLinkRequest(BaseModel):
@@ -59,94 +87,405 @@ SATISFACTION_QUESTIONS = [
 ]
 
 
-def _fallback_assessment(session: TrainingSession) -> list[dict]:
-    topic = session.formation_code or session.titre
-    return [
-        {"id":"q1","competence":"Connaissances initiales","enonce":f"Quel est votre niveau de familiarité avec {topic} ?","options":[{"id":"A","label":"Je découvre le sujet"},{"id":"B","label":"J’en connais quelques notions"},{"id":"C","label":"Je l’ai déjà pratiqué"},{"id":"D","label":"Je peux l’enseigner ou l’utiliser à un niveau expert"}],"options_scoring":{"A":0,"B":1,"C":2,"D":3}},
-        {"id":"q2","competence":"Expérience pratique","enonce":"Face à une tâche nouvelle dans ce domaine, quelle approche vous décrit le mieux ?","options":[{"id":"A","label":"J’attends une démonstration pas à pas"},{"id":"B","label":"Je peux suivre un exemple guidé"},{"id":"C","label":"Je peux adapter une méthode déjà apprise"},{"id":"D","label":"Je conçois une méthode et peux accompagner d’autres personnes"}],"options_scoring":{"A":0,"B":1,"C":2,"D":3}},
-        {"id":"q3","competence":"Autonomie","enonce":"À quelle fréquence utilisez-vous les outils ou méthodes liés à cette formation ?","options":[{"id":"A","label":"Jamais"},{"id":"B","label":"Rarement, avec aide"},{"id":"C","label":"Régulièrement, de façon autonome"},{"id":"D","label":"Très souvent, y compris pour résoudre des cas complexes"}],"options_scoring":{"A":0,"B":1,"C":2,"D":3}},
-        {"id":"q4","competence":"Résolution de problèmes","enonce":"Quand un résultat est incorrect, que faites-vous en premier ?","options":[{"id":"A","label":"Je ne sais pas comment procéder"},{"id":"B","label":"Je recommence en suivant les consignes"},{"id":"C","label":"Je vérifie les étapes et corrige la cause"},{"id":"D","label":"J’analyse les causes possibles et compare plusieurs solutions"}],"options_scoring":{"A":0,"B":1,"C":2,"D":3}},
-        {"id":"q5","competence":"Vocabulaire métier","enonce":f"Pouvez-vous expliquer les concepts principaux de {topic} ?","options":[{"id":"A","label":"Pas encore"},{"id":"B","label":"Quelques termes simples"},{"id":"C","label":"Oui, les notions et leur usage"},{"id":"D","label":"Oui, avec nuances, limites et cas avancés"}],"options_scoring":{"A":0,"B":1,"C":2,"D":3}},
-        {"id":"q6","competence":"Transfert des acquis","enonce":"Avez-vous déjà appliqué ces compétences dans une situation réelle ?","options":[{"id":"A","label":"Non"},{"id":"B","label":"Dans un exercice accompagné"},{"id":"C","label":"Oui, sur une tâche ou un projet"},{"id":"D","label":"Oui, sur plusieurs projets et avec transmission à d’autres"}],"options_scoring":{"A":0,"B":1,"C":2,"D":3}},
-        {"id":"q7","competence":"Confiance","enonce":"Comment vous sentez-vous pour réaliser seul une tâche courante de cette formation ?","options":[{"id":"A","label":"Je ne suis pas encore prêt"},{"id":"B","label":"Je peux essayer avec un guide"},{"id":"C","label":"Je peux la réaliser seul"},{"id":"D","label":"Je peux la réaliser, l’optimiser et aider un collègue"}],"options_scoring":{"A":0,"B":1,"C":2,"D":3}},
-        {"id":"q8","competence":"Objectif d’apprentissage","enonce":"Quel objectif vous correspond le mieux pour cette formation ?","options":[{"id":"A","label":"Découvrir les bases"},{"id":"B","label":"Comprendre les méthodes essentielles"},{"id":"C","label":"Être autonome dans des cas d’usage courants"},{"id":"D","label":"Approfondir et maîtriser des cas complexes"}],"options_scoring":{"A":0,"B":1,"C":2,"D":3}},
-        {"id":"q9","competence":"Application métier","enonce":f"Dans quelle mesure pouvez-vous appliquer {topic} à une situation concrète de votre travail ?","options":[{"id":"A","label":"Je ne sais pas encore par où commencer"},{"id":"B","label":"Je peux appliquer une consigne simple avec accompagnement"},{"id":"C","label":"Je peux traiter seul un cas courant"},{"id":"D","label":"Je peux adapter la démarche à un cas complexe"}],"options_scoring":{"A":0,"B":1,"C":2,"D":3}},
-        {"id":"q10","competence":"Analyse et prise de recul","enonce":f"Comment vérifiez-vous la qualité d’un résultat obtenu avec {topic} ?","options":[{"id":"A","label":"Je ne sais pas encore quels critères utiliser"},{"id":"B","label":"Je vérifie quelques points avec une liste fournie"},{"id":"C","label":"Je contrôle les critères essentiels de façon autonome"},{"id":"D","label":"Je définis des critères, détecte les limites et propose des améliorations"}],"options_scoring":{"A":0,"B":1,"C":2,"D":3}},
-    ]
-
-
 def _ensure_ten_assessment_questions(link: PublicRegistrationLink, session: TrainingSession, db: Session) -> list[dict]:
-    """Upgrade older persisted links that still contain fewer than ten questions."""
+    """Return persisted questions without inventing generic replacements."""
     questions = list(link.assessment_questions or [])
-    if len(questions) >= 10:
-        return questions[:10]
-    existing_ids = {str(question.get("id")) for question in questions if question.get("id")}
-    for fallback in _fallback_assessment(session):
-        if len(questions) >= 10:
-            break
-        if str(fallback["id"]) not in existing_ids:
-            questions.append(fallback)
-            existing_ids.add(str(fallback["id"]))
-    link.assessment_questions = questions
-    db.commit()
-    return questions
+    return questions[:10]
 
 
-async def _rag_context_for_formation(formation_code: str | None, titre: str) -> str:
-    """Retrieve up to 5 relevant chunks from the RAG for this formation, or '' if none."""
+async def _rag_context_for_formation(
+    formation_code: str | None, titre: str, session_id: UUID | str | None = None
+) -> str:
+    """Reuse the session's persisted chunks; never re-embed or query other sessions."""
+    if not session_id:
+        return ""
     try:
-        from app.services.rag.recherche_service import rechercher
-        query = f"contenu pédagogique objectifs compétences {titre}"
-        results = await rechercher(
-            requete=query,
-            top_k=5,
-            collection="support",
-            formation_code=formation_code or None,
-            seuil_min=0.45,
-            attente_max_s=3.0,
+        from app.services.rag.knowledge_repository import KnowledgeRepository
+        chunks = KnowledgeRepository().lister_chunks_session(
+            session_id=str(session_id), collection="support", limit=80,
         )
-        if not results:
+        if not chunks:
             return ""
-        passages = [f"[Extrait {i+1}] {r.contenu[:600]}" for i, r in enumerate(results[:5])]
+        passages = [
+            (
+                f"[Document : {chunk.get('fichier') or 'support'} ; "
+                f"module : {chunk.get('module') or 'non précisé'} ; "
+                f"passage {chunk.get('chunk_index') if chunk.get('chunk_index') is not None else i + 1}]\n"
+                f"{str(chunk.get('contenu') or '')[:1200]}"
+            )
+            for i, chunk in enumerate(chunks)
+            if str(chunk.get("contenu") or "").strip()
+        ]
         return "\n\n".join(passages)
     except Exception:
-        logger.debug("RAG non disponible pour _generate_assessment — génération sans contexte.")
+        logger.exception("Lecture des chunks RAG déjà indexés impossible pour le questionnaire.")
         return ""
+
+
+def _normaliser_preuve(value: str) -> str:
+    sans_accents = "".join(
+        char for char in unicodedata.normalize("NFKD", value.lower())
+        if not unicodedata.combining(char)
+    )
+    return " ".join(re.findall(r"[a-z0-9]+", sans_accents))
+
+
+def _assessment_est_ancre(questions: list[dict] | None) -> bool:
+    return bool(questions) and len(questions) >= 10 and all(
+        isinstance(question, dict) and isinstance(question.get("preuve_support"), str)
+        and len(_normaliser_preuve(question["preuve_support"])) >= 5
+        for question in questions[:10]
+    )
+
+
+def _question_est_naturelle(question: dict) -> bool:
+    """Reject stems that talk about the source instead of asking the learner."""
+    enonce_brut = str(question.get("enonce") or "").strip()
+    if not enonce_brut.endswith("?"):
+        return False
+    enonce = _normaliser_preuve(enonce_brut)
+    references_source = (
+        "selon le texte", "dans le texte", "selon la citation", "dans la citation",
+        "selon l extrait", "dans l extrait", "selon le support", "dans le support",
+        "selon le document", "dans le document", "citation", "extrait indexe",
+    )
+    if any(reference in enonce for reference in references_source):
+        return False
+    if re.search(r"\bquel(?:le)? element\b", enonce) and not any(
+        sujet in enonce for sujet in ("methode rtfce", "reseau de neurones", "machine learning")
+    ):
+        return False
+    return True
+
+
+def _assessment_est_pedagogiquement_presentable(questions: list[dict] | None) -> bool:
+    return _assessment_est_ancre(questions) and all(
+        isinstance(question, dict) and _question_est_naturelle(question)
+        for question in (questions or [])[:10]
+    )
+
+
+def _contexte_compact_reparation(rag_context: str, questions: list[dict], limit: int = 4) -> str:
+    """Choose short real indexed passages related to rejected questions."""
+    passages = [
+        passage.strip() for passage in re.split(r"(?=\[Document :)", rag_context)
+        if passage.strip().startswith("[Document :")
+    ]
+    if not passages:
+        return ""
+    stopwords = {
+        "avec", "dans", "pour", "plus", "quel", "quelle", "quels", "quelles",
+        "comment", "pourquoi", "selon", "faire", "formation", "support",
+        "module", "question", "reponse", "document", "citation", "extrait",
+    }
+    termes_requetes = {
+        terme for question in questions
+        for terme in _normaliser_preuve(" ".join([
+            str(question.get("enonce") or ""), str(question.get("competence") or ""),
+            *[str(option.get("label") or "") for option in question.get("options", []) if isinstance(option, dict)],
+        ])).split()
+        if len(terme) >= 4 and terme not in stopwords
+    }
+    classes = []
+    for index, passage in enumerate(passages):
+        termes_passage = set(_normaliser_preuve(passage).split())
+        score = len(termes_requetes & termes_passage)
+        lignes = passage.splitlines()
+        contenu = "\n".join(lignes[1:]).strip()
+        extrait = contenu[:350].rsplit(" ", 1)[0] if len(contenu) > 350 else contenu
+        classes.append((score, -index, f"{lignes[0]}\n{extrait}"))
+    selection = sorted(classes, key=lambda item: (item[0], item[1]), reverse=True)[:limit]
+    return "\n\n".join(passage for _score, _ordre, passage in selection)
+
+
+def _question_est_justifiee(question: dict, contexte_normalise: str) -> bool:
+    preuve = question.get("preuve_support")
+    if not isinstance(preuve, str):
+        return False
+    preuve_normalisee = _normaliser_preuve(preuve)
+    if len(preuve_normalisee) < 5 or preuve_normalisee not in contexte_normalise:
+        return False
+
+    stopwords = {
+        "avec", "dans", "pour", "plus", "quel", "quelle", "quels", "quelles",
+        "comment", "pourquoi", "selon", "faire", "fait", "etre", "avoir", "cette",
+        "cela", "leur", "leurs", "vous", "votre", "formation", "support",
+        "module", "competence", "competences", "notion", "notions", "question",
+        "reponse", "extrait", "document", "documente", "explique", "presente",
+    }
+    options = question.get("options") or []
+    bonne_reponse = next(
+        (option.get("label", "") for option in options
+         if isinstance(option, dict) and str(option.get("id")) == str(question.get("correct_answer"))),
+        "",
+    )
+    termes_question = {
+        terme for terme in _normaliser_preuve(
+            f"{question.get('competence', '')} {question.get('enonce', '')} {bonne_reponse}"
+        ).split()
+        if len(terme) >= 4 and terme not in stopwords
+    }
+    termes_preuve = {
+        terme for terme in preuve_normalisee.split()
+        if len(terme) >= 4 and terme not in stopwords
+    }
+    # Une notion centrale suffit : une question peut légitimement reformuler
+    # le passage avec des synonymes, mais doit garder au moins un terme
+    # pédagogique précis en commun avec sa preuve.
+    return bool(termes_preuve) and bool(termes_question & termes_preuve)
+
+
+def _normaliser_question_llm(question: object) -> dict | None:
+    """Normalize harmless JSON shape variations without relaxing source checks."""
+    if not isinstance(question, dict):
+        return None
+    raw_options = question.get("options")
+    if isinstance(raw_options, dict):
+        raw_options = [{"id": key, "label": value} for key, value in raw_options.items()]
+    if not isinstance(raw_options, list) or len(raw_options) != 4:
+        return None
+
+    options = []
+    for index, option in enumerate(raw_options):
+        if isinstance(option, str):
+            option_id, label = chr(ord("A") + index), option
+        elif isinstance(option, dict):
+            option_id = str(option.get("id") or option.get("key") or "").strip().upper()
+            label = option.get("label") or option.get("text") or option.get("texte")
+            match_id = re.search(r"\b([A-D])\b", option_id)
+            option_id = match_id.group(1) if match_id else ""
+        else:
+            return None
+        if option_id not in {"A", "B", "C", "D"} or not isinstance(label, str) or not label.strip():
+            return None
+        options.append({"id": option_id, "label": label.strip()})
+    if {option["id"] for option in options} != {"A", "B", "C", "D"}:
+        return None
+
+    raw_answer = str(question.get("correct_answer") or "").strip().upper()
+    answer_match = re.match(r"^(?:OPTION\s*)?([A-D])(?:\b|\s|[).:-])", raw_answer)
+    if answer_match:
+        correct_answer = answer_match.group(1)
+    else:
+        correct_answer = next(
+            (option["id"] for option in options if option["label"].casefold() == raw_answer.casefold()),
+            "",
+        )
+
+    enonce = question.get("enonce") or question.get("question")
+    preuve = question.get("preuve_support")
+    if not isinstance(enonce, str) or not enonce.strip() or not isinstance(preuve, str):
+        return None
+    return {
+        "id": str(question.get("id") or "").strip(),
+        "competence": str(question.get("competence") or question.get("objectif") or "").strip(),
+        "enonce": enonce.strip(),
+        "options": options,
+        "correct_answer": correct_answer,
+        "preuve_support": preuve.strip().strip("\"'«»“”"),
+    }
 
 
 async def _generate_assessment(session: TrainingSession, stage: str = "initial") -> list[dict]:
     """Generate a private, answer-key questionnaire for a training stage."""
-    topic = session.formation_code or session.titre
-    rag_context = await _rag_context_for_formation(session.formation_code, session.titre)
+    rag_context = await _rag_context_for_formation(
+        session.formation_code, session.titre, session.id
+    )
+    if not rag_context.strip():
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Aucun extrait pédagogique exploitable n’a été trouvé dans les supports indexés de cette session. "
+                "Le lien d’évaluation n’a pas été généré afin d’éviter un questionnaire hors sujet."
+            ),
+        )
     context_block = (
         f"\n\nCONTENU PÉDAGOGIQUE INDEXÉ (extraits réels des supports de la formation) :\n{rag_context}\n\n"
-        "Base tes questions sur ce contenu en priorité."
-        if rag_context else ""
+        "Base chaque question exclusivement sur ces extraits. Le titre de session et le code client sont administratifs : "
+        "ne les utilise jamais comme source de notions pédagogiques. Pour chaque question, fournis preuve_support : "
+        "une citation courte, copiée mot pour mot d’un extrait qui justifie la question et sa bonne réponse. "
+        "Produis exactement 10 questions distinctes : si les supports présentent peu de notions, reformule ces notions "
+        "sous des angles pédagogiques différents (expliquer, distinguer, appliquer à un cas simple, repérer une limite, "
+        "choisir une méthode), sans ajouter de nouveaux concepts, faits ou objectifs. La question et sa réponse attendue "
+        "doivent toutes deux pouvoir être justifiées par la citation. La bonne réponse doit reprendre littéralement "
+        "au moins un terme pédagogique distinctif de sa preuve_support ; évite les synonymes qui empêchent de vérifier "
+        "le lien entre la réponse et l’extrait. Les questions sont destinées directement aux participants : écris-les "
+        "comme un formateur les poserait naturellement, de façon autonome et précise. Ne mentionne jamais le texte, "
+        "la citation, l’extrait ou le support. Évite les formulations vagues comme « quel élément ? », « quel terme ? » "
+        "ou « quelle affirmation ? ». N’interroge qu’une notion clairement nommée et évite les questions tautologiques."
+    )
+    objectif_etape = (
+        "Évalue les acquis après la formation : privilégie l’application à une situation simple lorsque les supports "
+        "la permettent, sinon vérifie clairement une notion enseignée."
+        if stage == "final"
+        else "Évalue le niveau de départ : vérifie les notions fondamentales sans supposer que le participant a déjà suivi la formation."
     )
     try:
-        response = await get_llm_provider().generate(
-            system_prompt=("Tu es un concepteur d'évaluations de formation. Tu produis des questions à choix multiple en français, adaptées au thème. "
-                           "Le questionnaire de fin mesure les compétences acquises; il ne note pas la valeur de la personne." if stage == "final" else
-                           "Tu es un concepteur de tests diagnostiques de formation. Tu produis des questions à choix multiple en français, adaptées au thème. Le test évalue le niveau initial, il ne note pas la valeur de la personne."),
-            user_prompt=(f"Crée 10 questions de {'validation des acquis après la formation' if stage == 'final' else 'positionnement avant la formation'} pour la formation « {session.titre} » "
-                         f"(code/domaine : {topic}).{context_block} Retourne uniquement un objet JSON avec une clé questions. "
-                         "Chaque question doit avoir id (q1...), competence, enonce, options (4 objets id A-D et label), "
-                         "correct_answer (A-D). Questions concrètes et progressives, une seule bonne réponse."),
-            temperature=0.2, max_tokens=3500, json_mode=True,
+        llm_provider = get_llm_provider()
+        response = await _generate_llm_with_tpm_retry(
+            llm_provider,
+            system_prompt=("Tu conçois une évaluation en français STRICTEMENT à partir des extraits fournis. N’ajoute aucune connaissance générale, aucun sujet tiré du nom du client ou du titre administratif, et refuse implicitement toute notion absente des extraits. "
+                           "Écris pour les participants avec une formulation naturelle, claire et précise. Le test final mesure les acquis; le test initial mesure le niveau de départ, sans juger la personne."),
+            user_prompt=(f"Crée exactement 10 QCM concis de {'validation des acquis après la formation' if stage == 'final' else 'positionnement avant la formation'} à partir des seuls extraits ci-dessous."
+                         f"{objectif_etape}\n{context_block} Retourne uniquement un objet JSON avec une clé questions. "
+                         "Chaque question doit avoir id (q1...), competence courte, enonce court, options (4 objets id A-D et label court), "
+                         "correct_answer (A-D), preuve_support (citation exacte des extraits). Questions concrètes, progressives, "
+                         "une seule bonne réponse. Varie l’angle, jamais le contenu. N’invente rien. "
+                         "Réponse très concise : une phrase par énoncé, options brèves et preuve courte exacte."),
+            temperature=0.1, max_tokens=1700, json_mode=True,
+            reasoning_effort="low",
         )
-        data = json.loads(response["content"])
-        questions = data.get("questions", []) if isinstance(data, dict) else []
-        valid = [q for q in questions if isinstance(q, dict) and q.get("enonce")
-                 and q.get("correct_answer") in {"A", "B", "C", "D"}
-                 and isinstance(q.get("options"), list) and len(q["options"]) == 4
-                 and {str(option.get("id")) for option in q["options"] if isinstance(option, dict)} == {"A", "B", "C", "D"}]
+        if response.get("finish_reason") == "length":
+            raise ValueError("La réponse du modèle a été tronquée avant la fin du questionnaire.")
+        contenu_json = str(response.get("content") or "").strip()
+        if not contenu_json:
+            raise ValueError("Le fournisseur IA a renvoyé une réponse vide pour le questionnaire.")
+        data = json.loads(contenu_json)
+        questions_brutes = data.get("questions", []) if isinstance(data, dict) else []
+        questions = [_normaliser_question_llm(question) for question in questions_brutes]
+        questions = [question for question in questions if question is not None]
+        extrait_normalise = _normaliser_preuve(rag_context)
+        structurellement_valides = [
+            question for question in questions
+            if question["correct_answer"] in {"A", "B", "C", "D"}
+        ]
+        preuves_exactes = [
+            question for question in structurellement_valides
+            if len(_normaliser_preuve(question["preuve_support"])) >= 5
+            and _normaliser_preuve(question["preuve_support"]) in extrait_normalise
+        ]
+        valid = [question for question in preuves_exactes
+                 if _question_est_justifiee(question, extrait_normalise)
+                 and _question_est_naturelle(question)]
+        questions_uniques = {}
+        for question in valid:
+            cle = _normaliser_preuve(str(question["enonce"]))
+            if cle:
+                questions_uniques.setdefault(cle, question)
+        valid = list(questions_uniques.values())
+        if len(valid) < 10:
+            # Répare seulement les éléments rejetés par la qualité du libellé,
+            # la preuve ou l'unicité, à partir du contexte RAG réellement indexé.
+            candidats_reparation = []
+            enonces_vus = set()
+            for question in structurellement_valides:
+                cle = _normaliser_preuve(str(question["enonce"]))
+                if not cle:
+                    continue
+                preuve_exacte = (
+                    len(_normaliser_preuve(question["preuve_support"])) >= 5
+                    and _normaliser_preuve(question["preuve_support"]) in extrait_normalise
+                )
+                if (not preuve_exacte
+                        or not _question_est_justifiee(question, extrait_normalise)
+                        or not _question_est_naturelle(question)
+                        or cle in enonces_vus):
+                    candidats_reparation.append(question)
+                enonces_vus.add(cle)
+
+            nombre_a_reparer = 10 - len(valid)
+            contexte_reparation = _contexte_compact_reparation(
+                rag_context, candidats_reparation or structurellement_valides,
+            )
+            if nombre_a_reparer and contexte_reparation:
+                stems_existants = [question["enonce"] for question in valid]
+                reponse_reparation = await _generate_llm_with_tpm_retry(
+                    llm_provider,
+                    system_prompt=(
+                        "Tu rédiges des questions de formation naturellement adressées aux participants, à partir des seuls extraits fournis. "
+                        "La bonne réponse doit reprendre littéralement un terme distinctif de sa preuve exacte. N’ajoute aucun fait. "
+                        "N’évoque jamais le texte, la citation, l’extrait ou le support dans la question. Retourne uniquement un objet JSON valide."
+                    ),
+                    user_prompt=(
+                        f"Crée exactement {nombre_a_reparer} question(s) QCM distincte(s) à partir de ces extraits indexés. "
+                        f"{objectif_etape} Chaque question doit nommer clairement la notion visée, avoir une formulation naturelle, "
+                        "une seule bonne réponse clairement justifiée, quatre choix courts id A-D, et une preuve_support copiée "
+                        "mot pour mot d’un extrait. Évite les formulations vagues ou tautologiques. "
+                        f"Ne répète pas ces questions : {json.dumps(stems_existants, ensure_ascii=False)}. "
+                        f"Extraits autorisés : {contexte_reparation}. "
+                        '{"questions":[{"id":"r1","competence":"...","enonce":"...",'
+                        '"options":[{"id":"A","label":"..."},{"id":"B","label":"..."},'
+                        '{"id":"C","label":"..."},{"id":"D","label":"..."}],'
+                        '"correct_answer":"A","preuve_support":"citation exacte"}]}'
+                    ),
+                    temperature=0.1,
+                    max_tokens=min(600, max(350, nombre_a_reparer * 300)),
+                    json_mode=True,
+                    reasoning_effort="low",
+                )
+                contenu_reparation = str(reponse_reparation.get("content") or "").strip()
+                if reponse_reparation.get("finish_reason") != "length" and contenu_reparation:
+                    donnees_reparees = json.loads(contenu_reparation)
+                    questions_reparees = donnees_reparees.get("questions", []) if isinstance(donnees_reparees, dict) else []
+                    for brute in questions_reparees:
+                        question = _normaliser_question_llm(brute)
+                        if not question or question["correct_answer"] not in {"A", "B", "C", "D"}:
+                            continue
+                        preuve = _normaliser_preuve(question["preuve_support"])
+                        cle = _normaliser_preuve(question["enonce"])
+                        if (len(preuve) < 5 or preuve not in extrait_normalise or not cle
+                                or cle in questions_uniques or not _question_est_justifiee(question, extrait_normalise)
+                                or not _question_est_naturelle(question)):
+                            continue
+                        questions_uniques[cle] = question
+                        if len(questions_uniques) == 10:
+                            break
+                valid = list(questions_uniques.values())
         if len(valid) >= 10:
             for index, question in enumerate(valid[:10], start=1):
                 question["id"] = f"q{index}"
             return valid[:10]
-    except Exception:
-        logger.exception("La génération IA du test de positionnement a échoué; questionnaire de secours utilisé.")
-    return _fallback_assessment(session)
+        logger.warning(
+            "Questionnaire rejeté après validation des preuves "
+            "(session=%s, étape=%s, reçues=%s, format_valide=%s, preuve_exacte_initiale=%s, "
+            "preuve_et_réponse_initiale=%s, réparées_acceptées=%s, distinctes_finales=%s).",
+            session.id, stage, len(questions_brutes), len(structurellement_valides),
+            len(preuves_exactes), len([question for question in preuves_exactes if _question_est_justifiee(question, extrait_normalise)]),
+            max(0, len(valid) - len([question for question in preuves_exactes if _question_est_justifiee(question, extrait_normalise)])),
+            len(questions_uniques),
+        )
+    except HTTPException:
+        raise
+    except LLMRateLimitError as exc:
+        message_quota = str(exc).lower()
+        quota_journalier = any(
+            marqueur in message_quota
+            for marqueur in ("tokens per day", "(tpd)", "quota journalier", "limite journalière")
+        )
+        logger.warning(
+            "Limite LLM atteinte pour le questionnaire (type=%s, session=%s, étape=%s, extraits=%s, caractères_contexte=%s).",
+            "journalier" if quota_journalier else "par minute",
+            session.id, stage, rag_context.count("[Document :"), len(rag_context),
+        )
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                ("Le quota journalier du fournisseur IA est atteint. Aucun questionnaire générique n’a été créé. "
+                 "Réessayez après le renouvellement du quota.")
+                if quota_journalier else
+                "La limite temporaire de requêtes IA est atteinte. Aucun questionnaire générique n’a été créé. Réessayez dans quelques secondes."
+            ),
+        ) from exc
+    except Exception as exc:
+        logger.exception(
+            "La génération IA du questionnaire basé sur les supports a échoué "
+            "(session=%s, étape=%s, extraits=%s, caractères_contexte=%s, erreur=%s).",
+            session.id, stage, rag_context.count("[Document :"), len(rag_context), type(exc).__name__,
+        )
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Le fournisseur IA n’a pas terminé le questionnaire à partir des supports. "
+                "Aucun questionnaire générique n’a été créé ; vous pouvez relancer la génération."
+            ),
+        ) from exc
+    raise HTTPException(
+        status_code=422,
+        detail=(
+            "Les supports de cette session ne permettent pas de valider dix questions avec une preuve textuelle fiable. "
+            "Aucun questionnaire hors sujet n’a été créé. Vérifiez le contenu indexé puis relancez la génération."
+        ),
+    )
 
 
 def _public_question(question: dict) -> dict:
@@ -215,18 +554,23 @@ async def create_public_link(
     db: Session = Depends(get_db),
     _user: User = Depends(require_role("DIRECTION", "ADMIN", "ASSISTANT")),
 ):
-    if payload.kind == "participant":
-        if not payload.session_id:
-            raise HTTPException(422, "session_id est obligatoire pour une inscription participant.")
-        session = db.query(TrainingSession).filter(TrainingSession.id == payload.session_id).first()
-        if not session:
-            raise HTTPException(404, "Session introuvable.")
-    elif not payload.session_id:
+    # require_role() s'appuie sur le contexte posé par une dépendance synchrone.
+    # Reposer le tenant dans cette coroutine garantit que le registre RAG lu
+    # ci-dessous est celui du directeur connecté.
+    set_tenant_id(_user.owner_id or _user.id)
+    if not payload.session_id:
         raise HTTPException(422, "session_id est obligatoire pour un lien lié à une formation.")
-    else:
-        session = db.query(TrainingSession).filter(TrainingSession.id == payload.session_id).first()
-        if not session:
-            raise HTTPException(404, "Session introuvable.")
+    session = db.query(TrainingSession).filter(TrainingSession.id == payload.session_id).first()
+    if not session:
+        raise HTTPException(404, "Session introuvable.")
+    if payload.kind in {"participant", "post_formation"} and not _session_has_indexed_support(session.id):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Indexez au moins un support pédagogique de cette session avant de générer "
+                "un lien d'évaluation pour les participants."
+            ),
+        )
     existing_link = db.query(PublicRegistrationLink).filter(
         PublicRegistrationLink.kind == payload.kind,
         PublicRegistrationLink.session_id == payload.session_id,
@@ -234,8 +578,15 @@ async def create_public_link(
     ).order_by(PublicRegistrationLink.date_creation.desc()).first()
     if existing_link:
         question_count = len(existing_link.assessment_questions or [])
-        if payload.kind == "participant":
-            question_count = len(_ensure_ten_assessment_questions(existing_link, session, db))
+        if payload.kind in {"participant", "post_formation"} and not _assessment_est_pedagogiquement_presentable(existing_link.assessment_questions):
+            # Modernise les anciens questionnaires imprécis au prochain clic,
+            # sans changer l'URL si la nouvelle génération aboutit.
+            questions = await _generate_assessment(
+                session, stage="final" if payload.kind == "post_formation" else "initial"
+            )
+            existing_link.assessment_questions = questions
+            db.commit()
+            question_count = len(questions)
         return {"token": existing_link.token, "kind": existing_link.kind,
                 "session_id": str(existing_link.session_id) if existing_link.session_id else None,
                 "path": f"/inscription-publique/{existing_link.token}",
@@ -248,6 +599,22 @@ async def create_public_link(
     db.commit()
     return {"token": token, "kind": payload.kind, "session_id": str(payload.session_id) if payload.session_id else None,
             "path": f"/inscription-publique/{token}", "assessment_question_count": len(questions or [])}
+
+
+def _session_has_indexed_support(session_id: UUID | str) -> bool:
+    """Require every pedagogical support for the session to have indexed chunks."""
+    from app.services.rag import registry_service
+
+    supports = [
+        entry
+        for entry in registry_service.charger_registre().values()
+        if str(entry.session_id) == str(session_id)
+        and entry.collection == "support"
+    ]
+    return bool(supports) and all(
+        entry.statut == "indexe" and (entry.nb_chunks or 0) > 0
+        for entry in supports
+    )
 
 
 @router.get("/links/session/{session_id}")
@@ -264,6 +631,24 @@ def get_session_public_links(
         if link.kind not in latest:
             latest[link.kind] = {"token": link.token, "path": f"/inscription-publique/{link.token}"}
     return latest
+
+
+@router.delete("/links/{token}", summary="Désactiver un lien public de session")
+def revoke_public_link(
+    token: str,
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_role("DIRECTION", "ADMIN", "ASSISTANT")),
+):
+    """Révoque le lien sans effacer les inscriptions ou réponses déjà reçues."""
+    link = db.query(PublicRegistrationLink).filter(
+        PublicRegistrationLink.token == token,
+        PublicRegistrationLink.active.is_(True),
+    ).first()
+    if link is None:
+        raise HTTPException(404, "Lien introuvable ou déjà désactivé.")
+    link.active = False
+    db.commit()
+    return {"success": True, "message": "Le lien public a été désactivé."}
 
 
 def _get_link(token: str, db: Session) -> PublicRegistrationLink:
@@ -359,6 +744,14 @@ async def get_public_link(token: str, db: Session = Depends(get_db)):
     public_assessment = None
     if link.kind in {"participant", "post_formation"}:
         stored_questions = _ensure_ten_assessment_questions(link, session, db)
+        if not _assessment_est_ancre(stored_questions):
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "Ce questionnaire ancien n’est pas vérifié par les supports de la session. "
+                    "Le responsable doit régénérer le lien depuis la session avant sa diffusion."
+                ),
+            )
         questions = _individualize_assessment(stored_questions)
         assessment_attempt = secrets.token_urlsafe(36)
         db.add(PublicAssessmentAttempt(token=assessment_attempt, link_id=link.id, questions=questions))
@@ -386,6 +779,8 @@ async def public_participant_registration(token: str, payload: ParticipantRegist
     if session.nb_participants_max and count >= session.nb_participants_max:
         raise HTTPException(409, "La session a atteint sa capacité maximale.")
     questions = link.assessment_questions or []
+    if not _assessment_est_ancre(questions):
+        raise HTTPException(409, "Ce questionnaire n’est pas validé par les supports de la session. Demandez sa régénération au responsable.")
     attempt = None
     if questions:
         if not payload.assessment_attempt_id:
@@ -398,6 +793,8 @@ async def public_participant_registration(token: str, payload: ParticipantRegist
         if not attempt:
             raise HTTPException(409, "Ce test individuel a déjà été utilisé ou a expiré. Rechargez le formulaire.")
         questions = attempt.questions or []
+        if not _assessment_est_ancre(questions):
+            raise HTTPException(409, "Ce test individuel n’est pas vérifié par les supports. Rechargez la page après régénération du lien par le responsable.")
     answer_map = {str(item.get("question_id")): str(item.get("answer")) for item in payload.answers if item.get("question_id") and item.get("answer")}
     if questions:
         if len(answer_map) < len(questions):
@@ -482,6 +879,8 @@ async def submit_post_formation(token: str, payload: PostFormationSubmission, db
         raise HTTPException(409, "Ce questionnaire a expiré ou a déjà été utilisé. Rechargez la page pour en obtenir un nouveau.")
 
     questions = list(attempt.questions or [])
+    if not _assessment_est_ancre(questions):
+        raise HTTPException(409, "Ce questionnaire n’est pas validé par les supports de la session. Demandez sa régénération au responsable.")
     answer_map = {str(item.get("question_id")): str(item.get("answer", "")).strip()
                   for item in payload.answers if item.get("question_id")}
     if not questions or len(answer_map) < len(questions):

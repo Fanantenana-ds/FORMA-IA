@@ -7,6 +7,7 @@
 # ============================================================
 
 import asyncio
+from uuid import UUID
 
 import pytest
 from fastapi import FastAPI
@@ -14,7 +15,12 @@ from fastapi.testclient import TestClient
 
 import app.services.tdr.tdr_document_generator as tdr_gen_module
 from app.api.v1 import routes_tdr
-from app.services.veille.access_service import verify_api_key
+from app.api.v1.endpoints import formation_ia
+from app.core.tenant_context import set_tenant_id
+from app.services.hitl import hitl_helper
+from app.services.backend_sync.opportunity_fetcher import opportunity_to_brief
+from app.utils import security
+from app.utils.security import verify_api_key
 
 
 @pytest.fixture(autouse=True)
@@ -27,6 +33,7 @@ def exports_dir_temporaire(monkeypatch, tmp_path):
 def client():
     app = FastAPI()
     app.include_router(routes_tdr.router)
+    app.include_router(formation_ia.router)
     app.dependency_overrides[verify_api_key] = lambda: None
     return TestClient(app)
 
@@ -61,6 +68,69 @@ def test_generer_tdr_success(client, monkeypatch):
     body = resp.json()
     assert body["success"] is True
     assert body["files"]["docx"] == "tdr.docx"
+
+
+def test_revue_tdr_creee_par_route_est_visible_dans_liste_hitl_du_meme_tenant(
+    client, monkeypatch, tmp_path
+):
+    tenant_id = UUID("11111111-1111-4111-8111-111111111111")
+    monkeypatch.setattr(hitl_helper, "STORAGE_PATH", tmp_path / "hitl_reviews.json")
+
+    def faux_get_current_user(request, credential, db):
+        set_tenant_id(tenant_id)
+        return object()
+
+    monkeypatch.setattr(security, "get_current_user", faux_get_current_user)
+    client.app.dependency_overrides.pop(verify_api_key, None)
+    client.app.dependency_overrides[security.get_db] = lambda: None
+
+    async def generate(brief):
+        data = {
+            "success": True,
+            "data": {"titre": "TDR formation IA", "formateur_nom": "À désigner"},
+            "files": {"docx": "tdr.docx", "pdf": "tdr.pdf"},
+            "_inputs": {"brief": brief},
+        }
+        review_id = hitl_helper.create_review(
+            "agent_m2_tdr", data, "TDR formation IA", criticity="critical"
+        )
+        return {
+            "success": True,
+            "data": data["data"],
+            "files": data["files"],
+            "_review_id": review_id,
+            "_review_status": "pending_review",
+        }
+
+    monkeypatch.setattr(routes_tdr.orchestrator, "generate", generate)
+
+    generated = client.post("/ia/tdr/generer", json=BRIEF)
+    assert generated.status_code == 200
+    review_id = generated.json()["review_id"]
+
+    pending = client.get("/ia/formations/pending-reviews")
+    assert pending.status_code == 200
+    assert any(
+        review["review_id"] == review_id
+        for review in pending.json()["reviews"]
+    )
+
+
+def test_brief_tdr_extrait_organisme_et_ne_prend_pas_enum_source_pour_client():
+    brief = opportunity_to_brief({
+        "id": "opportunity-1",
+        "source": "URL",
+        "objet": "Formation en intelligence artificielle",
+        "contenu": "Résumé de l’avis | Organisme : Fonds d’Intervention pour le Développement | Type : AO | Lien : https://fid.mg/avis",
+    })
+    assert brief["client"] == "Fonds d’Intervention pour le Développement"
+
+    sans_organisme = opportunity_to_brief({
+        "source": "TEXTE",
+        "objet": "Formation en intelligence artificielle",
+        "contenu": "Texte de l’avis sans organisme explicite",
+    })
+    assert sans_organisme["client"] == ""
 
 
 def test_generer_tdr_echec_orchestrateur(client, monkeypatch):

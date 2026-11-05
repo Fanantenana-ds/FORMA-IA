@@ -8,7 +8,10 @@ from app.orchestrator.base_orchestrator import _vlog as vlog
 from app.services.backend_sync import review_sync
 from app.services.backend_sync.tdr_sync import sync_tdr_to_backend
 from app.services.hitl import create_review
-from app.services.tdr.tdr_document_generator import TDRDocumentGenerator
+from app.services.tdr.tdr_document_generator import (
+    FORMATEUR_A_DESIGNER,
+    TDRDocumentGenerator,
+)
 from app.services.tdr.tdr_service import TDRService
 
 logger = logging.getLogger(__name__)
@@ -113,6 +116,12 @@ class TdrOrchestrator(BaseOrchestrator):
 
             if not tdr_content:
                 raise ValueError("❌ TDRService : réponse vide ou None.")
+
+            # Un TDR préparant un appel à candidatures doit définir le profil,
+            # pas attribuer le poste à une personne avant le recrutement.
+            # Cette valeur est imposée côté serveur même si le LLM réutilise
+            # un nom présent dans un ancien exemple.
+            tdr_content["formateur_nom"] = FORMATEUR_A_DESIGNER
 
             vlog(f"   ✅ TDR JSON généré ({len(str(tdr_content))} chars)")
 

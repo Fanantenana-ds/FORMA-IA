@@ -45,6 +45,18 @@ def test_derniere_formation_memorisee_pour_les_relances(tmp_path):
     assert conv.derniere_formation_code == "IA_FONDAMENTAUX"
 
 
+def test_contexte_conversation_est_isole_par_session():
+    conv = memoire.Conversation(conversation_id="conv-sessions")
+    conv = memoire.ajouter_echange(conv, "utilisateur", "Question session A", session_id="session-a")
+    conv = memoire.ajouter_echange(conv, "assistant", "Réponse session A", session_id="session-a")
+    conv = memoire.ajouter_echange(conv, "utilisateur", "Question session B", session_id="session-b")
+
+    contexte = memoire.contexte_pour_session(conv, "session-a")
+
+    assert [e.texte for e in contexte.echanges] == ["Question session A", "Réponse session A"]
+    assert [e.texte for e in conv.echanges] == ["Question session A", "Réponse session A", "Question session B"]
+
+
 # ---- chat_log_service ----
 
 def test_enregistrer_et_relire(tmp_path):

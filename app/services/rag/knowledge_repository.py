@@ -37,6 +37,34 @@ class KnowledgeRepository:
         finally:
             db.close()
 
+    def lister_chunks_session(
+        self, session_id: str, collection: str = "support", limit: int = 80,
+        module: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Read existing chunks for one tenant session without computing embeddings."""
+        db = SessionLocal()
+        try:
+            stmt = select(
+                KnowledgeBase.contenu,
+                KnowledgeBase.fichier,
+                KnowledgeBase.module,
+                KnowledgeBase.page_debut,
+                KnowledgeBase.page_fin,
+                KnowledgeBase.chunk_index,
+                KnowledgeBase.formation_titre,
+            ).where(
+                KnowledgeBase.session_id == UUID(str(session_id)),
+                KnowledgeBase.collection == collection,
+            )
+            if module:
+                stmt = stmt.where(KnowledgeBase.module == module)
+            stmt = stmt.order_by(
+                KnowledgeBase.fichier, KnowledgeBase.chunk_index
+            ).limit(max(1, min(int(limit), 200)))
+            return [dict(row._mapping) for row in db.execute(stmt).all()]
+        finally:
+            db.close()
+
     def modeles_presents(self, collection: str | None = None) -> list[str]:
         db = SessionLocal()
         try:

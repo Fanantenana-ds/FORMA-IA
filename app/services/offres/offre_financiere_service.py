@@ -253,6 +253,33 @@ class OffreFinanciereGeneratorService:
             )
             vlog("   ✅ Contenu généré par template Python (fallback)")
 
+        # Keep commercial/legal conditions explicit until an authorized human
+        # supplies them; the LLM may draft wording but cannot set contract terms.
+        conditions = content.setdefault("conditions_financieres", {})
+        if isinstance(conditions, dict):
+            conditions["validite_offre"] = str(
+                options.get("validite_offre") or "À confirmer avant transmission au client"
+            )
+            conditions["modalites_paiement"] = str(
+                options.get("modalites_paiement") or "À convenir avec le client"
+            )
+            conditions["penalites_retard"] = options.get("penalites_retard")
+            conditions["monnaie"] = "MGA"
+            conditions["autres"] = options.get("conditions_complementaires") or [
+                "Conditions contractuelles à valider par la direction avant envoi."
+            ]
+        content["details_couts"] = calculs["details_couts"]
+        content["recapitulatif"] = calculs["recapitulatif"]
+        content["echeancier"] = echeancier
+        raw_notes = content.get("notes")
+        content["notes"] = [
+            note for note in raw_notes
+            if isinstance(note, str) and note.strip()
+        ] if isinstance(raw_notes, list) else []
+        content["notes"].append(
+            "Montants issus de la grille tarifaire FORMA-IA ; validation humaine requise avant transmission."
+        )
+
         # ── ÉTAPE 4 : MÉTADONNÉES + HITL ──
         elapsed = round((datetime.now() - start).total_seconds(), 2)
 
@@ -266,6 +293,9 @@ class OffreFinanciereGeneratorService:
                 "agent_id": AGENT_ID,
             },
         }
+        opportunite_id = offre_technique.get("opportunite_id")
+        if opportunite_id:
+            result["opportunite_id"] = str(opportunite_id)
         feedback = str(options.get("feedback") or "").strip()
         if feedback:
             # Le gabarit Python de secours ne sait pas exploiter le feedback
@@ -336,15 +366,14 @@ class OffreFinanciereGeneratorService:
             "recapitulatif": calculs["recapitulatif"],
             "echeancier": echeancier,
             "conditions_financieres": {
-                "validite_offre": "60 jours",
-                "modalites_paiement": "Virement bancaire",
-                "penalites_retard": "1% par mois de retard",
+                "validite_offre": "À confirmer avant transmission au client",
+                "modalites_paiement": "À convenir avec le client",
+                "penalites_retard": None,
                 "monnaie": "MGA",
-                "autres": ["Devis payable à Antananarivo"],
+                "autres": ["Conditions contractuelles à valider par la direction avant envoi."],
             },
             "notes": [
-                "TVA applicable selon la réglementation malgache.",
-                "Les tarifs sont valables pour la durée indiquée.",
+                "Montants issus de la grille tarifaire FORMA-IA ; validation humaine requise avant transmission.",
             ],
             "conclusion": (
                 "Nous restons à votre disposition pour toute clarification."

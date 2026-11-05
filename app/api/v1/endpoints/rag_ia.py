@@ -73,6 +73,10 @@ async def chat(request: ChatRequest, current_user: User = Depends(get_current_te
     """Assistant documentaire — route unique pour les 9 types de message
     (voir chat_orchestrator.py). Aucun HITL (usage interne)."""
     session = _session_scope(db, current_user, str(request.session_id) if request.session_id else None)
+    logger.info(
+        "RAG chat scope: streaming=false session_id=%s module=%s",
+        str(session.id) if session else None, request.module,
+    )
     formation_code = session.formation_code if session else request.formation_code
     allowed_codes = assigned_formation_codes(db, current_user) if is_trainer(current_user) else None
     allowed_sessions = assigned_session_ids(db, current_user) if is_trainer(current_user) else None
@@ -96,6 +100,10 @@ async def chat(request: ChatRequest, current_user: User = Depends(get_current_te
 @router.post("/chat/stream", summary="Chat documentaire avec progression en temps réel")
 async def chat_stream(payload: ChatRequest, request: Request, current_user: User = Depends(get_current_tenant_user), db: Session = Depends(get_db)):
     session = _session_scope(db, current_user, str(payload.session_id) if payload.session_id else None)
+    logger.info(
+        "RAG chat scope: streaming=true session_id=%s module=%s",
+        str(session.id) if session else None, payload.module,
+    )
     formation_code = session.formation_code if session else payload.formation_code
     allowed_codes = assigned_formation_codes(db, current_user) if is_trainer(current_user) else None
     allowed_sessions = assigned_session_ids(db, current_user) if is_trainer(current_user) else None
@@ -142,10 +150,21 @@ async def chat_stream(payload: ChatRequest, request: Request, current_user: User
             texte = resultat.get("reponse", "")
             if await request.is_disconnected():
                 return
-            # Le provider produit actuellement une réponse complète (JSON) en
-            # un seul appel. Ne pas simuler un flux de tokens en découpant le
-            # texte et en ajoutant un délai : transmettre le contenu aussitôt.
-            yield await envoyer({"type": "token", "text": texte})
+            # Le provider expose encore une génération JSON complète ; une fois
+            # calculée, on pousse le texte en fragments SSE pour que l'interface
+            # l'affiche progressivement, sans ajouter d'appel LLM ni de délai.
+            reste = texte
+            while reste:
+                if await request.is_disconnected():
+                    return
+                limite = min(120, len(reste))
+                if limite < len(reste):
+                    coupure = reste.rfind(" ", 0, limite)
+                    if coupure >= 60:
+                        limite = coupure + 1
+                yield await envoyer({"type": "token", "text": reste[:limite]})
+                reste = reste[limite:]
+                await asyncio.sleep(0)
             yield await envoyer({"type": "meta", "data": {k: resultat.get(k) for k in ("conversation_id", "type_reponse", "sources", "formation_resolue", "suggestions", "duree_ms")}})
             yield await envoyer({"type": "done"})
         except asyncio.CancelledError:

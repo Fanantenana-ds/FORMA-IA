@@ -8,6 +8,7 @@
 
 import logging
 import os
+import re
 from typing import Any
 
 from app.services.backend_sync import base_sync
@@ -107,10 +108,10 @@ def opportunity_to_brief(opportunite: dict[str, Any]) -> dict[str, Any]:
     Convertit une opportunité en brief pour M2.
 
     Mapping :
-      - objet (opportunité)    → objectifs (brief)
-      - source (opportunité)   → client (brief)
-      - budget (opportunité)   → budget (brief)
-      - contenu (opportunité)  → contexte supplémentaire
+      - objet (opportunité) → objectifs (brief)
+      - Organisme explicitement conservé dans le contenu → client
+      - budget (opportunité) → budget (brief)
+      - contenu (opportunité) → contexte supplémentaire
 
     Les champs manquants (public, durée, lieu) sont laissés VIDES
     pour que l'utilisateur les complète manuellement.
@@ -132,13 +133,21 @@ def opportunity_to_brief(opportunite: dict[str, Any]) -> dict[str, Any]:
     # Construire les objectifs (objet + éventuellement contenu)
     objet = opportunite.get("objet", "") or opportunite.get("title", "")
     contenu = opportunite.get("contenu", "") or opportunite.get("summary", "")
+    organisme_match = re.search(
+        r"(?:^|\|\s*)Organisme\s*:\s*(.*?)(?=\s*\|\s*(?:Type|Lien)\s*:|$)",
+        str(contenu),
+        re.IGNORECASE,
+    )
+    organisme = organisme_match.group(1).strip(" |;\t\r\n") if organisme_match else ""
 
     objectifs = objet
     if contenu and contenu != objet:
         objectifs = f"{objet}\n\n{contenu[:500]}"
 
     return {
-        "client": opportunite.get("source", ""),
+        # `source` est l'enum TEXTE/PDF/URL, pas le nom du client.
+        # Ne pas le confondre avec l'organisme qui publie l'avis.
+        "client": organisme,
         "objectifs": objectifs,
         "public": "",           # ⚠️ À compléter par l'utilisateur
         "duree": "",            # ⚠️ À compléter par l'utilisateur

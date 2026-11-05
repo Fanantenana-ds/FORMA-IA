@@ -24,6 +24,10 @@ import pytest
 
 from app.orchestrator.tdr_orchestrator import TdrOrchestrator
 from app.services.hitl import hitl_helper
+from app.services.tdr.tdr_document_generator import (
+    FORMATEUR_A_DESIGNER,
+    TDRDocumentGenerator,
+)
 
 
 def run(coro):
@@ -55,7 +59,11 @@ class TestTdrOrchestrator:
         }
 
         async def faux_tdr_service_generate(b):
-            return {"titre": "TDR Formation IA médicale", "sections": ["Contexte", "Objectifs"]}
+            return {
+                "titre": "TDR Formation IA médicale",
+                "sections": ["Contexte", "Objectifs"],
+                "formateur_nom": "Nom halluciné par le fournisseur LLM",
+            }
 
         def faux_document_generator_generate(tdr_content, client):
             return ("tdr_test.docx", "tdr_test.pdf")
@@ -67,6 +75,7 @@ class TestTdrOrchestrator:
 
         assert resultat["success"] is True
         assert resultat["data"]["titre"] == "TDR Formation IA médicale"
+        assert resultat["data"]["formateur_nom"] == FORMATEUR_A_DESIGNER
         assert resultat["files"] == {"docx": "tdr_test.docx", "pdf": "tdr_test.pdf"}
         assert resultat["error"] is None
 
@@ -74,6 +83,16 @@ class TestTdrOrchestrator:
         review = hitl_helper.get_review(resultat["_review_id"])
         assert review["agent_id"] == "agent_m2_tdr"
         assert review["status"] == "pending_review"
+
+
+def test_contexte_document_tdr_ne_confond_pas_signataire_et_formateur():
+    generator = TDRDocumentGenerator.__new__(TDRDocumentGenerator)
+    context = generator._build_context(
+        {"titre": "Formation IA", "formateur_profil": "Profil à confirmer"},
+        "FID",
+    )
+    assert context["formateur_nom"] == FORMATEUR_A_DESIGNER
+    assert context["responsable_altiora"] != context["formateur_nom"]
 
     def test_generate_service_indisponible(self):
         """TDRService non initialisé (ex. clé LLM absente) : RuntimeError explicite.

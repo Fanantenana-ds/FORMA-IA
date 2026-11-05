@@ -229,13 +229,13 @@ exemples:
           {"ordre": 3, "libelle": "Solde à la livraison", "pourcentage": 30, "montant": 842688, "delai": "À la fin de la formation"}
         ],
         "conditions_financieres": {
-          "validite_offre": "60 jours",
-          "modalites_paiement": "Virement bancaire",
-          "penalites_retard": "1% par mois de retard",
+          "validite_offre": "À confirmer avant transmission au client",
+          "modalites_paiement": "À convenir avec le client",
+          "penalites_retard": null,
           "monnaie": "MGA",
-          "autres": ["Devis payable à Antananarivo"]
+          "autres": ["Conditions contractuelles à valider par la direction avant envoi."]
         },
-        "notes": ["TVA applicable selon la réglementation malgache"],
+        "notes": ["Montants calculés selon la grille tarifaire FORMA-IA, à valider avant transmission."],
         "conclusion": "Nous restons à votre disposition pour toute clarification."
       }
 
@@ -256,3 +256,5 @@ regles: |
   11. Si un montant manque, utilise la grille de référence
   12. La langue est FRANÇAIS professionnel
   13. Les pourcentages d'échéancier doivent totaliser exactement 100
+  14. Ne fixe aucune durée de validité, pénalité ou modalité contractuelle si ces conditions ne sont pas explicitement fournies ; indique "À confirmer".
+  15. Les montants sont une proposition calculée à partir de la grille tarifaire, à faire valider par la direction avant envoi au client.

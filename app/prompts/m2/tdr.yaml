@@ -104,8 +104,8 @@ format: |
       "Attestation de formation",
       "Accès aux ressources 30 jours"
     ],
-    "formateur_nom": "M. RANAIVOSOA Sandamampianina",
-    "formateur_profil": "Expert IA & Prompt Engineering, 10+ ans d'expérience",
+    "formateur_nom": "À désigner après sélection des candidatures",
+    "formateur_profil": "Profil recherché : compétences en IA générative et Prompt Engineering, capacité à animer des ateliers pratiques et à accompagner les apprenants. Expérience et justificatifs à confirmer par ALTIORA.",
     "planning_sessions": [
       {"date": "Jour 1", "horaire": "08h30-16h00", "theme": "Thème du jour 1"},
       {"date": "Jour 2", "horaire": "08h30-16h00", "theme": "Thème du jour 2"},
@@ -209,8 +209,8 @@ examples: |
       "Accès aux ressources en ligne pendant 30 jours",
       "Bibliothèque de prompts adaptés aux cas administratifs"
     ],
-    "formateur_nom": "M. RANAIVOSOA Sandamampianina",
-    "formateur_profil": "Expert en intelligence artificielle et Prompt Engineering, formateur certifié Anthropic Academy, 10+ ans d'expérience.",
+    "formateur_nom": "À désigner après sélection des candidatures",
+    "formateur_profil": "Profil recherché : pratique professionnelle de l'intelligence artificielle générative et du Prompt Engineering, capacité à concevoir des exercices appliqués et à accompagner un public technique. Les expériences et certifications demandées sont à confirmer par ALTIORA avant publication de l'appel à candidatures.",
     "planning_sessions": [
       {"date": "Jour 1", "horaire": "08h30-16h00", "theme": "Introduction à l'IA et premiers prompts"},
       {"date": "Jour 2", "horaire": "08h30-16h00", "theme": "Prompt Engineering avancé et automatisation"},
@@ -240,3 +240,9 @@ security: |
   6. La somme de budget_details DOIT égaler budget_total.
   7. Les nombres (montant, budget_total) sont des FLOAT, pas des strings.
   8. Sois professionnel et adapté au contexte malgache.
+  9. Le TDR décrit un POSTE/PROFIL À RECRUTER, jamais un formateur déjà
+     choisi. `formateur_nom` doit rester « À désigner après sélection des
+     candidatures ». N'invente aucun nom, certification ou nombre d'années.
+     `formateur_profil` formule des critères de recrutement à partir du brief;
+     les certifications et seuils d'expérience restent à confirmer par le
+     réviseur humain.

@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { Sidebar } from './components/Sidebar';
-import { Header } from './components/Header';
+import { Header, type HeaderSearchItem } from './components/Header';
 import { AuthPage } from './components/AuthPage';
 import { LandingPage } from './components/landing/LandingPage';
 import { PublicRegistrationPage } from './components/PublicRegistrationPage';
@@ -34,6 +34,7 @@ import {
 import { apiService, tokenStore, ApiError } from './services/api';
 import { veilleCache } from './services/veilleCache';
 import { IS_API_CONFIGURED } from './config/env';
+import { prepareProfileAvatar, profileAvatarDataUrl } from './services/profileAvatar';
 
 const EMPTY_KPIS: KPIStats = {
   sessionsRealisees: 0,
@@ -48,6 +49,7 @@ const errorMessage = (err: unknown): string =>
 export default function App() {
   // Auth : l'utilisateur est toujours relu depuis le backend (GET /auth/me), jamais stocké en local.
   const [authUser, setAuthUser] = useState<AuthUser | null>(null);
+  const [profileAvatar, setProfileAvatar] = useState<{ userId: string; dataUrl: string } | null>(null);
   const [isCheckingSession, setIsCheckingSession] = useState<boolean>(() => tokenStore.get() !== null);
   const [authModalMode, setAuthModalMode] = useState<'login' | 'register'>('login');
 
@@ -59,6 +61,8 @@ export default function App() {
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [isDesktopViewport, setIsDesktopViewport] = useState(() => window.matchMedia('(min-width: 768px)').matches);
   const currentRole: UserRole = authUser?.role ?? 'Dir.';
+
+  const avatarUrl = profileAvatar?.userId === authUser?.id ? profileAvatar.dataUrl : null;
 
   useEffect(() => {
     const desktopQuery = window.matchMedia('(min-width: 768px)');
@@ -134,6 +138,23 @@ export default function App() {
     }, 4000);
   }, []);
 
+  useEffect(() => {
+    if (!authUser) {
+      setProfileAvatar(null);
+      return;
+    }
+    let active = true;
+    setProfileAvatar(null);
+    apiService.getProfilePhoto()
+      .then(async photo => {
+        if (!active || !photo) return;
+        const dataUrl = await profileAvatarDataUrl(photo);
+        if (active) setProfileAvatar({ userId: authUser.id, dataUrl });
+      })
+      .catch(err => { if (active) showToast(`Photo de profil indisponible : ${errorMessage(err)}`); });
+    return () => { active = false; };
+  }, [authUser?.id, showToast]);
+
   const resetData = useCallback(() => {
     setKpis(EMPTY_KPIS);
     setDomainOpportunities([]);
@@ -172,6 +193,24 @@ export default function App() {
     setShowAuthPage(false);
     setCurrentSection('tableau_de_bord');
     showToast(`Bienvenue ${user.nom} (${ROLE_LABELS[user.role]}) !`);
+  };
+
+  const handleUpdateProfile = async (updates: Pick<AuthUser, 'nom' | 'email'>) => {
+    const updatedUser = await apiService.updateOwnProfile(updates);
+    setAuthUser(updatedUser);
+  };
+
+  const handleUploadProfileAvatar = async (file: File): Promise<void> => {
+    if (!authUser) throw new Error('Connectez-vous pour modifier votre photo de profil.');
+    const photo = await prepareProfileAvatar(file);
+    await apiService.uploadProfilePhoto(photo);
+    const dataUrl = await profileAvatarDataUrl(photo);
+    setProfileAvatar({ userId: authUser.id, dataUrl });
+  };
+
+  const handleDeleteProfileAvatar = async () => {
+    await apiService.deleteProfilePhoto();
+    setProfileAvatar(null);
   };
 
   const handleLogout = async () => {
@@ -375,6 +414,49 @@ export default function App() {
     );
   }
 
+  const searchItems: HeaderSearchItem[] = [
+    ...(canAccessSection(currentRole, 'sessions_groupes') ? sessions.map(session => ({
+      id: `session-${session.id}`,
+      title: session.intitule,
+      description: [session.client, session.formateur, session.dates].filter(Boolean).join(' · '),
+      searchText: [session.intitule, session.code, session.formationCode, session.client, session.formateur, session.domaine, session.dates].filter(Boolean).join(' '),
+      section: 'sessions_groupes' as const,
+      sectionLabel: 'Session'
+    })) : []),
+    ...(canAccessSection(currentRole, 'opportunites_crm') ? opportunites.map(opportunity => ({
+      id: `opportunity-${opportunity.id}`,
+      title: opportunity.entreprise,
+      description: [opportunity.besoinFormation, opportunity.etape].filter(Boolean).join(' · '),
+      searchText: [opportunity.entreprise, opportunity.contactName, opportunity.contactEmail, opportunity.domaineIA, opportunity.besoinFormation, opportunity.etape].filter(Boolean).join(' '),
+      section: 'opportunites_crm' as const,
+      sectionLabel: 'Opportunité'
+    })) : []),
+    ...(canAccessSection(currentRole, 'formateurs_staff') ? formateurs.map(trainer => ({
+      id: `trainer-${trainer.id}`,
+      title: [trainer.prenom, trainer.nom].filter(Boolean).join(' '),
+      description: [trainer.specialite, trainer.email].filter(Boolean).join(' · '),
+      searchText: [trainer.prenom, trainer.nom, trainer.specialite, trainer.email, trainer.telephone].filter(Boolean).join(' '),
+      section: 'formateurs_staff' as const,
+      sectionLabel: 'Formateur'
+    })) : []),
+    ...(canAccessSection(currentRole, 'facturation_devis') ? factures.map(invoice => ({
+      id: `invoice-${invoice.id}`,
+      title: `${invoice.type} ${invoice.numero}`,
+      description: [invoice.client, invoice.statut, `${invoice.montantTTC.toLocaleString()} Ar TTC`].filter(Boolean).join(' · '),
+      searchText: [invoice.type, invoice.numero, invoice.client, invoice.statut].filter(Boolean).join(' '),
+      section: 'facturation_devis' as const,
+      sectionLabel: 'Facturation'
+    })) : []),
+    ...(canAccessSection(currentRole, 'veille_marche') ? veilles.map(veille => ({
+      id: `veille-${veille.id}`,
+      title: veille.titre,
+      description: [veille.categorie, veille.impactOrganisme].filter(Boolean).join(' · '),
+      searchText: [veille.titre, veille.categorie, veille.description, veille.demandeClient, ...veille.motsCles].filter(Boolean).join(' '),
+      section: 'veille_marche' as const,
+      sectionLabel: 'Veille marché'
+    })) : [])
+  ];
+
   return (
     <div className="flex min-h-screen bg-[#F4F5F3] font-sans text-slate-800 antialiased selection:bg-[#1B8F6E] selection:text-white">
       {/* Toast Notification */}
@@ -410,6 +492,9 @@ export default function App() {
       <div className="flex-1 flex flex-col min-w-0">
         <Header
           authUser={authUser}
+          avatarUrl={avatarUrl}
+          searchItems={searchItems}
+          onNavigate={setCurrentSection}
           isSidebarOpen={isMobileSidebarOpen}
           onToggleSidebar={() => setIsMobileSidebarOpen((open) => !open)}
           onOpenAuthModal={handleOpenAuthModal}
@@ -442,6 +527,11 @@ export default function App() {
             onOpenNewSession={() => setIsNewSessionModalOpen(true)}
             onOpenNewInvoice={openInvoiceModal}
             canManageFormateurs={currentRole === 'Dir.'}
+            authUser={authUser}
+            avatarUrl={avatarUrl}
+            onUploadAvatar={handleUploadProfileAvatar}
+            onDeleteAvatar={handleDeleteProfileAvatar}
+            onUpdateUser={handleUpdateProfile}
           />
         </main>
       </div>

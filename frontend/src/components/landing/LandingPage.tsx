@@ -5,7 +5,7 @@ import { FeaturesSection } from './FeaturesSection';
 import { ModulesSection } from './ModulesSection';
 import { MetricsSection } from './MetricsSection';
 import { HowItWorksSection } from './HowItWorksSection';
-import { TestimonialsSection } from './TestimonialsSection';
+import { TrustSection } from './TrustSection';
 import { FinalCtaSection } from './FinalCtaSection';
 import { LandingFooter } from './LandingFooter';
 import { DemoRequestModal } from './DemoRequestModal';
@@ -29,7 +29,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLogin }) => {
         <ModulesSection />
         <MetricsSection />
         <HowItWorksSection />
-        <TestimonialsSection />
+        <TrustSection />
         <FinalCtaSection onOpenDemo={openDemo} onLogin={onLogin} />
       </main>
       <LandingFooter />

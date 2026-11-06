@@ -10,9 +10,11 @@ import { FacturationDevisView } from './FacturationDevisView';
 import { EspaceIAView } from './EspaceIAView';
 import { GestionUtilisateursView } from './GestionUtilisateursView';
 import { DossiersFormationView } from './DossiersFormationView';
+import { ProfileView } from './ProfileView';
 import {
   MenuSection,
   UserRole,
+  AuthUser,
   KPIStats,
   DomainOpportunity,
   FacturationStatut,
@@ -47,6 +49,11 @@ interface ViewRouterProps {
   /** Seule la Direction peut créer, modifier ou supprimer des formateurs. */
   canManageFormateurs: boolean;
   onOpenNewInvoice: (sessionId?: string) => void;
+  authUser: AuthUser;
+  avatarUrl: string | null;
+  onUploadAvatar: (file: File) => Promise<void>;
+  onDeleteAvatar: () => Promise<void>;
+  onUpdateUser: (updates: Pick<AuthUser, 'nom' | 'email'>) => Promise<void>;
 }
 
 export const ViewRouter: React.FC<ViewRouterProps> = ({
@@ -69,9 +76,16 @@ export const ViewRouter: React.FC<ViewRouterProps> = ({
   onOpenNewOpportunity,
   onOpenNewSession,
   onOpenNewInvoice,
-  canManageFormateurs
+  canManageFormateurs,
+  authUser,
+  avatarUrl,
+  onUploadAvatar,
+  onDeleteAvatar,
+  onUpdateUser
 }) => {
   switch (currentSection) {
+    case 'mon_profil':
+      return <ProfileView authUser={authUser} avatarUrl={avatarUrl} onUploadAvatar={onUploadAvatar} onDeleteAvatar={onDeleteAvatar} onUpdateUser={onUpdateUser} />;
     case 'gestion_utilisateurs':
       return currentRole === 'Dir.' ? <GestionUtilisateursView /> : null;
     case 'tableau_de_bord':

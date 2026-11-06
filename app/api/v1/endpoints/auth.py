@@ -1,20 +1,25 @@
 ﻿from typing import List, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from fastapi import APIRouter, Depends, File, Header, HTTPException, Query, Response, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.core.dependencies import get_current_user, require_role
 from app.database import get_db
 from app.models.user import RoleEnum
+from app.models.user_profile_photo import UserProfilePhoto
 from app.schemas.auth import TokenResponse, UserLogin
-from app.schemas.user import UserAdminResponse, UserCreate, UserResponse, UserUpdate
+from app.schemas.user import UserAdminResponse, UserCreate, UserProfileUpdate, UserResponse, UserUpdate
 from app.services.auth_service import AuthService
 
 router = APIRouter(
     prefix="/auth",
     tags=["Authentification"],
 )
+
+TAILLE_MAX_PHOTO_PROFIL = 1 * 1024 * 1024
+SIGNATURE_JPEG = b"\xff\xd8\xff"
+FIN_JPEG = b"\xff\xd9"
 
 @router.post(
     "/register",
@@ -72,6 +77,79 @@ def get_me(current_user=Depends(get_current_user)):
         "email": current_user.email,
         "role": current_user.role,
     }
+
+
+@router.patch(
+    "/me",
+    summary="Mettre à jour son propre profil",
+    description="Modifie uniquement le nom ou l’adresse e-mail du compte connecté. Le rôle, le statut et le mot de passe ne sont pas modifiables par cette route.",
+)
+def mettre_a_jour_mon_profil(
+    data: UserProfileUpdate,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    return AuthService(db).mettre_a_jour_profil(current_user, data)
+
+
+@router.get(
+    "/me/photo",
+    summary="Lire sa photo de profil",
+    description="Retourne la photo JPEG du compte connecté. La photo n'est accessible qu'avec une session authentifiée.",
+)
+def lire_photo_profil(db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    photo = db.query(UserProfilePhoto).filter(UserProfilePhoto.user_id == current_user.id).first()
+    if not photo:
+        raise HTTPException(status_code=404, detail="Aucune photo de profil n’est enregistrée.")
+    return Response(
+        content=photo.contenu,
+        media_type="image/jpeg",
+        headers={"Cache-Control": "private, no-store"},
+    )
+
+
+@router.put(
+    "/me/photo",
+    summary="Mettre à jour sa photo de profil",
+    description="Enregistre une photo JPEG compressée (1 Mo maximum) sur le compte connecté.",
+)
+async def mettre_a_jour_photo_profil(
+    fichier: UploadFile = File(..., description="Photo JPEG compressée, 1 Mo maximum"),
+    current_user=Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if fichier.content_type != "image/jpeg":
+        raise HTTPException(status_code=415, detail="Format non pris en charge. Envoyez une image JPEG.")
+
+    contenu = await fichier.read(TAILLE_MAX_PHOTO_PROFIL + 1)
+    if len(contenu) > TAILLE_MAX_PHOTO_PROFIL:
+        raise HTTPException(status_code=413, detail="La photo de profil ne doit pas dépasser 1 Mo.")
+    if len(contenu) < 5 or not contenu.startswith(SIGNATURE_JPEG) or not contenu.endswith(FIN_JPEG):
+        raise HTTPException(status_code=422, detail="Le fichier reçu n’est pas une image JPEG valide.")
+
+    photo = db.query(UserProfilePhoto).filter(UserProfilePhoto.user_id == current_user.id).first()
+    if photo is None:
+        photo = UserProfilePhoto(user_id=current_user.id, contenu=contenu)
+    else:
+        photo.contenu = contenu
+    db.add(photo)
+    db.commit()
+    return {"success": True, "message": "Photo de profil mise à jour."}
+
+
+@router.delete(
+    "/me/photo",
+    summary="Supprimer sa photo de profil",
+)
+def supprimer_photo_profil(
+    current_user=Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    photo = db.query(UserProfilePhoto).filter(UserProfilePhoto.user_id == current_user.id).first()
+    if photo:
+        db.delete(photo)
+        db.commit()
+    return {"success": True, "message": "Photo de profil supprimée."}
 
 
 # =============================================================================

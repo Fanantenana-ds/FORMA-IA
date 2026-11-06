@@ -26,7 +26,7 @@ export const HeroSection: React.FC = () => (
         <div className="lg:col-span-7 text-left space-y-6">
           <div className="inline-flex items-center space-x-2 px-3.5 py-1.5 rounded-full bg-brand-gold/10 border border-brand-gold/30 backdrop-blur-md shadow-inner">
             <span className="w-2.5 h-2.5 rounded-full bg-brand-gold animate-ping" />
-            <span className="text-xs uppercase tracking-widest font-bold text-brand-gold">✨ Propulsé par l'IA &amp; RAG Vectoriel</span>
+            <span className="text-xs uppercase tracking-widest font-bold text-brand-gold">Assistance IA au service du parcours de formation</span>
           </div>
 
           <h1 className="text-4xl sm:text-5xl lg:text-6xl font-black text-white leading-tight tracking-tight">
@@ -34,7 +34,7 @@ export const HeroSection: React.FC = () => (
           </h1>
 
           <p className="text-base sm:text-lg text-slate-300 max-w-2xl font-normal leading-relaxed">
-            FORMA-IA automatise la veille marché, la génération de documents, la préparation de sessions et la capitalisation documentaire — pour que vous vous concentriez sur l'essentiel : <span className="text-white font-semibold">former</span>.
+            FORMA-IA automatise la veille marché, la génération de documents, la préparation de sessions et la capitalisation documentaire pour que vous vous concentriez sur l'essentiel : <span className="text-white font-semibold">former</span>.
           </p>
 
           <div className="flex flex-wrap gap-2.5 pt-2">
@@ -63,19 +63,13 @@ export const HeroSection: React.FC = () => (
               <svg className="w-5 h-5 mr-2 text-brand-gold group-hover:scale-110 transition-transform" fill="currentColor" viewBox="0 0 24 24">
                 <path d="M8 5v14l11-7z" />
               </svg>
-              Voir la démo
+              Voir le parcours métier
             </a>
           </div>
 
-          <div className="pt-6 border-t border-white/10 flex items-center space-x-3 text-xs text-slate-400">
-            <div className="flex -space-x-2">
-              <span className="w-7 h-7 rounded-full bg-brand-gold text-brand-darkNavy font-black flex items-center justify-center text-[10px] ring-2 ring-brand-navy">AP</span>
-              <span className="w-7 h-7 rounded-full bg-slate-700 text-white font-bold flex items-center justify-center text-[10px] ring-2 ring-brand-navy">ENI</span>
-              <span className="w-7 h-7 rounded-full bg-sky-600 text-white font-bold flex items-center justify-center text-[10px] ring-2 ring-brand-navy">IA</span>
-            </div>
-            <p>
-              Déjà utilisé par l'équipe <strong className="text-white font-medium">ALTIORA PREST</strong> et ses partenaires à Madagascar.
-            </p>
+          <div className="pt-6 border-t border-white/10 flex items-center gap-3 text-xs text-slate-300">
+            <span className="h-2 w-2 shrink-0 rounded-full bg-brand-gold" aria-hidden="true" />
+            <p>Conçu pour accompagner le cycle de formation d’<strong className="font-semibold text-white">ALTIORA PREST</strong>.</p>
           </div>
         </div>
 
@@ -103,11 +97,11 @@ export const HeroSection: React.FC = () => (
 
             <div className="absolute bottom-4 left-4 right-4 p-3 rounded-xl bg-brand-darkNavy/85 backdrop-blur-md border border-brand-gold/30 flex items-center justify-between">
               <div>
-                <p className="text-xs font-bold text-white">Directrice Pédagogique &amp; Formation</p>
-                <p className="text-[10px] text-brand-gold font-mono tracking-wider">FORMA-IA Copilote Actif</p>
+                <p className="text-xs font-bold text-white">Parcours de formation</p>
+                <p className="text-[10px] text-slate-300 tracking-wider">Aperçu illustratif de l’interface</p>
               </div>
-              <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-brand-gold/20 text-brand-gold border border-brand-gold/40">
-                En ligne
+              <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-white/10 text-white border border-white/20">
+                Exemple
               </span>
             </div>
           </div>
@@ -118,7 +112,7 @@ export const HeroSection: React.FC = () => (
               <span className="text-lg">🎯</span>
               <div>
                 <p className="text-[10px] font-bold text-brand-gold uppercase tracking-wider">Opportunité détectée</p>
-                <p className="text-xs font-semibold text-white">92% pertinence</p>
+                <p className="text-xs font-semibold text-white">À examiner par l’équipe</p>
               </div>
             </div>
           </div>
@@ -128,7 +122,7 @@ export const HeroSection: React.FC = () => (
               <span className="text-lg">📄</span>
               <div>
                 <p className="text-[10px] font-bold text-sky-400 uppercase tracking-wider">TDR Généré</p>
-                <p className="text-xs font-semibold text-white">Prêt en 45s (HITL)</p>
+                <p className="text-xs font-semibold text-white">À vérifier avant diffusion</p>
               </div>
             </div>
           </div>
@@ -138,7 +132,7 @@ export const HeroSection: React.FC = () => (
               <span className="text-lg">💰</span>
               <div>
                 <p className="text-[10px] font-bold text-brand-gold uppercase tracking-wider">Budget Calculé</p>
-                <p className="text-xs font-bold text-white">2 450 000 Ar (TTC)</p>
+                <p className="text-xs font-bold text-white">Montant du dossier</p>
               </div>
             </div>
           </div>
@@ -148,7 +142,7 @@ export const HeroSection: React.FC = () => (
               <span className="text-lg">🔍</span>
               <div>
                 <p className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider">Recherche RAG</p>
-                <p className="text-xs font-semibold text-white">5 sources trouvées</p>
+                <p className="text-xs font-semibold text-white">Références disponibles</p>
               </div>
             </div>
           </div>
@@ -156,7 +150,7 @@ export const HeroSection: React.FC = () => (
           <div className="absolute top-1/2 -right-6 sm:-right-8 -translate-y-1/2 p-2.5 bg-brand-darkNavy/95 backdrop-blur-md rounded-xl border border-brand-gold/40 shadow-xl animate-float-slow hidden sm:flex items-center space-x-2 z-20" style={{ animationDelay: '2.8s' }}>
             <span className="text-base">✍️</span>
             <span className="text-xs font-medium text-white">
-              <strong className="text-brand-gold">24 attestations</strong> générées
+              <strong className="text-brand-gold">Attestations</strong> à valider
             </span>
           </div>
         </div>

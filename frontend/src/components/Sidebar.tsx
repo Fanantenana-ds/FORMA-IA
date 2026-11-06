@@ -9,7 +9,6 @@ import {
   UserCheck,
   ReceiptText,
   Zap,
-  User,
   LogIn,
   UserPlus,
   LogOut,
@@ -56,8 +55,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
     return (
       <button
         key={id}
+        type="button"
         onClick={() => { onSelectSection(id); onClose(); }}
-        className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 ${
+        aria-current={isActive ? 'page' : undefined}
+        className={`w-full min-h-11 flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2dd4bf] focus-visible:ring-offset-2 focus-visible:ring-offset-[#11162A] ${
           isActive
             ? 'bg-[#1B8F6E] text-white shadow-md shadow-[#1B8F6E]/20 font-semibold'
             : 'text-slate-300 hover:text-white hover:bg-slate-800/60'
@@ -94,8 +95,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {/* Top Header Logo Section */}
       <div className="p-5 border-b border-slate-800/60">
         <div className="flex items-center gap-3">
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-[#1B8F6E] text-lg font-bold tracking-wider text-white shadow-lg shadow-[#1B8F6E]/30">
-            FA
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-white/70 bg-white p-1 shadow-lg shadow-black/10">
+            <img src="/logo_altiora_prest.png" alt="ALTIORA PREST" className="h-full w-full object-contain" />
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5">
@@ -104,8 +105,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
               </h1>
               <span className="inline-block w-2 h-2 rounded-full bg-[#1B8F6E] animate-pulse"></span>
             </div>
-            <p className="text-[11px] text-slate-400 font-medium">
-              Plateforme de gestion IA
+            <p className="text-[11px] font-semibold text-[#2dd4bf]">
+              Plateforme de gestion de Formation avec IA
             </p>
           </div>
           <button type="button" onClick={onClose} aria-label="Fermer le menu" className="rounded-lg p-2 text-slate-300 transition-colors hover:bg-slate-800 hover:text-white md:hidden">
@@ -223,13 +224,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* Déconnexion */}
       {onLogout && (
-        <div className="p-3.5 m-3 rounded-xl bg-slate-900/90 border border-slate-800 text-xs text-slate-300">
+        <div className="mt-auto border-t border-slate-800/80 p-3">
           <button
+            type="button"
             onClick={onLogout}
-            className="w-full text-left text-red-400 hover:text-red-300 font-bold flex items-center justify-between text-[11px] transition-colors cursor-pointer"
+            className="flex min-h-10 w-full cursor-pointer items-center justify-between rounded-xl px-3 py-2.5 text-left text-xs font-bold text-red-300 transition-colors hover:bg-red-400/10 hover:text-red-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300"
           >
             <span>Se déconnecter</span>
-            <LogOut size={13} />
+            <LogOut size={15} />
           </button>
         </div>
       )}

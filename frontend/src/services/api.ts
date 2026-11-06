@@ -166,6 +166,20 @@ class ApiService {
     return this.request('/auth/register', this.json('POST', { ...user, role: roleToApi[user.role] }), { auth: false });
   }
   async fetchCurrentUser(): Promise<AuthUser> { const u = await this.request<any>('/auth/me'); return { id: String(u.id), nom: u.nom, email: u.email, role: fromRole(u.role) }; }
+  async updateOwnProfile(payload: Pick<AuthUser, 'nom' | 'email'>): Promise<AuthUser> {
+    const u = await this.request<any>('/auth/me', this.json('PATCH', payload));
+    return { id: String(u.id), nom: u.nom, email: u.email, role: fromRole(u.role) };
+  }
+  async getProfilePhoto(): Promise<Blob | null> {
+    try { return await this.request<Blob>('/auth/me/photo'); }
+    catch (error) { if (error instanceof ApiError && error.status === 404) return null; throw error; }
+  }
+  async uploadProfilePhoto(photo: Blob) {
+    const form = new FormData();
+    form.append('fichier', photo, 'photo-profil.jpg');
+    return this.request<{ success: boolean }>('/auth/me/photo', { method: 'PUT', body: form });
+  }
+  async deleteProfilePhoto() { return this.request<{ success: boolean }>('/auth/me/photo', { method: 'DELETE' }); }
   async getManagedUsers() { return this.request<any[]>('/auth/users'); }
   async createManagedUser(data: { nom: string; email: string; password: string; role: 'ASSISTANT' | 'COMPTABLE' }) {
     return this.request<any>('/auth/users', this.json('POST', data));

@@ -46,7 +46,7 @@ interface ViewRouterProps {
   onOpenNewSession: () => void;
   /** Seule la Direction peut créer, modifier ou supprimer des formateurs. */
   canManageFormateurs: boolean;
-  onOpenNewInvoice: () => void;
+  onOpenNewInvoice: (sessionId?: string) => void;
 }
 
 export const ViewRouter: React.FC<ViewRouterProps> = ({
@@ -139,6 +139,8 @@ export const ViewRouter: React.FC<ViewRouterProps> = ({
           onRefreshData={onRefreshData}
           canDeleteSessions={currentRole === 'Dir.'}
           readOnly={currentRole === 'Form.'}
+          onNavigateToSection={onNavigateTo}
+          onOpenNewInvoice={onOpenNewInvoice}
         />
       );
 

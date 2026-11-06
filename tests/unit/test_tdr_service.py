@@ -166,7 +166,19 @@ class TestGenerate:
         assert "generation_time_seconds" in result
         assert result["ai_provider"] == "groq"
 
+        kwargs = service.llm.generate_with_retry.await_args.kwargs
+        assert kwargs["reasoning_effort"] == "low"
+        assert kwargs["max_retries"] == 2
+        assert kwargs["max_tokens"] <= 8000
+
     def test_exception_llm_retourne_none(self, service):
         service.llm.generate_with_retry = AsyncMock(side_effect=RuntimeError("Groq down"))
         result = run(service.generate({"client": "Test"}))
         assert result is None
+
+    def test_erreur_llm_remontee_au_orchestrateur(self, service):
+        from app.services.llm.llm_provider import LLMError
+
+        service.llm.generate_with_retry = AsyncMock(side_effect=LLMError("Timeout Groq"))
+        with pytest.raises(LLMError, match="Timeout Groq"):
+            run(service.generate({"client": "Test"}))

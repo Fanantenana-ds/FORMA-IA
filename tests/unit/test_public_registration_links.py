@@ -265,6 +265,39 @@ def test_assessment_generates_ten_questions_from_existing_session_chunks(monkeyp
     assert all(question.get("preuve_support") == citation for question in generated)
 
 
+def test_assessment_retries_once_when_groq_rejects_only_json_syntax():
+    calls = []
+
+    class FauxLLM:
+        async def generate(self, **kwargs):
+            calls.append(kwargs)
+            if len(calls) == 1:
+                raise routes.LLMError("Erreur API Groq: code json_validate_failed")
+            return {"content": '{"questions": []}'}
+
+    response = asyncio.run(routes._generate_assessment_json(
+        FauxLLM(), user_prompt="Crée les questions", json_mode=True,
+    ))
+
+    assert response["content"] == '{"questions": []}'
+    assert len(calls) == 2
+    assert "séquence \\\' est interdite" in calls[1]["user_prompt"]
+
+
+def test_assessment_does_not_retry_unrelated_llm_errors():
+    calls = []
+
+    class FauxLLM:
+        async def generate(self, **_kwargs):
+            calls.append(True)
+            raise routes.LLMError("Erreur connexion Groq")
+
+    with pytest.raises(routes.LLMError, match="Erreur connexion Groq"):
+        asyncio.run(routes._generate_assessment_json(FauxLLM(), user_prompt="test"))
+
+    assert len(calls) == 1
+
+
 def test_assessment_normalizes_option_labels_without_weakening_source_proof():
     question = routes._normaliser_question_llm({
         "question": "Quel élément décrit la forme attendue ?",

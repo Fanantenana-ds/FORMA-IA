@@ -139,10 +139,9 @@ def test_generer_tdr_echec_orchestrateur(client, monkeypatch):
         _async(lambda brief: {"success": False, "error": "TDRService indisponible"}),
     )
     resp = client.post("/ia/tdr/generer", json=BRIEF)
-    assert resp.status_code == 200
+    assert resp.status_code == 502
     body = resp.json()
-    assert body["success"] is False
-    assert body["error"] == "TDRService indisponible"
+    assert body["detail"] == "TDRService indisponible"
 
 
 def test_generer_tdr_exception_renvoie_500(client, monkeypatch):

@@ -120,9 +120,9 @@ async def generer_tdr(request: TDRRequest):
         result = await orchestrator.generate(brief)
 
         if not result.get("success"):
-            return TDRResponse(
-                success=False, data=None, files=None,
-                error=result.get("error", "Erreur inconnue"),
+            raise HTTPException(
+                status_code=502,
+                detail=result.get("error") or "Le fournisseur IA n’a pas pu générer le TDR.",
             )
 
         raw_files = result.get("files") or {}

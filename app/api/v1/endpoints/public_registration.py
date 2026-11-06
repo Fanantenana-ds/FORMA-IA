@@ -22,7 +22,7 @@ from app.models.public_registration import PublicAssessmentAttempt, PublicRegist
 from app.models.document import Document, StatutValidation, TypeDocument
 from app.models.rh import Candidat, DecisionPreselection, Formateur, RecommandationEvaluation
 from app.models.user import User
-from app.services.llm import LLMRateLimitError, get_llm_provider
+from app.services.llm import LLMError, LLMRateLimitError, get_llm_provider
 
 router = APIRouter(prefix="/public", tags=["Inscriptions publiques"])
 logger = logging.getLogger(__name__)
@@ -52,6 +52,24 @@ async def _generate_llm_with_tpm_retry(provider, **kwargs):
         logger.info("Limite TPM temporaire ; reprise unique après %.3f s.", delay_seconds)
         await asyncio.sleep(delay_seconds + 0.1)
         return await provider.generate(**kwargs)
+
+
+async def _generate_assessment_json(provider, **kwargs):
+    """Retry once when Groq rejects only the JSON serialization syntax."""
+    try:
+        return await _generate_llm_with_tpm_retry(provider, **kwargs)
+    except LLMError as exc:
+        if "json_validate_failed" not in str(exc).lower():
+            raise
+        retry_kwargs = dict(kwargs)
+        retry_kwargs["user_prompt"] += (
+            "\n\nCORRECTION DE SYNTAXE JSON : la réponse précédente a été rejetée car elle n'était pas un JSON strict. "
+            "Retourne un objet JSON valide conforme au schéma. N'écris jamais de barre oblique inverse devant une apostrophe : "
+            "la séquence \\' est interdite en JSON. Utilise une apostrophe typographique ou reformule la phrase. "
+            "Échappe uniquement les guillemets doubles et les caractères de contrôle selon la norme JSON."
+        )
+        logger.warning("Groq a rejeté la syntaxe JSON du questionnaire; une reprise de format est tentée.")
+        return await _generate_llm_with_tpm_retry(provider, **retry_kwargs)
 
 
 class CreateLinkRequest(BaseModel):
@@ -322,7 +340,7 @@ async def _generate_assessment(session: TrainingSession, stage: str = "initial")
     )
     try:
         llm_provider = get_llm_provider()
-        response = await _generate_llm_with_tpm_retry(
+        response = await _generate_assessment_json(
             llm_provider,
             system_prompt=("Tu conçois une évaluation en français STRICTEMENT à partir des extraits fournis. N’ajoute aucune connaissance générale, aucun sujet tiré du nom du client ou du titre administratif, et refuse implicitement toute notion absente des extraits. "
                            "Écris pour les participants avec une formulation naturelle, claire et précise. Le test final mesure les acquis; le test initial mesure le niveau de départ, sans juger la personne."),
@@ -389,7 +407,7 @@ async def _generate_assessment(session: TrainingSession, stage: str = "initial")
             )
             if nombre_a_reparer and contexte_reparation:
                 stems_existants = [question["enonce"] for question in valid]
-                reponse_reparation = await _generate_llm_with_tpm_retry(
+                reponse_reparation = await _generate_assessment_json(
                     llm_provider,
                     system_prompt=(
                         "Tu rédiges des questions de formation naturellement adressées aux participants, à partir des seuls extraits fournis. "

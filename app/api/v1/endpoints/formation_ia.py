@@ -144,6 +144,15 @@ class ApproveReviewRequest(BaseModel):
     reviewer_note: str | None = Field(None, max_length=1000)
 
 
+class AttestationEditRequest(BaseModel):
+    content: dict[str, Any]
+    expected_updated_at: str = Field(..., min_length=1, max_length=80)
+
+
+class AttestationDeleteRequest(BaseModel):
+    expected_updated_at: str = Field(..., min_length=1, max_length=80)
+
+
 class RejectReviewRequest(BaseModel):
     reason: str = Field(..., min_length=3, max_length=1000)
 
@@ -466,6 +475,19 @@ async def verifier_eligibilite_attestations(
     }
 
 
+def _review_has_generated_attestation_pdf(review: dict[str, Any]) -> bool:
+    """Un review vide ou dont les PDF ont disparu ne doit pas bloquer un nouvel essai."""
+    output_dir = AttestationGeneratorService.OUTPUT_DIR.resolve()
+    for item in (review.get("data") or {}).get("attestations", []):
+        try:
+            path = Path(str(item.get("pdf_path") or "")).resolve()
+            if path.suffix.lower() == ".pdf" and output_dir in path.parents and path.is_file():
+                return True
+        except (OSError, RuntimeError):
+            continue
+    return False
+
+
 @router.post("/sessions/{session_id}/attestations/generer", summary="[M6] Générer les attestations PDF des participants éligibles")
 async def generer_attestations_session(
     session_id: str,
@@ -487,11 +509,13 @@ async def generer_attestations_session(
         return {"success": True, "message": "Aucun participant n'atteint le seuil de 75 %.", "data": {"total_eligible": 0, "attestations": []}}
     for pending in list_pending(agent_id="agent_5_attestations"):
         existing = _get(pending.get("review_id", "")) or {}
-        if str((existing.get("meta") or {}).get("session_id")) == str(session_id):
+        if (str((existing.get("meta") or {}).get("session_id")) == str(session_id)
+                and _review_has_generated_attestation_pdf(existing)):
             raise HTTPException(status_code=409, detail="Un lot d'attestations attend déjà sa validation pour cette session.")
     for existing_item in list_reviews(status="approved", agent_id="agent_5_attestations"):
         existing = _get(existing_item.get("review_id", "")) or {}
-        if str((existing.get("meta") or {}).get("session_id")) == str(session_id):
+        if (str((existing.get("meta") or {}).get("session_id")) == str(session_id)
+                and _review_has_generated_attestation_pdf(existing)):
             raise HTTPException(status_code=409, detail="Des attestations ont déjà été approuvées pour cette session.")
 
     result = await orchestrator.generate_attestations(session_info, eligible)
@@ -525,6 +549,76 @@ async def preview_attestation(review_id: str, numero: str, _current_user=Depends
 async def telecharger_attestation(review_id: str, numero: str, _current_user=Depends(require_role("DIRECTION", "ADMIN", "ASSISTANT"))):
     _, item = _attestation_review(review_id, numero, approved_only=True)
     return FileResponse(item["pdf_path"], media_type="application/pdf", filename=f"{numero}.pdf")
+
+
+@router.put("/reviews/{review_id}/attestations/{numero}", summary="[M6] Modifier une attestation en attente et régénérer son PDF")
+async def modifier_attestation(
+    review_id: str,
+    numero: str,
+    payload: AttestationEditRequest,
+    _current_user=Depends(require_role("DIRECTION", "ADMIN", "ASSISTANT")),
+):
+    review, item = _attestation_review(review_id, numero)
+    if review.get("status") != "pending_review" or item.get("approval_status") == "approved":
+        raise HTTPException(status_code=409, detail="Une attestation approuvée ne peut plus être modifiée.")
+    if review.get("updated_at") != payload.expected_updated_at:
+        raise HTTPException(status_code=409, detail="Le lot a changé. Rechargez-le avant de modifier l’attestation.")
+    original = item.get("content") or {}
+    edited = payload.content
+    if set(edited) != set(original) or not isinstance(edited.get("details"), dict):
+        raise HTTPException(status_code=422, detail="Conservez la structure complète de l’attestation.")
+    if set(edited["details"]) != set(original.get("details") or {}):
+        raise HTTPException(status_code=422, detail="Conservez tous les champs descriptifs de l’attestation.")
+    if not isinstance(edited.get("competences"), list) or not 3 <= len(edited["competences"]) <= 12:
+        raise HTTPException(status_code=422, detail="L’attestation doit contenir de 3 à 12 compétences vérifiables.")
+    text_values = [value for key, value in edited.items() if key not in {"details", "competences"}]
+    text_values.extend(edited["details"].values())
+    text_values.extend(edited["competences"])
+    if any(not isinstance(value, str) or len(value) > 1200 for value in text_values):
+        raise HTTPException(status_code=422, detail="Chaque champ de l’attestation doit être un texte de 1 200 caractères maximum.")
+
+    output_dir = AttestationGeneratorService.OUTPUT_DIR.resolve()
+    new_path = output_dir / f"attestation_revision_{uuid.uuid4().hex}.pdf"
+    generator = AttestationGeneratorService.__new__(AttestationGeneratorService)
+    revised_item = {**item, "content": edited, "pdf_path": str(new_path), "pdf_generated": True}
+    generated_path = generator._build_attestation_pdf(revised_item, item.get("participant") or {}, output_path=new_path)
+    if not generated_path or not Path(generated_path).is_file():
+        raise HTTPException(status_code=500, detail="Le nouveau PDF n’a pas pu être généré ; l’attestation reste inchangée.")
+    data = dict(review.get("data") or {})
+    data["attestations"] = [revised_item if row.get("numero_unique") == numero else row for row in data.get("attestations", [])]
+    try:
+        updated = replace_pending_review_data(review_id, data, ("agent_5_attestations",), payload.expected_updated_at)
+    except (KeyError, PermissionError, ValueError, RuntimeError) as exc:
+        Path(generated_path).unlink(missing_ok=True)
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {"success": True, "review": updated}
+
+
+@router.delete("/reviews/{review_id}/attestations/{numero}", summary="[M6] Supprimer une attestation individuelle avant validation")
+async def supprimer_attestation(
+    review_id: str,
+    numero: str,
+    payload: AttestationDeleteRequest,
+    _current_user=Depends(require_role("DIRECTION", "ADMIN", "ASSISTANT")),
+):
+    review, item = _attestation_review(review_id, numero)
+    if review.get("status") != "pending_review" or item.get("approval_status") == "approved":
+        raise HTTPException(status_code=409, detail="Une attestation approuvée ne peut plus être supprimée.")
+    if review.get("updated_at") != payload.expected_updated_at:
+        raise HTTPException(status_code=409, detail="Le lot a changé. Rechargez-le avant de supprimer l’attestation.")
+    data = dict(review.get("data") or {})
+    items = list(data.get("attestations") or [])
+    if len(items) <= 1:
+        raise HTTPException(status_code=409, detail="La dernière attestation ne peut pas être retirée seule. Supprimez le lot en attente depuis l’Espace IA.")
+    data["attestations"] = [row for row in items if row.get("numero_unique") != numero]
+    try:
+        updated = replace_pending_review_data(review_id, data, ("agent_5_attestations",), payload.expected_updated_at)
+    except (KeyError, PermissionError, ValueError, RuntimeError) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    old_path = Path(str(item.get("pdf_path") or "")).resolve()
+    if AttestationGeneratorService.OUTPUT_DIR.resolve() in old_path.parents and old_path.suffix.lower() == ".pdf":
+        old_path.unlink(missing_ok=True)
+    return {"success": True, "review": updated}
 
 
 @router.post("/reviews/{review_id}/attestations/{numero}/approve", summary="[M6] Approuver une attestation dans le lot")
@@ -1169,8 +1263,10 @@ async def analyser_niveaux_db(
             db.close()
 
         participants_avec_scores = []
+        participants_incomplets = 0
         for insc, part in rows:
-            if insc.score_positionnement is None and insc.score_test_final is None:
+            if insc.score_positionnement is None or insc.score_test_final is None:
+                participants_incomplets += 1
                 continue
             participants_avec_scores.append({
                 "id": str(insc.participant_id),
@@ -1186,12 +1282,13 @@ async def analyser_niveaux_db(
         if not participants_avec_scores:
             return RouteResponse(
                 success=False,
-                message="Aucune inscription avec scores trouvée pour cette session. "
-                        "Les participants doivent d'abord répondre via le lien d'inscription.",
+                message="Aucun participant ne dispose à la fois du score initial et du score final. "
+                        "Vérifiez les réponses aux deux évaluations avant de relancer l'analyse.",
                 duration_seconds=round(time.perf_counter() - start, 2),
             )
 
         session_info = {
+            "id": session_id,
             "session_id": session_id,
             "titre": session_obj.titre,
             "formation_code": session_obj.formation_code if hasattr(session_obj, "formation_code") else "",
@@ -1200,9 +1297,14 @@ async def analyser_niveaux_db(
         result = await orchestrator.analyze_levels(
             session_info, participants_avec_scores, {}
         )
+        if isinstance(result.get("metadata"), dict):
+            result["metadata"]["participants_incomplets"] = participants_incomplets
         elapsed = round(time.perf_counter() - start, 2)
         vlog(f"✅ [Route IA] analyser-niveaux-db OK en {elapsed}s — {len(participants_avec_scores)} participant(s)")
-        return _build_response(result, f"Analyse niveaux réussie ({len(participants_avec_scores)} participants).", elapsed)
+        message = f"Analyse niveaux réussie ({len(participants_avec_scores)} participant(s) avec deux scores)."
+        if participants_incomplets:
+            message += f" {participants_incomplets} participant(s) écarté(s), score initial ou final manquant."
+        return _build_response(result, message, elapsed)
     except HTTPException:
         raise
     except Exception as e:

@@ -138,6 +138,41 @@ def test_agent2_distribution_avant_et_apres(niveaux):
     assert apres["avances"]["pourcentage"] == "75%"
 
 
+def test_agent2_utilise_les_scores_persistes_du_parcours_session(niveaux):
+    participants = [
+        {"nom": "NAMBININA", "score_avant": 50, "score_apres": 40},
+        {"nom": "RAKETA", "score_avant": 20, "score_apres": 50},
+        {"nom": "BIA", "score_avant": 60, "score_apres": 30},
+        {"nom": "TAHINA", "score_avant": 70, "score_apres": 70},
+    ]
+
+    stats = niveaux._compute_statistics(participants, {})
+
+    assert stats["statistiques"] == {
+        "score_moyen_avant": 50.0,
+        "score_moyen_apres": 47.5,
+        "progression_absolue": -2.5,
+        "progression_relative": "-5.0%",
+        "nb_participants": 4,
+    }
+    assert stats["cas_remarquables"]["meilleure_progression"] == {
+        "nom": "RAKETA", "avant": 20.0, "apres": 50.0, "gain": 30.0
+    }
+
+
+def test_agent2_ne_transforme_pas_un_score_manquant_en_zero_sans_corrige(niveaux):
+    participants = [
+        {"nom": "Complet", "score_avant": 40, "score_apres": 60},
+        {"nom": "Incomplet", "score_avant": 25, "score_apres": None},
+    ]
+
+    stats = niveaux._compute_statistics(participants, {})
+
+    assert stats["statistiques"]["nb_participants"] == 1
+    assert stats["statistiques"]["score_moyen_avant"] == 40.0
+    assert stats["statistiques"]["score_moyen_apres"] == 60.0
+
+
 @pytest.mark.parametrize("score, attendu", [
     (39.9, "debutants"), (40.0, "intermediaires"),
     (69.9, "intermediaires"), (70.0, "avances"),

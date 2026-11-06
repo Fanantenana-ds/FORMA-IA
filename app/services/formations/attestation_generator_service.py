@@ -540,11 +540,15 @@ class AttestationGeneratorService:
         self,
         attestation_result: dict[str, Any],
         participant: dict[str, Any],
+        output_path: Path | None = None,
     ) -> str | None:
         try:
             self.OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
             numero = attestation_result["numero_unique"]
-            pdf_path = self.OUTPUT_DIR / f"attestation_{numero}.pdf"
+            pdf_path = output_path or self.OUTPUT_DIR / f"attestation_{numero}.pdf"
+            pdf_path = Path(pdf_path).resolve()
+            if self.OUTPUT_DIR.resolve() not in pdf_path.parents:
+                raise ValueError("Le PDF doit être enregistré dans le dossier des attestations.")
             # ReportLab est utilisé pour garantir la page paysage unique même
             # lorsque le contenu pédagogique généré est long.
             return self._build_pdf_with_reportlab(attestation_result, pdf_path)

@@ -54,8 +54,32 @@ export const Header: React.FC<HeaderProps> = ({
   const [candidatures, setCandidatures] = useState<any[]>([]);
   const [nonTraites, setNonTraites] = useState(0);
   const [candidaturesError, setCandidaturesError] = useState(false);
+  const [seenCandidatureIds, setSeenCandidatureIds] = useState<Set<string>>(() => new Set());
   const bellRef = useRef<HTMLDivElement>(null);
   const canSeeCandidatures = authUser?.role === 'Dir.' || authUser?.role === 'Assis.';
+  const seenStorageKey = `formaia-seen-candidatures:${authUser?.id ?? 'anonymous'}`;
+
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(seenStorageKey) ?? '[]');
+      setSeenCandidatureIds(new Set(Array.isArray(saved) ? saved.map(String) : []));
+    } catch {
+      setSeenCandidatureIds(new Set());
+    }
+  }, [seenStorageKey]);
+
+  const markCandidaturesSeen = useCallback((rows: any[]) => {
+    if (!rows.length) return;
+    setSeenCandidatureIds(previous => {
+      const next = new Set(previous);
+      rows.forEach(row => { if (row.id != null) next.add(String(row.id)); });
+      const bounded = [...next].slice(-200);
+      try { localStorage.setItem(seenStorageKey, JSON.stringify(bounded)); } catch { /* Le badge reste fonctionnel pendant cette session. */ }
+      return new Set(bounded);
+    });
+  }, [seenStorageKey]);
+
+  const unreadCount = candidatures.filter(row => !seenCandidatureIds.has(String(row.id))).length;
 
   const fetchCandidatures = useCallback(async () => {
     if (!canSeeCandidatures) {
@@ -80,6 +104,10 @@ export const Header: React.FC<HeaderProps> = ({
     const interval = setInterval(() => void fetchCandidatures(), 60_000);
     return () => clearInterval(interval);
   }, [fetchCandidatures]);
+
+  useEffect(() => {
+    if (showBell) markCandidaturesSeen(candidatures);
+  }, [showBell, candidatures, markCandidaturesSeen]);
 
   // Fermer le dropdown Bell si clic extérieur
   useEffect(() => {
@@ -148,18 +176,22 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Notifications CV */}
         {canSeeCandidatures && <div className="relative" ref={bellRef}>
           <button
-            onClick={() => setShowBell(prev => !prev)}
+            type="button"
+            onClick={() => {
+              const opening = !showBell;
+              setShowBell(opening);
+              if (opening) markCandidaturesSeen(candidatures);
+            }}
             className="relative p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors"
-            title="Candidatures récentes"
+            title={unreadCount > 0 ? `${unreadCount} nouvelle(s) candidature(s)` : 'Candidatures récentes'}
+            aria-label={unreadCount > 0 ? `Notifications, ${unreadCount} nouvelle(s) candidature(s)` : 'Notifications, candidatures récentes'}
+            aria-expanded={showBell}
           >
             <Bell size={18} />
-            {nonTraites > 0 && (
+            {unreadCount > 0 && (
               <span className="absolute top-1 right-1 min-w-[16px] h-4 px-0.5 bg-red-500 text-white text-[9px] font-extrabold rounded-full flex items-center justify-center leading-none">
-                {nonTraites > 9 ? '9+' : nonTraites}
+                {unreadCount > 9 ? '9+' : unreadCount}
               </span>
-            )}
-            {nonTraites === 0 && candidatures.length > 0 && (
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-[#1B8F6E] rounded-full" />
             )}
           </button>
 

@@ -16,7 +16,7 @@ import {
   UserCheck,
   Pencil
 } from 'lucide-react';
-import { Session, PresenceRecord } from '../../types';
+import { Session, PresenceRecord, MenuSection } from '../../types';
 import { apiService } from '../../services/api';
 import { SessionsM5Panel } from './SessionsM5Panel';
 import { listenForVoiceAction, type VoiceActionContext } from '../../services/voiceActionContext';
@@ -28,6 +28,8 @@ interface SessionsGroupesViewProps {
   onRefreshData?: () => Promise<void> | void;
   canDeleteSessions?: boolean;
   readOnly?: boolean;
+  onNavigateToSection?: (section: MenuSection) => void;
+  onOpenNewInvoice?: (sessionId?: string) => void;
 }
 
 const mapSessionParticipant = (p: any, sessionId: string, sessionTitle: string): PresenceRecord => ({
@@ -48,7 +50,9 @@ export const SessionsGroupesView: React.FC<SessionsGroupesViewProps> = ({
   onOpenNewSession,
   onRefreshData,
   canDeleteSessions = false,
-  readOnly = false
+  readOnly = false,
+  onNavigateToSection,
+  onOpenNewInvoice
 }) => {
   // Navigation State: null = list of sessions, session ID = detail view
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
@@ -656,7 +660,7 @@ export const SessionsGroupesView: React.FC<SessionsGroupesViewProps> = ({
               </div>
             </div>
           </div>
-          <SessionsM5Panel sessionId={activeSession.id} sessionTitle={activeSession.intitule} domain={activeSession.domaine} formationCode={activeSession.formationCode} formateurId={activeSession.formateurId} tauxPresence={activeSession.tauxPresence} participants={sessionParticipants.map(p => ({ id:p.id, nom:p.apprenantNom, prenom:(p as any).prenom }))} trainerMode={readOnly} voiceAction={voiceAction} />
+          <SessionsM5Panel sessionId={activeSession.id} sessionTitle={activeSession.intitule} domain={activeSession.domaine} formationCode={activeSession.formationCode} formateurId={activeSession.formateurId} tauxPresence={activeSession.tauxPresence} sessionStatus={activeSession.statut} sessionDateStart={activeSession.dateDebut} sessionDateEnd={activeSession.dateFin} sessionLocation={activeSession.lieu} sessionTrainer={activeSession.formateur} participants={sessionParticipants.map(p => ({ id:p.id, nom:p.apprenantNom, prenom:(p as any).prenom }))} trainerMode={readOnly} voiceAction={voiceAction} onNavigateToSection={onNavigateToSection} onOpenNewInvoice={onOpenNewInvoice} />
         </div>
       )}
 

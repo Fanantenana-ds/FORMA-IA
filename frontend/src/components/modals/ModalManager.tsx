@@ -19,6 +19,7 @@ interface ModalManagerProps {
   onCloseNewInvoiceModal: () => void;
   onCreateInvoice: (invoice: Partial<DevisFacture>) => Promise<void>;
   sessions: Session[];
+  invoiceSessionId?: string;
 }
 
 export const ModalManager: React.FC<ModalManagerProps> = ({
@@ -33,7 +34,8 @@ export const ModalManager: React.FC<ModalManagerProps> = ({
   isNewInvoiceModalOpen,
   onCloseNewInvoiceModal,
   onCreateInvoice,
-  sessions
+  sessions,
+  invoiceSessionId
 }) => {
   return (
     <>
@@ -56,6 +58,7 @@ export const ModalManager: React.FC<ModalManagerProps> = ({
         onClose={onCloseNewInvoiceModal}
         onSubmit={onCreateInvoice}
         sessions={sessions}
+        initialSessionId={invoiceSessionId}
       />
     </>
   );

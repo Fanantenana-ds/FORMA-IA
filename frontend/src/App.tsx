@@ -117,6 +117,11 @@ export default function App() {
   const [isNewOppModalOpen, setIsNewOppModalOpen] = useState<boolean>(false);
   const [isNewSessionModalOpen, setIsNewSessionModalOpen] = useState<boolean>(false);
   const [isNewInvoiceModalOpen, setIsNewInvoiceModalOpen] = useState<boolean>(false);
+  const [invoiceSessionId, setInvoiceSessionId] = useState('');
+  const openInvoiceModal = (sessionId?: string) => {
+    setInvoiceSessionId(sessionId ?? '');
+    setIsNewInvoiceModalOpen(true);
+  };
 
   // Toast feedback
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -411,7 +416,7 @@ export default function App() {
           onLogout={handleLogout}
           onQuickNewOpportunity={() => setIsNewOppModalOpen(true)}
           onQuickNewSession={() => setIsNewSessionModalOpen(true)}
-          onQuickNewInvoice={() => setIsNewInvoiceModalOpen(true)}
+          onQuickNewInvoice={() => openInvoiceModal()}
           onNavigateToFormateurs={() => setCurrentSection('formateurs_staff')}
         />
 
@@ -435,7 +440,7 @@ export default function App() {
             onNavigateTo={setCurrentSection}
             onOpenNewOpportunity={() => setIsNewOppModalOpen(true)}
             onOpenNewSession={() => setIsNewSessionModalOpen(true)}
-            onOpenNewInvoice={() => setIsNewInvoiceModalOpen(true)}
+            onOpenNewInvoice={openInvoiceModal}
             canManageFormateurs={currentRole === 'Dir.'}
           />
         </main>
@@ -452,9 +457,10 @@ export default function App() {
         acceptedMarkets={veilles}
         formateurs={formateurs}
         isNewInvoiceModalOpen={isNewInvoiceModalOpen}
-        onCloseNewInvoiceModal={() => setIsNewInvoiceModalOpen(false)}
+        onCloseNewInvoiceModal={() => { setIsNewInvoiceModalOpen(false); setInvoiceSessionId(''); }}
         onCreateInvoice={handleCreateInvoice}
         sessions={sessions}
+        invoiceSessionId={invoiceSessionId}
       />
       <VocalAssistant
         currentRole={currentRole}
@@ -463,7 +469,7 @@ export default function App() {
         onNavigate={setCurrentSection}
         onCreateSession={() => setIsNewSessionModalOpen(true)}
         onCreateOpportunity={() => setIsNewOppModalOpen(true)}
-        onCreateInvoice={() => setIsNewInvoiceModalOpen(true)}
+        onCreateInvoice={() => openInvoiceModal()}
       />
     </div>
   );

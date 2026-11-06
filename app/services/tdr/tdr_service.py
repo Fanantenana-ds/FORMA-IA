@@ -15,12 +15,14 @@ from typing import Any
 
 import yaml
 
-from app.services.llm import LLMNotAvailableError, get_llm_provider
+from app.services.llm import LLMError, LLMNotAvailableError, get_llm_provider
 
 logger = logging.getLogger(__name__)
 
-GROQ_TIMEOUT = float(os.getenv("GROQ_TIMEOUT", "90"))
-TDR_MAX_OUTPUT_TOKENS = int(os.getenv("TDR_MAX_OUTPUT_TOKENS", "4000"))
+TDR_GROQ_TIMEOUT = float(os.getenv("TDR_GROQ_TIMEOUT", "45"))
+# Un plafond d'environnement trop élevé laisse le modèle de raisonnement
+# consommer beaucoup de temps avant de produire le JSON utile.
+TDR_MAX_OUTPUT_TOKENS = min(max(int(os.getenv("TDR_MAX_OUTPUT_TOKENS", "6000")), 1000), 8000)
 TDR_TEMPERATURE = float(os.getenv("TDR_TEMPERATURE", "0.3"))
 
 # Chemin vers tdr.yaml
@@ -110,8 +112,9 @@ class TDRService:
                 temperature=TDR_TEMPERATURE,
                 max_tokens=TDR_MAX_OUTPUT_TOKENS,
                 json_mode=True,
-                timeout=GROQ_TIMEOUT,
-                max_retries=3,
+                timeout=TDR_GROQ_TIMEOUT,
+                max_retries=2,
+                reasoning_effort="low",
             )
 
             elapsed = time.perf_counter() - start
@@ -133,6 +136,9 @@ class TDRService:
             logger.info("✅ TDR généré : '%s'", data.get("titre", "?"))
             return data
 
+        except LLMError:
+            logger.exception("❌ TDR : échec du fournisseur LLM")
+            raise
         except Exception as exc:
             logger.exception("❌ TDR erreur : %s", exc)
             return None

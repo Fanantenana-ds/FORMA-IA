@@ -251,8 +251,21 @@ class LevelAnalyzerService:
         """Calcule scores, distributions et cas remarquables (pur Python/pandas)."""
         rows = []
         for p in participants:
-            score_avant = self._score(p.get("reponses_avant", {}), corrige)
-            score_apres = self._score(p.get("reponses_apres", {}), corrige)
+            # Les scores persistés par les formulaires sont la source de vérité
+            # du parcours DB. Le recalcul par réponses n'est qu'un fallback
+            # pour les appels historiques qui fournissent un corrigé.
+            score_avant = self._score_disponible(
+                p.get("score_avant"), p.get("reponses_avant", {}), corrige
+            )
+            score_apres = self._score_disponible(
+                p.get("score_apres"), p.get("reponses_apres", {}), corrige
+            )
+            if score_avant is None or score_apres is None:
+                logger.warning(
+                    "Participant ignoré de la comparaison avant/après : "
+                    "score manquant (nom=%s)", p.get("nom", "N/A")
+                )
+                continue
             rows.append({
                 "nom": p.get("nom", "N/A"),
                 "avant": score_avant,
@@ -305,6 +318,23 @@ class LevelAnalyzerService:
                 ],
             },
         }
+
+    def _score_disponible(
+        self,
+        score_persisted: Any,
+        reponses: dict[str, str] | None,
+        corrige: dict[str, str],
+    ) -> float | None:
+        """Préfère un score sauvegardé ; recalcule seulement si un corrigé existe."""
+        if score_persisted is not None:
+            try:
+                score = float(score_persisted)
+            except (TypeError, ValueError):
+                return None
+            return score if 0 <= score <= 100 else None
+        if corrige:
+            return self._score(reponses or {}, corrige)
+        return None
 
     def _score(self, reponses: dict[str, str], corrige: dict[str, str]) -> float:
         """

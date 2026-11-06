@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { X, ReceiptText, Send } from 'lucide-react';
 import { DevisFacture, Session } from '../../types';
 
@@ -7,13 +7,15 @@ interface NewInvoiceModalProps {
   onClose: () => void;
   onSubmit: (fac: Partial<DevisFacture>) => Promise<void>;
   sessions: Session[];
+  initialSessionId?: string;
 }
 
 export const NewInvoiceModal: React.FC<NewInvoiceModalProps> = ({
   isOpen,
   onClose,
   onSubmit,
-  sessions
+  sessions,
+  initialSessionId
 }) => {
   const [client, setClient] = useState('');
   const [clientAdresse, setClientAdresse] = useState('');
@@ -28,6 +30,18 @@ export const NewInvoiceModal: React.FC<NewInvoiceModalProps> = ({
   const [sessionId, setSessionId] = useState('');
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    if (!initialSessionId) {
+      setSessionId('');
+      setClient('');
+      return;
+    }
+    setSessionId(initialSessionId);
+    const selected = sessions.find(item => item.id === initialSessionId);
+    if (selected?.client) setClient(selected.client);
+  }, [isOpen, initialSessionId]);
 
   if (!isOpen) return null;
 

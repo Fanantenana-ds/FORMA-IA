@@ -86,7 +86,7 @@ export const DemoRequestModal: React.FC<DemoRequestModalProps> = ({ open, onClos
               <path d="M6 18L18 6M6 6l12 12" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
             </svg>
           </button>
-          <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-brand-gold/15 border border-brand-gold/30 text-brand-gold text-[11px] font-bold uppercase tracking-wider mb-2.5">
+          <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-brand-gold/15 border border-brand-gold/30 text-brand-navy text-[11px] font-bold uppercase tracking-wider mb-2.5">
             <span>✨ DÉMO PERSONNALISÉE</span>
           </div>
           <h3 id="demo-modal-title" className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
@@ -208,8 +208,8 @@ export const DemoRequestModal: React.FC<DemoRequestModalProps> = ({ open, onClos
                   Merci <strong className="text-brand-darkNavy">{firstName} {lastName}</strong>. Votre demande de démo personnalisée pour{' '}
                   <strong className="text-brand-darkNavy">{org || 'votre organisation'}</strong> a été transmise avec succès.
                 </p>
-                <p className="text-xs text-brand-goldDark font-semibold">
-                  Un conseiller ALTIORA PREST vous contactera sous 24h ouvrées pour caler votre créneau de démonstration.
+                <p className="text-xs text-brand-navy font-semibold">
+                  L’équipe ALTIORA PREST pourra vous recontacter pour organiser une présentation de la plateforme.
                 </p>
               </div>
               <div className="pt-4">

@@ -14,7 +14,7 @@ from app.core.security import (
 from app.models.user import RoleEnum, User
 from app.repositories.revoked_token_repository import RevokedTokenRepository
 from app.repositories.user_repository import UserRepository
-from app.schemas.user import UserCreate, UserUpdate
+from app.schemas.user import UserCreate, UserProfileUpdate, UserUpdate
 
 
 class AuthService:
@@ -163,6 +163,18 @@ class AuthService:
 
     def get_utilisateur(self, user_id: UUID, owner_id=None) -> User:
         return self._get_user_or_404(user_id, owner_id)
+
+    def mettre_a_jour_profil(self, user: User, data: UserProfileUpdate) -> User:
+        updates = data.model_dump(exclude_unset=True, exclude_none=True)
+        if not updates:
+            raise HTTPException(status_code=422, detail="Renseignez au moins un champ à modifier.")
+        if "email" in updates:
+            existing = self.user_repository.find_by_email(updates["email"])
+            if existing and existing.id != user.id:
+                raise HTTPException(status_code=400, detail="Cet email est déjà associé à un autre compte.")
+        for field, value in updates.items():
+            setattr(user, field, value)
+        return self.user_repository.save(user)
 
     def mettre_a_jour_utilisateur(self, user_id: UUID, data: UserUpdate, owner_id=None) -> User:
         user = self._get_user_or_404(user_id, owner_id)

@@ -1,5 +1,6 @@
 export type UserRole = 'Dir.' | 'Form.' | 'Assis.' | 'Compt.';
 export const canAccessSection = (role: UserRole, section: MenuSection): boolean => {
+  if (section === 'mon_profil') return true;
   if (section === 'gestion_utilisateurs') return role === 'Dir.';
   if (role === 'Form.') return ['sessions_groupes', 'suivi_presences', 'espace_ia'].includes(section);
   if (role === 'Assis.') return section !== 'tableau_de_bord' && section !== 'veille_marche';
@@ -199,6 +200,7 @@ export interface VeilleMarche {
 }
 
 export type MenuSection = 
+  | 'mon_profil'
   | 'tableau_de_bord'
   | 'veille_marche'
   | 'opportunites_crm'

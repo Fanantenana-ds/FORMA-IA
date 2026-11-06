@@ -13,29 +13,29 @@ const FEATURES: Feature[] = [
     iconBox: 'bg-amber-500/10 text-brand-gold',
     path: 'M13 10V3L4 14h7v7l9-11h-7z',
     title: 'Détection intelligente',
-    text: "Scan automatique des appels d'offres et requêtes de formation. Scoring de pertinence supérieur à 85% pour cibler vos opportunités gagnantes.",
-    footer: 'Radar multi-sources & alertes',
+    text: "Repérage des besoins de formation et classement des opportunités selon les critères métier du projet.",
+    footer: 'Références des avis consultables',
   },
   {
     iconBox: 'bg-blue-500/10 text-brand-navy',
     path: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z',
     title: 'Génération documentaire',
-    text: 'Création en quelques secondes de TDR complets, propositions techniques et offres financières adaptées aux normes ALTIORA.',
-    footer: 'HITL & validation en 1 clic',
+    text: 'Préparation assistée des TDR et des offres techniques et financières, avec une revue avant leur utilisation.',
+    footer: 'Validation humaine intégrée',
   },
   {
     iconBox: 'bg-purple-500/10 text-purple-700',
     path: 'M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10',
     title: 'Base de connaissances RAG',
-    text: "Interrogez l'ensemble de votre patrimoine pédagogique en langage naturel. Indexation vectorielle PDF, DOCX et présentations PPTX.",
-    footer: 'Embeddings sémantiques instantanés',
+    text: 'Interrogez les supports de formation indexés en langage naturel et consultez les références utilisées dans les réponses.',
+    footer: 'Recherche documentaire sourcée',
   },
   {
     iconBox: 'bg-emerald-500/10 text-emerald-700',
     path: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z',
     title: 'Analyse & Pilotage',
-    text: 'Suivi assiduité QR code, évaluations intégrées Google Forms, attestations certifiées et analytics de rentabilité en direct.',
-    footer: "Tableaux de bord d'excellence",
+    text: 'Suivi des présences, analyses des évaluations, préparation des attestations et consultation des indicateurs disponibles.',
+    footer: 'Suivi des sessions de formation',
   },
 ];
 
@@ -49,8 +49,8 @@ export const FeaturesSection: React.FC = () => (
         <h2 className="text-3xl sm:text-4xl font-extrabold text-brand-darkNavy tracking-tight">
           Une IA avancée à chaque étape du cycle de formation
         </h2>
-        <p className="mt-4 text-base text-gray-600">
-          Conçu avec les frameworks de pointe <strong>Groq</strong>, <strong>Anthropic</strong> et <strong>LangChain</strong>, notre moteur RAG vectoriel garantit rapidité, confidentialité et haute précision contextuelle.
+        <p className="mt-4 text-base leading-relaxed text-gray-600">
+          Les fonctions d’assistance s’appuient sur les règles métier et les supports disponibles. Les contenus destinés à être diffusés restent soumis à une revue humaine.
         </p>
       </div>
 

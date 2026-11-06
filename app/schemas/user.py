@@ -1,7 +1,7 @@
 from typing import Optional
 from uuid import UUID
 
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 
 from app.models.user import RoleEnum
 
@@ -19,6 +19,12 @@ class UserUpdate(BaseModel):
     email: EmailStr | None = None
     role: RoleEnum | None = None
     actif: bool | None = None
+
+
+class UserProfileUpdate(BaseModel):
+    """Champs que l'utilisateur peut mettre à jour sur son propre compte."""
+    nom: str | None = Field(default=None, min_length=1, max_length=50)
+    email: EmailStr | None = None
 
 
 class UserLogin(BaseModel):

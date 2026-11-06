@@ -10,8 +10,9 @@ import {
   UserCheck,
   AlertCircle,
   Menu,
+  ArrowUpRight,
 } from 'lucide-react';
-import { UserRole, AuthUser, ROLE_LABELS } from '../types';
+import { UserRole, AuthUser, MenuSection, ROLE_LABELS } from '../types';
 import { apiService } from '../services/api';
 
 /** Initiales (2 max) à partir du nom complet. */
@@ -28,6 +29,9 @@ const scoreColor = (score: number | null) =>
 
 interface HeaderProps {
   authUser: AuthUser | null;
+  avatarUrl: string | null;
+  searchItems: HeaderSearchItem[];
+  onNavigate: (section: MenuSection) => void;
   onToggleSidebar: () => void;
   isSidebarOpen: boolean;
   onOpenAuthModal: (mode?: 'login' | 'register') => void;
@@ -38,8 +42,20 @@ interface HeaderProps {
   onNavigateToFormateurs?: () => void;
 }
 
+export interface HeaderSearchItem {
+  id: string;
+  title: string;
+  description: string;
+  searchText: string;
+  section: MenuSection;
+  sectionLabel: string;
+}
+
 export const Header: React.FC<HeaderProps> = ({
   authUser,
+  avatarUrl,
+  searchItems,
+  onNavigate,
   onToggleSidebar,
   isSidebarOpen,
   onOpenAuthModal,
@@ -50,14 +66,34 @@ export const Header: React.FC<HeaderProps> = ({
   onNavigateToFormateurs,
 }) => {
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [showQuickActions, setShowQuickActions] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showSearchResults, setShowSearchResults] = useState(false);
+  const [activeSearchIndex, setActiveSearchIndex] = useState(0);
   const [showBell, setShowBell] = useState(false);
   const [candidatures, setCandidatures] = useState<any[]>([]);
   const [nonTraites, setNonTraites] = useState(0);
   const [candidaturesError, setCandidaturesError] = useState(false);
   const [seenCandidatureIds, setSeenCandidatureIds] = useState<Set<string>>(() => new Set());
   const bellRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLDivElement>(null);
+  const quickActionsRef = useRef<HTMLDivElement>(null);
   const canSeeCandidatures = authUser?.role === 'Dir.' || authUser?.role === 'Assis.';
+  const canCreateOpportunity = authUser?.role === 'Dir.' || authUser?.role === 'Assis.';
+  const canCreateSession = authUser?.role === 'Dir.';
+  const canCreateInvoice = authUser?.role === 'Dir.' || authUser?.role === 'Compt.';
+  const hasQuickActions = canCreateOpportunity || canCreateSession || canCreateInvoice;
   const seenStorageKey = `formaia-seen-candidatures:${authUser?.id ?? 'anonymous'}`;
+  const normalizedQuery = searchQuery.trim().toLocaleLowerCase('fr');
+  const filteredSearchItems = normalizedQuery.length >= 2
+    ? searchItems.filter(item => `${item.title} ${item.description} ${item.searchText}`.toLocaleLowerCase('fr').includes(normalizedQuery)).slice(0, 8)
+    : [];
+
+  const selectSearchItem = (item: HeaderSearchItem) => {
+    setSearchQuery(item.title);
+    setShowSearchResults(false);
+    onNavigate(item.section);
+  };
 
   useEffect(() => {
     try {
@@ -109,12 +145,14 @@ export const Header: React.FC<HeaderProps> = ({
     if (showBell) markCandidaturesSeen(candidatures);
   }, [showBell, candidatures, markCandidaturesSeen]);
 
-  // Fermer le dropdown Bell si clic extérieur
+  // Fermer les menus si clic extérieur.
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (bellRef.current && !bellRef.current.contains(e.target as Node)) {
         setShowBell(false);
       }
+      if (searchRef.current && !searchRef.current.contains(e.target as Node)) setShowSearchResults(false);
+      if (quickActionsRef.current && !quickActionsRef.current.contains(e.target as Node)) setShowQuickActions(false);
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
@@ -122,8 +160,8 @@ export const Header: React.FC<HeaderProps> = ({
 
   return (
     <header className="sticky top-0 z-20 flex items-center justify-between gap-2 border-b border-slate-200 bg-white px-3 py-2.5 shadow-xs sm:px-6 sm:py-3.5">
-      {/* Left Search Bar */}
-      <div className="flex min-w-0 max-w-md flex-1 items-center gap-2 sm:gap-4">
+      {/* Recherche dans les données déjà chargées pour le rôle connecté */}
+      <div className="flex min-w-0 max-w-xl flex-1 items-center gap-2 sm:gap-4">
         <button
           type="button"
           onClick={onToggleSidebar}
@@ -134,44 +172,123 @@ export const Header: React.FC<HeaderProps> = ({
         >
           <Menu size={20} />
         </button>
-        <div className="relative min-w-0 w-full">
+        <div className="relative min-w-0 w-full" ref={searchRef}>
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
           <input
             type="text"
-            placeholder="Rechercher une session, opportunité, formateur..."
-            className="w-full rounded-lg border border-slate-200 bg-[#F4F5F3] py-2 pl-9 pr-2 text-xs text-slate-800 transition-all placeholder:text-[10px] placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#1B8F6E] sm:pr-4 sm:text-sm sm:placeholder:text-xs"
+            role="combobox"
+            aria-label="Rechercher dans FORMA-IA"
+            aria-expanded={showSearchResults}
+            aria-controls={showSearchResults ? 'header-search-results' : undefined}
+            aria-activedescendant={filteredSearchItems[activeSearchIndex] ? `header-search-option-${activeSearchIndex}` : undefined}
+            aria-autocomplete="list"
+            autoComplete="off"
+            value={searchQuery}
+            onFocus={() => setShowSearchResults(true)}
+            onChange={event => { setSearchQuery(event.target.value); setActiveSearchIndex(0); setShowSearchResults(true); }}
+            onKeyDown={event => {
+              if (event.key === 'Escape') setShowSearchResults(false);
+              if (event.key === 'ArrowDown' && filteredSearchItems.length) {
+                event.preventDefault();
+                setActiveSearchIndex(index => Math.min(index + 1, filteredSearchItems.length - 1));
+              }
+              if (event.key === 'ArrowUp' && filteredSearchItems.length) {
+                event.preventDefault();
+                setActiveSearchIndex(index => Math.max(index - 1, 0));
+              }
+              if (event.key === 'Enter' && filteredSearchItems[activeSearchIndex]) {
+                event.preventDefault();
+                selectSearchItem(filteredSearchItems[activeSearchIndex]);
+              }
+            }}
+            placeholder="Rechercher une session, une opportunité…"
+            className="w-full rounded-xl border border-slate-200 bg-[#F4F5F3] py-2.5 pl-9 pr-3 text-xs text-slate-800 transition-all placeholder:text-[10px] placeholder:text-slate-400 focus:border-[#1B8F6E] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#1B8F6E]/20 sm:pr-4 sm:text-sm sm:placeholder:text-xs"
           />
+          {showSearchResults && (
+            <div id="header-search-results" role="listbox" aria-label="Résultats de recherche" className="absolute left-0 right-0 top-full z-50 mt-2 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl">
+              {normalizedQuery.length < 2 ? (
+                <p className="px-4 py-3 text-xs text-slate-500">Saisissez au moins 2 caractères pour chercher dans les données disponibles.</p>
+              ) : filteredSearchItems.length === 0 ? (
+                <p className="px-4 py-3 text-xs text-slate-500">Aucun résultat dans les données actuellement chargées.</p>
+              ) : (
+                <>
+                  <p className="border-b border-slate-100 px-4 py-2 text-[10px] font-bold uppercase tracking-wide text-slate-400">Résultats disponibles</p>
+                  {filteredSearchItems.map((item, index) => (
+                    <button
+                      key={item.id}
+                      id={`header-search-option-${index}`}
+                      type="button"
+                      role="option"
+                      aria-selected={index === activeSearchIndex}
+                      onMouseEnter={() => setActiveSearchIndex(index)}
+                      onClick={() => selectSearchItem(item)}
+                      className={`flex w-full items-start justify-between gap-3 px-4 py-3 text-left transition-colors ${index === activeSearchIndex ? 'bg-emerald-50' : 'hover:bg-slate-50'}`}
+                    >
+                      <span className="min-w-0">
+                        <span className="block truncate text-xs font-bold text-slate-800">{item.title}</span>
+                        <span className="mt-0.5 block truncate text-[10px] text-slate-500">{item.description || 'Aucune information complémentaire'}</span>
+                      </span>
+                      <span className="flex shrink-0 items-center gap-1 text-[10px] font-semibold text-[#17694f]">{item.sectionLabel}<ArrowUpRight size={12} /></span>
+                    </button>
+                  ))}
+                  <p className="border-t border-slate-100 px-4 py-2 text-[10px] text-slate-400">Recherche parmi les données déjà chargées pour votre rôle.</p>
+                </>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
       {/* Right Controls */}
       <div className="flex shrink-0 items-center gap-1.5 sm:gap-3">
         {/* Quick Add Dropdown / Buttons */}
+        {hasQuickActions && <>
         <div className="hidden lg:flex items-center gap-2">
-          <button
+          {canCreateOpportunity && <button
             onClick={onQuickNewOpportunity}
+            type="button"
             className="px-3 py-1.5 bg-[#1B8F6E]/10 hover:bg-[#1B8F6E]/20 text-[#1B8F6E] rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors border border-[#1B8F6E]/20"
           >
             <Plus size={14} />
             <span>Opportunité</span>
-          </button>
-          <button
+          </button>}
+          {canCreateSession && <button
             onClick={onQuickNewSession}
+            type="button"
             className="px-3 py-1.5 bg-[#1B8F6E] hover:bg-[#16785c] text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-xs"
           >
             <Plus size={14} />
             <span>Session</span>
-          </button>
-          <button
+          </button>}
+          {canCreateInvoice && <button
             onClick={onQuickNewInvoice}
+            type="button"
             className="px-3 py-1.5 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors"
           >
             <Plus size={14} />
             <span>Devis / Facture</span>
-          </button>
+          </button>}
         </div>
 
         <div className="mx-1 hidden h-6 w-px bg-slate-200 sm:block"></div>
+        <div className="relative lg:hidden" ref={quickActionsRef}>
+          <button
+            type="button"
+            onClick={() => setShowQuickActions(open => !open)}
+            aria-label="Ouvrir les actions rapides"
+            aria-expanded={showQuickActions}
+            className="flex h-9 w-9 items-center justify-center rounded-xl border border-emerald-200 bg-emerald-50 text-[#17694f] transition hover:bg-emerald-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16785c]"
+          >
+            <Plus size={18} />
+          </button>
+          {showQuickActions && <div className="absolute right-0 top-full z-40 mt-2 w-56 rounded-2xl border border-slate-200 bg-white p-2 shadow-xl">
+            <p className="px-2 py-1.5 text-[10px] font-bold uppercase tracking-wide text-slate-400">Actions rapides</p>
+            {canCreateOpportunity && <button type="button" onClick={() => { setShowQuickActions(false); onQuickNewOpportunity(); }} className="w-full rounded-xl px-3 py-2.5 text-left text-xs font-semibold text-slate-700 transition hover:bg-emerald-50">Créer une opportunité</button>}
+            {canCreateSession && <button type="button" onClick={() => { setShowQuickActions(false); onQuickNewSession(); }} className="w-full rounded-xl px-3 py-2.5 text-left text-xs font-semibold text-slate-700 transition hover:bg-emerald-50">Créer une session</button>}
+            {canCreateInvoice && <button type="button" onClick={() => { setShowQuickActions(false); onQuickNewInvoice(); }} className="w-full rounded-xl px-3 py-2.5 text-left text-xs font-semibold text-slate-700 transition hover:bg-emerald-50">Créer un devis / une facture</button>}
+          </div>}
+        </div>
+        </>}
 
         {/* Notifications CV */}
         {canSeeCandidatures && <div className="relative" ref={bellRef}>
@@ -253,11 +370,14 @@ export const Header: React.FC<HeaderProps> = ({
           {authUser ? (
             <div className="relative">
               <button
+                type="button"
                 onClick={() => setShowUserMenu(!showUserMenu)}
+                aria-label={`Ouvrir le menu du compte ${authUser.nom}`}
+                aria-expanded={showUserMenu}
                 className="flex items-center gap-2.5 hover:opacity-80 transition-opacity p-1 rounded-xl hover:bg-slate-50"
               >
-                <div className="w-8 h-8 rounded-full bg-[#1B8F6E] text-white font-extrabold text-xs flex items-center justify-center border border-white shadow-xs">
-                  {getInitials(authUser.nom)}
+                <div className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-full border border-white bg-[#1B8F6E] text-xs font-extrabold text-white shadow-sm ring-1 ring-slate-200">
+                  {avatarUrl ? <img src={avatarUrl} alt="" className="h-full w-full object-cover" /> : getInitials(authUser.nom)}
                 </div>
                 <div className="hidden md:block text-left">
                   <div className="text-xs font-bold text-slate-800 leading-none flex items-center gap-1">
@@ -282,6 +402,16 @@ export const Header: React.FC<HeaderProps> = ({
                   </div>
 
                   <button
+                    type="button"
+                    onClick={() => { setShowUserMenu(false); onNavigate('mon_profil'); }}
+                    className="mt-1 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-semibold text-slate-700 transition-colors hover:bg-emerald-50 hover:text-[#17694f]"
+                  >
+                    <User size={14} className="text-[#17694f]" />
+                    <span>Mon profil</span>
+                  </button>
+
+                  <button
+                    type="button"
                     onClick={() => {
                       setShowUserMenu(false);
                       onOpenAuthModal('login');
@@ -293,6 +423,7 @@ export const Header: React.FC<HeaderProps> = ({
                   </button>
 
                   <button
+                    type="button"
                     onClick={() => {
                       setShowUserMenu(false);
                       onLogout();

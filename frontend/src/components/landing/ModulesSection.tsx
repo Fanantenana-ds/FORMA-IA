@@ -14,11 +14,11 @@ const MODULES: ModuleItem[] = [
     number: '01',
     title: 'Veille marché intelligente',
     description:
-      "Détectez automatiquement les opportunités d'affaires. L'IA analyse, résume et classe les opportunités par domaine avec un score de pertinence dynamique et contextualisé.",
+      "Repérez les besoins de formation et classez les opportunités selon les critères métier du projet.",
     bullets: [
-      "Analyse multi-sources continue (URLs d'appels d'offres, PDF, textes libres)",
-      'Scoring automatique > 85% selon vos compétences clés',
-      "Alertes immédiates des nouveaux appels à manifestation d'intérêt",
+      'Sources, références et dates consultables',
+      'Classement par domaine et pertinence',
+      'Sélection d’opportunités à examiner par l’équipe',
     ],
     image: LANDING_IMAGES.module1,
   },
@@ -26,11 +26,11 @@ const MODULES: ModuleItem[] = [
     number: '02',
     title: 'Génération assistée de TDR',
     description:
-      "Produisez des Termes de Référence complets et conformes en moins de 60 secondes. L'IA respecte rigoureusement les gabarits ALTIORA et vos exigences pédagogiques.",
+      "Préparez des Termes de Référence structurés à partir du besoin de formation et des gabarits disponibles.",
     bullets: [
-      'Conformité stricte aux gabarits officiels ALTIORA PREST',
-      'Export immédiat en formats Microsoft Word (.docx) et PDF',
-      'Validation humaine intégrée (HITL — Human-in-the-loop)',
+      'Génération assistée à partir des informations du besoin',
+      'Export des documents disponibles',
+      'Relecture humaine avant validation',
     ],
     image: LANDING_IMAGES.module2,
   },
@@ -38,11 +38,11 @@ const MODULES: ModuleItem[] = [
     number: '03',
     title: 'Offres technique & financière',
     description:
-      'Générez en un clic des offres commerciales hautement persuasives et structurées : architecture de formation, méthodologie, chronogramme, grille tarifaire et calculs de taxes en Ariary.',
+      'Préparez une proposition technique et financière avec le contenu de formation, le calendrier et les montants en Ariary.',
     bullets: [
       'Trame technique + financière synchronisées',
       'Calcul automatique HT / TVA (20%) / TTC en Ariary (MGA)',
-      "Workflow d'approbation et signature avant transmission client",
+      'Revue humaine avant transmission au client',
     ],
     image: LANDING_IMAGES.module3,
   },
@@ -50,11 +50,11 @@ const MODULES: ModuleItem[] = [
     number: '04',
     title: 'Préparation opérationnelle',
     description:
-      "Planifiez l'emploi du temps, affectez formateurs et salles adaptées, et estimez instantanément le budget prévisionnel de chaque session de montée en compétences.",
+      "Préparez l'emploi du temps et le budget prévisionnel avant le démarrage d'une session.",
     bullets: [
-      "Emploi du temps visuel interactif et gestion des conflits d'horaires",
-      'Affectation assistée selon expertises des formateurs et équipements requis',
-      'Budget prévisionnel auto-calculé (pauses-café, honoraires, logistique)',
+      'Organisation des séances de formation',
+      'Prise en compte des ressources disponibles',
+      'Estimation des principaux postes de coût',
     ],
     image: LANDING_IMAGES.module4,
   },
@@ -62,11 +62,11 @@ const MODULES: ModuleItem[] = [
     number: '05',
     title: 'Gestion des formations & Suivi',
     description:
-      'Assurez un suivi sans faille : émargement QR code digital, évaluations initiales et finales via Google Forms, enquêtes de satisfaction et génération automatique des attestations certifiées PDF pour les participants méritants (≥ 80%).',
+      'Suivez les présences et les évaluations, puis préparez les attestations des participants éligibles selon le seuil du projet.',
     bullets: [
-      '6 agents IA autonomes dédiés au suivi de cohorte',
-      'Émargement instantané par QR code & sync Google Forms',
-      'Génération d\'attestations certifiées en lot avec cachet ALTIORA',
+      '6 agents spécialisés pour le suivi M5',
+      'Analyses des évaluations et des présences',
+      'Attestations PDF soumises à validation',
     ],
     image: LANDING_IMAGES.module5,
   },
@@ -74,11 +74,11 @@ const MODULES: ModuleItem[] = [
     number: '06',
     title: 'Base de connaissances RAG',
     description:
-      "Centralisez tout le capital intellectuel de votre organisme. Posez vos questions en langage naturel : l'IA explore vos documents vectorisés, cite précisément les sources et synthétise syllabus, questionnaires et fiches réflexes.",
+      "Interrogez les supports pédagogiques indexés en langage naturel et retrouvez les références documentaires utilisées dans les réponses.",
     bullets: [
-      'Ingestion multi-formats : PDF, DOCX, PPTX, XLSX',
-      'Recherche sémantique vectorielle avec score de similarité',
-      'Capitalisation continue pour un enrichissement pérenne du savoir',
+      'Indexation de documents de formation',
+      'Recherche de passages liés à la question',
+      'Réponse accompagnée de sources lorsqu’elles sont disponibles',
     ],
     image: LANDING_IMAGES.module6,
   },
@@ -89,11 +89,11 @@ export const ModulesSection: React.FC = () => (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-24">
       <div className="text-center max-w-3xl mx-auto">
         <div className="inline-flex items-center space-x-2 px-3.5 py-1 rounded-full bg-brand-gold/10 border border-brand-gold/30 mb-3">
-          <span className="text-xs font-bold text-brand-goldDark uppercase tracking-wider">SUITE LOGICIELLE INTÉGRÉE</span>
+          <span className="text-xs font-bold text-brand-navy uppercase tracking-wider">PARCOURS DE FORMATION</span>
         </div>
-        <h2 className="text-3xl sm:text-4xl font-extrabold text-brand-darkNavy">Les 6 Modules Fondamentaux de FORMA-IA</h2>
+        <h2 className="text-3xl sm:text-4xl font-extrabold text-brand-darkNavy">Les modules au service du cycle de formation</h2>
         <p className="mt-3 text-base text-gray-600">
-          Une architecture puissante pensée pour les cabinets de formation, consultants et institutions éducatives à Madagascar et en Afrique.
+          Chaque module répond à un besoin métier précis, de la prospection au suivi des sessions.
         </p>
       </div>
 
@@ -110,7 +110,7 @@ export const ModulesSection: React.FC = () => (
               <ul className="space-y-3 pt-2">
                 {m.bullets.map((b) => (
                   <li key={b} className="flex items-center text-sm font-medium text-gray-700">
-                    <span className="w-5 h-5 shrink-0 rounded-full bg-brand-gold/20 text-brand-goldDark flex items-center justify-center mr-3 font-bold">✓</span>
+                    <span className="w-5 h-5 shrink-0 rounded-full bg-brand-gold/20 text-brand-navy flex items-center justify-center mr-3 font-bold">✓</span>
                     {b}
                   </li>
                 ))}

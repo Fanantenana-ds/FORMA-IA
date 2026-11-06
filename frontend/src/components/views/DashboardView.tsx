@@ -34,7 +34,9 @@ import {
   DomainOpportunity,
   FacturationStatut,
   ActiviteRecente,
-  UserRole
+  UserRole,
+  MenuSection,
+  canAccessSection
 } from '../../types';
 
 interface DashboardViewProps {
@@ -46,7 +48,7 @@ interface DashboardViewProps {
   isLoading?: boolean;
   notice?: string | null;
   onRefresh: () => void;
-  onNavigateTo: (section: any) => void;
+  onNavigateTo: (section: MenuSection) => void;
   onOpenNewOpportunity: () => void;
   onOpenNewSession: () => void;
 }
@@ -80,6 +82,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   };
 
   const totalFacturation = facturationStatuts.reduce((acc, curr) => acc + curr.montant, 0);
+  const presenceProgress = Math.max(0, Math.min(kpis.tauxPresenceMoyen, 100));
+  const presenceStatus = kpis.presenceIndisponible ? 'Réservé' : kpis.tauxPresenceMoyen >= 85 ? 'Conforme' : 'À surveiller';
 
   return (
     <div className="space-y-8 pb-12 animate-in fade-in duration-300">
@@ -90,7 +94,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-[#1B8F6E]/10 text-[#1B8F6E]">
               Vue {DASHBOARD_VIEW_LABELS[currentRole]}
             </span>
-            <span className="text-xs text-slate-400">• Temps réel (REST)</span>
+            <span className="text-xs text-slate-500">• Données synchronisées depuis le Backend</span>
           </div>
           <h1 className="text-2xl md:text-3xl font-extrabold text-[#11162A] tracking-tight">
             Tableau de bord
@@ -101,10 +105,29 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
 
         {/* Controls */}
-        <div className="flex items-center gap-2.5 shrink-0 self-start md:self-center">
+        <div className="flex flex-wrap items-center gap-2.5 self-start md:self-center">
+          {currentRole === 'Dir.' && <>
+            <button
+              type="button"
+              onClick={onOpenNewSession}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-[#16785c] px-3 py-2.5 text-xs font-bold text-white shadow-sm transition hover:bg-[#125f49] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16785c] focus-visible:ring-offset-2"
+            >
+              <Plus size={14} /> Nouvelle session
+            </button>
+            <button
+              type="button"
+              onClick={onOpenNewOpportunity}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-xs font-bold text-[#17694f] transition hover:bg-emerald-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16785c] focus-visible:ring-offset-2"
+            >
+              <Plus size={14} /> Nouvelle opportunité
+            </button>
+          </>}
           <button
+            type="button"
             onClick={handleRefreshClick}
             disabled={isRefreshing}
+            aria-label={isRefreshing ? 'Actualisation des données' : 'Actualiser les données du tableau de bord'}
+            aria-busy={isRefreshing}
             className="p-2.5 text-slate-600 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl transition-all shadow-xs active:scale-95"
             title="Rafraîchir les données"
           >
@@ -139,7 +162,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs hover:border-[#1B8F6E]/40 transition-all group">
           <div className="flex items-center justify-between mb-3">
             <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-              Sessions réalisées
+              Sessions enregistrées
             </span>
             <div className="w-10 h-10 rounded-xl bg-[#1B8F6E]/10 text-[#1B8F6E] flex items-center justify-center font-bold group-hover:bg-[#1B8F6E] group-hover:text-white transition-colors">
               <Calendar size={20} />
@@ -183,19 +206,19 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <div className="text-3xl font-extrabold text-[#11162A]">
               {kpis.presenceIndisponible ? '—' : `${kpis.tauxPresenceMoyen}%`}
             </div>
-            <div className="flex items-center text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">
-              <CheckCircle2 size={12} className="mr-1" />
-              Émargé
+            <div className={`flex items-center rounded-full px-2 py-0.5 text-xs font-bold ${kpis.presenceIndisponible ? 'bg-slate-100 text-slate-600' : presenceProgress >= 85 ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
+              {kpis.presenceIndisponible ? <AlertCircle size={12} className="mr-1" /> : <CheckCircle2 size={12} className="mr-1" />}
+              {presenceStatus}
             </div>
           </div>
           <p className="text-xs text-slate-500 mt-2 flex items-center justify-between">
             <span>Seuil d'alerte : &lt;85%</span>
-            <span className={`font-semibold ${kpis.tauxPresenceMoyen >= 85 ? 'text-emerald-600' : 'text-amber-600'}`}>
-              {kpis.presenceIndisponible || kpis.tauxPresenceMoyen === 0 ? '—' : kpis.tauxPresenceMoyen >= 85 ? 'Conforme' : 'Sous le seuil'}
+            <span className={`font-semibold ${kpis.presenceIndisponible ? 'text-slate-500' : presenceProgress >= 85 ? 'text-emerald-600' : 'text-amber-600'}`}>
+              {kpis.presenceIndisponible ? 'Réservé' : presenceProgress >= 85 ? 'Seuil atteint' : `${Math.round(85 - presenceProgress)} pt avant le seuil`}
             </span>
           </p>
           <div className="w-full bg-slate-100 h-1.5 rounded-full mt-2 overflow-hidden">
-            <div className="bg-amber-500 h-full rounded-full" style={{ width: `${kpis.tauxPresenceMoyen}%` }}></div>
+            <div className={`h-full rounded-full transition-[width] ${presenceProgress >= 85 ? 'bg-emerald-500' : 'bg-amber-500'}`} style={{ width: `${presenceProgress}%` }}></div>
           </div>
         </div>
 
@@ -203,19 +226,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs hover:border-purple-500/40 transition-all group">
           <div className="flex items-center justify-between mb-3">
             <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-              Opportunités détectées
+              Opportunités suivies
             </span>
             <div className="w-10 h-10 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center font-bold group-hover:bg-purple-600 group-hover:text-white transition-colors">
               <Zap size={20} />
             </div>
           </div>
-          <div className="flex items-baseline justify-between">
+            <div className="flex items-baseline justify-between">
             <div className="text-3xl font-extrabold text-[#11162A]">
               {kpis.opportunitesDetectees}
             </div>
-            <div className="flex items-center text-xs font-bold text-purple-600 bg-purple-50 px-2 py-0.5 rounded-full">
-              <Sparkles size={12} className="mr-1" />
-              IA Active
+            <div className="flex items-center text-xs font-bold text-purple-700 bg-purple-50 px-2 py-0.5 rounded-full">
+              Enregistrées
             </div>
           </div>
         </div>
@@ -269,7 +291,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               <div>
                 <h3 className="text-lg font-bold text-[#11162A] flex items-center gap-2">
                   <Zap size={18} className="text-[#1B8F6E]" />
-                  Opportunités détectées par domaine
+                  Opportunités suivies par domaine
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5">
                   Analyse automatisée du marché de la formation par l'IA FORMA-IA
@@ -439,15 +461,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               Dernières créations : opportunités, sessions, factures et documents
             </p>
           </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={onOpenNewOpportunity}
-              className="px-3 py-1.5 bg-[#1B8F6E]/10 text-[#1B8F6E] hover:bg-[#1B8F6E]/20 text-xs font-semibold rounded-lg transition-colors flex items-center gap-1"
-            >
-              <Plus size={14} />
-              <span>Nouvelle opportunité</span>
-            </button>
-          </div>
         </div>
 
         {/* Timeline List */}
@@ -475,10 +488,25 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               }
             };
 
+            const activityDestination: Partial<Record<ActiviteRecente['type'], MenuSection>> = {
+              session: 'sessions_groupes',
+              presence: 'suivi_presences',
+              opportunite: 'opportunites_crm',
+              facture: 'facturation_devis',
+              veille: 'veille_marche',
+              document: 'espace_ia'
+            };
+            const destination = activityDestination[item.type];
+            const canOpenActivity = destination ? canAccessSection(currentRole, destination) : false;
+
             return (
-              <div
+              <button
+                type="button"
                 key={item.id}
-                className="flex items-start gap-4 p-3.5 rounded-xl bg-[#F4F5F3]/80 hover:bg-[#F4F5F3] border border-slate-200/70 transition-all"
+                onClick={() => { if (destination && canOpenActivity) onNavigateTo(destination); }}
+                disabled={!canOpenActivity}
+                aria-label={canOpenActivity ? `${item.titre} — ouvrir la rubrique correspondante` : item.titre}
+                className="flex w-full items-start gap-4 rounded-xl border border-slate-200/70 bg-[#F4F5F3]/80 p-3.5 text-left transition-all hover:bg-[#F4F5F3] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16785c] disabled:cursor-default"
               >
                 <div className="w-9 h-9 rounded-xl bg-white border border-slate-200 flex items-center justify-center shrink-0 shadow-2xs mt-0.5">
                   {getIcon()}
@@ -508,7 +536,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     )}
                   </div>
                 </div>
-              </div>
+              </button>
             );
           })}
         </div>

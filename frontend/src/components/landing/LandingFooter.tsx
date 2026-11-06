@@ -1,29 +1,11 @@
 import React from 'react';
 
-const SOCIALS = [
-  {
-    label: 'LinkedIn',
-    fill: true,
-    path: 'M19 3a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14m-.5 15.5v-5.3a3.26 3.26 0 0 0-3.26-3.26c-.85 0-1.84.52-2.28 1.3v-1.11h-2.79v8.37h2.79v-4.93c0-.77.62-1.4 1.39-1.4a1.4 1.4 0 0 1 1.4 1.4v4.93h2.75M6.46 8.76a1.45 1.45 0 0 0 0-2.9 1.45 1.45 0 0 0 0 2.9m1.38 9.74v-8.37H5.08v8.37h2.76z',
-  },
-  {
-    label: 'Facebook',
-    fill: true,
-    path: 'M22 12c0-5.52-4.48-10-10-10S2 6.48 2 12c0 4.84 3.44 8.87 8 9.8V15H8v-3h2V9.5C10 7.57 11.57 6 13.5 6H16v3h-2c-.55 0-1 .45-1 1v2h3v3h-3v6.95c5.05-.5 9-4.76 9-9.95z',
-  },
-  {
-    label: 'Site Web',
-    fill: false,
-    path: 'M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9',
-  },
-];
-
 const QUICK_LINKS = [
   { href: '#hero', label: 'Accueil' },
-  { href: '#features', label: 'Fonctionnalités' },
+  { href: '#how-it-works', label: 'Parcours métier' },
   { href: '#modules', label: 'Modules' },
-  { href: '#how-it-works', label: 'Comment ça marche' },
-  { href: '#testimonials', label: 'Témoignages' },
+  { href: '#confiance', label: 'Confiance & contrôle' },
+  { href: '#contact', label: 'Contact' },
 ];
 
 export const LandingFooter: React.FC = () => (
@@ -33,8 +15,8 @@ export const LandingFooter: React.FC = () => (
         {/* Brand */}
         <div className="lg:col-span-4 space-y-4">
           <div className="flex items-center space-x-3">
-            <div className="w-9 h-9 rounded-lg bg-linear-to-br from-brand-gold to-brand-goldDark flex items-center justify-center text-brand-darkNavy font-black">
-              AI
+            <div className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-xl border border-white/20 bg-white p-0.5">
+              <img src="/logo_altiora_prest.png" alt="Logo ALTIORA PREST" className="h-full w-full object-contain" />
             </div>
             <div>
               <span className="text-xl font-black text-white">
@@ -44,27 +26,8 @@ export const LandingFooter: React.FC = () => (
             </div>
           </div>
           <p className="text-sm text-slate-400 leading-relaxed pr-4">
-            Cabinet de référence en ingénierie pédagogique, formation continue et conseil stratégique. FORMA-IA est la première solution souveraine d'IA générative dédiée aux organismes formateurs de la Grande Île.
+            FORMA-IA accompagne ALTIORA PREST dans la gestion du cycle de formation, de la veille marché au suivi des sessions et de la facturation.
           </p>
-          <div className="flex space-x-3 pt-2">
-            {SOCIALS.map((s) => (
-              <a
-                key={s.label}
-                href="#"
-                aria-label={s.label}
-                className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center text-brand-gold hover:bg-brand-gold hover:text-brand-darkNavy transition"
-              >
-                <svg
-                  className="w-4 h-4"
-                  viewBox="0 0 24 24"
-                  fill={s.fill ? 'currentColor' : 'none'}
-                  stroke={s.fill ? undefined : 'currentColor'}
-                >
-                  <path d={s.path} strokeLinecap="round" strokeLinejoin="round" strokeWidth={s.fill ? undefined : 2} />
-                </svg>
-              </a>
-            ))}
-          </div>
         </div>
 
         {/* Quick links */}
@@ -97,22 +60,21 @@ export const LandingFooter: React.FC = () => (
           </ul>
         </div>
 
-        {/* Legal */}
+        {/* Platform principles */}
         <div className="lg:col-span-3 space-y-3">
-          <p className="text-sm font-bold uppercase tracking-wider text-white">Cadre Légal &amp; Académique</p>
-          <ul className="space-y-2 text-sm text-slate-400">
-            <li><a className="hover:text-brand-gold transition" href="#">Mentions légales</a></li>
-            <li><a className="hover:text-brand-gold transition" href="#">Politique de confidentialité</a></li>
-            <li><a className="hover:text-brand-gold transition" href="#">Conditions Générales d'Utilisation</a></li>
-            <li><span className="text-slate-400">Partenaire académique : <strong className="text-brand-gold">ENI</strong></span></li>
+          <p className="text-sm font-bold uppercase tracking-wider text-white">Principes de la plateforme</p>
+          <ul className="space-y-2 text-sm leading-relaxed text-slate-400">
+            <li>Sources documentaires consultables</li>
+            <li>Validation humaine des contenus à diffuser</li>
+            <li>Parcours métier structuré en six phases</li>
           </ul>
         </div>
       </div>
 
       <div className="pt-8 border-t border-white/10 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-400 gap-4">
-        <p>© 2026 ALTIORA PREST — Tous droits réservés.</p>
-        <p>Développé avec <span className="text-brand-gold">❤️</span> à Antananarivo, Madagascar</p>
-        <p className="font-mono text-slate-400">Version 1.0 (Propulsée par IA)</p>
+        <p>© 2026 ALTIORA PREST — FORMA-IA</p>
+        <p>Antananarivo, Madagascar</p>
+        <p>Assistance IA avec contrôle humain</p>
       </div>
     </div>
   </footer>

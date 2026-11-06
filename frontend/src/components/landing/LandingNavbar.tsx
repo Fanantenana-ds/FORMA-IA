@@ -9,7 +9,7 @@ const NAV_LINKS = [
   { href: '#features', label: 'Fonctionnalités' },
   { href: '#modules', label: 'Modules' },
   { href: '#how-it-works', label: 'Comment ça marche' },
-  { href: '#testimonials', label: 'Témoignages' },
+  { href: '#confiance', label: 'Confiance & contrôle' },
   { href: '#contact', label: 'Contact' },
 ];
 
@@ -35,21 +35,18 @@ export const LandingNavbar: React.FC<LandingNavbarProps> = ({ onLogin, onOpenDem
         <div className="flex items-center justify-between">
           {/* Logo */}
           <a href="#hero" className="flex items-center space-x-3 group">
-            <div className="w-11 h-11 rounded-xl bg-linear-to-br from-brand-gold to-brand-goldDark flex items-center justify-center shadow-lg shadow-brand-gold/20 transform group-hover:scale-105 transition-transform duration-300">
-              <svg className="w-6 h-6 text-brand-darkNavy" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path
-                  d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082M19.8 15.3l-1.57.393A9.065 9.065 0 0112 15a9.065 9.065 0 01-6.23-.693L5 14.5m14.8.8l1.402 1.402c1.232 1.232.65 3.318-1.067 3.611A48.309 48.309 0 0112 21c-2.773 0-5.491-.235-8.135-.687-1.718-.293-2.3-2.379-1.067-3.61L4.2 15.3"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth="2"
-                />
-              </svg>
+            <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-white/20 bg-white p-0.5 shadow-lg shadow-brand-gold/20 transform group-hover:scale-105 transition-transform duration-300">
+              <img
+                src="/logo_altiora_prest.png"
+                alt="Logo ALTIORA PREST"
+                className="h-full w-full object-contain"
+              />
             </div>
             <div className="flex flex-col">
               <span className={`text-2xl font-black tracking-tight transition-colors duration-300 ${scrolled ? 'text-brand-darkNavy' : 'text-white'}`}>
-                FORMA<span className="text-brand-gold">-IA</span>
+                FORMA<span className={scrolled ? 'text-brand-navy' : 'text-brand-gold'}>-IA</span>
               </span>
-              <span className={`text-[10px] tracking-widest uppercase font-semibold transition-colors duration-300 -mt-1 ${scrolled ? 'text-brand-goldDark' : 'text-slate-300'}`}>
+              <span className={`text-[10px] tracking-widest uppercase font-semibold transition-colors duration-300 -mt-1 ${scrolled ? 'text-brand-navy' : 'text-slate-300'}`}>
                 by ALTIORA PREST
               </span>
             </div>
@@ -61,7 +58,7 @@ export const LandingNavbar: React.FC<LandingNavbarProps> = ({ onLogin, onOpenDem
               <a
                 key={l.href}
                 href={l.href}
-                className={`nav-link text-sm font-medium hover:text-brand-gold transition-colors ${scrolled ? 'text-brand-darkNavy' : 'text-white'}`}
+                className={`nav-link text-sm font-medium transition-colors ${scrolled ? 'text-brand-darkNavy hover:text-brand-navy' : 'text-white hover:text-brand-gold'}`}
               >
                 {l.label}
               </a>
@@ -96,7 +93,7 @@ export const LandingNavbar: React.FC<LandingNavbarProps> = ({ onLogin, onOpenDem
               type="button"
               aria-label="Ouvrir le menu"
               onClick={() => setMenuOpen((v) => !v)}
-              className={`p-2 rounded-lg hover:text-brand-gold focus:outline-none ${scrolled ? 'text-brand-darkNavy' : 'text-white'}`}
+              className={`p-2 rounded-lg focus:outline-none ${scrolled ? 'text-brand-darkNavy hover:text-brand-navy' : 'text-white hover:text-brand-gold'}`}
             >
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path d="M4 6h16M4 12h16M4 18h16" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />

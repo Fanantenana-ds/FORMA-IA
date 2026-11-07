@@ -62,7 +62,7 @@ export default function App() {
   const [isDesktopViewport, setIsDesktopViewport] = useState(() => window.matchMedia('(min-width: 768px)').matches);
   const currentRole: UserRole = authUser?.role ?? 'Dir.';
 
-  const avatarUrl = profileAvatar?.userId === authUser?.id ? profileAvatar.dataUrl : null;
+  const avatarUrl = profileAvatar && profileAvatar.userId === authUser?.id ? profileAvatar.dataUrl : null;
 
   useEffect(() => {
     const desktopQuery = window.matchMedia('(min-width: 768px)');

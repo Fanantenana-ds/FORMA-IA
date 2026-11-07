@@ -58,11 +58,17 @@ export default function App() {
 
   // Navigation
   const [currentSection, setCurrentSection] = useState<MenuSection>('tableau_de_bord');
+  const [previousSection, setPreviousSection] = useState<MenuSection>('tableau_de_bord');
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [isDesktopViewport, setIsDesktopViewport] = useState(() => window.matchMedia('(min-width: 768px)').matches);
   const currentRole: UserRole = authUser?.role ?? 'Dir.';
 
   const avatarUrl = profileAvatar && profileAvatar.userId === authUser?.id ? profileAvatar.dataUrl : null;
+
+  const navigateToSection = useCallback((section: MenuSection) => {
+    if (section === 'mon_profil' && currentSection !== 'mon_profil') setPreviousSection(currentSection);
+    setCurrentSection(section);
+  }, [currentSection]);
 
   useEffect(() => {
     const desktopQuery = window.matchMedia('(min-width: 768px)');
@@ -480,7 +486,7 @@ export default function App() {
         currentSection={currentSection}
         isOpen={isDesktopViewport || isMobileSidebarOpen}
         onClose={() => setIsMobileSidebarOpen(false)}
-        onSelectSection={(section) => { setCurrentSection(section); setIsMobileSidebarOpen(false); }}
+        onSelectSection={(section) => { navigateToSection(section); setIsMobileSidebarOpen(false); }}
         currentRole={currentRole}
         authUser={authUser}
         onOpenAuthModal={handleOpenAuthModal}
@@ -494,7 +500,7 @@ export default function App() {
           authUser={authUser}
           avatarUrl={avatarUrl}
           searchItems={searchItems}
-          onNavigate={setCurrentSection}
+          onNavigate={navigateToSection}
           isSidebarOpen={isMobileSidebarOpen}
           onToggleSidebar={() => setIsMobileSidebarOpen((open) => !open)}
           onOpenAuthModal={handleOpenAuthModal}
@@ -502,7 +508,7 @@ export default function App() {
           onQuickNewOpportunity={() => setIsNewOppModalOpen(true)}
           onQuickNewSession={() => setIsNewSessionModalOpen(true)}
           onQuickNewInvoice={() => openInvoiceModal()}
-          onNavigateToFormateurs={() => setCurrentSection('formateurs_staff')}
+          onNavigateToFormateurs={() => navigateToSection('formateurs_staff')}
         />
 
         <main className="flex-1 w-full max-w-[1600px] 2xl:max-w-[1760px] mx-auto p-3 sm:p-6 lg:p-7 2xl:px-9 overflow-y-auto">
@@ -522,7 +528,7 @@ export default function App() {
             onRefreshData={loadAllData}
             dashboardLoading={dashboardLoading}
             dashboardNotice={dashboardNotice}
-            onNavigateTo={setCurrentSection}
+            onNavigateTo={navigateToSection}
             onOpenNewOpportunity={() => setIsNewOppModalOpen(true)}
             onOpenNewSession={() => setIsNewSessionModalOpen(true)}
             onOpenNewInvoice={openInvoiceModal}
@@ -532,6 +538,7 @@ export default function App() {
             onUploadAvatar={handleUploadProfileAvatar}
             onDeleteAvatar={handleDeleteProfileAvatar}
             onUpdateUser={handleUpdateProfile}
+            onBackFromProfile={() => navigateToSection(previousSection)}
           />
         </main>
       </div>
@@ -556,7 +563,7 @@ export default function App() {
         currentRole={currentRole}
         currentSection={currentSection}
         sessions={sessions}
-        onNavigate={setCurrentSection}
+        onNavigate={navigateToSection}
         onCreateSession={() => setIsNewSessionModalOpen(true)}
         onCreateOpportunity={() => setIsNewOppModalOpen(true)}
         onCreateInvoice={() => openInvoiceModal()}

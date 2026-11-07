@@ -54,6 +54,7 @@ interface ViewRouterProps {
   onUploadAvatar: (file: File) => Promise<void>;
   onDeleteAvatar: () => Promise<void>;
   onUpdateUser: (updates: Pick<AuthUser, 'nom' | 'email'>) => Promise<void>;
+  onBackFromProfile: () => void;
 }
 
 export const ViewRouter: React.FC<ViewRouterProps> = ({
@@ -81,11 +82,12 @@ export const ViewRouter: React.FC<ViewRouterProps> = ({
   avatarUrl,
   onUploadAvatar,
   onDeleteAvatar,
-  onUpdateUser
+  onUpdateUser,
+  onBackFromProfile
 }) => {
   switch (currentSection) {
     case 'mon_profil':
-      return <ProfileView authUser={authUser} avatarUrl={avatarUrl} onUploadAvatar={onUploadAvatar} onDeleteAvatar={onDeleteAvatar} onUpdateUser={onUpdateUser} />;
+      return <ProfileView authUser={authUser} avatarUrl={avatarUrl} onUploadAvatar={onUploadAvatar} onDeleteAvatar={onDeleteAvatar} onUpdateUser={onUpdateUser} onBack={onBackFromProfile} />;
     case 'gestion_utilisateurs':
       return currentRole === 'Dir.' ? <GestionUtilisateursView /> : null;
     case 'tableau_de_bord':

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { BadgeCheck, Camera, Check, ImagePlus, Mail, Trash2, UserRound } from 'lucide-react';
+import { ArrowLeft, BadgeCheck, Camera, Check, ImagePlus, Mail, Trash2, UserRound } from 'lucide-react';
 import { AuthUser, ROLE_LABELS } from '../../types';
 
 interface ProfileViewProps {
@@ -8,11 +8,12 @@ interface ProfileViewProps {
   onUploadAvatar: (file: File) => Promise<void>;
   onDeleteAvatar: () => Promise<void>;
   onUpdateUser: (updates: Pick<AuthUser, 'nom' | 'email'>) => Promise<void>;
+  onBack: () => void;
 }
 
 const initials = (name: string) => name.trim().split(/\s+/).slice(0, 2).map(part => part[0]?.toUpperCase() ?? '').join('');
 
-export const ProfileView: React.FC<ProfileViewProps> = ({ authUser, avatarUrl, onUploadAvatar, onDeleteAvatar, onUpdateUser }) => {
+export const ProfileView: React.FC<ProfileViewProps> = ({ authUser, avatarUrl, onUploadAvatar, onDeleteAvatar, onUpdateUser, onBack }) => {
   const fileInput = useRef<HTMLInputElement>(null);
   const [nom, setNom] = useState(authUser.nom);
   const [email, setEmail] = useState(authUser.email);
@@ -78,6 +79,10 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ authUser, avatarUrl, o
 
   return (
     <div className="mx-auto max-w-5xl space-y-6 pb-10">
+      <button type="button" onClick={onBack} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-[#17694f] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16785c] focus-visible:ring-offset-2">
+        <ArrowLeft size={16} />
+        Retour
+      </button>
       <header className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7">
         <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
           <div className="relative mx-auto sm:mx-0">

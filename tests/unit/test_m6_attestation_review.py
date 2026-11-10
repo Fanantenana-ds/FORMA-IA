@@ -113,6 +113,40 @@ def test_modifier_attestation_regenere_pdf_et_conserve_validation_en_attente(rev
     assert response["review"]["manual_edits_count"] == 1
 
 
+def test_attestation_participation_sans_competences_peut_etre_modifiee(review_m6, monkeypatch):
+    _, items = review_m6
+    item = {
+        **items[0],
+        "metadata": {"competencies_source": "participation_only"},
+        "content": {**items[0]["content"], "competences": []},
+    }
+    review_id = hitl_helper.create_review(
+        agent_id="agent_5_attestations",
+        data={"session_id": "session-1", "attestations": [item]},
+        summary="Attestation de participation à valider",
+        criticity="critical",
+    )
+    review = hitl_helper.get_review(review_id)
+
+    def build_pdf(self, result, participant, output_path=None):
+        output_path.write_bytes(b"%PDF-1.4 participation revised")
+        return str(output_path)
+
+    monkeypatch.setattr(AttestationGeneratorService, "_build_attestation_pdf", build_pdf)
+    content = {**item["content"], "cloture": "Participation confirmée après vérification des présences."}
+    response = asyncio.run(formation_ia.modifier_attestation(
+        review_id,
+        item["numero_unique"],
+        formation_ia.AttestationEditRequest(content=content, expected_updated_at=review["updated_at"]),
+        _current_user=None,
+    ))
+
+    edited = response["review"]["data"]["attestations"][0]
+    assert edited["content"]["competences"] == []
+    assert edited["metadata"]["competencies_source"] == "participation_only"
+    assert Path(edited["pdf_path"]).read_bytes() == b"%PDF-1.4 participation revised"
+
+
 def test_supprimer_attestation_en_attente_et_refuser_la_derniere(review_m6):
     review_id, items = review_m6
     review = hitl_helper.get_review(review_id)

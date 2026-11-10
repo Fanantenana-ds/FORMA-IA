@@ -106,24 +106,24 @@ export const FacturationDevisView: React.FC<FacturationDevisViewProps> = ({
       <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-100 text-emerald-800">
+            <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-brand-gold/15 text-brand-navy">
               Gestion Financière
             </span>
-            <span className="text-xs text-slate-400">• Facturation automatisée</span>
+            <span className="text-xs text-slate-400">• Devis, règlements et relances</span>
           </div>
           <h1 className="text-2xl font-extrabold text-[#11162A]">Facturation & Devis</h1>
           <p className="text-slate-600 text-xs mt-1">
-            Émission et suivi des devis de formation, factures d'acompte et règlements clients.
+            Préparez les devis et les factures, enregistrez les règlements et suivez les soldes clients.
           </p>
         </div>
 
         <div className="flex gap-2 flex-wrap">
         <button
           onClick={onOpenNewInvoice}
-          className="px-4 py-2.5 bg-[#1B8F6E] hover:bg-[#16785c] text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors shrink-0"
+          className="px-4 py-2.5 bg-[#0B1F4D] hover:bg-[#06132F] text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors shrink-0"
         >
           <Plus size={16} />
-          <span>Créer Devis / Facture</span>
+          <span>Créer un devis ou une facture</span>
         </button>
         <div className="flex gap-1.5">{(['csv','excel','pdf'] as const).map(format => <button key={format} onClick={() => exportFile(format)} className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-[11px] font-bold">{format.toUpperCase()}</button>)}</div>
         </div>
@@ -150,7 +150,7 @@ export const FacturationDevisView: React.FC<FacturationDevisViewProps> = ({
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
           placeholder="Rechercher par client ou numéro de facture/devis..."
-          className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#1B8F6E]"
+          className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#0B1F4D]"
         />
       </div>
 
@@ -177,9 +177,9 @@ export const FacturationDevisView: React.FC<FacturationDevisViewProps> = ({
               <div><span className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-bold ${statusStyle[item.statut] ?? statusStyle['Envoyé']}`}>{item.statut}</span><div className="mt-1 text-[11px] text-slate-500">{item.dateEcheance ? `Échéance : ${new Date(item.dateEcheance).toLocaleDateString('fr-FR')}` : 'Échéance non renseignée'}</div><div className="mt-1 text-[11px] font-semibold text-slate-600">Reçu {paid.toLocaleString('fr-FR')} Ar · dû <span className={remaining > 0 ? 'text-orange-700' : 'text-emerald-700'}>{remaining.toLocaleString('fr-FR')} Ar</span></div></div>
               <div className="flex flex-wrap items-center gap-1.5 lg:justify-end">
                 <button onClick={() => toggleDetails(item)} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-2 text-[11px] font-bold text-slate-600 hover:bg-slate-50"><History size={14}/>Historique<ChevronDown size={13} className={expandedId === item.id ? 'rotate-180' : ''}/></button>
-                {remaining > 0 && item.statut !== 'Annulée' && <button onClick={() => addPayment(item)} disabled={busyId === item.id} className="inline-flex items-center gap-1 rounded-lg bg-[#1B8F6E] px-2.5 py-2 text-[11px] font-bold text-white disabled:opacity-50"><CreditCard size={14}/>Paiement</button>}
+                {remaining > 0 && item.statut !== 'Annulée' && <button onClick={() => addPayment(item)} disabled={busyId === item.id} className="inline-flex items-center gap-1 rounded-lg bg-[#0B1F4D] px-2.5 py-2 text-[11px] font-bold text-white disabled:opacity-50"><CreditCard size={14}/>Paiement</button>}
                 {item.statut === 'En retard' && <button onClick={() => generateReminder(item)} disabled={busyId === item.id} className="inline-flex items-center gap-1 rounded-lg bg-indigo-50 px-2.5 py-2 text-[11px] font-bold text-indigo-700 disabled:opacity-50">{busyId === item.id ? <Loader2 size={14} className="animate-spin"/> : <Sparkles size={14}/>}Relance IA</button>}
-                <button onClick={() => downloadInvoice(item)} disabled={busyId === item.id} className="rounded-lg border border-slate-200 p-2 text-slate-500 hover:border-[#1B8F6E] hover:text-[#1B8F6E] disabled:opacity-50" title={`Télécharger la facture ${item.numero} en PDF`}>{busyId === item.id ? <Loader2 size={15} className="animate-spin"/> : <Download size={15}/>}</button>
+                <button onClick={() => downloadInvoice(item)} disabled={busyId === item.id} className="rounded-lg border border-slate-200 p-2 text-slate-500 hover:border-[#0B1F4D] hover:text-[#0B1F4D] disabled:opacity-50" title={`Télécharger la facture ${item.numero} en PDF`}>{busyId === item.id ? <Loader2 size={15} className="animate-spin"/> : <Download size={15}/>}</button>
               </div>
             </div>
             {expandedId === item.id && <div className="grid gap-4 border-t border-slate-100 bg-slate-50/70 p-4 md:grid-cols-2">
@@ -195,13 +195,13 @@ export const FacturationDevisView: React.FC<FacturationDevisViewProps> = ({
         <div className="flex items-start justify-between"><div><h2 id="payment-title" className="text-lg font-extrabold text-[#11162A]">Enregistrer un paiement</h2><p className="mt-1 text-xs text-slate-500">Facture {paymentTarget.numero} · solde {(paymentTarget.montantRestantDu ?? paymentTarget.montantTTC).toLocaleString('fr-FR')} Ar</p></div><button type="button" onClick={() => setPaymentTarget(null)} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100"><X size={18}/></button></div>
         <label className="block text-xs font-bold text-slate-600">Montant payé (Ar)<input type="number" min="1" max={paymentTarget.montantRestantDu ?? paymentTarget.montantTTC} step="0.01" required value={paymentAmount} onChange={e => setPaymentAmount(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm text-slate-800"/></label>
         <div className="grid grid-cols-2 gap-3"><label className="block text-xs font-bold text-slate-600">Date<input type="date" required value={paymentDate} onChange={e => setPaymentDate(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm text-slate-800"/></label><label className="block text-xs font-bold text-slate-600">Mode<select value={paymentMode} onChange={e => setPaymentMode(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm text-slate-800"><option>VIREMENT</option><option>ESPECES</option><option>CHEQUE</option><option>MOBILE_MONEY</option><option>AUTRE</option></select></label></div>
-        {error && <p className="rounded-lg bg-red-50 p-2 text-xs text-red-700">{error}</p>}<button disabled={busyId === paymentTarget.id} className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#1B8F6E] px-4 py-3 text-xs font-bold text-white disabled:opacity-50">{busyId === paymentTarget.id ? <Loader2 size={15} className="animate-spin"/> : <Check size={15}/>}Enregistrer le paiement</button>
+        {error && <p className="rounded-lg bg-red-50 p-2 text-xs text-red-700">{error}</p>}<button disabled={busyId === paymentTarget.id} className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#0B1F4D] px-4 py-3 text-xs font-bold text-white disabled:opacity-50">{busyId === paymentTarget.id ? <Loader2 size={15} className="animate-spin"/> : <Check size={15}/>}Enregistrer le paiement</button>
       </form></div>}
 
       {reminderPreview && <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-950/50 p-4" role="dialog" aria-modal="true" aria-labelledby="reminder-title"><div className="my-auto w-full max-w-2xl space-y-4 rounded-2xl bg-white p-6 shadow-2xl">
         <div className="flex items-start justify-between"><div><span className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2.5 py-1 text-[10px] font-bold uppercase text-indigo-700"><Sparkles size={12}/>Validation humaine M7</span><h2 id="reminder-title" className="mt-2 text-xl font-extrabold text-[#11162A]">Aperçu de la relance</h2><p className="mt-1 text-xs text-slate-500">{reminderPreview.invoice.numero} · {reminderPreview.invoice.client}</p></div><button type="button" onClick={() => setReminderPreview(null)} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100"><X size={18}/></button></div>
         <div className="rounded-xl border border-indigo-100 bg-indigo-50/50 p-4"><div className="mb-2 flex flex-wrap gap-2"><span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-bold text-indigo-700">{reminderPreview.review.niveau ?? 'Relance'}</span>{reminderPreview.review.objet && <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600">{reminderPreview.review.objet}</span>}</div><div className="max-h-[45vh] overflow-y-auto whitespace-pre-wrap text-sm leading-relaxed text-slate-700">{reminderPreview.review.texte ?? reminderPreview.review.contenu ?? JSON.stringify(reminderPreview.review, null, 2)}</div></div>
-        <div className="flex justify-end"><button type="button" onClick={openReminderReview} className="rounded-xl bg-[#1B8F6E] px-4 py-2.5 text-xs font-bold text-white">Vérifier et valider dans l’Espace IA</button></div>
+        <div className="flex justify-end"><button type="button" onClick={openReminderReview} className="rounded-xl bg-[#0B1F4D] px-4 py-2.5 text-xs font-bold text-white">Vérifier et valider dans l’Espace IA</button></div>
       </div></div>}
     </div>
   );

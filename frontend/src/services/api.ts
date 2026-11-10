@@ -336,6 +336,8 @@ class ApiService {
   async getOffersByOpportunity(opportunityId: string) {
     return this.request<any>(`/offres${queryString({ opportunite_id: opportunityId, skip: '0', limit: '100' })}`);
   }
+  async getProjectBudget(projectId: string) { return this.request<any>(`/projets/${encodeURIComponent(projectId)}/budget`); }
+  async getProjectSchedule(projectId: string) { return this.request<any[]>(`/projets/${encodeURIComponent(projectId)}/edt`); }
   async createFacture(form: Partial<DevisFacture>) {
     const raw = await this.request<any>('/factures', this.json('POST', {
       client: form.client?.trim() || undefined,
@@ -537,7 +539,7 @@ class ApiService {
   async deleteRagConversation(id: string) { return this.request<any>(`/ia/rag/conversations/${id}`, { method: 'DELETE' }, { ia: true }); }
   async renameRagConversation(id: string, titre: string) { return this.request<any>(`/ia/rag/conversations/${id}/rename`, { method: 'PATCH', body: JSON.stringify({ titre }) }, { ia: true }); }
   async feedbackRagMessage(conversationId: string, indexEchange: number, feedback: 'positif' | 'negatif') { return this.request<any>(`/ia/rag/conversations/${conversationId}/feedback`, { method: 'POST', body: JSON.stringify({ index_echange: indexEchange, feedback }) }, { ia: true }); }
-  async getProjects() { return this.request<any[]>('/projets?skip=0&limit=100'); }
+  async getProjects() { return this.request<any[]>('/projets?skip=0&limit=500'); }
   async createProject(body: unknown) { return this.request<any>('/projets', this.json('POST', body)); }
   async getRooms() { return this.request<any[]>('/salles?skip=0&limit=100'); }
   async createRoom(body: unknown) { return this.request<any>('/salles', this.json('POST', body)); }

@@ -56,6 +56,9 @@ export const DossiersFormationView: React.FC<Props> = ({ opportunites, sessions,
   const [participants, setParticipants] = useState<any[]>([]);
   const [supports, setSupports] = useState<any[]>([]);
   const [eligibility, setEligibility] = useState<any>(null);
+  const [preparationProject, setPreparationProject] = useState<any>(null);
+  const [preparationBudget, setPreparationBudget] = useState<any>(null);
+  const [preparationSchedule, setPreparationSchedule] = useState<any[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [detailError, setDetailError] = useState('');
@@ -84,6 +87,7 @@ export const DossiersFormationView: React.FC<Props> = ({ opportunites, sessions,
     if (!selected) return;
     setLoadingDetail(true); setDetailError('');
     setOffers([]); setParticipants([]); setSupports([]); setEligibility(null);
+    setPreparationProject(null); setPreparationBudget(null); setPreparationSchedule([]);
     const sessionId = selected.session?.id;
     const opportunityId = selected.opportunity?.id;
     const tasks: Promise<any>[] = [
@@ -91,6 +95,7 @@ export const DossiersFormationView: React.FC<Props> = ({ opportunites, sessions,
       sessionId ? apiService.getParticipants(sessionId) : Promise.resolve([]),
       sessionId ? apiService.getSupports({ session_id: sessionId }) : Promise.resolve({ data: [] }),
       sessionId ? apiService.getM6Eligibility(sessionId) : Promise.resolve(null),
+      opportunityId ? apiService.getProjects() : Promise.resolve([]),
     ];
     const results = await Promise.allSettled(tasks);
     const errors = results.filter(result => result.status === 'rejected');
@@ -98,6 +103,20 @@ export const DossiersFormationView: React.FC<Props> = ({ opportunites, sessions,
     if (results[1].status === 'fulfilled') setParticipants(asArray(results[1].value, 'participants'));
     if (results[2].status === 'fulfilled') setSupports(asArray(results[2].value, 'data'));
     if (results[3].status === 'fulfilled') setEligibility(results[3].value);
+    if (results[4].status === 'fulfilled') {
+      const linkedProjects = asArray(results[4].value).filter(project => String(project.opportunite_id ?? '') === String(opportunityId ?? ''));
+      linkedProjects.sort((a, b) => String(b.date_creation ?? '').localeCompare(String(a.date_creation ?? '')));
+      const project = linkedProjects[0] ?? null;
+      setPreparationProject(project);
+      if (project) {
+        const [budgetResult, scheduleResult] = await Promise.allSettled([
+          apiService.getProjectBudget(String(project.id)),
+          apiService.getProjectSchedule(String(project.id)),
+        ]);
+        if (budgetResult.status === 'fulfilled') setPreparationBudget(budgetResult.value);
+        if (scheduleResult.status === 'fulfilled') setPreparationSchedule(asArray(scheduleResult.value));
+      }
+    }
     if (errors.length) setDetailError(`${errors.length} donnée(s) n’ont pas pu être chargée(s). Le reste du dossier reste consultable.`);
     setLoadingDetail(false);
   }, [selected]);
@@ -147,6 +166,7 @@ export const DossiersFormationView: React.FC<Props> = ({ opportunites, sessions,
   const tdrReview = latest('agent_m2_tdr');
   const trainer = session ? formateurs.find(item => item.id === session.formateurId) : undefined;
   const invoices = session ? factures.filter(invoice => invoice.sessionId === session.id) : [];
+  const indexedSupportCount = supports.filter(item => String(item.statut ?? '').toLowerCase() === 'indexe').length;
   const eligibleList = asArray(eligibility?.participants ?? eligibility?.data?.participants ?? eligibility?.eligibles);
   const attendanceKnown = eligibility != null && (eligibility?.success !== false);
   const eligibleCount = Number(eligibility?.total_eligible ?? eligibility?.eligible ?? eligibleList.filter((item: any) => item.eligible ?? item.eligibilite === 'eligible').length);
@@ -158,9 +178,11 @@ export const DossiersFormationView: React.FC<Props> = ({ opportunites, sessions,
     { title: 'TDR', detail: tdrReview ? `${statusLabel(tdrReview.status)} · ${tdrReview.summary ?? tdrReview.review_id}` : selected.opportunity ? 'Aucune revue TDR reliée à cette opportunité.' : 'Lien opportunité absent : TDR non rattachable automatiquement.', state: tdrReview?.status === 'approved' ? 'done' : tdrReview ? 'pending' : selected.opportunity ? 'pending' : 'warning', reviewId: reviewId(tdrReview) },
     { title: 'Offre technique', detail: offers.some(item => item.trame_technique) ? `${offers.filter(item => item.trame_technique).length} version(s) enregistrée(s) dans le Backend` : technicalReview ? `${statusLabel(technicalReview.status)} · ${technicalReview.summary ?? technicalReview.review_id}` : 'Aucune offre technique enregistrée ou revue IA reliée.', state: offers.some(item => item.trame_technique) ? 'done' : technicalReview ? technicalReview.status === 'approved' ? 'done' : 'pending' : selected.opportunity ? 'pending' : 'future', reviewId: reviewId(technicalReview) },
     { title: 'Offre financière', detail: offers.some(item => item.trame_financiere) ? `${offers.filter(item => item.trame_financiere).length} version(s) enregistrée(s) dans le Backend` : financialReview ? `${statusLabel(financialReview.status)} · ${financialReview.summary ?? financialReview.review_id}` : 'Aucune offre financière enregistrée ou revue IA reliée.', state: offers.some(item => item.trame_financiere) ? 'done' : financialReview ? financialReview.status === 'approved' ? 'done' : 'pending' : selected.opportunity ? 'pending' : 'future', reviewId: reviewId(financialReview) },
+    { title: 'Préparation · budget et planning', detail: preparationProject ? `${preparationProject.titre} · budget ${preparationBudget?.valide ? 'validé' : 'à compléter ou valider'} · ${preparationSchedule.length} séance(s) au planning.` : session && !selected.opportunity ? 'Session sans opportunité liée : le projet de préparation ne peut pas être rattaché par identifiant.' : 'Aucun projet de préparation lié à cette opportunité par identifiant.' , state: preparationProject ? preparationBudget?.valide && preparationSchedule.length > 0 ? 'done' : 'pending' : session ? 'warning' : selected.opportunity ? 'pending' : 'future' },
     { title: 'Formateur', detail: session ? trainer ? `${trainer.prenom ?? ''} ${trainer.nom}`.trim() : session.formateur !== 'À définir' ? `${session.formateur} · identifiant formateur non résolu` : 'Aucun formateur affecté à la session.' : 'À renseigner lors de la préparation de la session.', state: trainer || (session && session.formateur !== 'À définir') ? 'done' : session ? 'pending' : 'future' },
     { title: 'Session', detail: session ? `${session.intitule} · ${formatDate(session.dateDebut)} · ${session.lieu ?? 'Lieu à confirmer'} · ${session.statut}` : 'La session de formation n’est pas encore créée ou rattachée.', state: session ? 'done' : selected.opportunity ? 'pending' : 'warning' },
-    { title: 'Participants et supports', detail: session ? `${participants.length} participant(s) inscrit(s) · ${supports.length} support(s), dont ${supports.filter(item => item.statut === 'indexe').length} indexé(s)` : 'Disponible après création de la session.', state: session && (participants.length > 0 || supports.length > 0) ? 'done' : session ? 'pending' : 'future' },
+    { title: 'Participants inscrits', detail: session ? participants.length ? `${participants.length} participant(s) rattaché(s) à cette session.` : 'Aucun participant inscrit pour le moment.' : 'Disponible après création de la session.', state: session && participants.length > 0 ? 'done' : session ? 'pending' : 'future' },
+    { title: 'Supports pédagogiques · RAG', detail: session ? supports.length ? `${indexedSupportCount}/${supports.length} support(s) indexé(s) et exploitable(s) par le RAG.` : 'Aucun support pédagogique rattaché à cette session.' : 'Disponible après création de la session.', state: session && supports.length > 0 && indexedSupportCount === supports.length ? 'done' : session ? 'pending' : 'future' },
     { title: 'Présences et attestations', detail: session ? attendanceKnown ? `${eligibleCount} participant(s) éligible(s) selon le retour M6${attestations ? ` · attestation(s) ${statusLabel(attestations.status).toLowerCase()}` : ''}` : 'Éligibilité non chargée ou aucune donnée de présence disponible.' : 'Disponible après la formation.', state: attestations?.status === 'approved' ? 'done' : attendanceKnown ? 'pending' : 'future', reviewId: reviewId(attestations) },
     { title: 'Rapport final', detail: report ? `${statusLabel(report.status)} · ${report.summary ?? report.review_id}` : session ? 'Aucun rapport final relié à cette session.' : 'Disponible après la formation.', state: report?.status === 'approved' ? 'done' : report ? 'pending' : session?.statut === 'Terminée' ? 'pending' : 'future', reviewId: reviewId(report) },
     { title: 'Facturation', detail: session ? invoices.length ? `${invoices.length} document(s) de facturation lié(s) à la session` : 'Aucune facture liée à cette session.' : 'Disponible après création de la session.', state: invoices.length ? 'done' : session ? 'pending' : 'future' },
@@ -183,7 +205,7 @@ export const DossiersFormationView: React.FC<Props> = ({ opportunites, sessions,
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
         <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
           <div>
-            <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-800"><Workflow size={14} /> Pipeline de formation</div>
+          <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-brand-gold/15 px-3 py-1 text-xs font-semibold text-brand-navy"><Workflow size={14} className="text-brand-goldDark" /> Pipeline de formation</div>
             <h1 className="text-2xl font-bold text-slate-900">Dossiers de formation</h1>
             <p className="mt-1 max-w-3xl text-sm text-slate-600">Suivez chaque dossier de l’opportunité jusqu’au rapport final. Les liens sont établis à partir des identifiants enregistrés dans FORMA-IA.</p>
           </div>
@@ -208,8 +230,8 @@ export const DossiersFormationView: React.FC<Props> = ({ opportunites, sessions,
               const active = selectedKey === dossier.key;
               const title = dossier.opportunity?.entreprise ?? dossier.session?.client ?? 'Session sans client';
               const subtitle = dossier.session?.intitule ?? dossier.opportunity?.besoinFormation ?? dossier.opportunity?.domaineIA ?? 'Besoin non précisé';
-              return <button key={dossier.key} onClick={() => setSelectedKey(dossier.key)} className={`mb-1 w-full rounded-xl border p-3 text-left transition ${active ? 'border-emerald-200 bg-emerald-50/70' : 'border-transparent hover:border-slate-200 hover:bg-slate-50'}`}>
-                <div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className="truncate text-sm font-bold text-slate-900">{title}</div><div className="mt-1 line-clamp-2 text-xs text-slate-600">{subtitle}</div></div><ArrowRight size={15} className={active ? 'mt-1 shrink-0 text-emerald-700' : 'mt-1 shrink-0 text-slate-300'} /></div>
+              return <button key={dossier.key} onClick={() => setSelectedKey(dossier.key)} className={`mb-1 w-full rounded-xl border p-3 text-left transition ${active ? 'border-brand-gold/70 bg-brand-gold/10' : 'border-transparent hover:border-slate-200 hover:bg-slate-50'}`}>
+                <div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className="truncate text-sm font-bold text-slate-900">{title}</div><div className="mt-1 line-clamp-2 text-xs text-slate-600">{subtitle}</div></div><ArrowRight size={15} className={active ? 'mt-1 shrink-0 text-brand-goldDark' : 'mt-1 shrink-0 text-slate-300'} /></div>
                 <div className="mt-3 flex flex-wrap gap-1.5"><Badge>{dossier.session ? dossier.session.statut : 'Sans session'}</Badge>{!dossier.opportunity && <Badge>Opportunité non liée</Badge>}</div>
               </button>;
             })}
@@ -222,14 +244,14 @@ export const DossiersFormationView: React.FC<Props> = ({ opportunites, sessions,
             <div className="border-b border-slate-100 p-5 sm:p-6">
               <div className="flex flex-col justify-between gap-4 md:flex-row md:items-start">
                 <div className="min-w-0"><div className="text-xs font-semibold uppercase tracking-wide text-emerald-700">{selected.opportunity ? `Dossier opportunité · ${selected.opportunity.etape}` : 'Dossier de session · lien opportunité absent'}</div><h2 className="mt-1 truncate text-xl font-bold text-slate-900">{selected.opportunity?.entreprise ?? selected.session?.client ?? 'Formation'}</h2><p className="mt-1 text-sm text-slate-600">{selected.session?.intitule ?? selected.opportunity?.besoinFormation ?? selected.opportunity?.domaineIA}</p></div>
-                <div className="min-w-[170px] rounded-xl bg-slate-50 px-4 py-3"><div className="flex items-center justify-between text-xs text-slate-500"><span>Étapes confirmées</span><strong className="text-slate-800">{completed}/{stages.length}</strong></div><div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-200"><div className="h-full rounded-full bg-emerald-600 transition-all" style={{ width: `${progress}%` }} /></div></div>
+                <div className="min-w-[170px] rounded-xl bg-slate-50 px-4 py-3"><div className="flex items-center justify-between text-xs text-slate-500"><span>Étapes confirmées</span><strong className="text-slate-800">{completed}/{stages.length}</strong></div><div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-200"><div className="h-full rounded-full bg-brand-gold transition-all" style={{ width: `${progress}%` }} /></div></div>
               </div>
               {detailError && <div className="mt-4 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800"><AlertCircle size={15} /> {detailError}</div>}
             </div>
             {loadingDetail || loadingReviews ? <div className="flex items-center gap-2 p-5 text-sm text-slate-500"><Loader2 size={17} className="animate-spin" /> Chargement des éléments rattachés…</div> : null}
             <div className="grid gap-5 p-5 sm:p-6 lg:grid-cols-[minmax(0,1fr)_280px]">
               <div>
-                <div className="mb-4 flex items-center justify-between"><h3 className="font-bold text-slate-900">Avancement du pipeline</h3><span className="text-xs text-slate-500">Données enregistrées</span></div>
+                <div className="mb-4 flex items-center justify-between"><h3 className="font-bold text-slate-900">Avancement du pipeline</h3><span className="text-xs text-slate-500">États confirmés par les données liées</span></div>
                 <div className="space-y-0">
                   {stages.map((stage, index) => <div key={stage.title} className="relative flex gap-3 pb-5 last:pb-0">
                     {index < stages.length - 1 && <div className="absolute bottom-0 left-[15px] top-8 w-px bg-slate-200" />}
@@ -239,7 +261,7 @@ export const DossiersFormationView: React.FC<Props> = ({ opportunites, sessions,
                     <div className="min-w-0 flex-1 rounded-xl border border-slate-100 bg-white px-4 py-3">
                       <div className="flex flex-wrap items-center justify-between gap-2"><h4 className="text-sm font-semibold text-slate-900">{stage.title}</h4><StageBadge state={stage.state} /></div>
                       <p className="mt-1 text-sm leading-5 text-slate-600">{stage.detail}</p>
-                      {stage.reviewId && <button onClick={() => openReview(stage.reviewId)} className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 hover:text-emerald-900">{stage.state === 'pending' ? 'Ouvrir la validation IA' : 'Consulter le contenu associé'} <ArrowRight size={13} /></button>}
+                      {stage.reviewId && <button onClick={() => openReview(stage.reviewId)} className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-brand-navy hover:text-brand-goldDark">{stage.state === 'pending' ? 'Ouvrir la validation IA' : 'Consulter le contenu associé'} <ArrowRight size={13} /></button>}
                     </div>
                   </div>)}
                 </div>
@@ -268,4 +290,4 @@ const StageBadge: React.FC<{ state: Stage['state'] }> = ({ state }) => {
   const config = state === 'done' ? ['Confirmé', 'bg-emerald-50 text-emerald-700'] : state === 'pending' ? ['À traiter / vérifier', 'bg-blue-50 text-blue-700'] : state === 'warning' ? ['Lien à vérifier', 'bg-amber-50 text-amber-700'] : ['Étape ultérieure', 'bg-slate-100 text-slate-500'];
   return <span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold ${config[1]}`}>{config[0]}</span>;
 };
-const InfoCard: React.FC<{ icon: React.ReactNode; label: string; value: string }> = ({ icon, label, value }) => <div className="flex items-start gap-3 rounded-xl border border-slate-100 p-3"><span className="mt-0.5 text-emerald-700">{icon}</span><div className="min-w-0"><div className="text-xs font-semibold text-slate-500">{label}</div><div className="mt-0.5 break-all text-sm font-medium text-slate-800">{value}</div></div></div>;
+const InfoCard: React.FC<{ icon: React.ReactNode; label: string; value: string }> = ({ icon, label, value }) => <div className="flex items-start gap-3 rounded-xl border border-slate-100 p-3"><span className="mt-0.5 text-brand-goldDark">{icon}</span><div className="min-w-0"><div className="text-xs font-semibold text-slate-500">{label}</div><div className="mt-0.5 break-all text-sm font-medium text-slate-800">{value}</div></div></div>;

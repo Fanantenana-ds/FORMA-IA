@@ -50,7 +50,7 @@ export const OtFormEditor: React.FC<OtFormEditorProps> = ({ otData, setOtData })
             type="number"
             value={otData.budgetTotalAr}
             onChange={(e) => setOtData({ ...otData, budgetTotalAr: Number(e.target.value) })}
-            className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-extrabold text-[#1B8F6E]"
+            className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-extrabold text-[#0B1F4D]"
           />
         </div>
       </div>

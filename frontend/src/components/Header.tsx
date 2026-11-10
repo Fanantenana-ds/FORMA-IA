@@ -168,7 +168,7 @@ export const Header: React.FC<HeaderProps> = ({
           aria-label="Ouvrir ou fermer le menu de navigation"
           aria-controls="primary-navigation"
           aria-expanded={isSidebarOpen}
-          className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-[#11162A] shadow-sm transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1B8F6E] md:hidden"
+          className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-[#11162A] shadow-sm transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1F4D] md:hidden"
         >
           <Menu size={20} />
         </button>
@@ -202,7 +202,7 @@ export const Header: React.FC<HeaderProps> = ({
               }
             }}
             placeholder="Rechercher une session, une opportunité…"
-            className="w-full rounded-xl border border-slate-200 bg-[#F4F5F3] py-2.5 pl-9 pr-3 text-xs text-slate-800 transition-all placeholder:text-[10px] placeholder:text-slate-400 focus:border-[#1B8F6E] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#1B8F6E]/20 sm:pr-4 sm:text-sm sm:placeholder:text-xs"
+            className="w-full rounded-xl border border-slate-200 bg-[#F4F5F3] py-2.5 pl-9 pr-3 text-xs text-slate-800 transition-all placeholder:text-[10px] placeholder:text-slate-400 focus:border-[#0B1F4D] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0B1F4D]/20 sm:pr-4 sm:text-sm sm:placeholder:text-xs"
           />
           {showSearchResults && (
             <div id="header-search-results" role="listbox" aria-label="Résultats de recherche" className="absolute left-0 right-0 top-full z-50 mt-2 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl">
@@ -228,7 +228,7 @@ export const Header: React.FC<HeaderProps> = ({
                         <span className="block truncate text-xs font-bold text-slate-800">{item.title}</span>
                         <span className="mt-0.5 block truncate text-[10px] text-slate-500">{item.description || 'Aucune information complémentaire'}</span>
                       </span>
-                      <span className="flex shrink-0 items-center gap-1 text-[10px] font-semibold text-[#17694f]">{item.sectionLabel}<ArrowUpRight size={12} /></span>
+                      <span className="flex shrink-0 items-center gap-1 text-[10px] font-semibold text-[#0B1F4D]">{item.sectionLabel}<ArrowUpRight size={12} /></span>
                     </button>
                   ))}
                   <p className="border-t border-slate-100 px-4 py-2 text-[10px] text-slate-400">Recherche parmi les données déjà chargées pour votre rôle.</p>
@@ -247,7 +247,7 @@ export const Header: React.FC<HeaderProps> = ({
           {canCreateOpportunity && <button
             onClick={onQuickNewOpportunity}
             type="button"
-            className="px-3 py-1.5 bg-[#1B8F6E]/10 hover:bg-[#1B8F6E]/20 text-[#1B8F6E] rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors border border-[#1B8F6E]/20"
+            className="px-3 py-1.5 bg-brand-gold/10 hover:bg-brand-gold/20 text-brand-navy rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors border border-brand-gold/40"
           >
             <Plus size={14} />
             <span>Opportunité</span>
@@ -255,7 +255,7 @@ export const Header: React.FC<HeaderProps> = ({
           {canCreateSession && <button
             onClick={onQuickNewSession}
             type="button"
-            className="px-3 py-1.5 bg-[#1B8F6E] hover:bg-[#16785c] text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-xs"
+            className="px-3 py-1.5 bg-brand-navy hover:bg-brand-darkNavy text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-xs"
           >
             <Plus size={14} />
             <span>Session</span>
@@ -277,7 +277,7 @@ export const Header: React.FC<HeaderProps> = ({
             onClick={() => setShowQuickActions(open => !open)}
             aria-label="Ouvrir les actions rapides"
             aria-expanded={showQuickActions}
-            className="flex h-9 w-9 items-center justify-center rounded-xl border border-emerald-200 bg-emerald-50 text-[#17694f] transition hover:bg-emerald-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16785c]"
+            className="flex h-9 w-9 items-center justify-center rounded-xl border border-brand-gold/50 bg-brand-gold/10 text-brand-navy transition hover:bg-brand-gold/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-gold"
           >
             <Plus size={18} />
           </button>
@@ -355,7 +355,7 @@ export const Header: React.FC<HeaderProps> = ({
                 <div className="px-4 py-2.5 border-t border-slate-100">
                   <button
                     onClick={() => { setShowBell(false); onNavigateToFormateurs(); }}
-                    className="w-full text-xs font-bold text-[#1B8F6E] hover:underline text-center"
+                    className="w-full text-xs font-bold text-[#0B1F4D] hover:underline text-center"
                   >
                     Voir toutes les candidatures →
                   </button>
@@ -376,13 +376,13 @@ export const Header: React.FC<HeaderProps> = ({
                 aria-expanded={showUserMenu}
                 className="flex items-center gap-2.5 hover:opacity-80 transition-opacity p-1 rounded-xl hover:bg-slate-50"
               >
-                <div className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-full border border-white bg-[#1B8F6E] text-xs font-extrabold text-white shadow-sm ring-1 ring-slate-200">
+                <div className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-full border border-white bg-brand-navy text-xs font-extrabold text-white shadow-sm ring-1 ring-slate-200">
                   {avatarUrl ? <img src={avatarUrl} alt="" className="h-full w-full object-cover" /> : getInitials(authUser.nom)}
                 </div>
                 <div className="hidden md:block text-left">
                   <div className="text-xs font-bold text-slate-800 leading-none flex items-center gap-1">
                     <span>{authUser.nom}</span>
-                    <span className="text-[10px] px-1.5 py-0.2 bg-[#1B8F6E]/10 text-[#1B8F6E] font-extrabold rounded">
+                    <span className="text-[10px] px-1.5 py-0.2 bg-brand-gold/15 text-brand-navy font-extrabold rounded">
                       {ROLE_LABELS[authUser.role]}
                     </span>
                   </div>
@@ -398,15 +398,15 @@ export const Header: React.FC<HeaderProps> = ({
                   <div className="p-2 border-b border-slate-100">
                     <div className="font-bold text-xs text-[#11162A]">{authUser.nom}</div>
                     <div className="text-[11px] text-slate-500">{authUser.email}</div>
-                    <div className="text-[10px] text-[#1B8F6E] font-bold mt-1">{ROLE_LABELS[authUser.role]}</div>
+                    <div className="text-[10px] text-brand-goldDark font-bold mt-1">{ROLE_LABELS[authUser.role]}</div>
                   </div>
 
                   <button
                     type="button"
                     onClick={() => { setShowUserMenu(false); onNavigate('mon_profil'); }}
-                    className="mt-1 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-semibold text-slate-700 transition-colors hover:bg-emerald-50 hover:text-[#17694f]"
+                    className="mt-1 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-semibold text-slate-700 transition-colors hover:bg-emerald-50 hover:text-[#0B1F4D]"
                   >
-                    <User size={14} className="text-[#17694f]" />
+                    <User size={14} className="text-[#0B1F4D]" />
                     <span>Mon profil</span>
                   </button>
 
@@ -447,7 +447,7 @@ export const Header: React.FC<HeaderProps> = ({
               </button>
               <button
                 onClick={() => onOpenAuthModal('register')}
-                className="px-3 py-1.5 bg-[#1B8F6E] hover:bg-[#16785c] text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors shadow-xs"
+                className="px-3 py-1.5 bg-brand-navy hover:bg-brand-darkNavy text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors shadow-xs"
               >
                 <UserPlus size={14} />
                 <span className="hidden sm:inline">Inscription</span>

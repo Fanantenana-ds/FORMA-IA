@@ -33,13 +33,13 @@ export const WordDocumentPreview: React.FC<WordDocumentPreviewProps> = ({
             <h1 className="text-2xl md:text-3xl font-black text-[#11162A] tracking-tight uppercase font-sans">
               TERMES DE RÉFÉRENCE (TDR)
             </h1>
-            <div className="text-base font-bold text-[#1B8F6E]">{tdrData.projetTitre}</div>
+            <div className="text-base font-bold text-[#0B1F4D]">{tdrData.projetTitre}</div>
           </div>
 
           {/* Institutional Header */}
           <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 text-xs font-sans space-y-1 text-center font-bold text-slate-700">
             <div>{tdrData.partenaireAcademic}</div>
-            <div className="text-[#1B8F6E]">×</div>
+            <div className="text-[#0B1F4D]">×</div>
             <div>{tdrData.clientOrganisme}</div>
           </div>
 
@@ -58,7 +58,7 @@ export const WordDocumentPreview: React.FC<WordDocumentPreviewProps> = ({
                   rows={3}
                   value={tdrData.presentationClient}
                   onChange={(e) => setTdrData({ ...tdrData, presentationClient: e.target.value })}
-                  className="w-full p-2 bg-slate-50 border border-slate-200 rounded font-sans text-xs focus:ring-1 focus:ring-[#1B8F6E]"
+                  className="w-full p-2 bg-slate-50 border border-slate-200 rounded font-sans text-xs focus:ring-1 focus:ring-[#0B1F4D]"
                 />
               </div>
 
@@ -70,7 +70,7 @@ export const WordDocumentPreview: React.FC<WordDocumentPreviewProps> = ({
                   rows={2}
                   value={tdrData.positionnementProjet}
                   onChange={(e) => setTdrData({ ...tdrData, positionnementProjet: e.target.value })}
-                  className="w-full p-2 bg-slate-50 border border-slate-200 rounded font-sans text-xs focus:ring-1 focus:ring-[#1B8F6E]"
+                  className="w-full p-2 bg-slate-50 border border-slate-200 rounded font-sans text-xs focus:ring-1 focus:ring-[#0B1F4D]"
                 />
               </div>
             </div>
@@ -99,7 +99,7 @@ export const WordDocumentPreview: React.FC<WordDocumentPreviewProps> = ({
                   type="text"
                   value={tdrData.objectifGeneral}
                   onChange={(e) => setTdrData({ ...tdrData, objectifGeneral: e.target.value })}
-                  className="w-full p-2 bg-slate-50 border border-slate-200 rounded font-medium text-xs text-[#1B8F6E]"
+                  className="w-full p-2 bg-slate-50 border border-slate-200 rounded font-medium text-xs text-[#0B1F4D]"
                 />
               </div>
             </div>
@@ -127,7 +127,7 @@ export const WordDocumentPreview: React.FC<WordDocumentPreviewProps> = ({
                       <td className="border border-slate-300 p-1.5 font-bold">{p.phase}</td>
                       <td className="border border-slate-300 p-1.5 text-center font-mono">{p.semaines}</td>
                       <td className="border border-slate-300 p-1.5">{p.activites}</td>
-                      <td className="border border-slate-300 p-1.5 font-semibold text-[#1B8F6E]">{p.livrable}</td>
+                      <td className="border border-slate-300 p-1.5 font-semibold text-[#0B1F4D]">{p.livrable}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -211,7 +211,7 @@ export const WordDocumentPreview: React.FC<WordDocumentPreviewProps> = ({
             <h1 className="text-2xl md:text-3xl font-black text-[#11162A] tracking-tight uppercase">
               OFFRE TECHNIQUE & BUDGET
             </h1>
-            <div className="text-base font-bold text-[#1B8F6E]">{otData.intituleFormation}</div>
+            <div className="text-base font-bold text-[#0B1F4D]">{otData.intituleFormation}</div>
           </div>
 
           {/* Summary Block */}
@@ -317,7 +317,7 @@ export const WordDocumentPreview: React.FC<WordDocumentPreviewProps> = ({
                   <td colSpan={3} className="border border-slate-300 p-3 text-right uppercase text-emerald-900">
                     Total Général HT Estimé :
                   </td>
-                  <td className="border border-slate-300 p-3 text-right text-[#1B8F6E]">
+                  <td className="border border-slate-300 p-3 text-right text-[#0B1F4D]">
                     {otData.budgetTotalAr.toLocaleString()} Ar HT
                   </td>
                 </tr>

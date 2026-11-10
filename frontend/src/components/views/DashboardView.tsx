@@ -54,6 +54,9 @@ const DASHBOARD_VIEW_LABELS: Record<UserRole, string> = {
   'Compt.': 'Comptabilité'
 };
 
+const formatAriary = (amount: number): string =>
+  `${amount.toLocaleString('fr-FR')} Ar`;
+
 export const DashboardView: React.FC<DashboardViewProps> = ({
   kpis,
   domainOpportunities,
@@ -90,16 +93,16 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-slate-200/80 shadow-xs">
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-[#1B8F6E]/10 text-[#1B8F6E]">
+            <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-brand-gold/15 text-brand-navy">
               Vue {DASHBOARD_VIEW_LABELS[currentRole]}
             </span>
-            <span className="text-xs text-slate-500">• Données synchronisées depuis le Backend</span>
+            <span className="text-xs text-slate-500">• Vue de pilotage consolidée</span>
           </div>
           <h1 className="text-2xl md:text-3xl font-extrabold text-[#11162A] tracking-tight">
             Tableau de bord
           </h1>
           <p className="text-slate-600 text-sm mt-1 max-w-2xl font-normal leading-relaxed">
-            Vue consolidée de l'activité de formation : sessions, présences, opportunités et facturation.
+            Suivez l’activité de formation, les opportunités commerciales et les principaux indicateurs financiers.
           </p>
         </div>
 
@@ -109,14 +112,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <button
               type="button"
               onClick={onOpenNewSession}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-[#16785c] px-3 py-2.5 text-xs font-bold text-white shadow-sm transition hover:bg-[#125f49] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16785c] focus-visible:ring-offset-2"
+              className="inline-flex items-center gap-1.5 rounded-xl bg-brand-navy px-3 py-2.5 text-xs font-bold text-white shadow-sm transition hover:bg-brand-darkNavy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-gold focus-visible:ring-offset-2"
             >
               <Plus size={14} /> Nouvelle session
             </button>
             <button
               type="button"
               onClick={onOpenNewOpportunity}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-xs font-bold text-[#17694f] transition hover:bg-emerald-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16785c] focus-visible:ring-offset-2"
+              className="inline-flex items-center gap-1.5 rounded-xl border border-brand-gold/50 bg-brand-gold/10 px-3 py-2.5 text-xs font-bold text-brand-navy transition hover:bg-brand-gold/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-gold focus-visible:ring-offset-2"
             >
               <Plus size={14} /> Nouvelle opportunité
             </button>
@@ -130,7 +133,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             className="p-2.5 text-slate-600 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl transition-all shadow-xs active:scale-95"
             title="Rafraîchir les données"
           >
-            <RefreshCw size={16} className={isRefreshing ? 'animate-spin text-[#1B8F6E]' : ''} />
+            <RefreshCw size={16} className={isRefreshing ? 'animate-spin text-brand-goldDark' : ''} />
           </button>
         </div>
       </div>
@@ -155,15 +158,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
       )}
 
-      {/* GROS AFFICHAGE - 4 KPI CARDS */}
+      {/* Indicateurs opérationnels */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-        {/* KPI 1: Sessions Réalisées */}
-        <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs hover:border-[#1B8F6E]/40 transition-all group">
+        {/* Sessions comptées par le Backend */}
+        <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs hover:border-[#0B1F4D]/40 transition-all group">
           <div className="flex items-center justify-between mb-3">
             <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-              Sessions enregistrées
+              Sessions recensées
             </span>
-            <div className="w-10 h-10 rounded-xl bg-[#1B8F6E]/10 text-[#1B8F6E] flex items-center justify-center font-bold group-hover:bg-[#1B8F6E] group-hover:text-white transition-colors">
+            <div className="w-10 h-10 rounded-xl bg-[#0B1F4D]/10 text-[#0B1F4D] flex items-center justify-center font-bold group-hover:bg-[#0B1F4D] group-hover:text-white transition-colors">
               <Calendar size={20} />
             </div>
           </div>
@@ -172,15 +175,16 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               {kpis.sessionsRealisees}
             </div>
           </div>
+          <p className="mt-2 text-xs text-slate-500">Nombre total de sessions enregistrées dans la plateforme.</p>
         </div>
 
         {/* KPI 2: Participants Formés */}
         <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs hover:border-blue-500/40 transition-all group">
           <div className="flex items-center justify-between mb-3">
             <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-              Participants formés
+              Participants recensés
             </span>
-            <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold group-hover:bg-blue-600 group-hover:text-white transition-colors">
+            <div className="w-10 h-10 rounded-xl bg-brand-gold/15 text-brand-navy flex items-center justify-center font-bold group-hover:bg-brand-navy group-hover:text-white transition-colors">
               <Users size={20} />
             </div>
           </div>
@@ -189,15 +193,16 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               {kpis.presenceIndisponible ? '—' : kpis.participantsFormes}
             </div>
           </div>
+          <p className="mt-2 text-xs text-slate-500">Personnes distinctes relevées dans les feuilles de présence.</p>
         </div>
 
         {/* KPI 3: Taux de présence moyen */}
         <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs hover:border-amber-500/40 transition-all group">
           <div className="flex items-center justify-between mb-3">
             <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-              Taux de présence moyen
+              Taux de présence
             </span>
-            <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold group-hover:bg-amber-600 group-hover:text-white transition-colors">
+            <div className="w-10 h-10 rounded-xl bg-brand-gold/15 text-brand-goldDark flex items-center justify-center font-bold group-hover:bg-brand-gold group-hover:text-brand-darkNavy transition-colors">
               <Percent size={20} />
             </div>
           </div>
@@ -211,7 +216,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </div>
           </div>
           <p className="text-xs text-slate-500 mt-2 flex items-center justify-between">
-            <span>Seuil d'alerte : &lt;85%</span>
+            <span>Repère de suivi : 85 %</span>
             <span className={`font-semibold ${kpis.presenceIndisponible ? 'text-slate-500' : presenceProgress >= 85 ? 'text-emerald-600' : 'text-amber-600'}`}>
               {kpis.presenceIndisponible ? 'Réservé' : presenceProgress >= 85 ? 'Seuil atteint' : `${Math.round(85 - presenceProgress)} pt avant le seuil`}
             </span>
@@ -222,47 +227,54 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
 
         {/* KPI 4: Opportunités détectées */}
-          <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs hover:border-[#1B8F6E]/40 transition-all group">
+        <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs hover:border-[#0B1F4D]/40 transition-all group">
           <div className="flex items-center justify-between mb-3">
             <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-              Opportunités suivies
+              Opportunités au CRM
             </span>
-            <div className="w-10 h-10 rounded-xl bg-[#1B8F6E]/10 text-[#1B8F6E] flex items-center justify-center font-bold group-hover:bg-[#1B8F6E] group-hover:text-white transition-colors">
+            <div className="w-10 h-10 rounded-xl bg-[#0B1F4D]/10 text-[#0B1F4D] flex items-center justify-center font-bold group-hover:bg-[#0B1F4D] group-hover:text-white transition-colors">
               <Zap size={20} />
             </div>
           </div>
-            <div className="flex items-baseline justify-between">
+          <div className="flex items-baseline justify-between">
             <div className="text-3xl font-extrabold text-[#11162A]">
               {kpis.opportunitesDetectees}
             </div>
-            <div className="flex items-center text-xs font-bold text-[#17694f] bg-emerald-50 px-2 py-0.5 rounded-full">
+            <div className="flex items-center text-xs font-bold text-brand-navy bg-brand-gold/15 px-2 py-0.5 rounded-full">
               Enregistrées
             </div>
           </div>
+          <p className="mt-2 text-xs text-slate-500">Opportunités enregistrées, toutes étapes confondues.</p>
         </div>
       </div>
 
-      {/* INDICATEURS FINANCIERS & DOCUMENTS */}
+      {/* Synthèse financière */}
+      <section aria-labelledby="dashboard-finance-title" className="space-y-3">
+        <div>
+          <h2 id="dashboard-finance-title" className="text-base font-extrabold text-[#11162A]">Synthèse financière</h2>
+          <p className="mt-1 text-xs text-slate-500">Montants consolidés à partir des factures et paiements enregistrés.</p>
+        </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
         {[
-          { label: 'CA facturé (HT)', value: kpis.chiffreAffairesFacture, unit: ' Ar', accent: 'text-[#11162A]' },
-          { label: 'CA encaissé', value: kpis.chiffreAffairesEncaisse, unit: ' Ar', accent: 'text-emerald-700' },
-          { label: 'Montant impayé (TTC)', value: kpis.montantImpaye, unit: ' Ar', accent: 'text-amber-700' },
+          { label: 'Total facturé · HT', value: kpis.chiffreAffairesFacture, accent: 'text-brand-navy' },
+          { label: 'Total encaissé', value: kpis.chiffreAffairesEncaisse, accent: 'text-emerald-700' },
+          { label: 'Solde à recouvrer · TTC', value: kpis.montantImpaye, accent: 'text-amber-700' },
           { label: 'Factures en retard', value: kpis.facturesEnRetard, unit: '', accent: (kpis.facturesEnRetard ?? 0) > 0 ? 'text-red-600' : 'text-[#11162A]' }
         ].map((card) => (
           <div key={card.label} className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs">
             <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">{card.label}</span>
             <div className={`text-2xl font-extrabold mt-2 ${card.accent}`}>
-              {card.value === undefined ? '—' : `${card.value.toLocaleString()}${card.unit}`}
+              {card.value === undefined ? '—' : card.label === 'Factures en retard' ? card.value.toLocaleString('fr-FR') : formatAriary(card.value)}
             </div>
           </div>
         ))}
       </div>
+      </section>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs sm:p-6">
         <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <div className="mb-1 flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-emerald-700">
+            <div className="mb-1 flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-brand-navy">
               <FileText size={15} /> Production documentaire
             </div>
             <h3 className="text-lg font-bold text-[#11162A]">Documents générés et suivi</h3>
@@ -273,7 +285,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           <button
             type="button"
             onClick={() => onNavigateTo(documentOverviewSection)}
-            className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-xs font-bold text-[#17694f] transition hover:bg-emerald-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16785c] focus-visible:ring-offset-2"
+            className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-xs font-bold text-[#0B1F4D] transition hover:bg-emerald-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#06132F] focus-visible:ring-offset-2"
           >
             {documentOverviewSection === 'dossiers_formation' ? 'Suivre les dossiers' : 'Voir les validations IA'}
             <ArrowUpRight size={14} />
@@ -294,10 +306,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 type="button"
                 key={doc.label}
                 onClick={() => onNavigateTo(destination)}
-                className="group rounded-xl border border-slate-200 bg-slate-50/70 p-4 text-left transition hover:border-emerald-300 hover:bg-emerald-50/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16785c] focus-visible:ring-offset-2"
+                className="group rounded-xl border border-slate-200 bg-slate-50/70 p-4 text-left transition hover:border-emerald-300 hover:bg-emerald-50/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#06132F] focus-visible:ring-offset-2"
               >
                 <div className="flex items-start justify-between gap-3">
-                  <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-100 text-[#17694f] transition group-hover:bg-[#16785c] group-hover:text-white">
+                  <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-100 text-[#0B1F4D] transition group-hover:bg-[#06132F] group-hover:text-white">
                     <Icon size={18} />
                   </span>
                   <span className="rounded-full bg-white px-2.5 py-1 text-xs font-extrabold text-[#11162A] ring-1 ring-slate-200">
@@ -309,7 +321,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     <div className="text-sm font-bold text-[#11162A]">{doc.label}</div>
                     <div className="mt-0.5 text-[11px] text-slate-500">{doc.detail}</div>
                   </div>
-                  <ArrowUpRight size={15} className="shrink-0 text-slate-400 transition group-hover:text-[#17694f]" />
+                  <ArrowUpRight size={15} className="shrink-0 text-slate-400 transition group-hover:text-[#0B1F4D]" />
                 </div>
                 <p className="mt-2 text-[11px] font-medium text-slate-600">{countLabel}</p>
               </button>
@@ -327,7 +339,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         <section className="lg:col-span-7 rounded-2xl border border-slate-200 bg-white p-5 shadow-xs sm:p-6">
           <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
-              <div className="mb-1 flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-emerald-700">
+              <div className="mb-1 flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-brand-navy">
                 <Zap size={15} /> Veille marché · M1
               </div>
               <h3 className="text-lg font-bold text-[#11162A]">Opportunités par domaine</h3>
@@ -336,7 +348,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <button
               type="button"
               onClick={() => onNavigateTo('opportunites_crm')}
-              className="inline-flex shrink-0 items-center gap-1.5 self-start rounded-lg px-2 py-1.5 text-xs font-bold text-[#17694f] transition hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16785c]"
+              className="inline-flex shrink-0 items-center gap-1.5 self-start rounded-lg px-2 py-1.5 text-xs font-bold text-[#0B1F4D] transition hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#06132F]"
             >
               Voir le CRM <ArrowUpRight size={14} />
             </button>
@@ -344,10 +356,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
           {domainOpportunities.length === 0 ? (
             <div className="flex min-h-48 flex-col items-center justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50/80 px-5 py-6 text-center">
-              <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-white text-emerald-700 shadow-sm ring-1 ring-slate-200"><Zap size={20} /></span>
+              <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-white text-brand-navy shadow-sm ring-1 ring-slate-200"><Zap size={20} /></span>
               <h4 className="mt-3 text-sm font-bold text-slate-800">Aucune opportunité à présenter</h4>
               <p className="mt-1 max-w-sm text-xs leading-relaxed text-slate-600">Les opportunités détectées ou ajoutées apparaîtront ici, regroupées par domaine.</p>
-              <button type="button" onClick={() => onNavigateTo('veille_marche')} className="mt-3 inline-flex items-center gap-1 text-xs font-bold text-[#17694f] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16785c]">
+              <button type="button" onClick={() => onNavigateTo('veille_marche')} className="mt-3 inline-flex items-center gap-1 text-xs font-bold text-[#0B1F4D] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#06132F]">
                 Ouvrir la veille marché <ArrowUpRight size={13} />
               </button>
             </div>
@@ -358,9 +370,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   <div className="text-[11px] font-semibold text-slate-500">Opportunités suivies</div>
                   <div className="mt-0.5 text-xl font-extrabold text-[#11162A]">{totalDomainOpportunities.toLocaleString()}</div>
                 </div>
-                <div className="rounded-xl bg-emerald-50/70 px-3.5 py-3 ring-1 ring-emerald-100">
-                  <div className="text-[11px] font-semibold text-emerald-800">Budgets renseignés · total</div>
-                  <div className="mt-0.5 truncate text-base font-extrabold text-[#17694f]" title={totalEstimatedBudget > 0 ? `${totalEstimatedBudget.toLocaleString()} Ar` : 'Budget non renseigné'}>
+                <div className="rounded-xl bg-brand-gold/10 px-3.5 py-3 ring-1 ring-brand-gold/30">
+                  <div className="text-[11px] font-semibold text-brand-navy">Budgets renseignés · total</div>
+                  <div className="mt-0.5 truncate text-base font-extrabold text-[#0B1F4D]" title={totalEstimatedBudget > 0 ? `${totalEstimatedBudget.toLocaleString()} Ar` : 'Budget non renseigné'}>
                     {totalEstimatedBudget > 0 ? `${totalEstimatedBudget.toLocaleString()} Ar` : 'Non renseigné'}
                   </div>
                 </div>
@@ -382,14 +394,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                         </span>
                       </div>
                       <div role="progressbar" aria-label={`${item.domaine} : ${item.nombre} opportunité(s)`} aria-valuemin={0} aria-valuemax={maxDomainCount} aria-valuenow={item.nombre} className="h-2 overflow-hidden rounded-full bg-slate-100">
-                        <div className="h-full rounded-full bg-[#168263] transition-[width]" style={{ width: `${percentage}%` }} />
+                        <div className="h-full rounded-full transition-[width]" style={{ width: `${percentage}%`, backgroundColor: item.couleur ?? '#0B1F4D' }} />
                       </div>
                     </div>
                   );
                 })}
               </div>
               {domainOpportunities.length > 5 && (
-                <button type="button" onClick={() => onNavigateTo('opportunites_crm')} className="mt-4 inline-flex items-center gap-1 text-xs font-bold text-[#17694f] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16785c]">
+                <button type="button" onClick={() => onNavigateTo('opportunites_crm')} className="mt-4 inline-flex items-center gap-1 text-xs font-bold text-[#0B1F4D] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#06132F]">
                   Voir les {domainOpportunities.length - 5} autres domaines <ArrowUpRight size={13} />
                 </button>
               )}
@@ -410,7 +422,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               </p>
             </div>
             {facturationStatuts.length > 0 && (
-              <button type="button" onClick={() => onNavigateTo('facturation_devis')} className="inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-bold text-[#17694f] transition hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16785c]">
+              <button type="button" onClick={() => onNavigateTo('facturation_devis')} className="inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-bold text-[#0B1F4D] transition hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#06132F]">
                 Détails <ArrowUpRight size={14} />
               </button>
             )}
@@ -418,11 +430,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
           {facturationStatuts.length === 0 ? (
             <div className="mt-5 flex min-h-64 flex-col items-center justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50/80 px-5 py-7 text-center">
-              <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-emerald-700 shadow-sm ring-1 ring-slate-200"><WalletCards size={22} /></span>
+              <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-brand-navy shadow-sm ring-1 ring-slate-200"><WalletCards size={22} /></span>
               <div className="mt-3 text-[11px] font-bold uppercase tracking-wide text-slate-500">Suivi prêt à démarrer</div>
               <h4 className="mt-1 text-sm font-bold text-slate-800">Aucune facture enregistrée</h4>
               <p className="mt-1 max-w-xs text-xs leading-relaxed text-slate-600">Après la création d’un devis ou d’une facture, les montants et les statuts apparaîtront dans ce panneau.</p>
-              <button type="button" onClick={() => onNavigateTo('facturation_devis')} className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-[#16785c] px-3 py-2 text-xs font-bold text-white transition hover:bg-[#125f49] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16785c] focus-visible:ring-offset-2">
+              <button type="button" onClick={() => onNavigateTo('facturation_devis')} className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-[#06132F] px-3 py-2 text-xs font-bold text-white transition hover:bg-[#06132F] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#06132F] focus-visible:ring-offset-2">
                 Ouvrir la facturation <ArrowUpRight size={13} />
               </button>
             </div>
@@ -472,11 +484,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
           <div>
             <h3 className="text-lg font-bold text-[#11162A] flex items-center gap-2">
-              <Clock size={18} className="text-[#1B8F6E]" />
+              <Clock size={18} className="text-[#0B1F4D]" />
               Activité récente
             </h3>
             <p className="text-xs text-slate-500 mt-0.5">
-              Dernières créations : opportunités, sessions, factures et documents
+              Événements récents : sessions, présences, opportunités, factures et documents
             </p>
           </div>
         </div>
@@ -492,11 +504,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             const getIcon = () => {
               switch (item.type) {
                 case 'session':
-                  return <Calendar className="text-[#1B8F6E]" size={16} />;
+                  return <Calendar className="text-[#0B1F4D]" size={16} />;
                 case 'presence':
-                  return <Users className="text-blue-600" size={16} />;
+                  return <Users className="text-brand-goldDark" size={16} />;
                 case 'opportunite':
-                  return <Zap className="text-purple-600" size={16} />;
+                  return <Zap className="text-brand-goldDark" size={16} />;
                 case 'facture':
                   return <FileText className="text-emerald-600" size={16} />;
                 case 'document':
@@ -524,7 +536,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 onClick={() => { if (destination && canOpenActivity) onNavigateTo(destination); }}
                 disabled={!canOpenActivity}
                 aria-label={canOpenActivity ? `${item.titre} — ouvrir la rubrique correspondante` : item.titre}
-                className="flex w-full items-start gap-4 rounded-xl border border-slate-200/70 bg-[#F4F5F3]/80 p-3.5 text-left transition-all hover:bg-[#F4F5F3] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16785c] disabled:cursor-default"
+                className="flex w-full items-start gap-4 rounded-xl border border-slate-200/70 bg-[#F4F5F3]/80 p-3.5 text-left transition-all hover:bg-[#F4F5F3] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#06132F] disabled:cursor-default"
               >
                 <div className="w-9 h-9 rounded-xl bg-white border border-slate-200 flex items-center justify-center shrink-0 shadow-2xs mt-0.5">
                   {getIcon()}
@@ -548,7 +560,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                       </span>
                     )}
                     {item.statutTag && (
-                      <span className="bg-[#1B8F6E]/10 text-[#1B8F6E] font-bold px-2 py-0.5 rounded">
+                      <span className="bg-[#0B1F4D]/10 text-[#0B1F4D] font-bold px-2 py-0.5 rounded">
                         {item.statutTag}
                       </span>
                     )}

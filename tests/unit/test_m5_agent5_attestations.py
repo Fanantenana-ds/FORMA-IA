@@ -159,3 +159,45 @@ def test_numeros_sont_uniques_et_pdf_paysage_sur_une_page(service):
         page = PdfReader(item["pdf_path"]).pages
         assert len(page) == 1
         assert tuple(round(value) for value in page[0].mediabox[2:]) == tuple(round(value) for value in landscape(A4))
+
+
+def test_attestation_participation_generee_sans_inventer_des_competences(service):
+    session = {**SESSION, "require_grounded_competencies": True, "themes": []}
+    participant = {
+        "id": "participant-1",
+        "nom": "Hantamalala NAMBININA",
+        "taux_presence": 100,
+        "eligible_attestation": True,
+    }
+
+    result = run(service.generate_batch_with_pdf(session, [participant]))
+
+    assert result["total_pdf_generated"] == 1
+    item = result["attestations"][0]
+    assert item["metadata"]["competencies_source"] == "participation_only"
+    assert item["content"]["competences"] == []
+    assert item["content"]["titre_attestation"] == "ATTESTATION DE PARTICIPATION"
+
+    from pypdf import PdfReader
+
+    text = "\n".join(page.extract_text() or "" for page in PdfReader(item["pdf_path"]).pages)
+    assert "Hantamalala NAMBININA" in text
+    assert "PRÉSENCE ET PARTICIPATION CONFIRMÉES" in text
+    assert "100 %" in text
+    assert "CONTENUS DE FORMATION DOCUMENTÉS" not in text
+
+
+def test_aucun_review_hitl_vide_si_aucun_pdf_nest_produit(service, monkeypatch):
+    def fail_pdf(self, result, participant, output_path=None):
+        raise RuntimeError("erreur PDF simulée")
+
+    monkeypatch.setattr(AttestationGeneratorService, "_build_attestation_pdf", fail_pdf)
+    result = run(service.generate_batch_with_pdf(
+        SESSION,
+        [{"id": 1, "nom": "Participant", "taux_presence": 90}],
+    ))
+
+    assert result["total_pdf_generated"] == 0
+    assert result["_review_status"] == "generation_failed"
+    assert "_review_id" not in result
+    assert result["failed_participants"][0]["error"] == "erreur PDF simulée"

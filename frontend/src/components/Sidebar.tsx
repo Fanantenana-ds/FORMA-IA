@@ -58,9 +58,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
         type="button"
         onClick={() => { onSelectSection(id); onClose(); }}
         aria-current={isActive ? 'page' : undefined}
-        className={`w-full min-h-11 flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2dd4bf] focus-visible:ring-offset-2 focus-visible:ring-offset-[#11162A] ${
+        className={`w-full min-h-11 flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-gold focus-visible:ring-offset-2 focus-visible:ring-offset-brand-darkNavy ${
           isActive
-            ? 'bg-[#1B8F6E] text-white shadow-md shadow-[#1B8F6E]/20 font-semibold'
+            ? 'bg-brand-gold text-brand-darkNavy shadow-md shadow-brand-gold/20 font-semibold'
             : 'text-slate-300 hover:text-white hover:bg-slate-800/60'
         }`}
       >
@@ -73,8 +73,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {badge && (
           <span
             className={`text-xs px-2 py-0.5 rounded-full font-semibold ${urgent ? (isActive ? 'bg-white text-red-700' : 'bg-red-500/20 text-red-300') : isActive
-                ? 'bg-white/20 text-white'
-                : 'bg-[#1B8F6E]/20 text-[#2dd4bf]'
+                ? 'bg-brand-darkNavy/10 text-brand-darkNavy'
+                : 'bg-brand-gold/15 text-brand-goldLight'
             }`}
           >
             {badge}
@@ -90,7 +90,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       aria-label="Navigation principale"
       aria-hidden={!isOpen}
       inert={!isOpen}
-      className={`fixed inset-y-0 left-0 z-40 flex h-[100dvh] w-72 shrink-0 select-none flex-col border-r border-slate-800/60 bg-[#11162A] text-white shadow-2xl transition-transform duration-300 ease-in-out md:sticky md:top-0 md:z-30 md:h-screen md:translate-x-0 md:shadow-none ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}
+      className={`fixed inset-y-0 left-0 z-40 flex h-[100dvh] w-72 shrink-0 select-none flex-col border-r border-slate-800/60 bg-brand-darkNavy text-white shadow-2xl transition-transform duration-300 ease-in-out md:sticky md:top-0 md:z-30 md:h-screen md:translate-x-0 md:shadow-none ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}
     >
       {/* Top Header Logo Section */}
       <div className="p-5 border-b border-slate-800/60">
@@ -103,9 +103,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <h1 className="font-extrabold text-xl tracking-tight text-white">
                 FORMA-IA
               </h1>
-              <span className="inline-block w-2 h-2 rounded-full bg-[#1B8F6E] animate-pulse"></span>
+              <span className="inline-block w-2 h-2 rounded-full bg-brand-gold animate-pulse"></span>
             </div>
-            <p className="text-[11px] font-semibold text-[#2dd4bf]">
+            <p className="text-[11px] font-semibold text-emerald-300">
               Plateforme de gestion de Formation avec IA
             </p>
           </div>
@@ -120,7 +120,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <span className="text-[11px] uppercase font-bold tracking-wider text-slate-400">
               Rôle connecté
             </span>
-            <span className="text-xs text-[#2dd4bf] font-semibold bg-[#1B8F6E]/20 px-2 py-0.5 rounded">
+            <span className="text-xs text-brand-goldLight font-semibold bg-brand-gold/15 px-2 py-0.5 rounded">
               {ROLE_LABELS[currentRole]}
             </span>
           </div>

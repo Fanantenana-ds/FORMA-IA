@@ -400,7 +400,7 @@ export default function App() {
     return (
       <div className="min-h-screen bg-[#11162A] flex items-center justify-center font-sans">
         <div className="flex items-center gap-3 text-slate-200 text-sm font-semibold">
-          <span className="w-3 h-3 rounded-full bg-[#1B8F6E] animate-ping"></span>
+          <span className="w-3 h-3 rounded-full bg-[#0B1F4D] animate-ping"></span>
           Vérification de la session…
         </div>
       </div>
@@ -464,11 +464,11 @@ export default function App() {
   ];
 
   return (
-    <div className="flex min-h-screen bg-[#F4F5F3] font-sans text-slate-800 antialiased selection:bg-[#1B8F6E] selection:text-white">
+    <div className="flex min-h-screen bg-[#F7F7F6] font-sans text-slate-800 antialiased selection:bg-brand-navy selection:text-white">
       {/* Toast Notification */}
       {toastMessage && (
-        <div className="fixed top-4 right-4 z-50 bg-[#11162A] text-white px-4 py-3 rounded-xl shadow-2xl border border-[#1B8F6E] flex items-center gap-3 animate-in fade-in slide-in-from-top-2">
-          <span className="w-2.5 h-2.5 rounded-full bg-[#1B8F6E] animate-ping"></span>
+        <div className="fixed top-4 right-4 z-50 bg-brand-darkNavy text-white px-4 py-3 rounded-xl shadow-2xl border border-brand-gold flex items-center gap-3 animate-in fade-in slide-in-from-top-2">
+          <span className="w-2.5 h-2.5 rounded-full bg-brand-gold animate-ping"></span>
           <span className="text-xs font-semibold">{toastMessage}</span>
         </div>
       )}

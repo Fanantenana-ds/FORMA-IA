@@ -142,14 +142,14 @@ export const EvaluationCompetencesView: React.FC<EvaluationCompetencesViewProps>
       <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <span className="px-2.5 py-0.5 rounded text-[11px] font-extrabold bg-[#1B8F6E]/10 text-[#1B8F6E]">
+            <span className="px-2.5 py-0.5 rounded text-[11px] font-extrabold bg-[#0B1F4D]/10 text-[#0B1F4D]">
               Assurance Qualité
             </span>
             <span className="text-xs text-slate-400 font-medium">• Évaluation des formateurs</span>
           </div>
           <h1 className="text-2xl font-extrabold text-[#11162A]">Évaluation & Compétences</h1>
           <p className="text-slate-600 text-xs mt-1">
-            Résultats d'évaluation post-session des formateurs (score global et recommandation) et suivi des acquis.
+            Consultez les retours post-formation, les acquis mesurés et les recommandations disponibles pour chaque formateur.
           </p>
         </div>
 
@@ -158,7 +158,7 @@ export const EvaluationCompetencesView: React.FC<EvaluationCompetencesViewProps>
           <button
             onClick={() => setActiveTab('par_formateur')}
             className={`px-4 py-2.5 rounded-lg transition-all flex items-center gap-2 cursor-pointer ${
-              activeTab === 'par_formateur' ? 'bg-[#1B8F6E] text-white shadow-xs' : 'text-slate-500 hover:text-slate-800'
+              activeTab === 'par_formateur' ? 'bg-[#0B1F4D] text-white shadow-xs' : 'text-slate-500 hover:text-slate-800'
             }`}
           >
             <Star size={15} />
@@ -167,7 +167,7 @@ export const EvaluationCompetencesView: React.FC<EvaluationCompetencesViewProps>
           <button
             onClick={() => setActiveTab('matrice')}
             className={`px-4 py-2.5 rounded-lg transition-all flex items-center gap-2 cursor-pointer ${
-              activeTab === 'matrice' ? 'bg-[#1B8F6E] text-white shadow-xs' : 'text-slate-500 hover:text-slate-800'
+              activeTab === 'matrice' ? 'bg-[#0B1F4D] text-white shadow-xs' : 'text-slate-500 hover:text-slate-800'
             }`}
           >
             <BarChart2 size={15} />
@@ -187,7 +187,7 @@ export const EvaluationCompetencesView: React.FC<EvaluationCompetencesViewProps>
         </div>
         <textarea value={evaluationReport} onChange={e => setEvaluationReport(e.target.value)} rows={2} placeholder="Extrait du rapport de session (facultatif)" className="w-full p-3 rounded-xl border border-slate-300 bg-slate-50 text-sm" />
         {evaluationError && <div role="alert" className="text-xs text-red-700 font-semibold">{evaluationError}</div>}{evaluationNotice && <div className="text-xs text-emerald-800 font-semibold">{evaluationNotice}</div>}
-        <div className="flex flex-wrap items-center gap-2"><button type="submit" disabled={evaluationBusy || !currentFormateur} className="px-4 py-2.5 rounded-xl bg-[#1B8F6E] text-white text-xs font-bold disabled:opacity-50">{evaluationBusy ? 'Traitement…' : 'Générer une évaluation IA'}</button>{evaluationReviewId && <span className="rounded-xl bg-amber-50 px-3 py-2.5 text-xs font-bold text-amber-800">En attente de validation dans l’Espace IA · {evaluationReviewId}</span>}</div>
+        <div className="flex flex-wrap items-center gap-2"><button type="submit" disabled={evaluationBusy || !currentFormateur} className="px-4 py-2.5 rounded-xl bg-[#0B1F4D] text-white text-xs font-bold disabled:opacity-50">{evaluationBusy ? 'Traitement…' : 'Générer une évaluation IA'}</button>{evaluationReviewId && <span className="rounded-xl bg-amber-50 px-3 py-2.5 text-xs font-bold text-amber-800">En attente de validation dans l’Espace IA · {evaluationReviewId}</span>}</div>
       </form>
 
       {/* Stats globales */}
@@ -205,7 +205,7 @@ export const EvaluationCompetencesView: React.FC<EvaluationCompetencesViewProps>
             {evalues.length} / {formateurs.length}
           </div>
           <div className="text-xs font-bold text-slate-500 uppercase mt-1">Formateurs évalués</div>
-          <p className="text-[11px] text-[#1B8F6E] mt-1 font-semibold">Au moins une évaluation enregistrée</p>
+          <p className="text-[11px] text-[#0B1F4D] mt-1 font-semibold">Au moins une évaluation enregistrée</p>
         </div>
 
         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
@@ -230,7 +230,7 @@ export const EvaluationCompetencesView: React.FC<EvaluationCompetencesViewProps>
               <select
                 value={currentFormateur?.id ?? ''}
                 onChange={(e) => setSelectedFormateurId(e.target.value)}
-                className="w-full md:w-72 p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-xs text-[#11162A] focus:ring-2 focus:ring-[#1B8F6E] focus:outline-none"
+                className="w-full md:w-72 p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-xs text-[#11162A] focus:ring-2 focus:ring-[#0B1F4D] focus:outline-none"
               >
                 {formateurs.map((f) => (
                   <option key={f.id} value={f.id}>
@@ -247,7 +247,7 @@ export const EvaluationCompetencesView: React.FC<EvaluationCompetencesViewProps>
               {/* Fiche du formateur */}
               <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs space-y-5">
                 <div className="text-center space-y-3">
-                  <div className="w-20 h-20 rounded-2xl mx-auto bg-[#1B8F6E] text-white flex items-center justify-center text-2xl font-extrabold shadow-md">
+                  <div className="w-20 h-20 rounded-2xl mx-auto bg-[#0B1F4D] text-white flex items-center justify-center text-2xl font-extrabold shadow-md">
                     {formateurFullName(currentFormateur).charAt(0).toUpperCase()}
                   </div>
                   <div>
@@ -319,7 +319,7 @@ export const EvaluationCompetencesView: React.FC<EvaluationCompetencesViewProps>
                     <div className="mb-2 flex items-center justify-between"><span className="text-[10px] font-extrabold uppercase tracking-wide text-slate-500">Compétences perçues</span><span className="text-[10px] font-bold text-slate-500">Moyenne / 5</span></div>
                     <div className="space-y-2">{ratingDimensions.map(dimension => <div key={dimension.id}><div className="mb-1 flex items-center justify-between gap-2 text-[10px]"><span className="truncate font-semibold text-slate-600">{dimension.label}</span><span className="shrink-0 font-extrabold text-[#11162A]">{dimension.average != null ? `${dimension.average.toFixed(1)} / 5` : '—'}</span></div><div className="h-1.5 overflow-hidden rounded-full bg-slate-200"><div className={`h-full rounded-full ${dimension.average == null ? 'bg-slate-300' : dimension.average >= 4 ? 'bg-emerald-500' : dimension.average >= 3 ? 'bg-amber-500' : 'bg-rose-500'}`} style={{ width: `${dimension.average == null ? 0 : dimension.average / 5 * 100}%` }}/></div></div>)}</div>
                   </div>
-                  <div className="flex items-center justify-between rounded-lg bg-white/80 px-2.5 py-2"><div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-600"><TrendingUp size={13} className="text-[#1B8F6E]"/> Progression constatée</div><strong className="text-xs text-[#11162A]">{progressionCount} / {currentTrainerFeedback.length} apprenant(s)</strong></div>
+                  <div className="flex items-center justify-between rounded-lg bg-white/80 px-2.5 py-2"><div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-600"><TrendingUp size={13} className="text-[#0B1F4D]"/> Progression constatée</div><strong className="text-xs text-[#11162A]">{progressionCount} / {currentTrainerFeedback.length} apprenant(s)</strong></div>
                   {ratedFeedback.length > 0 && <div className="text-[9px] text-slate-400">Basé sur {ratedFeedback.length} enquête(s) reçue(s).</div>}
                 </section>
               </div>
@@ -327,7 +327,7 @@ export const EvaluationCompetencesView: React.FC<EvaluationCompetencesViewProps>
               {/* Synthèse de l'évaluation */}
               <div className="lg:col-span-2 space-y-4">
                 <h3 className="text-base font-extrabold text-[#11162A] flex items-center gap-2">
-                  <Award size={18} className="text-[#1B8F6E]" />
+                  <Award size={18} className="text-[#0B1F4D]" />
                   Synthèse de l'évaluation
                 </h3>
 
@@ -374,7 +374,7 @@ export const EvaluationCompetencesView: React.FC<EvaluationCompetencesViewProps>
                         <div><div className="text-sm font-extrabold text-[#11162A]">{review.meta?.session_title ?? data.session ?? 'Évaluation post-session'}</div><div className="mt-0.5 text-[10px] text-slate-500">Approuvée le {review.reviewed_at ? new Date(review.reviewed_at).toLocaleDateString('fr-FR') : '—'} · {review.review_id}</div></div>
                         <div className="flex items-center gap-2">{Number.isFinite(score) && <span className={`rounded-xl bg-white px-3 py-1.5 text-lg font-black shadow-xs ${scoreColor(score)}`}>{Math.round(score)}<span className="text-[10px] text-slate-400"> / 100</span></span>}{recommendation && <span className={`rounded-full px-2.5 py-1 text-[10px] font-extrabold ${recommandationStyle(recommendation)}`}>{recommendation}</span>}</div>
                       </div>
-                      <div className="space-y-3 p-4">{justif && <p className="text-xs leading-relaxed text-slate-700">{String(justif)}</p>}{Array.isArray(strengths) && strengths.length > 0 && <div><div className="mb-1.5 text-[10px] font-bold uppercase tracking-wide text-slate-400">Points clés</div><ul className="space-y-1">{strengths.map((point: any, i: number) => <li key={i} className="flex gap-2 text-xs text-slate-600"><span className="text-[#1B8F6E]">•</span><span>{typeof point === 'string' ? point : String(point?.point ?? point?.description ?? JSON.stringify(point))}</span></li>)}</ul></div>}{review.reviewer_note && <div className="rounded-lg bg-emerald-50 p-2.5 text-[11px] text-emerald-800"><strong>Note de validation :</strong> {review.reviewer_note}</div>}</div>
+                      <div className="space-y-3 p-4">{justif && <p className="text-xs leading-relaxed text-slate-700">{String(justif)}</p>}{Array.isArray(strengths) && strengths.length > 0 && <div><div className="mb-1.5 text-[10px] font-bold uppercase tracking-wide text-slate-400">Points clés</div><ul className="space-y-1">{strengths.map((point: any, i: number) => <li key={i} className="flex gap-2 text-xs text-slate-600"><span className="text-[#0B1F4D]">•</span><span>{typeof point === 'string' ? point : String(point?.point ?? point?.description ?? JSON.stringify(point))}</span></li>)}</ul></div>}{review.reviewer_note && <div className="rounded-lg bg-emerald-50 p-2.5 text-[11px] text-emerald-800"><strong>Note de validation :</strong> {review.reviewer_note}</div>}</div>
                     </article>;
                   }) : <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-5 text-center text-xs text-slate-500">Aucune évaluation approuvée pour ce formateur. Les évaluations apparaissent ici après validation dans l’Espace IA.</div>}
                 </div>
@@ -395,7 +395,7 @@ export const EvaluationCompetencesView: React.FC<EvaluationCompetencesViewProps>
       {activeTab === 'matrice' && (
         <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs space-y-4">
           <h3 className="text-base font-extrabold text-[#11162A] flex items-center gap-2">
-            <BarChart2 size={18} className="text-[#1B8F6E]" />
+            <BarChart2 size={18} className="text-[#0B1F4D]" />
             Taux d'acquisition par module
           </h3>
 
@@ -409,12 +409,12 @@ export const EvaluationCompetencesView: React.FC<EvaluationCompetencesViewProps>
             <div key={idx}>
               <div className="flex justify-between text-xs font-bold text-slate-700 mb-1">
                 <span>{item.module}</span>
-                <span className="text-[#1B8F6E]">
+                <span className="text-[#0B1F4D]">
                   {item.acquise}% · {item.participants} participants
                 </span>
               </div>
               <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden">
-                <div className="bg-[#1B8F6E] h-full rounded-full" style={{ width: `${item.acquise}%` }}></div>
+                <div className="bg-[#0B1F4D] h-full rounded-full" style={{ width: `${item.acquise}%` }}></div>
               </div>
             </div>
           ))}

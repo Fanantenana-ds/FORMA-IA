@@ -136,7 +136,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
     <div className="min-h-screen w-full bg-[#11162A] flex font-sans text-slate-800 antialiased relative overflow-x-hidden">
       
       {/* Decorative Glow Backgrounds */}
-      <div className="absolute top-0 left-1/4 w-96 h-96 bg-[#1B8F6E]/15 rounded-full blur-3xl pointer-events-none"></div>
+      <div className="absolute top-0 left-1/4 w-96 h-96 bg-[#0B1F4D]/15 rounded-full blur-3xl pointer-events-none"></div>
       <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-blue-600/10 rounded-full blur-3xl pointer-events-none"></div>
 
       {/* LEFT COLUMN: BRANDING & FEATURES (Hidden on mobile) */}
@@ -167,7 +167,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
           {/* Feature Bullets */}
           <div className="mt-10 space-y-4 max-w-md">
             <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800 flex items-start gap-3">
-              <div className="p-2 rounded-lg bg-[#1B8F6E]/20 text-[#2dd4bf] shrink-0 mt-0.5">
+              <div className="p-2 rounded-lg bg-[#0B1F4D]/20 text-[#2dd4bf] shrink-0 mt-0.5">
                 <ReceiptText size={18} />
               </div>
               <div>
@@ -299,7 +299,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                     autoComplete="email"
                     onChange={(e) => setLoginEmail(e.target.value)}
                     placeholder="nom@organisation.mg"
-                    className="w-full rounded-xl border border-slate-300 bg-white py-3 pl-10 pr-3.5 text-sm text-slate-800 transition-all focus:border-[#16785c] focus:outline-none focus:ring-2 focus:ring-[#16785c]/20"
+                    className="w-full rounded-xl border border-slate-300 bg-white py-3 pl-10 pr-3.5 text-sm text-slate-800 transition-all focus:border-[#06132F] focus:outline-none focus:ring-2 focus:ring-[#06132F]/20"
                   />
                 </div>
               </div>
@@ -316,7 +316,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                     autoComplete="current-password"
                     onChange={(e) => setLoginPassword(e.target.value)}
                     placeholder="••••••••"
-                    className="w-full rounded-xl border border-slate-300 bg-white py-3 pl-10 pr-3.5 text-sm text-slate-800 transition-all focus:border-[#16785c] focus:outline-none focus:ring-2 focus:ring-[#16785c]/20"
+                    className="w-full rounded-xl border border-slate-300 bg-white py-3 pl-10 pr-3.5 text-sm text-slate-800 transition-all focus:border-[#06132F] focus:outline-none focus:ring-2 focus:ring-[#06132F]/20"
                   />
                 </div>
               </div>
@@ -324,7 +324,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
               <button
                 type="submit"
                 disabled={isSubmitting}
-                className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-[#16785c] py-3.5 text-sm font-bold text-white shadow-lg shadow-emerald-900/15 transition-all hover:bg-[#125f49] focus:outline-none focus:ring-2 focus:ring-[#16785c] focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+                className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-[#06132F] py-3.5 text-sm font-bold text-white shadow-lg shadow-emerald-900/15 transition-all hover:bg-[#06132F] focus:outline-none focus:ring-2 focus:ring-[#06132F] focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {isSubmitting ? <Loader2 size={16} className="animate-spin" /> : <ArrowRight size={16} />}
                 <span>{isSubmitting ? 'Connexion en cours…' : 'Se connecter'}</span>
@@ -348,7 +348,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                     autoCapitalize="words"
                     onChange={(e) => { setRegNom(e.target.value); setErrorMsg(null); }}
                     placeholder="Prénom et nom"
-                    className="w-full rounded-xl border border-slate-300 bg-white py-3 pl-10 pr-3 text-sm text-slate-800 transition focus:border-[#16785c] focus:outline-none focus:ring-2 focus:ring-[#16785c]/20"
+                    className="w-full rounded-xl border border-slate-300 bg-white py-3 pl-10 pr-3 text-sm text-slate-800 transition focus:border-[#06132F] focus:outline-none focus:ring-2 focus:ring-[#06132F]/20"
                   />
                 </div>
               </div>
@@ -365,7 +365,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                   spellCheck={false}
                   onChange={(e) => { setRegEmail(e.target.value); setErrorMsg(null); }}
                   placeholder="nom@organisation.mg"
-                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-3 text-sm text-slate-800 transition focus:border-[#16785c] focus:outline-none focus:ring-2 focus:ring-[#16785c]/20"
+                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-3 text-sm text-slate-800 transition focus:border-[#06132F] focus:outline-none focus:ring-2 focus:ring-[#06132F]/20"
                 />
               </div>
 
@@ -383,14 +383,14 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                       aria-describedby="registration-password-hint"
                       onChange={(e) => { setRegPassword(e.target.value); setErrorMsg(null); }}
                       placeholder={`${MIN_PASSWORD_LENGTH} caractères minimum`}
-                      className="w-full rounded-xl border border-slate-300 bg-white py-3 pl-3 pr-11 text-sm text-slate-800 transition focus:border-[#16785c] focus:outline-none focus:ring-2 focus:ring-[#16785c]/20"
+                      className="w-full rounded-xl border border-slate-300 bg-white py-3 pl-3 pr-11 text-sm text-slate-800 transition focus:border-[#06132F] focus:outline-none focus:ring-2 focus:ring-[#06132F]/20"
                     />
                     <button
                       type="button"
                       onClick={() => setShowRegPassword((visible) => !visible)}
                       aria-label={showRegPassword ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}
                       aria-pressed={showRegPassword}
-                      className="absolute inset-y-0 right-2 flex items-center rounded-lg px-2 text-slate-500 hover:bg-slate-100 hover:text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#16785c]"
+                      className="absolute inset-y-0 right-2 flex items-center rounded-lg px-2 text-slate-500 hover:bg-slate-100 hover:text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#06132F]"
                     >
                       {showRegPassword ? <EyeOff size={17} /> : <Eye size={17} />}
                     </button>
@@ -410,14 +410,14 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                       aria-describedby={passwordMismatch ? 'registration-password-error' : 'registration-password-confirm-hint'}
                       onChange={(e) => { setRegPasswordConfirm(e.target.value); setErrorMsg(null); }}
                       placeholder="Répétez le mot de passe"
-                      className={`w-full rounded-xl border bg-white py-3 pl-3 pr-11 text-sm text-slate-800 transition focus:outline-none focus:ring-2 ${passwordMismatch ? 'border-red-400 focus:border-red-500 focus:ring-red-500/20' : 'border-slate-300 focus:border-[#16785c] focus:ring-[#16785c]/20'}`}
+                      className={`w-full rounded-xl border bg-white py-3 pl-3 pr-11 text-sm text-slate-800 transition focus:outline-none focus:ring-2 ${passwordMismatch ? 'border-red-400 focus:border-red-500 focus:ring-red-500/20' : 'border-slate-300 focus:border-[#06132F] focus:ring-[#06132F]/20'}`}
                     />
                     <button
                       type="button"
                       onClick={() => setShowRegPasswordConfirm((visible) => !visible)}
                       aria-label={showRegPasswordConfirm ? 'Masquer la confirmation' : 'Afficher la confirmation'}
                       aria-pressed={showRegPasswordConfirm}
-                      className="absolute inset-y-0 right-2 flex items-center rounded-lg px-2 text-slate-500 hover:bg-slate-100 hover:text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#16785c]"
+                      className="absolute inset-y-0 right-2 flex items-center rounded-lg px-2 text-slate-500 hover:bg-slate-100 hover:text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#06132F]"
                     >
                       {showRegPasswordConfirm ? <EyeOff size={17} /> : <Eye size={17} />}
                     </button>
@@ -433,7 +433,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
               <div>
                 <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3.5">
                   <div className="flex items-start gap-3">
-                    <div className="rounded-lg bg-emerald-100 p-2 text-[#17694f]">
+                    <div className="rounded-lg bg-emerald-100 p-2 text-[#0B1F4D]">
                       <ShieldCheck size={18} aria-hidden="true" />
                     </div>
                     <div>
@@ -449,7 +449,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
               <button
                 type="submit"
                 disabled={isSubmitting || passwordMismatch}
-                className="w-full rounded-xl bg-[#16785c] py-3.5 text-sm font-bold text-white shadow-lg shadow-emerald-900/15 transition-all hover:bg-[#125f49] focus:outline-none focus:ring-2 focus:ring-[#16785c] focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+                className="w-full rounded-xl bg-[#06132F] py-3.5 text-sm font-bold text-white shadow-lg shadow-emerald-900/15 transition-all hover:bg-[#06132F] focus:outline-none focus:ring-2 focus:ring-[#06132F] focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <span className="inline-flex items-center justify-center gap-2">
                   {isSubmitting ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}

@@ -217,17 +217,19 @@ class AttestationGeneratorService:
         grounded_competencies = list(dict.fromkeys(syllabus_competencies + [
             f"Contenu travaillé : {theme}" for theme in session_themes
         ]))
-        if session_info.get("require_grounded_competencies") and not contexte_rag and len(grounded_competencies) < 3:
-            raise ValueError(
-                "Aucun support RAG indexé ni thème de séance enregistré : "
-                "au moins trois éléments de contenu vérifiables sont requis."
-            )
+        require_grounded_competencies = bool(session_info.get("require_grounded_competencies"))
+        has_training_sources = bool(
+            (contexte_rag and not contexte_rag.startswith("Syllabus approuvé"))
+            or len(grounded_competencies) >= 3
+        )
 
         content = None
         source = "fallback_template"
 
-        # ── ÉTAPE 1 : ESSAI LLM ──
-        if self.llm:
+        # Sans source pédagogique, le LLM ne doit pas inventer de compétences.
+        # Une attestation de participation reste possible si l'éligibilité est
+        # vérifiée par les pointages en amont.
+        if self.llm and (not require_grounded_competencies or has_training_sources):
             try:
                 content = await self._generate_with_llm(
                     session_info, participant, temperature, max_tokens,
@@ -243,11 +245,6 @@ class AttestationGeneratorService:
 
         # ── ÉTAPE 2 : FALLBACK ──
         if content is None:
-            if session_info.get("require_grounded_competencies") and len(grounded_competencies) < 3:
-                raise ValueError(
-                    "La génération automatique a échoué et les sources de formation "
-                    "ne permettent pas de rédiger trois compétences vérifiables."
-                )
             content = self._generate_with_template(
                 {**session_info, "syllabus_competencies": grounded_competencies},
                 participant,
@@ -268,6 +265,7 @@ class AttestationGeneratorService:
                 "participant_id": participant.get("id"),
                 "session_id": session_info.get("id"),
                 "competencies_source": (
+                    "participation_only" if not content.get("competences") else
                     "approved_syllabus" if contexte_rag.startswith("Syllabus approuvé") else
                     "rag_supports" if contexte_rag else
                     "session_themes" if session_themes else "generic_fallback"
@@ -445,7 +443,11 @@ class AttestationGeneratorService:
     ) -> dict[str, Any]:
         nom = participant.get("nom", "Participant")
         genre = (participant.get("genre") or "").lower()
-        civilite = "Madame" if genre in ("f", "feminin", "féminin", "femme") else "Monsieur"
+        civilite = (
+            "Madame" if genre in ("f", "feminin", "féminin", "femme") else
+            "Monsieur" if genre in ("m", "masculin", "homme") else
+            ""
+        )
 
         date_debut = session_info.get("date_debut", "")
         date_fin = session_info.get("date_fin", "")
@@ -473,11 +475,19 @@ class AttestationGeneratorService:
                 f"Appliquer les méthodes et outils essentiels du domaine {domaine}",
                 f"Analyser des cas pratiques liés à {domaine}",
             ]
+        designation = f"{civilite} {nom}".strip()
 
         return {
-            "titre_attestation": "ATTESTATION DE FORMATION",
-            "introduction": f"Le Directeur d'ALTIORA PREST atteste que {civilite} {nom}",
-            "corps": "a suivi la formation professionnelle intitulée :",
+            "titre_attestation": (
+                "ATTESTATION DE PARTICIPATION"
+                if session_info.get("require_grounded_competencies")
+                else "ATTESTATION DE FORMATION"
+            ),
+            "introduction": f"La Direction d’ALTIORA PREST a le plaisir de reconnaître la participation de {designation}",
+            "corps": (
+                f"a participé à la formation professionnelle « {session_info.get('titre', 'Formation professionnelle')} ». "
+                "Sa présence, confirmée par les pointages de la session, témoigne de son engagement dans ce parcours d’apprentissage."
+            ),
             "details": {
                 "formation": session_info.get("titre", "Formation professionnelle"),
                 "dates": dates_str,
@@ -489,8 +499,8 @@ class AttestationGeneratorService:
             },
             "competences": competences,
             "cloture": (
-                "En foi de quoi, la présente attestation lui est délivrée "
-                "pour servir et valoir ce que de droit."
+                f"ALTIORA PREST adresse ses félicitations à {designation} et lui souhaite pleine réussite "
+                "dans la suite de son parcours professionnel."
             ),
             "lieu_emission": "Antananarivo",
             "date_emission": date_fin or datetime.now().strftime("%Y-%m-%d"),
@@ -601,86 +611,206 @@ class AttestationGeneratorService:
         from reportlab.platypus import KeepInFrame, Image as RLImage, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
         content = result["content"]
-        d = content["details"]
+        details = content.get("details") or {}
+        participant = result.get("participant") or {}
+        metadata = result.get("metadata") or {}
+        palette = {
+            "navy": colors.HexColor("#0B1F4D"),
+            "dark_navy": colors.HexColor("#06132F"),
+            "gold": colors.HexColor("#D4AF37"),
+            "gold_dark": colors.HexColor("#B88A1A"),
+            "gold_light": colors.HexColor("#F3E5AB"),
+            "ink": colors.HexColor("#06132F"),
+            "muted": colors.HexColor("#5D5D5D"),
+            "line": colors.HexColor("#E3E5E8"),
+            "wash": colors.HexColor("#F7F7F6"),
+            "white": colors.white,
+        }
 
         doc = SimpleDocTemplate(
             str(pdf_path),
             pagesize=landscape(A4),
-            leftMargin=2*cm, rightMargin=2*cm,
-            topMargin=1.5*cm, bottomMargin=1.5*cm,
+            leftMargin=1.65*cm, rightMargin=1.65*cm,
+            topMargin=1.35*cm, bottomMargin=1.35*cm,
         )
 
         styles = getSampleStyleSheet()
-        title_st = ParagraphStyle("T", parent=styles["Title"], fontSize=26,
-                                   textColor=colors.HexColor("#1F3A5F"),
-                                   alignment=TA_CENTER, spaceAfter=18)
-        header_st = ParagraphStyle("H", parent=styles["Heading1"], fontSize=20,
-                                    textColor=colors.HexColor("#1F3A5F"),
-                                    alignment=TA_CENTER, spaceAfter=6)
-        sub_st = ParagraphStyle("S", parent=styles["Normal"], fontSize=11,
-                                 alignment=TA_CENTER, textColor=colors.grey, spaceAfter=18)
-        body_st = ParagraphStyle("B", parent=styles["Normal"], fontSize=14,
-                                  alignment=TA_CENTER, spaceAfter=14)
-        small_st = ParagraphStyle("Sm", parent=styles["Normal"], fontSize=11,
-                                   alignment=TA_CENTER, spaceAfter=6)
+        brand_st = ParagraphStyle("Brand", parent=styles["Normal"], fontName="Helvetica-Bold",
+                                  fontSize=14, leading=16, textColor=palette["navy"])
+        address_st = ParagraphStyle("Address", parent=styles["Normal"], fontSize=8.5,
+                                    leading=11, textColor=palette["muted"])
+        ref_st = ParagraphStyle("Reference", parent=styles["Normal"], fontName="Helvetica-Bold",
+                                fontSize=8, leading=11, alignment=TA_RIGHT, textColor=palette["gold_dark"])
+        title_st = ParagraphStyle("CertificateTitle", parent=styles["Title"], fontName="Helvetica-Bold",
+                                  fontSize=21, leading=24, textColor=palette["navy"],
+                                  alignment=TA_CENTER, spaceAfter=2)
+        lead_st = ParagraphStyle("Lead", parent=styles["Normal"], fontSize=11,
+                                 leading=14, alignment=TA_CENTER, textColor=palette["muted"])
+        person_st = ParagraphStyle("Person", parent=styles["Normal"], fontName="Helvetica-Bold",
+                                   fontSize=19, leading=23, alignment=TA_CENTER, textColor=palette["navy"])
+        body_st = ParagraphStyle("Body", parent=styles["Normal"], fontSize=10.5,
+                                 leading=14, alignment=TA_CENTER, textColor=palette["ink"])
+        label_st = ParagraphStyle("FactLabel", parent=styles["Normal"], fontName="Helvetica-Bold",
+                                  fontSize=7, leading=9, textColor=palette["muted"])
+        value_st = ParagraphStyle("FactValue", parent=styles["Normal"], fontName="Helvetica-Bold",
+                                  fontSize=9, leading=12, textColor=palette["ink"])
+        section_st = ParagraphStyle("Section", parent=styles["Normal"], fontName="Helvetica-Bold",
+                                    fontSize=8.5, leading=11, textColor=palette["navy"])
+        confirmation_st = ParagraphStyle("Confirmation", parent=styles["Normal"], fontSize=9,
+                                         leading=12, textColor=palette["ink"])
+        competency_st = ParagraphStyle("Competency", parent=styles["Normal"], fontSize=8.5,
+                                       leading=11, leftIndent=8, textColor=palette["ink"])
+        closing_st = ParagraphStyle("Closing", parent=styles["Normal"], fontSize=8,
+                                    leading=11, textColor=palette["muted"])
+        signature_st = ParagraphStyle("Signature", parent=styles["Normal"], fontSize=8.5,
+                                      leading=12, alignment=TA_CENTER, textColor=palette["ink"])
 
         _logo_path = Path(__file__).resolve().parents[2] / "templates" / "logo_altiora_prest.png"
         story = []
+
+        def para(value: Any, style: ParagraphStyle) -> Paragraph:
+            return Paragraph(escape(str(value or "")), style)
+
         if _logo_path.exists():
-            _logo = RLImage(str(_logo_path), width=5*cm, height=2*cm, kind="proportional")
-            _logo.hAlign = "CENTER"
-            story.append(_logo)
-            story.append(Spacer(1, 0.2*cm))
-        story += [
-            Paragraph("ALTIORA PREST", header_st),
-            Paragraph("Antananarivo, Madagascar", sub_st),
-            Spacer(1, 0.5*cm),
-            Paragraph(escape(content["titre_attestation"]), title_st),
-            Spacer(1, 0.5*cm),
-            Paragraph(escape(content["introduction"]), body_st),
-            Paragraph(escape(content["corps"]), body_st),
-            Spacer(1, 0.5*cm),
-        ]
+            logo = RLImage(str(_logo_path), width=3.45*cm, height=1.25*cm, kind="proportional")
+            logo.hAlign = "LEFT"
+            brand = [para("ALTIORA PREST", brand_st), para("Antananarivo, Madagascar", address_st)]
+            header_left = Table([[logo, brand]], colWidths=[4.0*cm, 7.5*cm])
+            header_left.setStyle(TableStyle([
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+                ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+            ]))
+        else:
+            header_left = [para("ALTIORA PREST", brand_st), para("Antananarivo, Madagascar", address_st)]
 
-        details_data = [
-            ["Formation", d["formation"]], ["Dates", d["dates"]],
-            ["Lieu", d["lieu"]], ["Durée", d["duree"]],
-            ["Formateur", d["formateur"]], ["Domaine", d["domaine"]],
-            ["Niveau", d["niveau"]],
-        ]
-        t = Table(details_data, colWidths=[4*cm, 12*cm])
-        t.setStyle(TableStyle([
-            ("FONTSIZE", (0,0), (-1,-1), 11),
-            ("FONTNAME", (0,0), (0,-1), "Helvetica-Bold"),
-            ("ALIGN", (0,0), (0,-1), "RIGHT"),
-            ("ALIGN", (1,0), (1,-1), "LEFT"),
-            ("BOTTOMPADDING", (0,0), (-1,-1), 4),
-            ("TOPPADDING", (0,0), (-1,-1), 4),
-            ("TEXTCOLOR", (0,0), (0,-1), colors.HexColor("#1F3A5F")),
+        reference = Paragraph(f"RÉFÉRENCE<br/>{escape(str(result.get('numero_unique', '')))}", ref_st)
+        header = Table([[header_left, reference]], colWidths=[doc.width * 0.72, doc.width * 0.28])
+        header.setStyle(TableStyle([
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("ALIGN", (1, 0), (1, 0), "RIGHT"),
+            ("LINEBELOW", (0, 0), (-1, -1), 1, palette["line"]),
+            ("LINEBELOW", (0, 0), (0, 0), 2, palette["gold"]),
+            ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+            ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
         ]))
-        story.append(t)
-        story.append(Spacer(1, 0.7*cm))
+        story.extend([header, Spacer(1, 0.42*cm), para(content.get("titre_attestation", "ATTESTATION DE FORMATION"), title_st)])
 
-        story.append(Paragraph("<b>Contenus et compétences abordés :</b>", small_st))
-        for c in content["competences"]:
-            story.append(Paragraph(f"• {escape(str(c))}", small_st))
-        story.append(Spacer(1, 0.7*cm))
-        story.append(Paragraph(f"<i>{escape(content['cloture'])}</i>", small_st))
-        story.append(Spacer(1, 1*cm))
+        # Garder le texte légal éditable tout en mettant le nom en valeur quand
+        # il apparaît à la fin de la phrase générée.
+        introduction = str(content.get("introduction") or "")
+        person_name = " ".join(str(value).strip() for value in (participant.get("prenom"), participant.get("nom")) if value)
+        if person_name and person_name in introduction:
+            lead, _, _ = introduction.rpartition(person_name)
+            story.extend([para(lead.strip(), lead_st), para(person_name, person_st)])
+        else:
+            story.append(para(introduction, person_st))
+        story.extend([para(content.get("corps", ""), body_st), Spacer(1, 0.25*cm)])
 
-        sig_st = ParagraphStyle("Sig", parent=styles["Normal"], fontSize=11, alignment=TA_RIGHT)
-        story.append(Paragraph(
-            f"Fait à {escape(content['lieu_emission'])}, le {escape(content['date_emission'])}", sig_st
-        ))
-        story.append(Paragraph("<b>Le Directeur<br/>ALTIORA PREST</b><br/><u>Signature et cachet</u>", sig_st))
-        story.append(Spacer(1, 0.5*cm))
+        def fact(label: str, key: str, fallback: str = "—") -> list[Paragraph]:
+            value = details.get(key) or fallback
+            return [para(label.upper(), label_st), para(value, value_st)]
 
-        num_st = ParagraphStyle("N", parent=styles["Normal"], fontSize=9, textColor=colors.grey)
-        story.append(Paragraph(f"N° {result['numero_unique']}", num_st))
+        fact_rows = [
+            [fact("Formation", "formation", "Formation professionnelle"), fact("Dates", "dates"), fact("Lieu", "lieu")],
+            [fact("Durée", "duree"), fact("Formateur", "formateur"), [
+                para("DOMAINE ET NIVEAU", label_st),
+                para(" · ".join(str(value) for value in (details.get("domaine"), details.get("niveau")) if value) or "—", value_st),
+            ]],
+        ]
+        try:
+            attendance_rate = float(str(participant.get("taux_presence", "")).rstrip("% ").replace(",", "."))
+        except (TypeError, ValueError):
+            attendance_rate = None
+        facts = Table(fact_rows, colWidths=[doc.width / 3] * 3, rowHeights=[1.25*cm, 1.25*cm])
+        facts.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, -1), palette["wash"]),
+            ("BOX", (0, 0), (-1, -1), 0.7, palette["line"]),
+            ("INNERGRID", (0, 0), (-1, -1), 0.45, palette["line"]),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 10), ("RIGHTPADDING", (0, 0), (-1, -1), 9),
+            ("TOPPADDING", (0, 0), (-1, -1), 6), ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+        ]))
+        story.extend([facts, Spacer(1, 0.3*cm)])
+
+        if attendance_rate is not None or metadata.get("competencies_source") == "participation_only":
+            threshold = SEUIL_ELIGIBILITE_ATTESTATION
+            rate_text = (
+                f"Taux de présence vérifié : {attendance_rate:g} % ; seuil requis : {threshold} %."
+                if attendance_rate is not None
+                else f"Le seuil de présence de {threshold} % est atteint, selon les pointages enregistrés."
+            )
+            confirmation_title = (
+                "PRÉSENCE ET PARTICIPATION CONFIRMÉES"
+                if metadata.get("competencies_source") == "participation_only"
+                else "ASSIDUITÉ VÉRIFIÉE"
+            )
+            confirmation = Table([[ [para(confirmation_title, section_st), para(rate_text, confirmation_st)] ]], colWidths=[doc.width])
+            confirmation.setStyle(TableStyle([
+                ("BACKGROUND", (0, 0), (-1, -1), palette["gold_light"]),
+                ("BOX", (0, 0), (-1, -1), 0.8, palette["gold_dark"]),
+                ("LINEBEFORE", (0, 0), (0, 0), 4, palette["gold"]),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 12), ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+                ("TOPPADDING", (0, 0), (-1, -1), 8), ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+            ]))
+            story.append(confirmation)
+
+        competences = content.get("competences") or []
+        if competences:
+            story.extend([Spacer(1, 0.24*cm), para("CONTENUS DE FORMATION DOCUMENTÉS", section_st)])
+            competency_data = [[[
+                para(f"• {value}", competency_st) for value in competences[:6]
+            ]]]
+            competency_table = Table(competency_data, colWidths=[doc.width], hAlign="LEFT")
+            competency_table.setStyle(TableStyle([
+                ("BACKGROUND", (0, 0), (-1, -1), palette["white"]),
+                ("BOX", (0, 0), (-1, -1), 0.55, palette["line"]),
+                ("LEFTPADDING", (0, 0), (-1, -1), 10), ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+                ("TOPPADDING", (0, 0), (-1, -1), 6), ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+            ]))
+            story.append(competency_table)
+
+        story.extend([Spacer(1, 0.25*cm), para(content.get("cloture", ""), closing_st)])
+        issuance = para(
+            f"Fait à {content.get('lieu_emission', 'Antananarivo')}, le {content.get('date_emission', '')}",
+            signature_st,
+        )
+        signature = Paragraph(
+            "<b>La Direction</b><br/>ALTIORA PREST<br/><br/><font color='#657487'>Signature et cachet</font>",
+            signature_st,
+        )
+        sign_block = Table([[issuance, signature]], colWidths=[doc.width * 0.62, doc.width * 0.38])
+        sign_block.setStyle(TableStyle([
+            ("VALIGN", (0, 0), (-1, -1), "BOTTOM"),
+            ("ALIGN", (0, 0), (0, 0), "LEFT"), ("ALIGN", (1, 0), (1, 0), "CENTER"),
+            ("LINEABOVE", (1, 0), (1, 0), 0.7, palette["gold"]),
+            ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+            ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+        ]))
+        story.extend([Spacer(1, 0.22*cm), sign_block])
+
+        def draw_page(canvas: Any, _document: Any) -> None:
+            canvas.saveState()
+            page_width, page_height = landscape(A4)
+            canvas.setStrokeColor(palette["navy"])
+            canvas.setLineWidth(0.8)
+            canvas.roundRect(0.55*cm, 0.55*cm, page_width - 1.1*cm, page_height - 1.1*cm, 8, stroke=1, fill=0)
+            canvas.setStrokeColor(palette["gold"])
+            canvas.setLineWidth(1.8)
+            canvas.line(0.8*cm, page_height - 0.72*cm, 3.2*cm, page_height - 0.72*cm)
+            canvas.setFillColor(palette["muted"])
+            canvas.setFont("Helvetica", 7)
+            canvas.drawCentredString(page_width / 2, 0.83*cm, "ALTIORA PREST  ·  ATTESTATION À CONSERVER PAR LE BÉNÉFICIAIRE")
+            canvas.restoreState()
 
         # Une attestation tient toujours sur une seule page paysage. KeepInFrame
         # réduit proportionnellement le contenu si les textes générés sont longs.
-        doc.build([KeepInFrame(doc.width, doc.height, story, mode="shrink")])
+        doc.build(
+            [KeepInFrame(doc.width, doc.height, story, mode="shrink", vAlign="TOP")],
+            onFirstPage=draw_page,
+            onLaterPages=draw_page,
+        )
         vlog(f"   ✅ PDF (reportlab) : {pdf_path.name}")
         return str(pdf_path)
 
@@ -781,18 +911,21 @@ class AttestationGeneratorService:
             "duration_seconds": elapsed,
         }
 
-        # ⏳ HITL — Créer un review (CRITIQUE)
-        review_id = create_review(
-            agent_id="agent_5_attestations",
-            data=result,
-            summary=(
-                f"{pdf_ok} PDF générés — "
-                f"à valider avant envoi email aux participants"
-            ),
-            criticity="critical",
-        )
-        result["_review_id"] = review_id
-        result["_review_status"] = "pending_review"
-
-        vlog(f"⏳ [HITL] Review créé : {review_id}")
+        # Aucun dossier HITL vide : il n'y a rien à valider ni à télécharger.
+        if pdf_ok:
+            review_id = create_review(
+                agent_id="agent_5_attestations",
+                data=result,
+                summary=(
+                    f"{pdf_ok} PDF générés — "
+                    f"à valider avant envoi email aux participants"
+                ),
+                criticity="critical",
+            )
+            result["_review_id"] = review_id
+            result["_review_status"] = "pending_review"
+            vlog(f"⏳ [HITL] Review créé : {review_id}")
+        else:
+            result["_review_status"] = "generation_failed"
+            result["message"] = "Aucun PDF n'a pu être généré. Consultez les erreurs par participant."
         return result

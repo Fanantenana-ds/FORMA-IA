@@ -151,14 +151,14 @@ export const VeilleMarcheView: React.FC<VeilleMarcheViewProps> = ({
       <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-[#1B8F6E]/10 text-[#1B8F6E]">
+            <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-[#0B1F4D]/10 text-[#0B1F4D]">
               Intelligence Artificielle & Veille
             </span>
             <span className="text-xs text-slate-400 font-medium">• Analyseur automatisé de marché</span>
           </div>
           <h1 className="text-2xl font-extrabold text-[#11162A]">Veille marché IA</h1>
           <p className="text-slate-600 text-xs mt-1">
-            Recherche d'appels d'offres et d'opportunités de formation à Madagascar, analysés et notés par l'IA.
+            Repérez les appels d’offres et les besoins de formation, puis examinez leur pertinence avant de les intégrer au suivi commercial.
           </p>
         </div>
 
@@ -170,14 +170,14 @@ export const VeilleMarcheView: React.FC<VeilleMarcheViewProps> = ({
               activeTab === 'trouves' ? 'bg-white text-[#11162A] shadow-xs' : 'text-slate-500 hover:text-slate-800'
             }`}
           >
-            <Search size={15} className="text-[#1B8F6E]" />
+            <Search size={15} className="text-[#0B1F4D]" />
             <span>Marchés Trouvés ({foundList.length})</span>
           </button>
 
           <button
             onClick={() => setActiveTab('acceptes')}
             className={`px-4 py-2.5 rounded-lg transition-all flex items-center gap-2 cursor-pointer ${
-              activeTab === 'acceptes' ? 'bg-[#1B8F6E] text-white shadow-xs' : 'text-slate-500 hover:text-slate-800'
+              activeTab === 'acceptes' ? 'bg-[#0B1F4D] text-white shadow-xs' : 'text-slate-500 hover:text-slate-800'
             }`}
           >
             <CheckCircle2 size={15} />
@@ -193,11 +193,11 @@ export const VeilleMarcheView: React.FC<VeilleMarcheViewProps> = ({
           onClick={() => setMode('manuel')}
           className={`p-4 rounded-2xl border-2 text-left transition-all cursor-pointer flex items-start gap-3 ${
             mode === 'manuel'
-              ? 'border-[#1B8F6E] bg-[#1B8F6E]/5'
+              ? 'border-[#0B1F4D] bg-[#0B1F4D]/5'
               : 'border-slate-200 bg-white hover:border-slate-300'
           }`}
         >
-          <Keyboard size={20} className={mode === 'manuel' ? 'text-[#1B8F6E]' : 'text-slate-400'} />
+          <Keyboard size={20} className={mode === 'manuel' ? 'text-[#0B1F4D]' : 'text-slate-400'} />
           <span>
             <span className="block text-sm font-extrabold text-[#11162A]">Recherche manuelle</span>
             <span className="block text-xs text-slate-500 mt-0.5">
@@ -211,11 +211,11 @@ export const VeilleMarcheView: React.FC<VeilleMarcheViewProps> = ({
           onClick={() => setMode('auto')}
           className={`p-4 rounded-2xl border-2 text-left transition-all cursor-pointer flex items-start gap-3 ${
             mode === 'auto'
-              ? 'border-[#1B8F6E] bg-[#1B8F6E]/5'
+              ? 'border-[#0B1F4D] bg-[#0B1F4D]/5'
               : 'border-slate-200 bg-white hover:border-slate-300'
           }`}
         >
-          <Bot size={20} className={mode === 'auto' ? 'text-[#1B8F6E]' : 'text-slate-400'} />
+          <Bot size={20} className={mode === 'auto' ? 'text-[#0B1F4D]' : 'text-slate-400'} />
           <span>
             <span className="block text-sm font-extrabold text-[#11162A]">Détection automatique</span>
             <span className="block text-xs text-slate-500 mt-0.5">
@@ -236,7 +236,7 @@ export const VeilleMarcheView: React.FC<VeilleMarcheViewProps> = ({
         className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex flex-col md:flex-row gap-3"
       >
         <div className="relative flex-1">
-          <Sparkles className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#1B8F6E]" size={16} />
+          <Sparkles className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#0B1F4D]" size={16} />
           <input
             type="text"
             value={query}
@@ -244,13 +244,13 @@ export const VeilleMarcheView: React.FC<VeilleMarcheViewProps> = ({
             minLength={2}
             maxLength={500}
             placeholder="Que cherchez-vous ? ex : appel d'offres formation intelligence artificielle"
-            className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#1B8F6E]"
+            className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#0B1F4D]"
           />
         </div>
         <button
           type="submit"
           disabled={isSearching || query.trim().length < 2}
-          className="px-5 py-2.5 bg-[#1B8F6E] hover:bg-[#16785c] text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
+          className="px-5 py-2.5 bg-[#0B1F4D] hover:bg-[#06132F] text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
         >
           {isSearching ? <Loader2 size={15} className="animate-spin" /> : <Search size={15} />}
           <span>{isSearching ? 'Analyse en cours…' : 'Lancer la recherche IA'}</span>
@@ -283,7 +283,7 @@ export const VeilleMarcheView: React.FC<VeilleMarcheViewProps> = ({
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
           <div className="text-[10px] font-bold text-slate-400 uppercase">Résultats de la recherche</div>
           <div className="text-2xl font-extrabold text-[#11162A] mt-1">{foundList.length}</div>
-          <p className="text-xs text-[#1B8F6E] font-semibold mt-1">
+          <p className="text-xs text-[#0B1F4D] font-semibold mt-1">
             {foundList.filter((v) => v.validation === 'validated').length} jugés fiables par l'IA
           </p>
         </div>
@@ -309,7 +309,7 @@ export const VeilleMarcheView: React.FC<VeilleMarcheViewProps> = ({
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
           placeholder="Filtrer la liste affichée par titre, organisme ou domaine..."
-          className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#1B8F6E]"
+          className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#0B1F4D]"
         />
       </div>
 
@@ -328,7 +328,7 @@ export const VeilleMarcheView: React.FC<VeilleMarcheViewProps> = ({
             return (
             <div
               key={item.id}
-              className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-4 hover:border-[#1B8F6E]/40 transition-all"
+              className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-4 hover:border-[#0B1F4D]/40 transition-all"
             >
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex flex-wrap items-center gap-2">
@@ -337,7 +337,7 @@ export const VeilleMarcheView: React.FC<VeilleMarcheViewProps> = ({
                   </span>
                   {item.clientCible && (
                     <span className="px-2.5 py-0.5 bg-slate-100 text-slate-700 rounded-md text-[11px] font-extrabold flex items-center gap-1">
-                      <Building2 size={12} className="text-[#1B8F6E]" />
+                      <Building2 size={12} className="text-[#0B1F4D]" />
                       {item.clientCible}
                     </span>
                   )}
@@ -385,7 +385,7 @@ export const VeilleMarcheView: React.FC<VeilleMarcheViewProps> = ({
 
               <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 p-3 bg-slate-50 rounded-xl border border-slate-200/80 text-xs">
                 <span className="flex items-center gap-1.5 text-slate-600">
-                  <CalendarClock size={14} className="text-[#1B8F6E]" />
+                  <CalendarClock size={14} className="text-[#0B1F4D]" />
                   <span className="font-bold text-slate-800">Échéance :</span> {item.echeance || 'Non précisée'}
                 </span>
                 {item.sourceSite && (
@@ -398,7 +398,7 @@ export const VeilleMarcheView: React.FC<VeilleMarcheViewProps> = ({
                     href={item.url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex items-center gap-1 font-bold text-[#1B8F6E] hover:underline"
+                    className="flex items-center gap-1 font-bold text-[#0B1F4D] hover:underline"
                   >
                     <ExternalLink size={13} />
                     Consulter l'annonce
@@ -495,7 +495,7 @@ export const VeilleMarcheView: React.FC<VeilleMarcheViewProps> = ({
 
                 <button
                   onClick={() => handleOpenDocGenerator(item)}
-                  className="px-4 py-2.5 bg-[#1B8F6E] hover:bg-[#16785c] text-white rounded-xl font-bold flex items-center gap-2 shadow-sm transition-colors cursor-pointer"
+                  className="px-4 py-2.5 bg-[#0B1F4D] hover:bg-[#06132F] text-white rounded-xl font-bold flex items-center gap-2 shadow-sm transition-colors cursor-pointer"
                 >
                   <FileText size={16} />
                   <span>Générer / Éditer TDR et OT →</span>

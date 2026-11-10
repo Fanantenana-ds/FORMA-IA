@@ -175,14 +175,14 @@ export const SuiviPresencesView: React.FC<SuiviPresencesViewProps> = ({
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
               <div className="flex items-center gap-2 mb-1">
-                <span className="px-2.5 py-0.5 rounded text-[11px] font-extrabold bg-[#1B8F6E]/10 text-[#1B8F6E]">
-                  Émargement Numérique & Certifié
+                <span className="px-2.5 py-0.5 rounded text-[11px] font-extrabold bg-[#0B1F4D]/10 text-[#0B1F4D]">
+                  Émargement numérique
                 </span>
-                <span className="text-xs text-slate-400 font-medium">• Contrôle Qualiopi</span>
+                <span className="text-xs text-slate-400 font-medium">• Pointages par séance</span>
               </div>
               <h1 className="text-2xl font-extrabold text-[#11162A]">Suivi des Présences</h1>
               <p className="text-slate-600 text-xs mt-1">
-                Sélectionnez une session active pour gérer l'émargement et valider la présence des participants inscrits.
+                Consultez une session pour enregistrer les présences par séance et vérifier les pointages des participants inscrits.
               </p>
             </div>
 
@@ -218,7 +218,7 @@ export const SuiviPresencesView: React.FC<SuiviPresencesViewProps> = ({
               value={sessionSearch}
               onChange={(e) => setSessionSearch(e.target.value)}
               placeholder="Rechercher une session par intitulé, code ou formateur..."
-              className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#1B8F6E]"
+              className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#0B1F4D]"
             />
           </div>
 
@@ -231,7 +231,7 @@ export const SuiviPresencesView: React.FC<SuiviPresencesViewProps> = ({
               return (
                 <div
                   key={s.id}
-                  className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs hover:border-[#1B8F6E]/40 hover:shadow-md transition-all flex flex-col justify-between"
+                  className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs hover:border-[#0B1F4D]/40 hover:shadow-md transition-all flex flex-col justify-between"
                 >
                   <div>
                     {/* Top Badges */}
@@ -262,7 +262,7 @@ export const SuiviPresencesView: React.FC<SuiviPresencesViewProps> = ({
                     <h3 className="font-extrabold text-[#11162A] text-sm leading-snug line-clamp-2">
                       {s.intitule}
                     </h3>
-                    <p className="text-[11px] font-semibold text-[#1B8F6E] mt-1">{s.domaine}</p>
+                    <p className="text-[11px] font-semibold text-[#0B1F4D] mt-1">{s.domaine}</p>
 
                     {/* Info Metadata */}
                     <div className="mt-4 space-y-1.5 text-xs text-slate-600">
@@ -302,7 +302,7 @@ export const SuiviPresencesView: React.FC<SuiviPresencesViewProps> = ({
                   {/* Action Button */}
                   <button
                     onClick={() => setSelectedSessionId(s.id)}
-                    className="w-full mt-5 py-2.5 bg-[#11162A] hover:bg-[#1B8F6E] text-white rounded-xl font-bold text-xs shadow-xs transition-colors flex items-center justify-center gap-2 cursor-pointer"
+                    className="w-full mt-5 py-2.5 bg-[#11162A] hover:bg-[#0B1F4D] text-white rounded-xl font-bold text-xs shadow-xs transition-colors flex items-center justify-center gap-2 cursor-pointer"
                   >
                     <UserCheck size={16} />
                     <span>Gérer l'émargement →</span>
@@ -365,7 +365,7 @@ export const SuiviPresencesView: React.FC<SuiviPresencesViewProps> = ({
                 <option value="">Choisir une séance</option>
                 {seances.map((seance: any) => <option key={seance.id} value={seance.id}>{new Date(seance.date).toLocaleDateString('fr-FR')}{seance.theme ? ` · ${seance.theme}` : ''}</option>)}
               </select>
-              {!readOnly && !seances.length && <button type="button" disabled={presenceBusy} onClick={createSessionSeance} className="px-3 py-2 bg-[#1B8F6E] text-white rounded-lg text-xs font-bold">Créer une séance aujourd'hui</button>}
+              {!readOnly && !seances.length && <button type="button" disabled={presenceBusy} onClick={createSessionSeance} className="px-3 py-2 bg-[#0B1F4D] text-white rounded-lg text-xs font-bold">Créer une séance aujourd'hui</button>}
               {presenceBusy && <span className="text-xs text-slate-500">Enregistrement…</span>}
             </div>
             {apiError && <div className="mt-3 p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs font-semibold">{apiError}</div>}
@@ -402,7 +402,7 @@ export const SuiviPresencesView: React.FC<SuiviPresencesViewProps> = ({
               value={participantSearch}
               onChange={(e) => setParticipantSearch(e.target.value)}
               placeholder="Filtrer un participant inscrit par nom ou entreprise..."
-              className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#1B8F6E]"
+              className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#0B1F4D]"
             />
           </div>
 

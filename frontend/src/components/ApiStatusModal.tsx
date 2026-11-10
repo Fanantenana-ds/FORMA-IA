@@ -62,7 +62,7 @@ export const ApiStatusModal: React.FC<ApiStatusModalProps> = ({
       <div className="bg-white rounded-2xl max-w-xl w-full p-6 shadow-2xl border border-slate-200">
         <div className="flex items-center justify-between pb-4 border-b border-slate-100">
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-[#1B8F6E]/10 flex items-center justify-center text-[#1B8F6E]">
+            <div className="w-9 h-9 rounded-xl bg-[#0B1F4D]/10 flex items-center justify-center text-[#0B1F4D]">
               <Server size={20} />
             </div>
             <div>
@@ -131,7 +131,7 @@ export const ApiStatusModal: React.FC<ApiStatusModalProps> = ({
               <button
                 onClick={handleTestHealth}
                 disabled={isTesting}
-                className="px-4 py-2 bg-[#1B8F6E] hover:bg-[#16785c] text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors shadow-xs disabled:opacity-50"
+                className="px-4 py-2 bg-[#0B1F4D] hover:bg-[#06132F] text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors shadow-xs disabled:opacity-50"
               >
                 {isTesting ? <RefreshCw size={14} className="animate-spin" /> : <Activity size={14} />}
                 <span>Tester la connexion</span>

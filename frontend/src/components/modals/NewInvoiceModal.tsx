@@ -158,7 +158,7 @@ export const NewInvoiceModal: React.FC<NewInvoiceModalProps> = ({
             <button
               type="submit"
               disabled={isSubmitting}
-              className="px-5 py-2 bg-[#1B8F6E] text-white rounded-lg font-bold flex items-center gap-1.5"
+              className="px-5 py-2 bg-[#0B1F4D] text-white rounded-lg font-bold flex items-center gap-1.5"
             >
               <Send size={14} />
               <span>Générer document</span>

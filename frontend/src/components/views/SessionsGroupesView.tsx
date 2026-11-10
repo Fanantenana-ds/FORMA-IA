@@ -352,20 +352,20 @@ export const SessionsGroupesView: React.FC<SessionsGroupesViewProps> = ({
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
               <div className="flex items-center gap-2 mb-1">
-                <span className="px-2.5 py-0.5 rounded text-[11px] font-extrabold bg-[#1B8F6E]/10 text-[#1B8F6E]">
+                <span className="px-2.5 py-0.5 rounded text-[11px] font-extrabold bg-[#0B1F4D]/10 text-[#0B1F4D]">
                   Planning & Promos
                 </span>
-                <span className="text-xs text-slate-400 font-medium">• Synchronisé REST</span>
+                <span className="text-xs text-slate-400 font-medium">• Suivi opérationnel</span>
               </div>
               <h1 className="text-2xl font-extrabold text-[#11162A]">Sessions & Groupes</h1>
               <p className="text-slate-600 text-xs mt-1">
-                Gestion des promotions, répartition des groupes et inscription des participants retenus.
+                Organisez les sessions, suivez leurs groupes et inscrivez les participants retenus.
               </p>
             </div>
 
             {!readOnly && <button
               onClick={onOpenNewSession}
-              className="px-4 py-2.5 bg-[#1B8F6E] hover:bg-[#16785c] text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors shrink-0 cursor-pointer"
+              className="px-4 py-2.5 bg-[#0B1F4D] hover:bg-[#06132F] text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors shrink-0 cursor-pointer"
             >
               <Plus size={16} />
               <span>Créer une session</span>
@@ -382,7 +382,7 @@ export const SessionsGroupesView: React.FC<SessionsGroupesViewProps> = ({
               value={sessionSearch}
               onChange={(e) => setSessionSearch(e.target.value)}
               placeholder="Rechercher par intitulé, code session ou formateur..."
-              className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#1B8F6E]"
+              className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#0B1F4D]"
             />
           </div>
 
@@ -395,7 +395,7 @@ export const SessionsGroupesView: React.FC<SessionsGroupesViewProps> = ({
               return (
                 <div
                   key={s.id}
-                  className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex flex-col lg:flex-row lg:items-center justify-between gap-4 hover:border-[#1B8F6E]/40 transition-all"
+                  className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex flex-col lg:flex-row lg:items-center justify-between gap-4 hover:border-[#0B1F4D]/40 transition-all"
                 >
                   <div className="space-y-2 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
@@ -440,7 +440,7 @@ export const SessionsGroupesView: React.FC<SessionsGroupesViewProps> = ({
                           {sessionPresences.map((participant) => (
                             <span key={participant.id} className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-semibold text-slate-700">
                               {participant.apprenantNom}
-                              {participant.niveauInitial && <span className="text-[#1B8F6E]">· {participant.niveauInitial}</span>}
+                              {participant.niveauInitial && <span className="text-[#0B1F4D]">· {participant.niveauInitial}</span>}
                             </span>
                           ))}
                         </div>
@@ -470,7 +470,7 @@ export const SessionsGroupesView: React.FC<SessionsGroupesViewProps> = ({
                           </select>
                           {!sessionTrainerOptions.length && <span className="block mt-1 max-w-52 text-[10px] text-slate-500">Aucun formateur disponible dans la section Formateurs.</span>}
                         </label>
-                        <button type="button" disabled={savingDates} onClick={() => void saveSessionDates(s.id)} className="px-3 py-2 bg-[#1B8F6E] text-white rounded-lg text-xs font-bold disabled:opacity-50">
+                        <button type="button" disabled={savingDates} onClick={() => void saveSessionDates(s.id)} className="px-3 py-2 bg-[#0B1F4D] text-white rounded-lg text-xs font-bold disabled:opacity-50">
                           {savingDates ? 'Enregistrement…' : 'Enregistrer'}
                         </button>
                         <button type="button" onClick={() => { setEditingDateSessionId(null); setDateEditError(''); }} className="px-3 py-2 bg-slate-100 text-slate-700 rounded-lg text-xs font-bold">Annuler</button>
@@ -487,7 +487,7 @@ export const SessionsGroupesView: React.FC<SessionsGroupesViewProps> = ({
                       </div>
                       <div className="w-24 bg-slate-100 h-1.5 rounded-full mt-1 overflow-hidden">
                         <div
-                          className="bg-[#1B8F6E] h-full rounded-full"
+                          className="bg-[#0B1F4D] h-full rounded-full"
                           style={{ width: s.capacityMax ? `${Math.min(100, (totalInscrits / s.capacityMax) * 100)}%` : '0%' }}
                         ></div>
                       </div>
@@ -514,7 +514,7 @@ export const SessionsGroupesView: React.FC<SessionsGroupesViewProps> = ({
                     <button
                       type="button"
                       onClick={() => setSelectedSessionId(s.id)}
-                      className="px-4 py-2.5 bg-[#11162A] hover:bg-[#1B8F6E] text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-xs transition-colors cursor-pointer"
+                      className="px-4 py-2.5 bg-[#11162A] hover:bg-[#0B1F4D] text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-xs transition-colors cursor-pointer"
                     >
                       <Users size={15} />
                       <span>Inscrits ({totalInscrits}) →</span>
@@ -563,7 +563,7 @@ export const SessionsGroupesView: React.FC<SessionsGroupesViewProps> = ({
 
               <div className="flex flex-wrap gap-2">
                 {!readOnly && <>
-                  <button onClick={() => void openAddParticipant()} className="px-4 py-2.5 bg-[#1B8F6E] hover:bg-[#16785c] text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-sm transition-colors cursor-pointer"><UserPlus size={16} /><span>Ajouter un participant retenu</span></button>
+                  <button onClick={() => void openAddParticipant()} className="px-4 py-2.5 bg-[#0B1F4D] hover:bg-[#06132F] text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-sm transition-colors cursor-pointer"><UserPlus size={16} /><span>Ajouter un participant retenu</span></button>
                   <input ref={participantCsvInput} type="file" accept=".csv,text/csv" className="hidden" onChange={e=>void importParticipantsCsv(e.target.files?.[0])}/><button onClick={()=>participantCsvInput.current?.click()} className="px-4 py-2.5 bg-slate-100 text-slate-700 rounded-xl text-xs font-bold">Importer CSV</button>
                   <button disabled={publicLinkBusy || supportsLoading || !assessmentSupportReady} title={assessmentSupportReady ? 'Créer le lien avec les supports indexés de cette session' : 'Indexez d’abord les supports pédagogiques de cette session'} onClick={() => void generatePublicLink('participant')} className="px-4 py-2.5 bg-blue-50 text-blue-800 rounded-xl text-xs font-bold disabled:cursor-not-allowed disabled:opacity-50">Lien public participants</button>
                   <button disabled={publicLinkBusy || supportsLoading || !assessmentSupportReady} title={assessmentSupportReady ? 'Créer l’évaluation post-formation à partir des supports indexés' : 'Indexez d’abord les supports pédagogiques de cette session'} onClick={() => void generatePublicLink('post_formation')} className="px-4 py-2.5 bg-emerald-50 text-emerald-800 rounded-xl text-xs font-bold disabled:cursor-not-allowed disabled:opacity-50">Lien d’évaluation post-formation</button>
@@ -623,7 +623,7 @@ export const SessionsGroupesView: React.FC<SessionsGroupesViewProps> = ({
               value={participantSearch}
               onChange={(e) => setParticipantSearch(e.target.value)}
               placeholder="Filtrer un participant par nom ou organisme..."
-              className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#1B8F6E]"
+              className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#0B1F4D]"
             />
           </div>
 
@@ -672,7 +672,7 @@ export const SessionsGroupesView: React.FC<SessionsGroupesViewProps> = ({
           <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 relative">
             <div className="flex items-center justify-between pb-4 border-b border-slate-100">
               <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-[#1B8F6E]/10 text-[#1B8F6E] flex items-center justify-center font-bold">
+                <div className="w-8 h-8 rounded-lg bg-[#0B1F4D]/10 text-[#0B1F4D] flex items-center justify-center font-bold">
                   <UserPlus size={18} />
                 </div>
                 <div>
@@ -692,7 +692,7 @@ export const SessionsGroupesView: React.FC<SessionsGroupesViewProps> = ({
             <form onSubmit={handleAddParticipantSubmit} className="mt-4 space-y-4 text-xs">
               <div>
                 <label className="block font-bold text-slate-700 uppercase mb-1">Participant déjà enregistré</label>
-                <select value={selectedParticipantId} onChange={(e) => setSelectedParticipantId(e.target.value)} className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-800 focus:ring-2 focus:ring-[#1B8F6E] focus:outline-none">
+                <select value={selectedParticipantId} onChange={(e) => setSelectedParticipantId(e.target.value)} className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-800 focus:ring-2 focus:ring-[#0B1F4D] focus:outline-none">
                   <option value="">Créer une nouvelle fiche participant</option>
                   {participantOptions.map((participant) => <option key={participant.id} value={participant.id}>{participant.nom}{participant.email ? ` — ${participant.email}` : ''}</option>)}
                 </select>
@@ -709,7 +709,7 @@ export const SessionsGroupesView: React.FC<SessionsGroupesViewProps> = ({
                   value={newNom}
                   onChange={(e) => setNewNom(e.target.value)}
                   placeholder="ex: Mihaja Rasoanaivo"
-                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-800 focus:ring-2 focus:ring-[#1B8F6E] focus:outline-none"
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-800 focus:ring-2 focus:ring-[#0B1F4D] focus:outline-none"
                 />
               </div>
 
@@ -723,7 +723,7 @@ export const SessionsGroupesView: React.FC<SessionsGroupesViewProps> = ({
                   value={newEmail}
                   onChange={(e) => setNewEmail(e.target.value)}
                   placeholder="participant@exemple.mg"
-                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-800 focus:ring-2 focus:ring-[#1B8F6E] focus:outline-none"
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-800 focus:ring-2 focus:ring-[#0B1F4D] focus:outline-none"
                 />
               </div>
 
@@ -737,7 +737,7 @@ export const SessionsGroupesView: React.FC<SessionsGroupesViewProps> = ({
                   value={newEntreprise}
                   onChange={(e) => setNewEntreprise(e.target.value)}
                   placeholder="ex: TELMA Madagascar / Orange / BOA"
-                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-800 focus:ring-2 focus:ring-[#1B8F6E] focus:outline-none"
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-800 focus:ring-2 focus:ring-[#0B1F4D] focus:outline-none"
                 />
               </div>
               </>}
@@ -753,7 +753,7 @@ export const SessionsGroupesView: React.FC<SessionsGroupesViewProps> = ({
                 <button
                   type="submit"
                   disabled={participantsLoading}
-                  className="px-4 py-2 bg-[#1B8F6E] hover:bg-[#16785c] text-white rounded-xl font-bold shadow-xs transition-colors cursor-pointer flex items-center gap-1.5"
+                  className="px-4 py-2 bg-[#0B1F4D] hover:bg-[#06132F] text-white rounded-xl font-bold shadow-xs transition-colors cursor-pointer flex items-center gap-1.5"
                 >
                   <Check size={16} />
                   <span>Inscrire à la session</span>

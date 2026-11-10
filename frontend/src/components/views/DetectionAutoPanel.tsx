@@ -43,7 +43,7 @@ const TRIGGER_LABELS: Record<string, string> = {
 };
 
 const quotaBarColor = (percent: number): string =>
-  percent >= 95 ? 'bg-red-500' : percent >= 80 ? 'bg-amber-500' : 'bg-[#1B8F6E]';
+  percent >= 95 ? 'bg-red-500' : percent >= 80 ? 'bg-amber-500' : 'bg-[#0B1F4D]';
 
 export const DetectionAutoPanel: React.FC<DetectionAutoPanelProps> = ({ canTrigger, onDetected }) => {
   const [status, setStatus] = useState<DetectionStatus | null>(null);
@@ -209,7 +209,7 @@ export const DetectionAutoPanel: React.FC<DetectionAutoPanelProps> = ({ canTrigg
       {/* En-tête */}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex items-start gap-3">
-          <div className="w-10 h-10 rounded-xl bg-[#1B8F6E]/10 text-[#1B8F6E] flex items-center justify-center shrink-0">
+          <div className="w-10 h-10 rounded-xl bg-[#0B1F4D]/10 text-[#0B1F4D] flex items-center justify-center shrink-0">
             <Bot size={20} />
           </div>
           <div>
@@ -376,7 +376,7 @@ export const DetectionAutoPanel: React.FC<DetectionAutoPanelProps> = ({ canTrigg
                   checked={autoSave}
                   onChange={(e) => setAutoSave(e.target.checked)}
                   disabled={busy}
-                  className="mt-0.5 accent-[#1B8F6E]"
+                  className="mt-0.5 accent-[#0B1F4D]"
                 />
                 <span>
                   <span className="font-bold">Enregistrer automatiquement les nouvelles opportunités</span>
@@ -390,7 +390,7 @@ export const DetectionAutoPanel: React.FC<DetectionAutoPanelProps> = ({ canTrigg
               <button
                 onClick={handleRun}
                 disabled={busy || config.requetes.length === 0}
-                className="px-5 py-2.5 bg-[#1B8F6E] hover:bg-[#16785c] text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
+                className="px-5 py-2.5 bg-[#0B1F4D] hover:bg-[#06132F] text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
               >
                 {isRunning ? <Loader2 size={15} className="animate-spin" /> : <Play size={15} />}
                 <span>{isRunning ? 'Détection en cours…' : 'Lancer la détection maintenant'}</span>
@@ -417,7 +417,7 @@ export const DetectionAutoPanel: React.FC<DetectionAutoPanelProps> = ({ canTrigg
             </span>
           </div>
           <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
-            <div className={`h-full rounded-full bg-[#1B8F6E] transition-all duration-500 ${isRunning ? 'w-2/3 animate-pulse' : 'w-full'}`} />
+            <div className={`h-full rounded-full bg-[#0B1F4D] transition-all duration-500 ${isRunning ? 'w-2/3 animate-pulse' : 'w-full'}`} />
           </div>
           <div className="max-h-72 space-y-2 overflow-y-auto">
             {progress.filter(item => item.type === 'result').map((item, index) => (
@@ -430,7 +430,7 @@ export const DetectionAutoPanel: React.FC<DetectionAutoPanelProps> = ({ canTrigg
                   </div>
                   <div className="flex shrink-0 flex-col items-end gap-1">{item.score !== undefined && <span className="rounded-lg bg-white px-2 py-1 text-[11px] font-bold text-emerald-800">{item.score}/100</span>}{item.status && <span className={`rounded-full px-2 py-1 text-[10px] font-bold ${item.status === 'ouverte' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-700'}`}>{item.status}</span>}</div>
                 </div>
-                {item.url ? <a href={item.url} target="_blank" rel="noopener noreferrer" className="mt-2 inline-block text-[11px] font-semibold text-[#16785c] underline">Voir l’avis original ↗</a>
+                {item.url ? <a href={item.url} target="_blank" rel="noopener noreferrer" className="mt-2 inline-block text-[11px] font-semibold text-[#06132F] underline">Voir l’avis original ↗</a>
                   : <span className="mt-2 block text-[11px] text-amber-700">Aucun lien public fourni</span>}
               </div>
             ))}

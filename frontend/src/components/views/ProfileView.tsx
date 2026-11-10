@@ -79,14 +79,14 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ authUser, avatarUrl, o
 
   return (
     <div className="mx-auto max-w-5xl space-y-6 pb-10">
-      <button type="button" onClick={onBack} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-[#17694f] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16785c] focus-visible:ring-offset-2">
+      <button type="button" onClick={onBack} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-[#0B1F4D] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#06132F] focus-visible:ring-offset-2">
         <ArrowLeft size={16} />
         Retour
       </button>
       <header className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7">
         <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
           <div className="relative mx-auto sm:mx-0">
-            <div className="flex h-24 w-24 items-center justify-center overflow-hidden rounded-full border-4 border-white bg-emerald-50 text-2xl font-extrabold text-[#17694f] shadow-md ring-1 ring-slate-200 sm:h-28 sm:w-28">
+            <div className="flex h-24 w-24 items-center justify-center overflow-hidden rounded-full border-4 border-white bg-emerald-50 text-2xl font-extrabold text-[#0B1F4D] shadow-md ring-1 ring-slate-200 sm:h-28 sm:w-28">
               {avatarUrl ? <img src={avatarUrl} alt={`Photo de profil de ${authUser.nom}`} className="h-full w-full object-cover" /> : initials(authUser.nom) || <UserRound size={32} />}
             </div>
             <button
@@ -94,14 +94,14 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ authUser, avatarUrl, o
               onClick={() => fileInput.current?.click()}
               disabled={avatarSaving}
               aria-label="Choisir une photo de profil"
-              className="absolute bottom-0 right-0 flex h-9 w-9 items-center justify-center rounded-full border-2 border-white bg-[#16785c] text-white shadow-sm transition hover:bg-[#125f49] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16785c] focus-visible:ring-offset-2 disabled:opacity-60"
+              className="absolute bottom-0 right-0 flex h-9 w-9 items-center justify-center rounded-full border-2 border-white bg-[#06132F] text-white shadow-sm transition hover:bg-[#06132F] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#06132F] focus-visible:ring-offset-2 disabled:opacity-60"
             >
               {avatarSaving ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" /> : <Camera size={16} />}
             </button>
             <input ref={fileInput} type="file" accept="image/*" tabIndex={-1} className="sr-only" onChange={event => void handlePhoto(event.target.files?.[0])} />
           </div>
           <div className="min-w-0 flex-1 text-center sm:text-left">
-            <div className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-bold text-[#17694f]">
+            <div className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-bold text-[#0B1F4D]">
               <BadgeCheck size={14} />
               {ROLE_LABELS[authUser.role]}
             </div>
@@ -134,14 +134,14 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ authUser, avatarUrl, o
             <span className="mb-1.5 block text-xs font-bold text-slate-700">Nom affiché</span>
             <span className="relative block">
               <UserRound size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input value={nom} onChange={event => { setNom(event.target.value); setError(''); setNotice(''); }} disabled={saving} required autoComplete="name" className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-9 pr-3 text-sm text-slate-800 outline-none transition focus:border-[#16785c] focus:ring-2 focus:ring-[#16785c]/15 disabled:bg-slate-50 disabled:text-slate-600" />
+              <input value={nom} onChange={event => { setNom(event.target.value); setError(''); setNotice(''); }} disabled={saving} required autoComplete="name" className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-9 pr-3 text-sm text-slate-800 outline-none transition focus:border-[#06132F] focus:ring-2 focus:ring-[#06132F]/15 disabled:bg-slate-50 disabled:text-slate-600" />
             </span>
           </label>
           <label className="block">
             <span className="mb-1.5 block text-xs font-bold text-slate-700">Adresse e-mail</span>
             <span className="relative block">
               <Mail size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input type="email" value={email} onChange={event => { setEmail(event.target.value); setError(''); setNotice(''); }} disabled={saving} required autoComplete="email" className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-9 pr-3 text-sm text-slate-800 outline-none transition focus:border-[#16785c] focus:ring-2 focus:ring-[#16785c]/15 disabled:bg-slate-50 disabled:text-slate-600" />
+              <input type="email" value={email} onChange={event => { setEmail(event.target.value); setError(''); setNotice(''); }} disabled={saving} required autoComplete="email" className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-9 pr-3 text-sm text-slate-800 outline-none transition focus:border-[#06132F] focus:ring-2 focus:ring-[#06132F]/15 disabled:bg-slate-50 disabled:text-slate-600" />
             </span>
           </label>
 
@@ -150,7 +150,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ authUser, avatarUrl, o
 
           <div className="flex flex-col-reverse gap-3 border-t border-slate-100 pt-4 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-[11px] text-slate-500">Les changements sont enregistrés sur votre compte Backend.</p>
-            <button type="submit" disabled={saving || (nom.trim() === authUser.nom && email.trim() === authUser.email)} aria-busy={saving} className="rounded-xl bg-[#16785c] px-4 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-[#125f49] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16785c] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50">
+            <button type="submit" disabled={saving || (nom.trim() === authUser.nom && email.trim() === authUser.email)} aria-busy={saving} className="rounded-xl bg-[#06132F] px-4 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-[#06132F] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#06132F] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50">
               {saving ? 'Enregistrement…' : 'Enregistrer mon profil'}
             </button>
           </div>

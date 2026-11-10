@@ -61,7 +61,7 @@ export const TdrFormEditor: React.FC<TdrFormEditorProps> = ({ tdrData, setTdrDat
           type="text"
           value={tdrData.projetTitre}
           onChange={(e) => setTdrData({ ...tdrData, projetTitre: e.target.value })}
-          className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-[#1B8F6E]"
+          className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-[#0B1F4D]"
         />
       </div>
 

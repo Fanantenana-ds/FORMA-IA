@@ -519,7 +519,12 @@ async def generer_attestations_session(
             raise HTTPException(status_code=409, detail="Des attestations ont déjà été approuvées pour cette session.")
 
     result = await orchestrator.generate_attestations(session_info, eligible)
-    return _build_response(result, "Attestations générées pour validation humaine.", float(result.get("duration_seconds", 0)))
+    response_message = (
+        "Aucun PDF n'a pu être généré. Consultez les erreurs par participant et relancez la préparation."
+        if not result.get("total_pdf_generated")
+        else "Attestations générées pour validation humaine."
+    )
+    return _build_response(result, response_message, float(result.get("duration_seconds", 0)))
 
 
 def _attestation_review(review_id: str, numero: str, *, approved_only: bool = False) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -569,8 +574,11 @@ async def modifier_attestation(
         raise HTTPException(status_code=422, detail="Conservez la structure complète de l’attestation.")
     if set(edited["details"]) != set(original.get("details") or {}):
         raise HTTPException(status_code=422, detail="Conservez tous les champs descriptifs de l’attestation.")
-    if not isinstance(edited.get("competences"), list) or not 3 <= len(edited["competences"]) <= 12:
-        raise HTTPException(status_code=422, detail="L’attestation doit contenir de 3 à 12 compétences vérifiables.")
+    minimum_competencies = 0 if (item.get("metadata") or {}).get("competencies_source") == "participation_only" else 3
+    if not isinstance(edited.get("competences"), list) or not minimum_competencies <= len(edited["competences"]) <= 12:
+        if minimum_competencies:
+            raise HTTPException(status_code=422, detail="L’attestation doit contenir de 3 à 12 compétences vérifiables.")
+        raise HTTPException(status_code=422, detail="L’attestation de participation peut rester sans compétence ; 12 compétences maximum.")
     text_values = [value for key, value in edited.items() if key not in {"details", "competences"}]
     text_values.extend(edited["details"].values())
     text_values.extend(edited["competences"])

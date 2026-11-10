@@ -96,7 +96,7 @@ export const NewSessionModal: React.FC<NewSessionModalProps> = ({
       <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200">
         <div className="flex items-center justify-between pb-4 border-b border-slate-100">
           <div className="flex items-center gap-2">
-            <div className="w-9 h-9 rounded-xl bg-[#1B8F6E]/10 text-[#1B8F6E] flex items-center justify-center">
+            <div className="w-9 h-9 rounded-xl bg-[#0B1F4D]/10 text-[#0B1F4D] flex items-center justify-center">
               <CalendarDays size={20} />
             </div>
             <h3 className="text-lg font-bold text-[#11162A]">Planifier une nouvelle session</h3>
@@ -131,7 +131,7 @@ export const NewSessionModal: React.FC<NewSessionModalProps> = ({
               value={intitule}
               onChange={(e) => setIntitule(e.target.value)}
               placeholder="ex: Architectures RAG & Fine-Tuning Llama 3"
-              className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-[#1B8F6E]"
+              className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-[#0B1F4D]"
             />
           </div>
 
@@ -207,7 +207,7 @@ export const NewSessionModal: React.FC<NewSessionModalProps> = ({
             <button
               type="submit"
               disabled={isSubmitting}
-              className="px-5 py-2 bg-[#1B8F6E] text-white rounded-lg font-bold flex items-center gap-1.5"
+              className="px-5 py-2 bg-[#0B1F4D] text-white rounded-lg font-bold flex items-center gap-1.5"
             >
               <Send size={14} />
               <span>{isSubmitting ? 'Enregistrement...' : 'Enregistrer session'}</span>

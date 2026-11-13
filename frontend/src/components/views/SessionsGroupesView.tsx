@@ -16,6 +16,7 @@ import {
   UserCheck,
   Pencil
 } from 'lucide-react';
+import { PageHeader } from '../PageHeader';
 import { Session, PresenceRecord, MenuSection } from '../../types';
 import { apiService } from '../../services/api';
 import { SessionsM5Panel } from './SessionsM5Panel';
@@ -348,29 +349,17 @@ export const SessionsGroupesView: React.FC<SessionsGroupesViewProps> = ({
       {/* ========================================== */}
       {!selectedSessionId && (
         <>
-          {/* Header Banner */}
-          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div>
-              <div className="flex items-center gap-2 mb-1">
-                <span className="px-2.5 py-0.5 rounded text-[11px] font-extrabold bg-[#0B1F4D]/10 text-[#0B1F4D]">
-                  M5 — 6 Agents IA
-                </span>
-                <span className="text-xs text-slate-400 font-medium">· Formulaires · Niveaux · Satisfaction · Présences · Attestations · Rapport</span>
-              </div>
-              <h1 className="text-2xl font-extrabold text-[#11162A]">Sessions & Groupes</h1>
-              <p className="text-slate-600 text-xs mt-1">
-                Organisez les sessions, activez les agents IA de suivi et générez les attestations automatiquement.
-              </p>
-            </div>
-
-            {!readOnly && <button
-              onClick={onOpenNewSession}
-              className="px-4 py-2.5 bg-[#0B1F4D] hover:bg-[#06132F] text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors shrink-0 cursor-pointer"
-            >
-              <Plus size={16} />
-              <span>Créer une session</span>
-            </button>}
-          </div>
+          <PageHeader
+            icon={<CalendarDays size={22} />}
+            badge="M5 — 6 Agents IA"
+            title="Sessions & Groupes"
+            subtitle="Organisez les sessions, activez les agents IA de suivi et générez les attestations automatiquement."
+            actions={!readOnly ? (
+              <button onClick={onOpenNewSession} className="inline-flex items-center gap-1.5 rounded-xl border border-white/20 bg-white/15 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/25 transition-colors cursor-pointer">
+                <Plus size={14} /><span>Créer une session</span>
+              </button>
+            ) : undefined}
+          />
 
           {sessionDeleteError && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-semibold text-red-700">{sessionDeleteError}</div>}
 
@@ -448,7 +437,25 @@ export const SessionsGroupesView: React.FC<SessionsGroupesViewProps> = ({
                         <span className="text-[11px] text-slate-400">Aucun participant inscrit pour le moment.</span>
                       )}
                     </div>
-                    {!readOnly && editingDateSessionId === s.id && (
+                      {/* Badge M5 — prochaine action IA recommandée */}
+                    <div className="mt-2">
+                      {s.statut === 'Planifiée' && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 border border-blue-200 px-2.5 py-1 text-[10px] font-bold text-blue-700">
+                          ⚡ Prochaine étape M5 · Envoyer les formulaires de positionnement
+                        </span>
+                      )}
+                      {s.statut === 'En cours' && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 border border-emerald-200 px-2.5 py-1 text-[10px] font-bold text-emerald-700">
+                          ● Formation en cours · Agents IA disponibles
+                        </span>
+                      )}
+                      {s.statut === 'Terminée' && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 border border-amber-200 px-2.5 py-1 text-[10px] font-bold text-amber-700">
+                          ✓ Terminée · Générer les attestations PDF
+                        </span>
+                      )}
+                    </div>
+                  {!readOnly && editingDateSessionId === s.id && (
                       <div className="mt-3 flex flex-wrap items-end gap-2">
                         <label className="text-[11px] font-semibold text-slate-600">
                           Début
@@ -517,7 +524,7 @@ export const SessionsGroupesView: React.FC<SessionsGroupesViewProps> = ({
                       className="px-4 py-2.5 bg-[#11162A] hover:bg-[#0B1F4D] text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-xs transition-colors cursor-pointer"
                     >
                       <Users size={15} />
-                      <span>Inscrits ({totalInscrits}) →</span>
+                      <span>Agents IA &amp; Inscrits →</span>
                     </button>
                   </div>
                   {formsFeedback?.id === s.id && <div className={`w-full text-xs font-semibold ${formsFeedback.error ? 'text-red-600' : 'text-emerald-700'}`}>{formsFeedback.text}</div>}
@@ -540,7 +547,7 @@ export const SessionsGroupesView: React.FC<SessionsGroupesViewProps> = ({
               className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold flex items-center gap-1.5 mb-4 transition-colors cursor-pointer"
             >
               <ArrowLeft size={14} />
-              <span>← Retour à la liste des sessions</span>
+              <span>Retour à la liste des sessions</span>
             </button>
 
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">

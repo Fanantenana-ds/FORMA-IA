@@ -224,7 +224,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, onBackToHome
           </h2>
 
           <p className="text-sm text-white/45 leading-relaxed max-w-sm mb-10">
-            De la détection du marché à la facturation — chaque étape assistée par l'IA avec validation humaine intégrée.
+            De la détection du marché à la facturation chaque étape assistée par l'IA avec validation humaine intégrée.
           </p>
 
           {/* 3 feature cards horizontales */}

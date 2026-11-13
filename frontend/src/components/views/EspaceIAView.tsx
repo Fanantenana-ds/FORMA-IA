@@ -1,13 +1,37 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { PageHeader } from '../PageHeader';
 import { LLMConfigPanel } from './LLMConfigPanel';
 
 function renderMarkdown(text: string): string {
   return text
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/^- (.+)$/gm, '<li>$1</li>')
-    .replace(/(<li>.*<\/li>(\n|$))+/g, (match) => `<ul class="list-disc pl-4 my-1 space-y-0.5">${match}</ul>`)
-    .replace(/^(\d+)\. (.+)$/gm, '<li>$2</li>')
-    .replace(/\n/g, '<br />');
+    // Headings
+    .replace(/^### (.+)$/gm, '<h4 class="text-sm font-extrabold text-slate-800 mt-4 mb-1.5 flex items-center gap-1.5"><span class="inline-block w-1 h-4 rounded-full bg-brand-gold/60 mr-1"></span>$1</h4>')
+    .replace(/^## (.+)$/gm, '<h3 class="text-base font-extrabold text-[#0B1F4D] mt-5 mb-2 pb-1.5 border-b-2 border-brand-gold/30">$1</h3>')
+    .replace(/^# (.+)$/gm, '<h2 class="text-lg font-extrabold text-[#06132F] mt-5 mb-2">$1</h2>')
+    // Bold — couleur navy pour ressortir
+    .replace(/\*\*\*(.+?)\*\*\*/g, '<strong class="font-extrabold text-[#0B1F4D]"><em>$1</em></strong>')
+    .replace(/\*\*(.+?)\*\*/g, '<strong class="font-extrabold text-[#0B1F4D]">$1</strong>')
+    .replace(/\*(.+?)\*/g, '<em class="italic text-slate-600 not-italic font-medium">$1</em>')
+    // Inline code
+    .replace(/`([^`]+)`/g, '<code class="bg-[#0B1F4D]/8 text-[#0B1F4D] rounded-md px-1.5 py-0.5 text-[11px] font-mono border border-[#0B1F4D]/12">$1</code>')
+    // Blockquote
+    .replace(/^> (.+)$/gm, '<blockquote class="border-l-4 border-brand-gold/50 pl-3 my-2 text-slate-600 italic text-[12px] bg-amber-50/40 py-1 rounded-r-lg">$1</blockquote>')
+    // Source references [file, p. X]
+    .replace(/\[([^\]]+,\s*(?:p\.|diapo)\s*\d+[^\]]*)\]/g, '<span class="inline-flex items-center gap-0.5 text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2 py-0.5 ml-0.5">📎 $1</span>')
+    // Bullet lists
+    .replace(/^- (.+)$/gm, '<li class="ml-1 flex gap-2"><span class="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-brand-gold/70"></span><span>$1</span></li>')
+    .replace(/(<li[^>]*>.*<\/li>(\n|$))+/gs, (m) => `<ul class="pl-2 my-2.5 space-y-1.5 text-slate-700 text-[13px]">${m}</ul>`)
+    // Numbered lists
+    .replace(/^(\d+)\. (.+)$/gm, '<li class="ml-1 text-slate-700" style="list-style-type:decimal">$2</li>')
+    .replace(/(<li[^>]*style="list-style-type:decimal"[^>]*>.*<\/li>(\n|$))+/gs, (m) => `<ol class="list-decimal pl-5 my-2.5 space-y-1.5 text-slate-700 text-[13px]">${m}</ol>`)
+    // Horizontal rule
+    .replace(/^---$/gm, '<hr class="border-slate-200 my-4" />')
+    // Paragraphs
+    .replace(/\n\n/g, '</p><p class="mt-3 text-[13px] leading-relaxed text-slate-700">')
+    .replace(/\n/g, '<br />')
+    // Wrap
+    .replace(/^(.+)/, '<p class="text-[13px] leading-relaxed text-slate-700">$1')
+    + '</p>';
 }
 import { AlertCircle, Archive, Award, Check, CheckCheck, Copy, Download, Eye, FileText, Loader2, MessageCircle, Paperclip, Pencil, PlusCircle, Send, ShieldCheck, ThumbsDown, ThumbsUp, Trash2, Upload, X, Zap } from 'lucide-react';
 import { apiService } from '../../services/api';
@@ -174,14 +198,7 @@ export const EspaceIAView: React.FC<{ readOnly?: boolean; trainerMode?: boolean;
   const [notice, setNotice] = useState('');
   const [continueMarket, setContinueMarket] = useState(false);
   const [streamingStatus, setStreamingStatus] = useState('');
-  const streamBufferRef = useRef('');
-  const streamDrainRef = useRef(false);
-
-  const waitForStreamDrain = async () => {
-    while (streamDrainRef.current || streamBufferRef.current) {
-      await new Promise(resolve => window.setTimeout(resolve, 16));
-    }
-  };
+  const [sidebarOpen, setSidebarOpen] = useState(true);
 
   const loadReviews = async () => {
     // La revue M2 est la source principale : l'afficher sans attendre les
@@ -707,31 +724,20 @@ export const EspaceIAView: React.FC<{ readOnly?: boolean; trainerMode?: boolean;
   const sendMessage = async (text = draft) => {
     const message = text.trim(); if (!message || busy) return;
     if (trainerMode && !sessionId) { setError("Sélectionnez d'abord une session qui vous est affectée."); return; }
-    streamBufferRef.current = '';
-    streamDrainRef.current = false;
     setMessages(prev => [...prev, { role: 'user', text: message }, { role: 'assistant', text: '' }]); setDraft(''); setBusy(true); setError(''); setStreamingStatus("Connexion à l'assistant documentaire…");
     try {
       await apiService.chatRagStream({ message, conversation_id: conversationId, formation_code: formationCode || null, session_id: sessionId || null, module: chatModule || null }, event => {
         if (event.type === 'status') setStreamingStatus(event.message ?? 'Préparation de la réponse…');
         if (event.type === 'token') {
-          streamBufferRef.current += event.text ?? '';
-          if (!streamDrainRef.current) {
-            streamDrainRef.current = true;
-            void (async () => {
-              while (streamBufferRef.current) {
-                const fragment = streamBufferRef.current.slice(0, 28);
-                streamBufferRef.current = streamBufferRef.current.slice(fragment.length);
-                setMessages(previous => {
-                  const next = [...previous]; const last = next[next.length - 1];
-                  if (last?.role === 'assistant') next[next.length - 1] = { ...last, text: last.text + fragment };
-                  return next;
-                });
-                await new Promise(resolve => window.setTimeout(resolve, 18));
-              }
-              streamDrainRef.current = false;
-            })();
+          const fragment = event.text ?? '';
+          if (fragment) {
+            setMessages(previous => {
+              const next = [...previous]; const last = next[next.length - 1];
+              if (last?.role === 'assistant') next[next.length - 1] = { ...last, text: last.text + fragment };
+              return next;
+            });
+            setStreamingStatus('Rédaction de la réponse…');
           }
-          setStreamingStatus('Rédaction de la réponse…');
         }
         if (event.type === 'meta') {
           const data = event.data ?? {};
@@ -753,9 +759,7 @@ export const EspaceIAView: React.FC<{ readOnly?: boolean; trainerMode?: boolean;
           });
         }
       });
-      await waitForStreamDrain();
     } catch (e) {
-      await waitForStreamDrain();
       setError(errorText(e));
       setMessages(previous => previous.filter((item, index) => !(index === previous.length - 1 && item.role === 'assistant' && !item.text)));
     } finally {
@@ -774,32 +778,32 @@ export const EspaceIAView: React.FC<{ readOnly?: boolean; trainerMode?: boolean;
     ...(!readOnly ? [{ id: 'config_llm' as const, label: 'Config LLM', icon: <Zap size={15} /> }] : []),
   ];
   return <div className="space-y-6 animate-in fade-in duration-300">
-    <div className={`${panel} flex flex-col md:flex-row md:items-center md:justify-between gap-4`}>
-      <div>
-        <div className="flex items-center gap-2 mb-1">
-          <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-[#0B1F4D]/10 text-[#0B1F4D]">Pipeline IA</span>
-          <span className="text-xs text-slate-500">· Agents Groq + Voyage AI + pgvector</span>
-        </div>
-        <h1 className="text-2xl font-extrabold text-[#11162A]">Espace IA</h1>
-        <p className="text-xs text-slate-500 mt-1">Validez les contenus générés par IA, gérez la base documentaire RAG et utilisez le chat intelligent.</p>
-      </div>
-      <div className="flex gap-1.5 bg-slate-100 p-1.5 rounded-xl text-xs font-bold flex-wrap">
-        {tabs.map(t => (
-          <button
-            key={t.id}
-            onClick={() => { setTab(t.id); setSelected(null); setDocumentEdit(null); }}
-            className={`px-3 py-2 rounded-lg flex items-center gap-1.5 transition-colors ${tab === t.id ? 'bg-white text-[#11162A] shadow-xs' : 'text-slate-500 hover:text-slate-700'}`}
-          >
-            {t.icon}
-            {t.label}
-            {t.id === 'reviews' && reviews.length > 0 && (
-              <span className="ml-0.5 h-4 min-w-4 px-1 rounded-full bg-amber-500 text-white text-[9px] font-extrabold flex items-center justify-center">
-                {reviews.length}
-              </span>
-            )}
-          </button>
-        ))}
-      </div>
+    <PageHeader
+      icon={<Zap size={22} />}
+      badge="Pipeline IA"
+      title="Espace IA"
+      subtitle="Validez les contenus générés par IA, gérez la base documentaire RAG et utilisez le chat intelligent."
+    />
+
+    {/* Barre d'onglets séparée — pleine largeur, style pill */}
+    <div className="flex items-center gap-1 overflow-x-auto rounded-2xl border border-slate-200 bg-white px-3 py-2 shadow-xs scrollbar-none">
+      {tabs.map(t => (
+        <button
+          key={t.id}
+          onClick={() => { setTab(t.id); setSelected(null); setDocumentEdit(null); }}
+          className={`flex shrink-0 items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-semibold transition-all whitespace-nowrap ${
+            tab === t.id
+              ? 'bg-brand-navy text-white shadow-sm'
+              : 'text-slate-500 hover:bg-slate-100 hover:text-slate-800'
+          }`}
+        >
+          {t.icon}
+          {t.label}
+          {t.id === 'reviews' && reviews.length > 0 && (
+            <span className="ml-0.5 h-4 min-w-4 px-1 rounded-full bg-amber-500 text-white text-[9px] font-extrabold flex items-center justify-center">{reviews.length}</span>
+          )}
+        </button>
+      ))}
     </div>
 
     {/* Bandeau HITL — visible uniquement sur l'onglet reviews avec contenus en attente */}
@@ -919,175 +923,293 @@ export const EspaceIAView: React.FC<{ readOnly?: boolean; trainerMode?: boolean;
 })}</div> : <p className="rounded-xl bg-slate-50 p-4 text-xs text-slate-500">{sessionId ? `Aucun support enregistré pour la session sélectionnée.` : 'Aucun support disponible.'}</p>}</section>
     </div>}
 
-    {tab === 'chat' && <div className={`grid gap-4 ${ragConversations.length > 0 ? 'lg:grid-cols-[220px_minmax(0,1fr)]' : ''}`}>
-      {/* Sidebar conversations — visible seulement si conversations existantes */}
-      {ragConversations.length > 0 && (
-        <aside className={`${panel} flex flex-col gap-3 h-fit`}>
-          <div className="flex items-center justify-between">
-            <h3 className="font-extrabold text-[#11162A] text-sm">Conversations</h3>
-            {conversationsLoading && <Loader2 size={13} className="animate-spin text-slate-400" />}
-          </div>
-          <button type="button" onClick={newConversation} className="flex items-center gap-2 w-full rounded-xl border border-dashed border-[#0B1F4D] px-3 py-2 text-xs font-bold text-[#0B1F4D] hover:bg-emerald-50 transition">
-            <PlusCircle size={14} />Nouvelle conversation
-          </button>
-          <div className="space-y-1 max-h-[400px] overflow-y-auto">
-            {ragConversations.map((conv: any) => (
-              <div key={conv.conversation_id} className={`group relative rounded-xl border p-2.5 transition ${conversationId === conv.conversation_id ? 'border-[#0B1F4D] bg-emerald-50/50' : 'border-slate-200 hover:border-slate-300'}`}>
-                {renamingConvId === conv.conversation_id ? (
-                  <div className="flex items-center gap-1">
-                    <input autoFocus value={renameValue} onChange={e => setRenameValue(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') void confirmRename(conv.conversation_id); if (e.key === 'Escape') setRenamingConvId(null); }} className="flex-1 min-w-0 text-xs border border-[#0B1F4D] rounded px-1.5 py-1 outline-none" />
-                    <button type="button" onClick={() => void confirmRename(conv.conversation_id)} className="p-1 rounded text-[#0B1F4D] hover:bg-emerald-50"><Check size={11} /></button>
-                    <button type="button" onClick={() => setRenamingConvId(null)} className="p-1 rounded text-slate-400 hover:bg-slate-100"><X size={11} /></button>
-                  </div>
-                ) : (
-                  <>
-                    <button type="button" onClick={() => void resumeConversation(conv)} className="w-full text-left min-w-0 pr-10">
-                      <div className="truncate text-xs font-semibold text-[#11162A]">{conv.titre || 'Conversation'}</div>
-                      <div className="mt-0.5 text-[10px] text-slate-500">{conv.nb_echanges} échange{conv.nb_echanges > 1 ? 's' : ''} · {conv.mis_a_jour_le ? new Date(conv.mis_a_jour_le * 1000).toLocaleDateString('fr-FR') : ''}</div>
-                    </button>
-                    <div className="absolute right-1.5 top-1.5 flex gap-0.5 opacity-0 group-hover:opacity-100 transition">
-                      <button type="button" onClick={() => startRename(conv)} title="Renommer" className="p-1 rounded text-slate-400 hover:text-[#0B1F4D] hover:bg-emerald-50"><Pencil size={11} /></button>
-                      <button type="button" onClick={() => void deleteRagConversation(conv.conversation_id)} title="Supprimer" className="p-1 rounded text-slate-400 hover:text-red-600 hover:bg-red-50"><Trash2 size={11} /></button>
-                    </div>
-                  </>
-                )}
+    {tab === 'chat' && (
+      <div className={`grid gap-4 ${ragConversations.length > 0 && sidebarOpen ? 'lg:grid-cols-[260px_minmax(0,1fr)]' : ''}`}>
+
+        {/* ── Sidebar conversations ── */}
+        {ragConversations.length > 0 && sidebarOpen && (
+          <aside className="flex flex-col gap-0 h-fit rounded-2xl overflow-hidden border border-slate-200 shadow-sm"
+            style={{ background: 'linear-gradient(180deg, #0B1F4D 0%, #06132F 100%)' }}>
+            {/* Header sidebar */}
+            <div className="px-4 pt-4 pb-3 border-b border-white/10">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-extrabold text-sm text-white tracking-tight flex items-center gap-2">
+                  <MessageCircle size={14} style={{ color: '#D4AF37' }} />Conversations
+                </h3>
+                <div className="flex items-center gap-1">
+                  {conversationsLoading && <Loader2 size={12} className="animate-spin text-white/40" />}
+                  <button type="button" onClick={() => setSidebarOpen(false)} title="Masquer le panneau" className="p-1.5 rounded-lg text-white/30 hover:text-white/80 hover:bg-white/10 transition">
+                    <X size={13} />
+                  </button>
+                </div>
               </div>
-            ))}
-          </div>
-          <p className="text-[10px] text-slate-400 border-t border-slate-100 pt-2">Max 20 conversations conservées.</p>
-        </aside>
-      )}
-
-      {/* Zone de chat principale */}
-      <section className={`${panel} flex flex-col`}>
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
-          <div>
-            <h2 className="font-extrabold text-[#11162A]">Assistant documentaire</h2>
-            <p className="text-[11px] text-slate-500 mt-1">{sessionId ? `Recherche isolée dans la session « ${sessions.find((item: any) => item.id === sessionId)?.titre ?? sessionId} »${chatModule ? ` · module ${chatModule}` : ''}.` : trainerMode ? 'Choisissez une session qui vous est affectée.' : "Le catalogue, l'inventaire et les synthèses peuvent couvrir votre espace ; choisissez une session pour les questions sur son contenu."}</p>
-          </div>
-          <div className="flex flex-col gap-2 sm:items-end">
-            <select required={trainerMode} value={sessionId} onChange={e => { const id = e.target.value; setSessionId(id); setFormationCode(sessions.find((item: any) => item.id === id)?.formation_code ?? ''); setChatModule(''); }} className="px-3 py-2 border border-slate-300 bg-white rounded-lg text-xs">
-              <option value="">{trainerMode ? 'Choisir ma session' : 'Toutes les sessions'}</option>
-              {sessions.map((item: any) => <option key={item.id} value={item.id}>{item.titre}{item.formation_code ? ` — ${item.formation_code}` : ''}</option>)}
-            </select>
-            {sessionId && (sessions.find((item: any) => item.id === sessionId)?.modules?.length ?? 0) > 0 && (
-              <select value={chatModule} onChange={e => setChatModule(e.target.value)} className="px-3 py-2 border border-slate-300 bg-white rounded-lg text-xs">
-                <option value="">Tous les modules de la session</option>
-                {sessions.find((item: any) => item.id === sessionId)?.modules.map((name: string) => <option key={name} value={name}>{name}</option>)}
-              </select>
-            )}
-          </div>
-        </div>
-
-        <div className="flex-1 min-h-[320px] max-h-[500px] overflow-y-auto py-4 space-y-4">
-          {messages.length === 0 && (
-            <div className="text-center text-slate-400 py-20">
-              <MessageCircle size={30} className="mx-auto mb-2" />
-              <p className="text-xs font-semibold">Posez une question sur les documents de formation.</p>
-              <p className="text-[10px] mt-1 text-slate-300">Les réponses sont fondées exclusivement sur les supports indexés.</p>
+              <button type="button" onClick={newConversation}
+                className="flex items-center gap-2 w-full rounded-xl px-3 py-2.5 text-xs font-bold transition-all"
+                style={{ background: 'rgba(212,175,55,0.12)', border: '1px solid rgba(212,175,55,0.3)', color: '#D4AF37' }}>
+                <PlusCircle size={13} />Nouvelle conversation
+              </button>
             </div>
-          )}
-          {messages.map((m, i) => {
-            const isStreaming = busy && i === messages.length - 1 && m.role === 'assistant';
-            const isUser = m.role === 'user';
-            const progressLabel = streamingStatus.toLocaleLowerCase();
-            const activeStage = /rédaction|redaction|réponse prête|reponse prete|finalisation/.test(progressLabel) || (isStreaming && Boolean(m.text))
-              ? 2
-              : /recherche|passage|support|document/.test(progressLabel)
-                ? 1
-                : 0;
-            return (
-            <div key={i} className={`group max-w-[88%] mb-6 ${isUser ? 'ml-auto' : 'mr-auto'}`}>
-              <div className={`relative p-3.5 rounded-2xl text-xs leading-relaxed ${isUser ? 'bg-[#0B1F4D] text-white rounded-br-sm whitespace-pre-wrap' : 'bg-slate-50 text-slate-800 border border-slate-200 rounded-bl-sm'}`}>
-                {isStreaming && !m.text ? (
-                  <div className="min-w-64 space-y-3" role="status" aria-live="polite">
-                    <div className="flex items-center gap-2 text-xs font-semibold text-slate-700">
-                      <Loader2 size={14} className="animate-spin text-[#0B1F4D]" />
-                      <span>{streamingStatus || 'Préparation de la réponse…'}</span>
+            {/* Liste conversations */}
+            <div className="px-3 pb-3 space-y-1 max-h-[420px] overflow-y-auto">
+              {ragConversations.map((conv: any) => (
+                <div key={conv.conversation_id}
+                  className="group relative rounded-xl p-2.5 transition-all cursor-pointer"
+                  style={{
+                    background: conversationId === conv.conversation_id ? 'rgba(212,175,55,0.12)' : 'rgba(255,255,255,0.03)',
+                    border: `1px solid ${conversationId === conv.conversation_id ? 'rgba(212,175,55,0.35)' : 'rgba(255,255,255,0.07)'}`,
+                  }}>
+                  {renamingConvId === conv.conversation_id ? (
+                    <div className="flex items-center gap-1">
+                      <input autoFocus value={renameValue} onChange={e => setRenameValue(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') void confirmRename(conv.conversation_id); if (e.key === 'Escape') setRenamingConvId(null); }}
+                        className="flex-1 min-w-0 text-xs border border-white/20 rounded bg-white/10 text-white px-1.5 py-1 outline-none" />
+                      <button type="button" onClick={() => void confirmRename(conv.conversation_id)} className="p-1 rounded text-emerald-400"><Check size={11} /></button>
+                      <button type="button" onClick={() => setRenamingConvId(null)} className="p-1 rounded text-white/40"><X size={11} /></button>
                     </div>
-                    <div className="grid grid-cols-3 gap-2 text-[10px]">
-                      {['Compréhension', 'Recherche RAG', 'Rédaction'].map((stage, stageIndex) => (
-                        <div key={stage} className={`rounded-lg border px-2 py-1.5 transition-colors ${stageIndex < activeStage ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : stageIndex === activeStage ? 'border-emerald-300 bg-white font-semibold text-[#167a60]' : 'border-slate-200 bg-slate-100 text-slate-400'}`}>
-                          <span className="mr-1">{stageIndex < activeStage ? '✓' : stageIndex === activeStage ? '●' : '○'}</span>{stage}
+                  ) : (
+                    <>
+                      <button type="button" onClick={() => void resumeConversation(conv)} className="w-full text-left min-w-0 pr-8">
+                        <div className="truncate text-xs font-semibold text-white/90">{conv.titre || 'Conversation'}</div>
+                        <div className="mt-0.5 text-[10px] text-white/35">
+                          {conv.nb_echanges} échange{conv.nb_echanges > 1 ? 's' : ''}{conv.mis_a_jour_le ? ` · ${new Date(conv.mis_a_jour_le * 1000).toLocaleDateString('fr-FR')}` : ''}
                         </div>
-                      ))}
-                    </div>
-                  </div>
-                ) : <>
-                  {isStreaming && m.text && (
-                    <div className="mb-2 flex items-center gap-1.5 text-[10px] font-semibold text-[#167a60]" role="status" aria-live="polite">
-                      <span className="relative flex h-2 w-2"><span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60" /><span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-600" /></span>
-                      Réponse en cours de rédaction
-                    </div>
+                      </button>
+                      <div className="absolute right-1.5 top-1.5 flex gap-0.5 opacity-0 group-hover:opacity-100 transition">
+                        <button type="button" onClick={() => startRename(conv)} title="Renommer" className="p-1 rounded text-white/30 hover:text-white/80 hover:bg-white/10"><Pencil size={10} /></button>
+                        <button type="button" onClick={() => void deleteRagConversation(conv.conversation_id)} title="Supprimer" className="p-1 rounded text-white/30 hover:text-red-400 hover:bg-red-500/10"><Trash2 size={10} /></button>
+                      </div>
+                    </>
                   )}
-                {m.text
-                  ? isUser
-                    ? <>{m.text}{isStreaming && <span className="inline-block w-0.5 h-3 bg-white ml-0.5 align-middle animate-pulse" />}</>
-                    : isStreaming
-                      ? <span className="whitespace-pre-wrap">{m.text}<span className="inline-block w-0.5 h-3 bg-[#0B1F4D] ml-0.5 align-middle animate-pulse" /></span>
-                      : <span dangerouslySetInnerHTML={{ __html: renderMarkdown(m.text) }} />
-                  : isStreaming
-                    ? null
-                    : ''}
-                </>}
-                {m.text && !isStreaming && (
-                  <div className={`absolute -bottom-5 ${isUser ? 'right-0' : 'left-0'} flex items-center gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 focus-within:opacity-100 transition`}>
-                    <button type="button" onClick={() => copyMessage(m.text, i)} title="Copier" className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-white border border-slate-200 text-[10px] text-slate-500 hover:text-[#0B1F4D] hover:border-[#0B1F4D] shadow-sm transition">
-                      {copiedMsgIdx === i ? <Check size={10} className="text-emerald-600" /> : <Copy size={10} />}
-                      {copiedMsgIdx === i ? 'Copié' : 'Copier'}
+                </div>
+              ))}
+            </div>
+            <div className="px-4 pb-3 text-[10px] text-white/20 border-t border-white/8 pt-2">Max 20 conversations conservées.</div>
+          </aside>
+        )}
+
+        {/* ── Zone de chat principale premium ── */}
+        <section className="flex flex-col rounded-2xl border border-slate-200 shadow-sm overflow-hidden bg-white" style={{ minHeight: 560 }}>
+
+          {/* Header chat — fond navy */}
+          <div className="px-5 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+            style={{ background: 'linear-gradient(135deg, #0B1F4D 0%, #06132F 100%)', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+            <div className="flex items-center gap-3 min-w-0">
+              {/* Bouton toggle sidebar */}
+              {ragConversations.length > 0 && !sidebarOpen && (
+                <button type="button" onClick={() => setSidebarOpen(true)} title="Afficher les conversations"
+                  className="flex items-center gap-1.5 shrink-0 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-all"
+                  style={{ background: 'rgba(212,175,55,0.12)', border: '1px solid rgba(212,175,55,0.3)', color: '#D4AF37' }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/></svg>
+                </button>
+              )}
+              <div className="min-w-0">
+              <div className="flex items-center gap-2 mb-0.5">
+                <div className="flex h-7 w-7 items-center justify-center rounded-lg" style={{ background: 'rgba(212,175,55,0.15)', border: '1px solid rgba(212,175,55,0.3)' }}>
+                  <MessageCircle size={14} style={{ color: '#D4AF37' }} />
+                </div>
+                <h2 className="font-extrabold text-sm text-white tracking-tight">Assistant documentaire</h2>
+                <div className="relative flex h-2 w-2">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full opacity-60" style={{ background: '#D4AF37' }} />
+                  <span className="relative inline-flex h-2 w-2 rounded-full" style={{ background: '#D4AF37' }} />
+                </div>
+              </div>
+              <p className="text-[11px] text-white/40 pl-9">
+                {sessionId
+                  ? `Session : ${sessions.find((item: any) => item.id === sessionId)?.titre ?? sessionId}${chatModule ? ` · ${chatModule}` : ''}`
+                  : trainerMode ? 'Choisissez une session qui vous est affectée.' : 'Catalogue, inventaire et synthèses disponibles — choisissez une session pour son contenu.'}
+              </p>
+              </div>
+            </div>
+            <div className="flex flex-col gap-1.5 sm:items-end">
+              <select required={trainerMode} value={sessionId}
+                onChange={e => { const id = e.target.value; setSessionId(id); setFormationCode(sessions.find((item: any) => item.id === id)?.formation_code ?? ''); setChatModule(''); }}
+                className="px-3 py-2 rounded-lg text-xs font-semibold text-white/90 outline-none focus:ring-1 focus:ring-brand-gold/50"
+                style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)' }}>
+                <option value="" style={{ background: '#0B1F4D' }}>{trainerMode ? 'Choisir ma session' : 'Toutes les sessions'}</option>
+                {sessions.map((item: any) => <option key={item.id} value={item.id} style={{ background: '#0B1F4D' }}>{item.titre}{item.formation_code ? ` — ${item.formation_code}` : ''}</option>)}
+              </select>
+              {sessionId && (sessions.find((item: any) => item.id === sessionId)?.modules?.length ?? 0) > 0 && (
+                <select value={chatModule} onChange={e => setChatModule(e.target.value)}
+                  className="px-3 py-2 rounded-lg text-xs font-semibold text-white/90 outline-none"
+                  style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)' }}>
+                  <option value="" style={{ background: '#0B1F4D' }}>Tous les modules</option>
+                  {sessions.find((item: any) => item.id === sessionId)?.modules.map((name: string) => <option key={name} value={name} style={{ background: '#0B1F4D' }}>{name}</option>)}
+                </select>
+              )}
+            </div>
+          </div>
+
+          {/* Zone messages */}
+          <div className="flex-1 overflow-y-auto px-5 py-5 space-y-5" style={{ minHeight: 320, maxHeight: 480, background: '#F8F9FB' }}>
+            {messages.length === 0 && (
+              <div className="flex flex-col items-center justify-center h-full py-16 text-center">
+                <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl"
+                  style={{ background: 'linear-gradient(135deg, #0B1F4D, #06132F)', boxShadow: '0 8px 32px rgba(11,31,77,0.25)' }}>
+                  <MessageCircle size={28} className="text-white/80" />
+                </div>
+                <p className="text-sm font-bold text-slate-700 mb-1">Comment puis-je vous aider ?</p>
+                <p className="text-[11px] text-slate-400 max-w-sm leading-relaxed">Posez toute question sur vos formations — le contenu est extrait directement des supports indexés, sans hallucination.</p>
+                <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-2 w-full max-w-lg">
+                  {[
+                    { icon: '📋', label: 'Résumé du contenu', q: 'Fais un résumé structuré du contenu de cette formation.' },
+                    { icon: '🔍', label: 'Chercher un sujet', q: 'Où est expliqué ce sujet dans les supports ?' },
+                    { icon: '📊', label: 'Synthèse thématique', q: 'Génère une synthèse thématique des points clés.' },
+                    { icon: '📝', label: 'Exercices disponibles', q: 'Quels exercices pratiques sont disponibles dans les supports ?' },
+                  ].map(({ icon, label, q }) => (
+                    <button key={q} type="button" onClick={() => void sendMessage(q)}
+                      className="flex items-center gap-2.5 rounded-xl border border-slate-200 bg-white px-4 py-3 text-left text-xs font-semibold text-slate-600 hover:border-[#0B1F4D]/40 hover:bg-[#0B1F4D]/3 hover:text-[#0B1F4D] transition-all shadow-xs group">
+                      <span className="text-base">{icon}</span>
+                      <span>{label}</span>
+                      <svg className="ml-auto text-slate-300 group-hover:text-[#0B1F4D]/50 transition" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
                     </button>
-                    {!isUser && (
-                      <>
-                        <button type="button" onClick={() => void sendFeedback(i, 'positif')} title="Bonne réponse" className={`p-0.5 rounded-md border shadow-sm transition ${feedbacks[i] === 'positif' ? 'bg-emerald-50 border-emerald-400 text-emerald-600' : 'bg-white border-slate-200 text-slate-400 hover:text-emerald-600 hover:border-emerald-300'}`}>
-                          <ThumbsUp size={10} />
-                        </button>
-                        <button type="button" onClick={() => void sendFeedback(i, 'negatif')} title="Mauvaise réponse" className={`p-0.5 rounded-md border shadow-sm transition ${feedbacks[i] === 'negatif' ? 'bg-red-50 border-red-400 text-red-600' : 'bg-white border-slate-200 text-slate-400 hover:text-red-500 hover:border-red-300'}`}>
-                          <ThumbsDown size={10} />
-                        </button>
-                      </>
+                  ))}
+                </div>
+              </div>
+            )}
+            {messages.map((m, i) => {
+              const isStreaming = busy && i === messages.length - 1 && m.role === 'assistant';
+              const isUser = m.role === 'user';
+              const progressLabel = streamingStatus.toLocaleLowerCase();
+              const activeStage = /rédaction|redaction|réponse prête|reponse prete|finalisation/.test(progressLabel) || (isStreaming && Boolean(m.text))
+                ? 2 : /recherche|passage|support|document/.test(progressLabel) ? 1 : 0;
+              return (
+                <div key={i} className={`group flex flex-col ${isUser ? 'items-end' : 'items-start'} mb-2`}>
+                  <div className={`max-w-[85%] ${isUser ? '' : ''}`}>
+                    {/* Bulle message */}
+                    <div className={`relative px-4 py-3 rounded-2xl text-sm leading-relaxed ${isUser
+                      ? 'text-white rounded-br-sm'
+                      : 'text-slate-800 rounded-bl-sm bg-white border border-slate-200'}`}
+                      style={isUser ? {
+                        background: 'linear-gradient(135deg, #0B1F4D 0%, #06132F 100%)',
+                        boxShadow: '0 4px 16px rgba(11,31,77,0.25)',
+                      } : {
+                        boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+                      }}>
+
+                      {/* Loader streaming */}
+                      {isStreaming && !m.text ? (
+                        <div className="min-w-56 space-y-3" role="status" aria-live="polite">
+                          <div className="flex items-center gap-2 text-xs font-semibold text-slate-600">
+                            <Loader2 size={13} className="animate-spin text-[#0B1F4D]" />
+                            <span>{streamingStatus || 'Préparation…'}</span>
+                          </div>
+                          <div className="flex gap-2 text-[10px]">
+                            {['Compréhension', 'Recherche RAG', 'Rédaction'].map((stage, si) => (
+                              <div key={stage} className="flex items-center gap-1 rounded-lg px-2 py-1 transition-colors"
+                                style={{
+                                  background: si < activeStage ? 'rgba(16,122,96,0.08)' : si === activeStage ? '#fff' : 'rgba(0,0,0,0.03)',
+                                  border: `1px solid ${si < activeStage ? 'rgba(16,122,96,0.25)' : si === activeStage ? 'rgba(11,31,77,0.2)' : 'rgba(0,0,0,0.08)'}`,
+                                  color: si < activeStage ? '#167a60' : si === activeStage ? '#0B1F4D' : '#94a3b8',
+                                  fontWeight: si === activeStage ? 700 : 500,
+                                }}>
+                                <span>{si < activeStage ? '✓' : si === activeStage ? '●' : '○'}</span>{stage}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : <>
+                        {isStreaming && m.text && (
+                          <div className="mb-2 flex items-center gap-1.5 text-[10px] font-semibold text-emerald-700">
+                            <span className="relative flex h-1.5 w-1.5">
+                              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60" />
+                              <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                            </span>
+                            Rédaction en cours…
+                          </div>
+                        )}
+                        {m.text
+                          ? isUser
+                            ? <span className="whitespace-pre-wrap text-[13px] leading-relaxed">{m.text}{isStreaming && <span className="inline-block w-0.5 h-3.5 bg-white/70 ml-0.5 align-middle animate-pulse" />}</span>
+                            : isStreaming
+                              ? <div className="prose-chat"><span dangerouslySetInnerHTML={{ __html: renderMarkdown(m.text) }} /><span className="inline-block w-0.5 h-4 bg-[#0B1F4D]/70 ml-0.5 align-middle animate-[pulse_0.8s_ease-in-out_infinite]" /></div>
+                              : <div className="prose-chat"><span dangerouslySetInnerHTML={{ __html: renderMarkdown(m.text) }} /></div>
+                          : isStreaming ? null : ''}
+                      </>}
+
+                      {/* Actions hover */}
+                      {m.text && !isStreaming && (
+                        <div className={`absolute -bottom-6 ${isUser ? 'right-0' : 'left-0'} flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition`}>
+                          <button type="button" onClick={() => copyMessage(m.text, i)}
+                            className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-white border border-slate-200 text-[10px] text-slate-500 hover:text-[#0B1F4D] shadow-sm transition">
+                            {copiedMsgIdx === i ? <Check size={10} className="text-emerald-600" /> : <Copy size={10} />}
+                            {copiedMsgIdx === i ? 'Copié' : 'Copier'}
+                          </button>
+                          {!isUser && (<>
+                            <button type="button" onClick={() => void sendFeedback(i, 'positif')}
+                              className={`p-1 rounded-md border shadow-sm transition ${feedbacks[i] === 'positif' ? 'bg-emerald-50 border-emerald-300 text-emerald-600' : 'bg-white border-slate-200 text-slate-400 hover:text-emerald-600'}`}>
+                              <ThumbsUp size={10} />
+                            </button>
+                            <button type="button" onClick={() => void sendFeedback(i, 'negatif')}
+                              className={`p-1 rounded-md border shadow-sm transition ${feedbacks[i] === 'negatif' ? 'bg-red-50 border-red-300 text-red-600' : 'bg-white border-slate-200 text-slate-400 hover:text-red-500'}`}>
+                              <ThumbsDown size={10} />
+                            </button>
+                          </>)}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Sources */}
+                    {m.sources && m.sources.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {m.sources.map((s: any, j: number) => (
+                          <span key={j} className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-[10px] font-semibold"
+                            style={{ background: 'rgba(16,122,96,0.07)', border: '1px solid rgba(16,122,96,0.18)', color: '#167a60' }}>
+                            <FileText size={9} />
+                            {s.fichier ?? s.filename ?? 'Document'}{s.page ? `, p. ${s.page}` : ''}
+                            {s.score ? <span className="ml-1 opacity-60">{Math.round(s.score * 100)}%</span> : ''}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Suggestions */}
+                    {m.suggestions && m.suggestions.length > 0 && m.role === 'assistant' && (
+                      <div className="mt-2.5 flex flex-wrap gap-1.5">
+                        {m.suggestions.map((suggestion, j) => (
+                          <button key={j} type="button" onClick={() => void sendMessage(suggestion)}
+                            className="rounded-xl bg-white border border-slate-200 px-3 py-1.5 text-[11px] font-semibold text-slate-600 hover:border-[#0B1F4D] hover:text-[#0B1F4D] hover:bg-slate-50 transition shadow-sm">
+                            {suggestion}
+                          </button>
+                        ))}
+                      </div>
                     )}
                   </div>
-                )}
-              </div>
-              {/* Sources — visibles uniquement si retournées par le backend (rôle DIRECTION) */}
-              {m.sources && m.sources.length > 0 && (
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  {m.sources.map((s: any, j: number) => (
-                    <span key={j} className="inline-flex items-center gap-1 rounded-full bg-emerald-50 border border-emerald-200 px-2 py-0.5 text-[10px] font-semibold text-emerald-800">
-                      <FileText size={9} />
-                      {s.fichier ?? s.filename ?? 'Document'}{s.page ? `, p. ${s.page}` : ''}
-                      {s.score ? ` (${Math.round(s.score * 100)}%)` : ''}
-                    </span>
-                  ))}
                 </div>
-              )}
-              {/* Suggestions de relance */}
-              {m.suggestions && m.suggestions.length > 0 && m.role === 'assistant' && (
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  {m.suggestions.map((suggestion, j) => (
-                    <button key={j} type="button" onClick={() => void sendMessage(suggestion)} className="rounded-full bg-white border border-slate-200 px-2.5 py-1 text-[11px] font-bold text-[#0B1F4D] hover:border-[#0B1F4D] transition">
-                      {suggestion}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-            );
-          })}
-          <div ref={messagesEndRef} />
-        </div>
+              );
+            })}
+            <div ref={messagesEndRef} />
+          </div>
 
-        <form onSubmit={e => { e.preventDefault(); void sendMessage(); }} className="flex gap-2 border-t border-slate-100 pt-3">
-          <input value={draft} onChange={e => setDraft(e.target.value)} placeholder="Votre question sur les supports…" className="flex-1 min-w-0 px-3 py-2.5 border border-slate-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-[#0B1F4D]" />
-          <button disabled={busy || !draft.trim() || (trainerMode && !sessionId)} className="px-4 py-2.5 bg-[#0B1F4D] text-white rounded-xl text-xs font-bold flex items-center gap-1.5 disabled:opacity-50">
-            {busy ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}Envoyer
-          </button>
-        </form>
-      </section>
-    </div>}
+          {/* Input bar premium */}
+          <div className="px-4 py-3 border-t border-slate-100 bg-white">
+            <form onSubmit={e => { e.preventDefault(); void sendMessage(); }}
+              className="flex items-center gap-2 rounded-2xl px-3 py-2 transition-all"
+              style={{ border: '1.5px solid', borderColor: draft ? '#0B1F4D' : '#e2e8f0', boxShadow: draft ? '0 0 0 3px rgba(11,31,77,0.06)' : 'none', background: '#fafafa' }}>
+              <MessageCircle size={15} className="shrink-0 text-slate-400" />
+              <input
+                value={draft}
+                onChange={e => setDraft(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void sendMessage(); } }}
+                placeholder="Posez votre question sur les supports de formation…"
+                className="flex-1 min-w-0 bg-transparent text-sm text-slate-800 placeholder:text-slate-400 outline-none"
+              />
+              <button
+                type="submit"
+                disabled={busy || !draft.trim() || (trainerMode && !sessionId)}
+                className="flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-bold text-white transition-all disabled:opacity-40"
+                style={{ background: 'linear-gradient(135deg, #0B1F4D, #06132F)', boxShadow: '0 2px 8px rgba(11,31,77,0.3)' }}>
+                {busy ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+                {busy ? '' : 'Envoyer'}
+              </button>
+            </form>
+            <p className="mt-1.5 text-center text-[10px] text-slate-400">MODE STRICT — Réponses fondées uniquement sur les documents indexés</p>
+          </div>
+        </section>
+      </div>
+    )}
 
     {tab === 'config_llm' && (
-      <div className="max-w-2xl">
+      <div className="w-full">
         <LLMConfigPanel />
       </div>
     )}

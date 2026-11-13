@@ -32,6 +32,7 @@ from app.schemas.opportunite import (
     OpportuniteCreate,
     OpportuniteList,
     OpportuniteResponse,
+    OpportuniteStatutUpdate,
     OpportuniteUpdate,
 )
 from app.services.opportunite_service import OpportuniteService
@@ -130,6 +131,22 @@ def delete_opportunite(
             detail="Opportunité introuvable"
         )
 
+
+@router.patch(
+    "/{opportunite_id}/statut",
+    response_model=OpportuniteResponse,
+    summary="Mettre à jour le statut d'une opportunité",
+)
+def patch_opportunite_statut(
+    opportunite_id: UUID,
+    data: OpportuniteStatutUpdate,
+    service: OpportuniteService = Depends(get_opportunite_service),
+    current_user: User = Depends(require_role("DIRECTION", "ASSISTANT")),
+):
+    updated = service.update_statut(opportunite_id, data.statut)
+    if not updated:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Opportunité introuvable")
+    return updated
 
 @router.put(
     "/{opportunite_id}",

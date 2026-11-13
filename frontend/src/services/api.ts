@@ -329,7 +329,7 @@ class ApiService {
     const trainer = trainers.find(t => t.id === form.formateurId || `${t.prenom ?? ''} ${t.nom}`.trim() === form.formateur || t.nom === form.formateur);
     const formateurId = trainer?.id;
     const start = dateOnly(form.dates);
-    const raw = await this.request<any>('/sessions', this.json('POST', { titre: form.intitule?.trim().slice(0, 50), client: form.client?.trim().slice(0, 50) || undefined, formation_code: (form as any).formationCode || undefined, opportunite_id: form.opportuniteId || undefined, lieu: form.lieu || undefined, nb_participants_max: form.capacityMax || undefined, date_debut: start, date_fin: dateOnly(form.dateFin), ...(formateurId ? { formateur_id: formateurId } : {}) }));
+    const raw = await this.request<any>('/sessions', this.json('POST', { titre: form.intitule?.trim().slice(0, 200), client: form.client?.trim().slice(0, 200) || undefined, formation_code: (form as any).formationCode || undefined, opportunite_id: form.opportuniteId || undefined, lieu: form.lieu || undefined, nb_participants_max: form.capacityMax || undefined, date_debut: start, date_fin: dateOnly(form.dateFin), ...(formateurId ? { formateur_id: formateurId } : {}) }));
     return mapSession(raw, trainer ? formateurFullName(trainer) : form.formateur);
   }
   async getFactures(): Promise<DevisFacture[]> { return arr<any>(await this.request('/factures?skip=0&limit=100')).map(mapInvoice); }

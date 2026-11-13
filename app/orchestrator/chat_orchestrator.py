@@ -91,6 +91,52 @@ def _formater_historique(conv: "memoire.Conversation") -> str:
     return "\n".join(lignes)
 
 
+_SYSTEM_STREAMING_SUFFIX = (
+    "\n\nFORMAT : Réponds directement en Markdown sans JSON ni balise. "
+    "Commence ta réponse immédiatement."
+)
+
+
+async def _appeler_llm_stream(
+    nom_prompt: str, contenu: str, temperature: float = 0.4,
+    consigne_additionnelle: str | None = None,
+    historique: str | None = None,
+    on_token: "Callable[[str], Awaitable[None]] | None" = None,
+) -> str:
+    """Call LLM with token-level streaming; returns accumulated text."""
+    try:
+        llm = get_llm_provider()
+    except LLMNotAvailableError:
+        return ""
+    generate_stream = getattr(llm, "generate_stream", None)
+    if not callable(generate_stream):
+        result = await _appeler_llm_json(nom_prompt, contenu, temperature, consigne_additionnelle, historique)
+        return result.get("reponse", "") if result else ""
+    contexte_historique = (
+        f"\n\nHISTORIQUE DE LA CONVERSATION (pour contexte, ne pas répéter) :\n{historique}"
+        if historique else ""
+    )
+    system = (
+        _charger_prompt(nom_prompt)
+        + "\n\nRÈGLE DE FIABILITÉ : utilise uniquement les informations présentes dans le contexte fourni. "
+        "N'ajoute aucun fait issu de connaissances générales. Si le contexte ne suffit pas, indique clairement la limite."
+        + (f"\n\n{consigne_additionnelle}" if consigne_additionnelle else "")
+        + contexte_historique
+        + _SYSTEM_STREAMING_SUFFIX
+    )
+    tokens: list[str] = []
+    try:
+        async for token in generate_stream(system, contenu, temperature=temperature, max_tokens=1500, reasoning_effort="low"):
+            tokens.append(token)
+            if on_token:
+                await on_token(token)
+    except Exception as exc:
+        logger.warning("⚠️ Streaming LLM échoué : %s — repli sur batch", exc)
+        result = await _appeler_llm_json(nom_prompt, contenu, temperature, consigne_additionnelle, historique)
+        return result.get("reponse", "") if result else ""
+    return "".join(tokens)
+
+
 async def _appeler_llm_json(
     nom_prompt: str, contenu: str, temperature: float = 0.3,
     consigne_additionnelle: str | None = None,
@@ -149,6 +195,7 @@ class ChatOrchestrator:
         hide_references: bool = False,
         user_id: str | None = None,
         on_progress: Callable[[str, str], Awaitable[None]] | None = None,
+        on_token: "Callable[[str], Awaitable[None]] | None" = None,
     ) -> dict[str, Any]:
         async def progress(stage: str, label: str) -> None:
             if on_progress:
@@ -219,19 +266,14 @@ class ChatOrchestrator:
             elif type_detecte == "contenu_formation":
                 texte, sources, formation_resolue = await self._repondre_contenu_formation(message, formation_code, session_id, module_contexte, conv, hide_references)
             elif type_detecte == "synthese_thematique":
-                # Le scope validé par la route s'applique aussi à la direction.
-                # allowed_session_ids=None signifie « accès autorisé », pas
-                # « ignorer la session sélectionnée ».
                 texte, sources, modele_requete, cache_utilise = await self._repondre_synthese_thematique(
                     message, conv, formation_code, session_id, module_contexte,
-                    allowed_session_ids, hide_references,
+                    allowed_session_ids, hide_references, on_token=on_token,
                 )
             elif type_detecte == "localisation":
-                # Les formateurs ne reçoivent pas les références de fichiers/pages.
-                # Leur recherche reste strictement limitée à la session affectée.
                 texte, sources, modele_requete, cache_utilise = await self._repondre_localisation(message, formation_code, session_id, module_contexte, hide_references, conv)
             elif type_detecte == "question_fond":
-                texte, sources, modele_requete, cache_utilise = await self._repondre_question_fond(message, conv, formation_code, session_id, module_contexte, hide_references)
+                texte, sources, modele_requete, cache_utilise = await self._repondre_question_fond(message, conv, formation_code, session_id, module_contexte, hide_references, on_token=on_token)
                 if cache_utilise is True and not await self._cache_utilise_pour(message):
                     reponse_depuis_cache = True
             elif type_detecte == "aide_plateforme":
@@ -805,7 +847,7 @@ class ChatOrchestrator:
         )
         return any(marqueur in normalise for marqueur in marqueurs)
 
-    async def _repondre_synthese_thematique(self, message, conv=None, formation_code=None, session_id=None, module=None, allowed_session_ids=None, hide_references=False):
+    async def _repondre_synthese_thematique(self, message, conv=None, formation_code=None, session_id=None, module=None, allowed_session_ids=None, hide_references=False, on_token=None):
         cache_avant = await self._cache_utilise_pour(message)
         try:
             modele_requete = get_embedding_provider().modele_requete
@@ -859,15 +901,17 @@ class ChatOrchestrator:
             for r in resultats
         )
         prompt = "reponse_question_fond.yaml" if session_id else "reponse_synthese_thematique.yaml"
-        resultat = await _appeler_llm_json(
-            prompt,
-            f"QUESTION : {message}\n\nEXTRAITS :\n{contexte}" if session_id else f"THÈME DEMANDÉ : {message}\n\nCONTEXTE INDEXÉ :\n{contexte}",
-            temperature=0.5,
-            consigne_additionnelle=("Ne cite aucun nom de fichier, page ou identifiant de document." if hide_references else None),
-            historique=_formater_historique(conv),
-        )
-
-        texte = resultat["reponse"] if resultat and resultat.get("reponse") else self._reponse_brute_depuis_chunks(resultats, hide_references) if session_id else _reponse_mode_strict()
+        contenu_prompt = f"QUESTION : {message}\n\nEXTRAITS :\n{contexte}" if session_id else f"THÈME DEMANDÉ : {message}\n\nCONTEXTE INDEXÉ :\n{contexte}"
+        consigne = "Ne cite aucun nom de fichier, page ou identifiant de document." if hide_references else None
+        if on_token:
+            texte = await _appeler_llm_stream(
+                prompt, contenu_prompt, temperature=0.5,
+                consigne_additionnelle=consigne, historique=_formater_historique(conv), on_token=on_token,
+            )
+            texte = texte or (self._reponse_brute_depuis_chunks(resultats, hide_references) if session_id else _reponse_mode_strict())
+        else:
+            resultat = await _appeler_llm_json(prompt, contenu_prompt, temperature=0.5, consigne_additionnelle=consigne, historique=_formater_historique(conv))
+            texte = resultat["reponse"] if resultat and resultat.get("reponse") else self._reponse_brute_depuis_chunks(resultats, hide_references) if session_id else _reponse_mode_strict()
         if session_id and self._llm_refuse_contenu(texte):
             if resultats_directs:
                 texte = self._reponse_brute_depuis_chunks(resultats, hide_references)
@@ -939,7 +983,7 @@ class ChatOrchestrator:
         texte = ("Voici les passages pertinents dans les supports de votre formation :\n\n" if hide_references else "Voici où ce sujet est expliqué :\n\n") + "\n".join(lignes)
         return texte, ([] if hide_references else sources), modele_requete, cache_avant
 
-    async def _repondre_question_fond(self, message, conv=None, formation_code=None, session_id=None, module=None, hide_references=False):
+    async def _repondre_question_fond(self, message, conv=None, formation_code=None, session_id=None, module=None, hide_references=False, on_token=None):
         if not session_id:
             return "Je réponds uniquement à partir des supports indexés. Sélectionnez une session pour vérifier cette question sans mélanger les formations.", [], None, False
         cache_avant = await self._cache_utilise_pour(message)
@@ -997,15 +1041,25 @@ class ChatOrchestrator:
         )
         if hide_references:
             contexte = f"{contexte}\n\nConsigne de confidentialité : ne cite pas de nom de document, de page ni de référence de source."
-        resultat = await _appeler_llm_json(
-            "reponse_question_fond.yaml",
-            f"QUESTION : {message}\n\nEXTRAITS :\n{contexte}",
-            temperature=0.5,
-            consigne_additionnelle=("Ne cite aucun nom de fichier, page ou identifiant de document." if hide_references else None),
-            historique=_formater_historique(conv),
-        )
+        contenu_prompt = f"QUESTION : {message}\n\nEXTRAITS :\n{contexte}"
+        consigne = "Ne cite aucun nom de fichier, page ou identifiant de document." if hide_references else None
 
-        texte = resultat["reponse"] if resultat and resultat.get("reponse") else self._reponse_brute_depuis_chunks(resultats, hide_references)
+        if on_token:
+            texte = await _appeler_llm_stream(
+                "reponse_question_fond.yaml", contenu_prompt,
+                temperature=0.5, consigne_additionnelle=consigne,
+                historique=_formater_historique(conv), on_token=on_token,
+            )
+        else:
+            resultat = await _appeler_llm_json(
+                "reponse_question_fond.yaml", contenu_prompt,
+                temperature=0.5, consigne_additionnelle=consigne,
+                historique=_formater_historique(conv),
+            )
+            texte = resultat["reponse"] if resultat and resultat.get("reponse") else ""
+
+        if not texte:
+            texte = self._reponse_brute_depuis_chunks(resultats, hide_references)
         sources = [
             {"fichier": r.fichier, "formation": r.formation_titre, "page": r.page_debut, "score": r.score}
             for r in resultats
@@ -1015,7 +1069,7 @@ class ChatOrchestrator:
                 texte = self._reponse_brute_depuis_chunks(resultats, hide_references)
             else:
                 sources = []
-        if resultat and resultat.get("reponse"):
+        if texte and not on_token:
             rcache.mettre_en_cache(requete, cache_namespace, {"texte": texte, "sources": sources, "hide_references": hide_references}, formation_code, session_id)
         return texte, sources, modele_requete, cache_avant
 

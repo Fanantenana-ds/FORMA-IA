@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Loader2, Plus, RefreshCw, Shield, UserRound, UserX } from 'lucide-react';
+import { Loader2, Plus, RefreshCw, Shield, UserRound, UserX, Users } from 'lucide-react';
+import { PageHeader } from '../PageHeader';
 import { apiService } from '../../services/api';
 
 type ManagedUser = { id: string; nom: string; email: string; role: 'DIRECTION' | 'ASSISTANT' | 'COMPTABLE' | 'FORMATEUR'; actif: boolean };
@@ -45,10 +46,17 @@ export const GestionUtilisateursView: React.FC = () => {
   const roleName = (value: ManagedUser['role']) => ({ DIRECTION: 'Directeur', ASSISTANT: 'Assistant / Secrétaire', COMPTABLE: 'Comptable', FORMATEUR: 'Formateur' })[value];
 
   return <div className="space-y-6 animate-in fade-in duration-300">
-    <header className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-xs">
-      <div><span className="text-[10px] font-extrabold uppercase tracking-wider text-[#0B1F4D]">Administration de l’entreprise</span><h1 className="mt-1 text-2xl font-extrabold text-[#11162A]">Gestion des utilisateurs</h1><p className="mt-1 text-xs text-slate-500">Les comptes créés ici voient les données de votre entreprise selon leur rôle.</p></div>
-      <button onClick={() => void refresh()} className="flex items-center gap-2 rounded-xl bg-slate-100 px-3 py-2 text-xs font-bold text-slate-700"><RefreshCw size={14}/>Actualiser</button>
-    </header>
+    <PageHeader
+      icon={<Users size={22} />}
+      badge="Administration"
+      title="Gestion des utilisateurs"
+      subtitle="Les comptes créés ici voient les données de votre entreprise selon leur rôle."
+      actions={
+        <button onClick={() => void refresh()} className="inline-flex items-center gap-1.5 rounded-xl border border-white/20 bg-white/15 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/25 transition-colors cursor-pointer">
+          <RefreshCw size={13} />Actualiser
+        </button>
+      }
+    />
     {error && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-semibold text-red-700">{error}</div>}
     {success && <div role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs font-semibold text-emerald-800">{success}</div>}
     <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">

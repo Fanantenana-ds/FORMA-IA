@@ -19,8 +19,10 @@ import {
   FileUp,
   ClipboardList,
   FileSignature,
-  CalendarDays
+  CalendarDays,
+  GraduationCap
 } from 'lucide-react';
+import { PageHeader } from '../PageHeader';
 import { Formateur, StatutFormateur, Session, OpportuniteCRM } from '../../types';
 import { apiService, ApiError } from '../../services/api';
 import {
@@ -389,31 +391,18 @@ export const FormateursStaffView: React.FC<FormateursStaffViewProps> = ({
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
-      {/* Header Banner */}
-      <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="px-2.5 py-0.5 rounded text-[11px] font-extrabold bg-brand-gold/15 text-brand-navy">
-              Ressources Humaines
-            </span>
-            <span className="text-xs text-slate-400 font-medium">• Annuaire et suivi des candidatures</span>
-          </div>
-          <h1 className="text-2xl font-extrabold text-[#11162A]">Formateurs & Staff</h1>
-          <p className="text-slate-600 text-xs mt-1">
-            Gérez les profils, les spécialités, les disponibilités et les candidatures des formateurs.
-          </p>
-        </div>
-
-        {canManage && (
-          <button
-            onClick={openCreate}
-            className="px-4 py-2.5 bg-[#0B1F4D] hover:bg-[#06132F] text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-xs transition-all cursor-pointer shrink-0"
-          >
-            <UserPlus size={16} />
+      <PageHeader
+        icon={<GraduationCap size={22} />}
+        badge="Ressources Humaines"
+        title="Formateurs & Staff"
+        subtitle="Gérez les profils, les spécialités, les disponibilités et les candidatures des formateurs."
+        actions={canManage ? (
+          <button onClick={openCreate} className="inline-flex items-center gap-1.5 rounded-xl border border-white/20 bg-white/15 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/25 transition-colors cursor-pointer">
+            <UserPlus size={14} />
             <span>Ajouter un formateur</span>
           </button>
-        )}
-      </div>
+        ) : undefined}
+      />
 
       {canManage && <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs space-y-5">
         <div className="flex items-center gap-2"><Sparkles size={18} className="text-[#0B1F4D]"/><div><h2 className="font-extrabold text-[#11162A]">M4 · Recrutement assisté</h2><p className="mt-1 text-xs text-slate-500">Analyse comparative des CV, préparation des entretiens et contrats soumis à validation humaine.</p></div></div>
@@ -520,7 +509,7 @@ export const FormateursStaffView: React.FC<FormateursStaffViewProps> = ({
       </div>
 
       {/* Grille des formateurs */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
         {filtered.map((f) => {
           const specs = specialitesList(f);
           return (

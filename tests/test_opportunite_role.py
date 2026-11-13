@@ -1,7 +1,7 @@
 def test_create_opportunite_role_non_autorise(client_role):
     client = client_role(role="FORMATEUR")
     response = client.post(
-        "/api/v1/opportunites",
+        "/api/v1/opportunites"
         json={
             "source": "TEXTE",
             "contenu": "Test opportunité",

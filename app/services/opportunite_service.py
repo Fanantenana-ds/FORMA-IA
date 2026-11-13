@@ -39,6 +39,13 @@ class OpportuniteService(IOpportuniteService):
     def delete(self, opportunite_id: UUID) -> bool:
         return self.repository.delete(opportunite_id)
 
+    def update_statut(self, opportunite_id: UUID, statut: StatutOpportunite) -> Opportunite | None:
+        opportunite = self.repository.find_by_id(opportunite_id)
+        if not opportunite:
+            return None
+        opportunite.statut = statut
+        return self.repository.update(opportunite)
+
     def update(self, opportunite_id: UUID, data: OpportuniteUpdate) -> Opportunite | None:
         opportunite = self.repository.find_by_id(opportunite_id)
 

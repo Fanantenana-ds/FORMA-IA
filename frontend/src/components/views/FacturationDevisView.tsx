@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { ReceiptText, Plus, Download, Search, ChevronDown, CreditCard, History, X, Check, Loader2, Sparkles } from 'lucide-react';
+import { PageHeader } from '../PageHeader';
 import { DevisFacture, MenuSection, Session } from '../../types';
 import { apiService } from '../../services/api';
 
@@ -103,31 +104,20 @@ export const FacturationDevisView: React.FC<FacturationDevisViewProps> = ({
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
-      <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-brand-gold/15 text-brand-navy">
-              M7 — Facturation IA
-            </span>
-            <span className="text-xs text-slate-400">· Devis · Règlements · Relances IA automatiques</span>
+      <PageHeader
+        icon={<ReceiptText size={22} />}
+        badge="M7 — Facturation IA"
+        title="Facturation & Devis"
+        subtitle="Calculez les montants par IA, générez les relances automatiquement et suivez les règlements."
+        actions={
+          <div className="flex items-center gap-2">
+            <button onClick={onOpenNewInvoice} className="inline-flex items-center gap-1.5 rounded-xl border border-white/20 bg-white/15 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/25 transition-colors cursor-pointer">
+              <Plus size={14} /><span>Nouveau devis / facture</span>
+            </button>
+            <div className="flex gap-1">{(['csv','excel','pdf'] as const).map(format => <button key={format} onClick={() => exportFile(format)} className="px-2.5 py-1.5 rounded-lg border border-white/15 bg-white/10 text-white/70 text-[10px] font-bold hover:bg-white/20">{format.toUpperCase()}</button>)}</div>
           </div>
-          <h1 className="text-2xl font-extrabold text-[#11162A]">Facturation & Devis</h1>
-          <p className="text-slate-600 text-xs mt-1">
-            Calculez les montants par IA, générez les relances automatiquement et suivez les règlements.
-          </p>
-        </div>
-
-        <div className="flex gap-2 flex-wrap">
-        <button
-          onClick={onOpenNewInvoice}
-          className="px-4 py-2.5 bg-[#0B1F4D] hover:bg-[#06132F] text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors shrink-0"
-        >
-          <Plus size={16} />
-          <span>Créer un devis ou une facture</span>
-        </button>
-        <div className="flex gap-1.5">{(['csv','excel','pdf'] as const).map(format => <button key={format} onClick={() => exportFile(format)} className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-[11px] font-bold">{format.toUpperCase()}</button>)}</div>
-        </div>
-      </div>
+        }
+      />
 
       {error && <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs font-semibold">{error}</div>}
       {notice && <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold">{notice}</div>}
@@ -171,7 +161,7 @@ export const FacturationDevisView: React.FC<FacturationDevisViewProps> = ({
           const payments = item.paiements ?? [];
           return <article key={item.id} className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xs">
             <div className="grid gap-4 p-4 lg:grid-cols-[1.2fr_1fr_0.8fr_1fr_auto] lg:items-center">
-              <div><div className="font-mono text-sm font-extrabold text-[#11162A]">{item.numero}</div><div className="mt-1 text-[11px] text-slate-500">{item.type}{session ? ` · ${session.titre}` : ''}</div></div>
+              <div><div className="font-mono text-sm font-extrabold text-[#11162A]">{item.numero}</div><div className="mt-1 text-[11px] text-slate-500">{item.type ?? 'Facture'}{session ? ` · ${session.titre}` : ''}</div></div>
               <div><div className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Client</div><div className="mt-1 font-bold text-slate-800">{item.client}</div></div>
               <div><div className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Total TTC</div><div className="mt-1 font-extrabold text-[#11162A]">{item.montantTTC.toLocaleString('fr-FR')} Ar</div></div>
               <div><span className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-bold ${statusStyle[item.statut] ?? statusStyle['Envoyé']}`}>{item.statut}</span><div className="mt-1 text-[11px] text-slate-500">{item.dateEcheance ? `Échéance : ${new Date(item.dateEcheance).toLocaleDateString('fr-FR')}` : 'Échéance non renseignée'}</div><div className="mt-1 text-[11px] font-semibold text-slate-600">Reçu {paid.toLocaleString('fr-FR')} Ar · dû <span className={remaining > 0 ? 'text-orange-700' : 'text-emerald-700'}>{remaining.toLocaleString('fr-FR')} Ar</span></div></div>

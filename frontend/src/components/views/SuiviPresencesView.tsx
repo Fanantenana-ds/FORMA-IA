@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { PageHeader } from '../PageHeader';
 import {
   UserCheck,
   CheckCircle2,
@@ -171,44 +172,24 @@ export const SuiviPresencesView: React.FC<SuiviPresencesViewProps> = ({
       {/* ========================================== */}
       {!selectedSessionId && (
         <>
-          {/* Header Banner */}
-          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div>
-              <div className="flex items-center gap-2 mb-1">
-                <span className="px-2.5 py-0.5 rounded text-[11px] font-extrabold bg-[#0B1F4D]/10 text-[#0B1F4D]">
-                  Émargement numérique
-                </span>
-                <span className="text-xs text-slate-400 font-medium">• Pointages par séance</span>
-              </div>
-              <h1 className="text-2xl font-extrabold text-[#11162A]">Suivi des Présences</h1>
-              <p className="text-slate-600 text-xs mt-1">
-                Consultez une session pour enregistrer les présences par séance et vérifier les pointages des participants inscrits.
-              </p>
-            </div>
+          <PageHeader
+            icon={<UserCheck size={22} />}
+            badge="Émargement numérique"
+            title="Suivi des Présences"
+            subtitle="Consultez une session pour enregistrer les presences par seance et verifier les pointages des participants inscrits."
+          />
 
-            {!readOnly && <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-xl text-xs font-bold shrink-0">
-              <button
-                onClick={() => setSessionFilter('en_cours')}
-                className={`px-3 py-2 rounded-lg transition-all cursor-pointer ${
-                  sessionFilter === 'en_cours'
-                    ? 'bg-white text-[#11162A] shadow-xs'
-                    : 'text-slate-500 hover:text-slate-800'
-                }`}
-              >
-                Sessions Actives ({sessions.filter((s) => s.statut === 'En cours').length})
+          {/* Barre de filtres */}
+          {!readOnly && (
+            <div className="flex items-center gap-1 rounded-2xl border border-slate-200 bg-white px-3 py-2 shadow-xs">
+              <button onClick={() => setSessionFilter('en_cours')} className={`flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-semibold transition-all ${sessionFilter === 'en_cours' ? 'bg-brand-navy text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-800'}`}>
+                Sessions actives ({sessions.filter((s) => s.statut === 'En cours').length})
               </button>
-              <button
-                onClick={() => setSessionFilter('all')}
-                className={`px-3 py-2 rounded-lg transition-all cursor-pointer ${
-                  sessionFilter === 'all'
-                    ? 'bg-white text-[#11162A] shadow-xs'
-                    : 'text-slate-500 hover:text-slate-800'
-                }`}
-              >
-                Toutes ({sessions.length})
+              <button onClick={() => setSessionFilter('all')} className={`flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-semibold transition-all ${sessionFilter === 'all' ? 'bg-brand-navy text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-800'}`}>
+                Toutes les sessions ({sessions.length})
               </button>
-            </div>}
-          </div>
+            </div>
+          )}
 
           {/* Search Bar */}
           <div className="relative">
@@ -336,7 +317,7 @@ export const SuiviPresencesView: React.FC<SuiviPresencesViewProps> = ({
               className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold flex items-center gap-1.5 mb-4 transition-colors cursor-pointer"
             >
               <ArrowLeft size={14} />
-              <span>← Retour à la liste des sessions</span>
+              <span>Retour à la liste des sessions</span>
             </button>
 
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">

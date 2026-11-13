@@ -114,9 +114,17 @@ async def chat_stream(payload: ChatRequest, request: Request, current_user: User
     async def produire():
         trace_id = uuid4().hex[:12]
         queue: asyncio.Queue[dict] = asyncio.Queue()
+        streaming_active = False  # True once real LLM tokens start arriving
 
         async def progress(stage: str, label: str):
-            await queue.put({"type": stage, "message": label})
+            # Don't push status events once real tokens are flowing
+            if not streaming_active:
+                await queue.put({"type": stage, "message": label})
+
+        async def on_token(token: str):
+            nonlocal streaming_active
+            streaming_active = True
+            await queue.put({"type": "token", "text": token})
 
         async def envoyer(data: dict):
             return "data: " + json.dumps(data, ensure_ascii=False) + "\n\n"
@@ -129,6 +137,7 @@ async def chat_stream(payload: ChatRequest, request: Request, current_user: User
                 hide_references=hide_refs,
                 user_id=str(current_user.id),
                 on_progress=progress,
+                on_token=on_token,
             )
 
         task = asyncio.create_task(executer())
@@ -146,25 +155,26 @@ async def chat_stream(payload: ChatRequest, request: Request, current_user: User
             resultat = await task
             if hide_refs:
                 resultat["sources"] = []
-            yield await envoyer({"type": "status", "message": "Réponse prête. Affichage du résultat…"})
-            texte = resultat.get("reponse", "")
-            if await request.is_disconnected():
-                return
-            # Le provider expose encore une génération JSON complète ; une fois
-            # calculée, on pousse le texte en fragments SSE pour que l'interface
-            # l'affiche progressivement, sans ajouter d'appel LLM ni de délai.
-            reste = texte
-            while reste:
-                if await request.is_disconnected():
-                    return
-                limite = min(120, len(reste))
-                if limite < len(reste):
-                    coupure = reste.rfind(" ", 0, limite)
-                    if coupure >= 60:
-                        limite = coupure + 1
-                yield await envoyer({"type": "token", "text": reste[:limite]})
-                reste = reste[limite:]
-                await asyncio.sleep(0)
+
+            # If streaming was not activated (non-LLM paths: catalogue, conversationnel…),
+            # simulate token streaming from the full response text.
+            if not streaming_active:
+                texte = resultat.get("reponse", "")
+                if texte:
+                    yield await envoyer({"type": "status", "message": "Réponse prête. Affichage du résultat…"})
+                    reste = texte
+                    while reste:
+                        if await request.is_disconnected():
+                            return
+                        limite = min(120, len(reste))
+                        if limite < len(reste):
+                            coupure = reste.rfind(" ", 0, limite)
+                            if coupure >= 60:
+                                limite = coupure + 1
+                        yield await envoyer({"type": "token", "text": reste[:limite]})
+                        reste = reste[limite:]
+                        await asyncio.sleep(0)
+
             yield await envoyer({"type": "meta", "data": {k: resultat.get(k) for k in ("conversation_id", "type_reponse", "sources", "formation_resolue", "suggestions", "duree_ms")}})
             yield await envoyer({"type": "done"})
         except asyncio.CancelledError:

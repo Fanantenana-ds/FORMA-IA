@@ -56,6 +56,7 @@ interface ViewRouterProps {
   onDeleteAvatar: () => Promise<void>;
   onUpdateUser: (updates: Pick<AuthUser, 'nom' | 'email'>) => Promise<void>;
   onBackFromProfile: () => void;
+  pendingReviewCount?: number;
 }
 
 export const ViewRouter: React.FC<ViewRouterProps> = ({
@@ -84,7 +85,8 @@ export const ViewRouter: React.FC<ViewRouterProps> = ({
   onUploadAvatar,
   onDeleteAvatar,
   onUpdateUser,
-  onBackFromProfile
+  onBackFromProfile,
+  pendingReviewCount = 0
 }) => {
   switch (currentSection) {
     case 'mon_profil':
@@ -103,6 +105,7 @@ export const ViewRouter: React.FC<ViewRouterProps> = ({
           currentRole={currentRole}
           isLoading={dashboardLoading}
           notice={dashboardNotice}
+          pendingReviewCount={pendingReviewCount}
           onRefresh={onRefreshData}
           onNavigateTo={onNavigateTo}
           onOpenNewOpportunity={onOpenNewOpportunity}
@@ -203,6 +206,7 @@ export const ViewRouter: React.FC<ViewRouterProps> = ({
           currentRole={currentRole}
           isLoading={dashboardLoading}
           notice={dashboardNotice}
+          pendingReviewCount={pendingReviewCount}
           onRefresh={onRefreshData}
           onNavigateTo={onNavigateTo}
           onOpenNewOpportunity={onOpenNewOpportunity}

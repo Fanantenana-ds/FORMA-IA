@@ -61,6 +61,7 @@ export default function App() {
   const [currentSection, setCurrentSection] = useState<MenuSection>('tableau_de_bord');
   const [previousSection, setPreviousSection] = useState<MenuSection>('tableau_de_bord');
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isDesktopViewport, setIsDesktopViewport] = useState(() => window.matchMedia('(min-width: 768px)').matches);
   const currentRole: UserRole = authUser?.role ?? 'Dir.';
 
@@ -494,6 +495,8 @@ export default function App() {
         onOpenAuthModal={handleOpenAuthModal}
         onLogout={handleLogout}
         pendingReviewCount={pendingReviewCount}
+        collapsed={isSidebarCollapsed}
+        onToggleCollapse={() => setIsSidebarCollapsed(c => !c)}
       />
 
       {/* Main Content Area */}
@@ -541,6 +544,7 @@ export default function App() {
             onDeleteAvatar={handleDeleteProfileAvatar}
             onUpdateUser={handleUpdateProfile}
             onBackFromProfile={() => navigateToSection(previousSection)}
+            pendingReviewCount={pendingReviewCount}
           />
         </main>
       </div>

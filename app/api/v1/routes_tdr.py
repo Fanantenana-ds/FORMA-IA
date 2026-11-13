@@ -25,9 +25,12 @@ from app.services.backend_sync.opportunity_fetcher import (
 from app.services.tdr.tdr_document_generator import get_tenant_exports_dir
 
 logger = logging.getLogger(__name__)
+from app.services.backend_sync.request_context import bind_backend_auth_token
 from app.utils.security import verify_api_key
 
-router = APIRouter(dependencies=[Depends(verify_api_key)])
+router = APIRouter(
+    dependencies=[Depends(verify_api_key), Depends(bind_backend_auth_token)]
+)
 orchestrator = TdrOrchestrator()
 
 class SynchroniserTDRRequest(BaseModel):

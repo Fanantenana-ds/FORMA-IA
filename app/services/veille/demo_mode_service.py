@@ -423,6 +423,16 @@ def charger_opportunites_demo_reelles() -> list[dict]:
             logger.warning("Fiche d'avis ignorée : format invalide.")
             continue
 
+        # Les contacts du réseau partenaires sont des pistes privées, pas des
+        # avis publics vérifiables. Ils ne doivent pas alimenter l'archive M1
+        # présentée comme une démonstration fondée sur des sources publiques.
+        if fiche.get("capture_type") == "contact_partenarial":
+            logger.info(
+                "Piste partenaire exclue de l'archive publique : %s",
+                fiche.get("reference", fiche.get("title", "sans référence")),
+            )
+            continue
+
         opportunite = dict(fiche)
         try:
             date_capture = date.fromisoformat(opportunite["date_capture"])

@@ -27,6 +27,7 @@ from app.orchestrator.facturation_orchestrator import (
 )
 from app.schemas.common import RouteResponse
 from app.schemas.facture_ia import CalculerMontantsRequest, GenererRelanceRequest, SynchroniserRelanceRequest
+from app.services.backend_sync.request_context import bind_backend_auth_token
 from app.utils.security import verify_api_key
 
 logger = logging.getLogger(__name__)
@@ -45,7 +46,7 @@ def vlog(msg: str, level: str = "info") -> None:
 router = APIRouter(
     prefix="/ia/facturation",
     tags=["M7 — IA Facturation"],
-    dependencies=[Depends(verify_api_key)],
+    dependencies=[Depends(verify_api_key), Depends(bind_backend_auth_token)],
 )
 
 

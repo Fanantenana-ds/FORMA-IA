@@ -45,15 +45,20 @@ from app.services.veille.demo_mode_service import (
 )
 from app.services.veille.tavily_quota_service import QuotaTavilyDepasseError
 from app.services.veille.access_service import verify_api_key, verify_api_key_sse
+from app.services.backend_sync.request_context import bind_backend_auth_token
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(dependencies=[Depends(verify_api_key)])
+router = APIRouter(
+    dependencies=[Depends(verify_api_key), Depends(bind_backend_auth_token)]
+)
 
 # Router séparé pour les routes SSE : l'auth Bearer standard est incompatible
 # avec EventSource (le navigateur ne peut pas envoyer de headers custom).
 # verify_api_key_sse accepte le token en query param ?token= ou en header Bearer.
-sse_router = APIRouter(dependencies=[Depends(verify_api_key_sse)])
+sse_router = APIRouter(
+    dependencies=[Depends(verify_api_key_sse), Depends(bind_backend_auth_token)]
+)
 
 
 # ============================================================

@@ -8,7 +8,10 @@ import {
   Gauge,
   AlertTriangle,
   CheckCircle2,
-  Info
+  ExternalLink,
+  Info,
+  Sparkles,
+  TrendingUp
 } from 'lucide-react';
 import { apiService } from '../../services/api';
 import { describeVeilleError } from '../../services/veilleErrors';
@@ -406,36 +409,89 @@ export const DetectionAutoPanel: React.FC<DetectionAutoPanelProps> = ({ canTrigg
       )}
 
       {(isRunning || progress.length > 0) && (
-        <div aria-live="polite" className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm space-y-4">
+        <div aria-live="polite" className="rounded-2xl border border-[#0B1F4D]/20 bg-gradient-to-br from-[#0B1F4D]/5 to-white p-4 shadow-sm space-y-4">
+          {/* Header streaming */}
           <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Suivi de la détection</p>
-              <p className="text-sm font-bold text-[#11162A] mt-1">{streamStage}</p>
+            <div className="flex items-center gap-3">
+              <div className={`h-10 w-10 rounded-xl flex items-center justify-center ${isRunning ? 'bg-[#0B1F4D]' : 'bg-emerald-600'}`}>
+                {isRunning
+                  ? <Loader2 size={18} className="text-white animate-spin" />
+                  : <CheckCircle2 size={18} className="text-white" />}
+              </div>
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Agent IA · Veille Marché M1</p>
+                <p className="text-sm font-bold text-[#11162A] mt-0.5">{streamStage}</p>
+              </div>
             </div>
-            <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-800">
+            <span className={`rounded-full px-3 py-1 text-xs font-bold ${isRunning ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'}`}>
               {progress.filter(item => item.type === 'result').length} avis repéré(s)
             </span>
           </div>
-          <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
-            <div className={`h-full rounded-full bg-[#0B1F4D] transition-all duration-500 ${isRunning ? 'w-2/3 animate-pulse' : 'w-full'}`} />
+
+          {/* Barre de progression */}
+          <div className="h-1.5 overflow-hidden rounded-full bg-slate-200">
+            <div className={`h-full rounded-full bg-gradient-to-r from-[#0B1F4D] to-emerald-500 transition-all duration-500 ${isRunning ? 'w-2/3 animate-pulse' : 'w-full'}`} />
           </div>
-          <div className="max-h-72 space-y-2 overflow-y-auto">
-            {progress.filter(item => item.type === 'result').map((item, index) => (
-              <div key={`${item.title}-${index}`} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="text-xs font-bold leading-5 text-[#11162A]">{item.title}</p>
-                    {item.source && <p className="mt-0.5 text-[11px] text-slate-500">{item.source}</p>}
-                    {(item.reference || item.deadline || item.capturedAt) && <p className="mt-1 text-[11px] text-slate-500">{item.reference ? `Réf. ${item.reference}` : ''}{item.reference && (item.deadline || item.capturedAt) ? ' · ' : ''}{item.deadline ? `Échéance ${item.deadline}` : ''}{item.deadline && item.capturedAt ? ' · ' : ''}{item.capturedAt ? `Capturé le ${item.capturedAt}` : ''}</p>}
+
+          {/* Cartes résultats */}
+          <div className="max-h-80 space-y-3 overflow-y-auto pr-1">
+            {progress.filter(item => item.type === 'result').map((item, index) => {
+              const score = item.score ?? 0;
+              const scoreColor = score >= 80
+                ? 'border-l-emerald-500 bg-emerald-50/60'
+                : score >= 60
+                ? 'border-l-blue-500 bg-blue-50/40'
+                : 'border-l-amber-400 bg-amber-50/40';
+              const scoreBadge = score >= 80
+                ? 'bg-emerald-100 text-emerald-800'
+                : score >= 60
+                ? 'bg-blue-100 text-blue-800'
+                : 'bg-amber-100 text-amber-800';
+              return (
+                <div
+                  key={`${item.title}-${index}`}
+                  className={`rounded-xl border border-slate-200 border-l-4 p-3.5 shadow-xs ${scoreColor}`}
+                >
+                  <div className="flex items-start gap-3">
+                    {/* Score badge */}
+                    {item.score !== undefined && (
+                      <div className={`shrink-0 mt-0.5 h-12 w-12 rounded-xl flex flex-col items-center justify-center ${scoreBadge}`}>
+                        <span className="text-base font-extrabold leading-none">{item.score}</span>
+                        <span className="text-[9px] font-bold opacity-60">/100</span>
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-start justify-between gap-2">
+                        <p className="text-sm font-bold leading-5 text-[#11162A]">{item.title}</p>
+                        {item.status && (
+                          <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${item.status === 'ouverte' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-600'}`}>
+                            {item.status}
+                          </span>
+                        )}
+                      </div>
+                      {item.source && (
+                        <p className="mt-0.5 text-[11px] font-medium text-slate-500">{item.source}</p>
+                      )}
+                      <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-slate-500">
+                        {item.reference && <span>Réf. <span className="font-semibold text-slate-700">{item.reference}</span></span>}
+                        {item.deadline && <span>Échéance <span className="font-semibold text-amber-700">{item.deadline}</span></span>}
+                        {item.capturedAt && <span>Capturé le {item.capturedAt}</span>}
+                      </div>
+                    </div>
                   </div>
-                  <div className="flex shrink-0 flex-col items-end gap-1">{item.score !== undefined && <span className="rounded-lg bg-white px-2 py-1 text-[11px] font-bold text-emerald-800">{item.score}/100</span>}{item.status && <span className={`rounded-full px-2 py-1 text-[10px] font-bold ${item.status === 'ouverte' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-700'}`}>{item.status}</span>}</div>
+                  <div className="mt-2.5 pt-2.5 border-t border-slate-200/60">
+                    {item.url
+                      ? <a href={item.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#0B1F4D] hover:text-emerald-700 hover:underline transition-colors">Consulter l'avis officiel ↗</a>
+                      : <span className="text-[11px] text-amber-700">Archive — lien à vérifier avant validation</span>}
+                  </div>
                 </div>
-                {item.url ? <a href={item.url} target="_blank" rel="noopener noreferrer" className="mt-2 inline-block text-[11px] font-semibold text-[#06132F] underline">Voir l’avis original ↗</a>
-                  : <span className="mt-2 block text-[11px] text-amber-700">Aucun lien public fourni</span>}
-              </div>
-            ))}
+              );
+            })}
             {progress.filter(item => item.type === 'result').length === 0 && (
-              <p className="text-xs text-slate-500">{progress.length ? `${progress.filter(item => item.type === 'source').length} source(s) parcourue(s). Les avis arrivent…` : 'Connexion au flux en cours…'}</p>
+              <p className="text-xs text-slate-500 flex items-center gap-1.5">
+                <Loader2 size={12} className="animate-spin shrink-0" />
+                {progress.length ? `${progress.filter(item => item.type === 'source').length} source(s) parcourue(s) — les avis arrivent…` : 'Connexion au flux IA en cours…'}
+              </p>
             )}
           </div>
         </div>

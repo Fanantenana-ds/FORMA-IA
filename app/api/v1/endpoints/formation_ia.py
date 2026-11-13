@@ -34,6 +34,7 @@ from app.models.formation import Inscription, Participant, Presence, Seance, Ses
 from app.models.rh import Formateur
 from app.services.formations.attestation_generator_service import AttestationGeneratorService
 from app.services.formations.presence_analyzer_service import SEUIL_ELIGIBILITE_ATTESTATION
+from app.services.backend_sync.request_context import bind_backend_auth_token
 from app.utils.security import verify_api_key
 
 logger = logging.getLogger(__name__)
@@ -52,7 +53,7 @@ def vlog(msg: str, level: str = "info") -> None:
 router = APIRouter(
     prefix="/ia/formations",
     tags=["M5 — IA Formations"],
-    dependencies=[Depends(verify_api_key)],
+    dependencies=[Depends(verify_api_key), Depends(bind_backend_auth_token)],
 )
 
 

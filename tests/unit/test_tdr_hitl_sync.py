@@ -25,7 +25,7 @@ from app.api.v1 import routes_tdr
 from app.orchestrator.tdr_orchestrator import TdrOrchestrator
 from app.services.backend_sync import base_sync, review_sync
 from app.services.hitl import hitl_helper
-from app.services.veille.access_service import verify_api_key
+from app.utils.security import verify_api_key
 
 BRIEF = {
     "client": "Ministère de la Santé",

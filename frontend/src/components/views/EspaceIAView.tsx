@@ -773,9 +773,47 @@ export const EspaceIAView: React.FC<{ readOnly?: boolean; trainerMode?: boolean;
   ];
   return <div className="space-y-6 animate-in fade-in duration-300">
     <div className={`${panel} flex flex-col md:flex-row md:items-center md:justify-between gap-4`}>
-      <div><div className="text-[11px] font-bold uppercase tracking-wider text-[#0B1F4D]">Services connectés au backend</div><h1 className="text-2xl font-extrabold text-[#11162A] mt-1">Espace IA</h1><p className="text-xs text-slate-500 mt-1">Validez les contenus générés, alimentez la base documentaire et échangez avec vos supports.</p></div>
-      <div className="flex gap-1.5 bg-slate-100 p-1.5 rounded-xl text-xs font-bold flex-wrap">{tabs.map(t => <button key={t.id} onClick={() => { setTab(t.id); setSelected(null); setDocumentEdit(null); }} className={`px-3 py-2 rounded-lg flex items-center gap-1.5 ${tab === t.id ? 'bg-white text-[#11162A] shadow-xs' : 'text-slate-500'}`}>{t.icon}{t.label}</button>)}</div>
+      <div>
+        <div className="flex items-center gap-2 mb-1">
+          <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-[#0B1F4D]/10 text-[#0B1F4D]">Pipeline IA</span>
+          <span className="text-xs text-slate-500">· Agents Groq + Voyage AI + pgvector</span>
+        </div>
+        <h1 className="text-2xl font-extrabold text-[#11162A]">Espace IA</h1>
+        <p className="text-xs text-slate-500 mt-1">Validez les contenus générés par IA, gérez la base documentaire RAG et utilisez le chat intelligent.</p>
+      </div>
+      <div className="flex gap-1.5 bg-slate-100 p-1.5 rounded-xl text-xs font-bold flex-wrap">
+        {tabs.map(t => (
+          <button
+            key={t.id}
+            onClick={() => { setTab(t.id); setSelected(null); setDocumentEdit(null); }}
+            className={`px-3 py-2 rounded-lg flex items-center gap-1.5 transition-colors ${tab === t.id ? 'bg-white text-[#11162A] shadow-xs' : 'text-slate-500 hover:text-slate-700'}`}
+          >
+            {t.icon}
+            {t.label}
+            {t.id === 'reviews' && reviews.length > 0 && (
+              <span className="ml-0.5 h-4 min-w-4 px-1 rounded-full bg-amber-500 text-white text-[9px] font-extrabold flex items-center justify-center">
+                {reviews.length}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
     </div>
+
+    {/* Bandeau HITL — visible uniquement sur l'onglet reviews avec contenus en attente */}
+    {tab === 'reviews' && reviews.length > 0 && (
+      <div className="flex items-start gap-3 rounded-xl border border-[#0B1F4D]/20 bg-gradient-to-r from-[#0B1F4D]/5 to-white p-4">
+        <div className="h-10 w-10 shrink-0 rounded-xl bg-[#0B1F4D] flex items-center justify-center">
+          <ShieldCheck size={18} className="text-white" />
+        </div>
+        <div>
+          <div className="text-[10px] font-bold uppercase tracking-wider text-[#0B1F4D] mb-0.5">HITL — Human in the Loop</div>
+          <p className="text-sm font-bold text-[#11162A]">{reviews.length} contenu{reviews.length > 1 ? 's' : ''} généré{reviews.length > 1 ? 's' : ''} par IA — validation humaine requise</p>
+          <p className="text-[11px] text-slate-600 mt-0.5">Chaque document IA doit être relu et approuvé par un responsable avant tout envoi au client ou enregistrement en base.</p>
+        </div>
+      </div>
+    )}
+
     {error && <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs font-semibold flex gap-2"><AlertCircle size={15} />{error}</div>}
     {notice && <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold"><span>{notice}</span>{continueMarket && <button type="button" onClick={() => onNavigateToSection?.('opportunites_crm')} className="rounded-lg bg-emerald-700 px-3 py-2 font-bold text-white">Continuer le dossier du marché</button>}</div>}
 

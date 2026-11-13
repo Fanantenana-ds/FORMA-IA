@@ -31,6 +31,7 @@ from app.services.document_design import apply_docx_branding, add_metadata_table
 from pydantic import BaseModel
 
 from app.orchestrator.rh_orchestrator import RhOrchestrator, get_rh_orchestrator
+from app.core.dependencies import require_role
 from app.schemas.rh_ia import (
     ContratFormateurRequest,
     EmailBrouillonPatchRequest,
@@ -40,8 +41,8 @@ from app.schemas.rh_ia import (
     EvaluationFormateurRequest,
     PreselectionCvRequest,
 )
+from app.services.backend_sync.request_context import bind_backend_auth_token
 from app.utils.security import verify_api_key
-from app.core.dependencies import require_role
 
 logger = logging.getLogger(__name__)
 VERBOSE = os.getenv("VERBOSE_LOGS", "true").lower() == "true"
@@ -65,7 +66,7 @@ class RouteResponse(BaseModel):
 router = APIRouter(
     prefix="/ia/rh",
     tags=["M4 — IA Assistance RH (bonus)"],
-    dependencies=[Depends(verify_api_key)],
+    dependencies=[Depends(verify_api_key), Depends(bind_backend_auth_token)],
 )
 
 

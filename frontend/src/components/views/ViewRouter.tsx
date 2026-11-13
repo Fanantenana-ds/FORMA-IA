@@ -183,6 +183,7 @@ export const ViewRouter: React.FC<ViewRouterProps> = ({
           factures={factures}
           onRefreshData={onRefreshData}
           onNavigateTo={onNavigateTo}
+          canManagePreparation={currentRole === 'Dir.' || currentRole === 'Assis.'}
         />
       );
 

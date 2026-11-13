@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { LLMConfigPanel } from './LLMConfigPanel';
 
 function renderMarkdown(text: string): string {
   return text
@@ -8,11 +9,11 @@ function renderMarkdown(text: string): string {
     .replace(/^(\d+)\. (.+)$/gm, '<li>$2</li>')
     .replace(/\n/g, '<br />');
 }
-import { AlertCircle, Archive, Award, Check, CheckCheck, Copy, Download, Eye, FileText, Loader2, MessageCircle, Paperclip, Pencil, PlusCircle, Send, ShieldCheck, ThumbsDown, ThumbsUp, Trash2, Upload, X } from 'lucide-react';
+import { AlertCircle, Archive, Award, Check, CheckCheck, Copy, Download, Eye, FileText, Loader2, MessageCircle, Paperclip, Pencil, PlusCircle, Send, ShieldCheck, ThumbsDown, ThumbsUp, Trash2, Upload, X, Zap } from 'lucide-react';
 import { apiService } from '../../services/api';
 import { MenuSection } from '../../types';
 
-type Tab = 'reviews' | 'history' | 'supports' | 'chat' | 'syllabus';
+type Tab = 'reviews' | 'history' | 'supports' | 'chat' | 'syllabus' | 'config_llm';
 const errorText = (error: unknown) => error instanceof Error ? error.message : 'Une erreur est survenue.';
 const panel = 'bg-white p-5 rounded-2xl border border-slate-200 shadow-xs';
 const supportStatusStyle: Record<string, string> = {
@@ -769,7 +770,8 @@ export const EspaceIAView: React.FC<{ readOnly?: boolean; trainerMode?: boolean;
     ...(!readOnly ? [{ id: 'history' as const, label: 'Historique', icon: <FileText size={15} /> }] : []),
     ...(!readOnly ? [{ id: 'syllabus' as const, label: 'Générer un syllabus', icon: <FileText size={15} /> }] : []),
     { id: 'supports', label: 'Supports RAG', icon: <Paperclip size={15} /> },
-    { id: 'chat', label: 'Chat documentaire', icon: <MessageCircle size={15} /> }
+    { id: 'chat', label: 'Chat documentaire', icon: <MessageCircle size={15} /> },
+    ...(!readOnly ? [{ id: 'config_llm' as const, label: 'Config LLM', icon: <Zap size={15} /> }] : []),
   ];
   return <div className="space-y-6 animate-in fade-in duration-300">
     <div className={`${panel} flex flex-col md:flex-row md:items-center md:justify-between gap-4`}>
@@ -1083,6 +1085,12 @@ export const EspaceIAView: React.FC<{ readOnly?: boolean; trainerMode?: boolean;
         </form>
       </section>
     </div>}
+
+    {tab === 'config_llm' && (
+      <div className="max-w-2xl">
+        <LLMConfigPanel />
+      </div>
+    )}
   </div>;
 };
 

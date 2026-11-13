@@ -11,6 +11,7 @@ import { EspaceIAView } from './EspaceIAView';
 import { GestionUtilisateursView } from './GestionUtilisateursView';
 import { DossiersFormationView } from './DossiersFormationView';
 import { ProfileView } from './ProfileView';
+import { ParametresView } from './ParametresView';
 import {
   MenuSection,
   UserRole,
@@ -88,6 +89,8 @@ export const ViewRouter: React.FC<ViewRouterProps> = ({
   switch (currentSection) {
     case 'mon_profil':
       return <ProfileView authUser={authUser} avatarUrl={avatarUrl} onUploadAvatar={onUploadAvatar} onDeleteAvatar={onDeleteAvatar} onUpdateUser={onUpdateUser} onBack={onBackFromProfile} />;
+    case 'parametres':
+      return <ParametresView authUser={authUser} onBack={onBackFromProfile} />;
     case 'gestion_utilisateurs':
       return currentRole === 'Dir.' ? <GestionUtilisateursView /> : null;
     case 'tableau_de_bord':

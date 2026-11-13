@@ -137,18 +137,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
     >
       {/* ── Header ── */}
       <div className={`relative border-b border-white/[0.07] ${collapsed ? 'px-2 py-4' : 'px-4 py-4'}`}>
-        <div className={`flex items-center ${collapsed ? 'justify-center' : 'gap-3'}`}>
+        <div className={`flex items-center ${collapsed ? 'justify-center' : 'gap-3 items-center'}`}>
           <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-white shadow-lg shadow-black/30 ring-1 ring-white/30 p-1">
             <img src="/logo_altiora_prest.png" alt="ALTIORA PREST" className="h-full w-full object-contain" />
           </div>
 
           {!collapsed && (
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-1.5">
-                <h1 className="font-extrabold text-[17px] tracking-tight text-white leading-none">FORMA-IA</h1>
+            <div className="min-w-0 flex-1 flex flex-col items-center justify-center gap-0.5">
+              <div className="flex items-center gap-2">
+                <h1 className="font-extrabold text-[23px] tracking-tight leading-none">
+                  <span className="text-white">FORMA</span><span className="text-brand-gold">-IA</span>
+                </h1>
                 <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
               </div>
-              <p className="mt-0.5 text-[10px] font-medium text-emerald-400/80 leading-tight">
+              <p className="text-[10px] font-medium text-emerald-400/80 leading-tight">
                 Plateforme de Gestion de Formation
               </p>
             </div>

@@ -15,7 +15,10 @@ import {
   WalletCards,
   BadgeCheck,
   CalendarCheck,
-  LayoutDashboard
+  LayoutDashboard,
+  BrainCircuit,
+  Workflow,
+  ChevronRight
 } from 'lucide-react';
 import { PageHeader } from '../PageHeader';
 import {
@@ -43,6 +46,7 @@ interface DashboardViewProps {
   currentRole: UserRole;
   isLoading?: boolean;
   notice?: string | null;
+  pendingReviewCount?: number;
   onRefresh: () => void;
   onNavigateTo: (section: MenuSection) => void;
   onOpenNewOpportunity: () => void;
@@ -67,6 +71,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   currentRole,
   isLoading = false,
   notice,
+  pendingReviewCount = 0,
   onRefresh,
   onNavigateTo,
   onOpenNewOpportunity,
@@ -128,6 +133,89 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         <div className="p-3 rounded-xl bg-slate-100 border border-slate-200 text-slate-600 text-xs font-medium">
           Le nombre de participants et le taux de présence global sont réservés à la Direction.
         </div>
+      )}
+
+      {/* Prochaines actions */}
+      {!isLoading && (
+        <section aria-labelledby="next-actions-title" className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs">
+          <h2 id="next-actions-title" className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-4 flex items-center gap-2">
+            <ChevronRight size={15} className="text-brand-gold" />
+            Prochaines actions
+          </h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {/* Validations IA en attente */}
+            {pendingReviewCount > 0 && (
+              <button
+                type="button"
+                onClick={() => onNavigateTo('espace_ia')}
+                className="group flex items-center gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-left transition hover:bg-red-100 hover:border-red-300"
+              >
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-red-100 text-red-600 group-hover:bg-red-200">
+                  <BrainCircuit size={18} />
+                </span>
+                <div className="min-w-0">
+                  <div className="text-sm font-bold text-red-800">{pendingReviewCount} à valider</div>
+                  <div className="text-[11px] text-red-600">Validations IA en attente</div>
+                </div>
+                <ArrowUpRight size={14} className="ml-auto shrink-0 text-red-400 group-hover:text-red-600" />
+              </button>
+            )}
+
+            {/* Dossiers de formation */}
+            {canAccessSection(currentRole, 'dossiers_formation') && (
+              <button
+                type="button"
+                onClick={() => onNavigateTo('dossiers_formation')}
+                className="group flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-left transition hover:bg-brand-navy/5 hover:border-brand-navy/30"
+              >
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand-navy/10 text-brand-navy group-hover:bg-brand-navy group-hover:text-white transition-colors">
+                  <Workflow size={18} />
+                </span>
+                <div className="min-w-0">
+                  <div className="text-sm font-bold text-slate-800">Dossiers de formation</div>
+                  <div className="text-[11px] text-slate-500">Suivre M1 → M7</div>
+                </div>
+                <ArrowUpRight size={14} className="ml-auto shrink-0 text-slate-400 group-hover:text-brand-navy" />
+              </button>
+            )}
+
+            {/* Sessions & présences */}
+            <button
+              type="button"
+              onClick={() => onNavigateTo('sessions_groupes')}
+              className="group flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-left transition hover:bg-brand-navy/5 hover:border-brand-navy/30"
+            >
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand-gold/15 text-brand-navy group-hover:bg-brand-navy group-hover:text-white transition-colors">
+                <Calendar size={18} />
+              </span>
+              <div className="min-w-0">
+                <div className="text-sm font-bold text-slate-800">Sessions · {kpis.sessionsRealisees}</div>
+                <div className="text-[11px] text-slate-500">Planifier & suivre</div>
+              </div>
+              <ArrowUpRight size={14} className="ml-auto shrink-0 text-slate-400 group-hover:text-brand-navy" />
+            </button>
+
+            {/* Facturation — alerte si factures en retard */}
+            <button
+              type="button"
+              onClick={() => onNavigateTo('facturation_devis')}
+              className={`group flex items-center gap-3 rounded-xl border px-4 py-3 text-left transition ${(kpis.facturesEnRetard ?? 0) > 0 ? 'border-amber-200 bg-amber-50 hover:bg-amber-100 hover:border-amber-300' : 'border-slate-200 bg-slate-50 hover:bg-brand-navy/5 hover:border-brand-navy/30'}`}
+            >
+              <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition-colors ${(kpis.facturesEnRetard ?? 0) > 0 ? 'bg-amber-100 text-amber-700 group-hover:bg-amber-200' : 'bg-emerald-100 text-emerald-700 group-hover:bg-brand-navy group-hover:text-white'}`}>
+                <WalletCards size={18} />
+              </span>
+              <div className="min-w-0">
+                <div className={`text-sm font-bold ${(kpis.facturesEnRetard ?? 0) > 0 ? 'text-amber-800' : 'text-slate-800'}`}>
+                  {(kpis.facturesEnRetard ?? 0) > 0 ? `${kpis.facturesEnRetard} en retard` : 'Facturation'}
+                </div>
+                <div className={`text-[11px] ${(kpis.facturesEnRetard ?? 0) > 0 ? 'text-amber-600' : 'text-slate-500'}`}>
+                  {(kpis.facturesEnRetard ?? 0) > 0 ? 'Relances à envoyer' : 'Devis & factures'}
+                </div>
+              </div>
+              <ArrowUpRight size={14} className={`ml-auto shrink-0 ${(kpis.facturesEnRetard ?? 0) > 0 ? 'text-amber-400 group-hover:text-amber-700' : 'text-slate-400 group-hover:text-brand-navy'}`} />
+            </button>
+          </div>
+        </section>
       )}
 
       {/* Indicateurs opérationnels */}

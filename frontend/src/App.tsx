@@ -12,6 +12,7 @@ import { PublicRegistrationPage } from './components/PublicRegistrationPage';
 import { ViewRouter } from './components/views/ViewRouter';
 import { ModalManager } from './components/modals/ModalManager';
 import { VocalAssistant } from './components/VocalAssistant';
+import { LanguageProvider } from './contexts/LanguageContext';
 
 import {
   MenuSection,
@@ -464,6 +465,7 @@ export default function App() {
   ];
 
   return (
+  <LanguageProvider>
     <div className="flex min-h-screen bg-[#F7F7F6] font-sans text-slate-800 antialiased selection:bg-brand-navy selection:text-white">
       {/* Toast Notification */}
       {toastMessage && (
@@ -569,5 +571,6 @@ export default function App() {
         onCreateInvoice={() => openInvoiceModal()}
       />
     </div>
+  </LanguageProvider>
   );
 }

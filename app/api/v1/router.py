@@ -3,6 +3,7 @@ from fastapi import APIRouter
 from app.api.v1.endpoints import (
     analyse,
     auth,
+    config_ia,
     dashboard,
     document,
     export,
@@ -40,6 +41,7 @@ api_router.include_router(facture_ia.router)
 api_router.include_router(rag_ia.router)
 api_router.include_router(rh_ia.router)
 api_router.include_router(vocal_ia.router)
+api_router.include_router(config_ia.router)
 api_router.include_router(rh.router)
 api_router.include_router(export.router)
 api_router.include_router(offre.router)

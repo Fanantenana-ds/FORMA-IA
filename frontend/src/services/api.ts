@@ -64,7 +64,7 @@ const normalizeBudget = (value: unknown): number | undefined => {
 const mapOpportunity = (o: any): OpportuniteCRM => ({
   id: String(o.id), entreprise: o.objet || 'Opportunité', contactName: '', contactEmail: '',
   domaineIA: o.domaine || 'AUTRE', besoinFormation: o.contenu || '', participantsEstimes: 0,
-  montantEstime: currency(o.budget), etape: o.statut === 'ANALYSEE' ? 'Contact qualifié' : o.statut === 'ARCHIVEE' ? 'Perdue' : 'Détectée par IA',
+  montantEstime: currency(o.budget), etape: o.statut === 'GAGNEE' ? 'Gagnée' : o.statut === 'DEVIS_TRANSMIS' ? 'Devis transmis' : o.statut === 'ANALYSEE' ? 'Contact qualifié' : o.statut === 'ARCHIVEE' ? 'Perdue' : 'Détectée par IA',
   probabilite: currency(o.score_pertinence), dateDetection: o.date_creation ? new Date(o.date_creation).toLocaleDateString('fr-FR') : ''
 });
 let veilleClientId = 0;
@@ -401,6 +401,7 @@ class ApiService {
   async updateSession(id: string, payload: Record<string, unknown>) { return mapSession(await this.request<any>(`/sessions/${id}`, this.json('PATCH', payload))); }
   async deleteSession(id: string) { return this.request(`/sessions/${id}`, this.json('DELETE')); }
   async deleteOpportunity(id: string) { return this.request(`/opportunites/${encodeURIComponent(id)}`, this.json('DELETE')); }
+  async updateOpportunityStatut(id: string, statut: 'EN_ATTENTE' | 'ANALYSEE' | 'DEVIS_TRANSMIS' | 'GAGNEE' | 'ARCHIVEE'): Promise<OpportuniteCRM> { const data = await this.request<any>(`/opportunites/${encodeURIComponent(id)}/statut`, this.json('PATCH', { statut })); return mapOpportunity(data); }
   async createPublicRegistrationLink(kind: 'participant' | 'formateur' | 'post_formation', session_id?: string) { return this.request<{token:string;path:string;kind:string;assessment_question_count?:number}>('/public/links', this.json('POST', { kind, ...(session_id ? {session_id} : {}) })); }
   async getSessionPublicLinks(sessionId: string) { return this.request<{participant?:{token:string;path:string};formateur?:{token:string;path:string};post_formation?:{token:string;path:string}}>(`/public/links/session/${encodeURIComponent(sessionId)}`); }
   async revokePublicRegistrationLink(token: string) { return this.request<any>(`/public/links/${encodeURIComponent(token)}`, { method: 'DELETE' }); }
@@ -554,6 +555,17 @@ class ApiService {
   async generateSyllabus(body: unknown) { return this.request<any>('/ia/rag/syllabus', this.json('POST', body), { ia: true, timeout: 120000 }); }
   async generatePortfolio(body: unknown) { return this.request<any>('/ia/rag/portfolio', this.json('POST', body), { ia: true, timeout: 120000 }); }
   async getBlob(path: string, params: Record<string, string> = {}) { return this.request<Blob>(`${path}${queryString(params)}`); }
+
+  // ── Config LLM runtime ────────────────────────────────────────────────────
+  async getLLMConfig() { return this.request<any>('/ia/config/llm', {}, { ia: true, jwtForIA: true }); }
+  async setLLMConfig(body: { provider?: string; model?: string; cle_api?: string }) {
+    return this.request<any>('/ia/config/llm', this.json('POST', body), { ia: true, jwtForIA: true });
+  }
+  async getLLMModels(provider: string) { return this.request<any>(`/ia/config/llm/models/${provider}`, {}, { ia: true }); }
+  async getAllLLMModels() { return this.request<any>('/ia/config/llm/models', {}, { ia: true }); }
+  async testLLMConnection(body: { provider: string; cle_api: string; model: string }) {
+    return this.request<any>('/ia/config/llm/tester', this.json('POST', body), { ia: true, jwtForIA: true, timeout: 15000 });
+  }
 }
 const normalizeDomain = (value?: string): string => {
   const text = (value ?? '').toUpperCase();

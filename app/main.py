@@ -298,6 +298,10 @@ async def startup():
     from app.services.rag.conversation_service import purger_conversations_expirees
     purger_conversations_expirees()
 
+    # Config LLM runtime : injecter les overrides de data/llm_config.json avant le premier appel
+    from app.services.llm.llm_config_service import charger_cles_depuis_fichier
+    charger_cles_depuis_fichier()
+
     logger.info("✅ FORMA-IA API prêt à recevoir des requêtes.")
 
 

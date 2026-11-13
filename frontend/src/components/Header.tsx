@@ -11,9 +11,11 @@ import {
   AlertCircle,
   Menu,
   ArrowUpRight,
+  Settings,
 } from 'lucide-react';
 import { UserRole, AuthUser, MenuSection, ROLE_LABELS } from '../types';
 import { apiService } from '../services/api';
+import { useLanguage } from '../contexts/LanguageContext';
 
 /** Initiales (2 max) à partir du nom complet. */
 const getInitials = (name: string): string =>
@@ -65,6 +67,7 @@ export const Header: React.FC<HeaderProps> = ({
   onQuickNewInvoice,
   onNavigateToFormateurs,
 }) => {
+  const { t } = useLanguage();
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showQuickActions, setShowQuickActions] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -290,6 +293,7 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
         </>}
 
+
         {/* Notifications CV */}
         {canSeeCandidatures && <div className="relative" ref={bellRef}>
           <button
@@ -376,63 +380,70 @@ export const Header: React.FC<HeaderProps> = ({
                 aria-expanded={showUserMenu}
                 className="flex items-center gap-2.5 hover:opacity-80 transition-opacity p-1 rounded-xl hover:bg-slate-50"
               >
-                <div className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-full border border-white bg-brand-navy text-xs font-extrabold text-white shadow-sm ring-1 ring-slate-200">
+                <div className="relative flex h-9 w-9 items-center justify-center overflow-hidden rounded-full border-2 border-white bg-brand-navy text-xs font-extrabold text-white shadow-sm ring-1 ring-slate-200">
                   {avatarUrl ? <img src={avatarUrl} alt="" className="h-full w-full object-cover" /> : getInitials(authUser.nom)}
                 </div>
-                <div className="hidden md:block text-left">
-                  <div className="text-xs font-bold text-slate-800 leading-none flex items-center gap-1">
-                    <span>{authUser.nom}</span>
-                    <span className="text-[10px] px-1.5 py-0.2 bg-brand-gold/15 text-brand-navy font-extrabold rounded">
-                      {ROLE_LABELS[authUser.role]}
-                    </span>
-                  </div>
-                  <div className="text-[10px] text-slate-500 mt-0.5 truncate max-w-[130px]">
-                    {authUser.email}
-                  </div>
-                </div>
+                <span className="hidden md:inline-block text-[10px] px-1.5 py-0.5 bg-brand-gold/15 text-brand-navy font-extrabold rounded">
+                  {ROLE_LABELS[authUser.role]}
+                </span>
               </button>
 
               {/* User Dropdown Menu */}
               {showUserMenu && (
-                <div className="absolute right-0 mt-2 w-56 bg-white rounded-2xl shadow-xl border border-slate-200 p-2 z-50 animate-in fade-in duration-150">
-                  <div className="p-2 border-b border-slate-100">
-                    <div className="font-bold text-xs text-[#11162A]">{authUser.nom}</div>
-                    <div className="text-[11px] text-slate-500">{authUser.email}</div>
-                    <div className="text-[10px] text-brand-goldDark font-bold mt-1">{ROLE_LABELS[authUser.role]}</div>
+                <div className="absolute right-0 mt-2 w-64 bg-white rounded-2xl shadow-xl border border-slate-200 p-2 z-50 animate-in fade-in duration-150">
+                  {/* Profil résumé */}
+                  <div className="p-2 border-b border-slate-100 mb-1">
+                    <div className="flex items-center gap-2.5">
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-brand-navy text-xs font-extrabold text-white">
+                        {avatarUrl ? <img src={avatarUrl} alt="" className="h-full w-full object-cover" /> : getInitials(authUser.nom)}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="font-bold text-xs text-[#11162A] truncate">{authUser.nom}</div>
+                        <div className="text-[10px] text-slate-500 truncate">{authUser.email}</div>
+                        <div className="text-[10px] text-brand-goldDark font-bold">{ROLE_LABELS[authUser.role]}</div>
+                      </div>
+                    </div>
                   </div>
 
+                  {/* Mon profil */}
                   <button
                     type="button"
                     onClick={() => { setShowUserMenu(false); onNavigate('mon_profil'); }}
-                    className="mt-1 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-semibold text-slate-700 transition-colors hover:bg-emerald-50 hover:text-[#0B1F4D]"
+                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-semibold text-slate-700 transition-colors hover:bg-emerald-50 hover:text-[#0B1F4D]"
                   >
                     <User size={14} className="text-[#0B1F4D]" />
-                    <span>Mon profil</span>
+                    <span>{t('nav.profil')}</span>
                   </button>
 
+                  {/* Paramètres */}
                   <button
                     type="button"
-                    onClick={() => {
-                      setShowUserMenu(false);
-                      onOpenAuthModal('login');
-                    }}
-                    className="w-full text-left px-3 py-2 text-xs text-slate-700 hover:bg-slate-50 rounded-lg flex items-center gap-2 mt-1"
+                    onClick={() => { setShowUserMenu(false); onNavigate('parametres'); }}
+                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-50 hover:text-[#0B1F4D]"
                   >
-                    <User size={14} className="text-slate-400" />
-                    <span>Changer de compte</span>
+                    <Settings size={14} className="text-slate-500" />
+                    <span>{t('nav.parametres')}</span>
                   </button>
 
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowUserMenu(false);
-                      onLogout();
-                    }}
-                    className="w-full text-left px-3 py-2 text-xs text-red-600 hover:bg-red-50 rounded-lg flex items-center gap-2 font-bold"
-                  >
-                    <LogOut size={14} />
-                    <span>Se déconnecter</span>
-                  </button>
+                  <div className="mt-2 border-t border-slate-100 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => { setShowUserMenu(false); onOpenAuthModal('login'); }}
+                      className="w-full text-left px-3 py-2 text-xs text-slate-600 hover:bg-slate-50 rounded-lg flex items-center gap-2"
+                    >
+                      <User size={14} className="text-slate-400" />
+                      <span>{t('nav.changer_compte')}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => { setShowUserMenu(false); onLogout(); }}
+                      className="w-full text-left px-3 py-2 text-xs text-red-600 hover:bg-red-50 rounded-lg flex items-center gap-2 font-bold"
+                    >
+                      <LogOut size={14} />
+                      <span>{t('nav.deconnexion')}</span>
+                    </button>
+                  </div>
                 </div>
               )}
             </div>

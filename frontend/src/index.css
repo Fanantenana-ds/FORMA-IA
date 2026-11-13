@@ -33,6 +33,48 @@
     0% { transform: rotate(0deg); }
     100% { transform: rotate(360deg); }
   }
+  @keyframes rotateSlow {
+    0% { transform: translate(-50%, -50%) rotate(0deg); }
+    100% { transform: translate(-50%, -50%) rotate(360deg); }
+  }
+  @keyframes rotateReverse {
+    0% { transform: translate(-50%, -50%) rotate(0deg); }
+    100% { transform: translate(-50%, -50%) rotate(-360deg); }
+  }
+  @keyframes floatParticle1 {
+    0%, 100% { transform: translate(0px, 0px); opacity: 0.4; }
+    33% { transform: translate(8px, -14px); opacity: 0.7; }
+    66% { transform: translate(-6px, -8px); opacity: 0.3; }
+  }
+  @keyframes floatParticle2 {
+    0%, 100% { transform: translate(0px, 0px); opacity: 0.3; }
+    40% { transform: translate(-10px, -18px); opacity: 0.6; }
+    70% { transform: translate(6px, -6px); opacity: 0.2; }
+  }
+  @keyframes floatParticle3 {
+    0%, 100% { transform: translate(0px, 0px); opacity: 0.25; }
+    50% { transform: translate(12px, -10px); opacity: 0.5; }
+  }
+  @keyframes pulseHalo {
+    0%, 100% { opacity: 0.5; transform: scale(1); }
+    50% { opacity: 1; transform: scale(1.08); }
+  }
+  @keyframes pulseHaloAlt {
+    0%, 100% { opacity: 0.3; transform: scale(1); }
+    50% { opacity: 0.7; transform: scale(1.12); }
+  }
+  @keyframes shimmerLine {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(400%); }
+  }
+  @keyframes driftLeft {
+    0%, 100% { transform: translateX(0px) translateY(0px); }
+    50% { transform: translateX(-18px) translateY(8px); }
+  }
+  @keyframes driftRight {
+    0%, 100% { transform: translateX(0px) translateY(0px); }
+    50% { transform: translateX(18px) translateY(-10px); }
+  }
 }
 
 html {

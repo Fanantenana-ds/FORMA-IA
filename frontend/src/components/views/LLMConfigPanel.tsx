@@ -162,40 +162,8 @@ export const LLMConfigPanel: React.FC = () => {
   }
 
   return (
-    <div className="space-y-5">
-      {/* En-tête */}
-      <div className={iap}>
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-base font-semibold text-slate-800">Configuration LLM</h2>
-            <p className="mt-0.5 text-xs text-slate-500">
-              Modifiez le fournisseur IA et les clés API sans redémarrage.
-              La configuration est appliquée immédiatement.
-            </p>
-          </div>
-          <button onClick={chargerConfig} className={btn('ghost')} title="Rafraîchir">
-            <RefreshCw className="h-4 w-4" />
-          </button>
-        </div>
-
-        {/* Config active */}
-        {config && (
-          <div className="mt-4 flex flex-wrap gap-3">
-            <span className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold ${PROVIDER_COLORS[config.provider] ?? 'bg-slate-100 text-slate-700 border-slate-200'}`}>
-              <Zap className="h-3 w-3" />
-              {PROVIDER_LABELS[config.provider] ?? config.provider}
-            </span>
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs text-slate-600">
-              {config.model}
-            </span>
-            <span className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs ${config.source === 'fichier' ? 'border-blue-200 bg-blue-50 text-blue-700' : 'border-slate-200 bg-slate-50 text-slate-500'}`}>
-              {config.source === 'fichier' ? 'Config personnalisée' : 'Config .env'}
-            </span>
-          </div>
-        )}
-      </div>
-
-      {/* Formulaire */}
+    <div className="grid gap-5 lg:grid-cols-[1fr_380px]">
+      {/* Formulaire — colonne principale */}
       <div className={iap}>
         <h3 className="mb-4 text-sm font-semibold text-slate-700">Modifier la configuration</h3>
 
@@ -346,32 +314,61 @@ export const LLMConfigPanel: React.FC = () => {
         </div>
       </div>
 
-      {/* Tableau des clés définies */}
-      {config && (
+      {/* Colonne droite : config active + état des clés */}
+      <div className="space-y-5">
+        {/* Config active */}
         <div className={iap}>
-          <h3 className="mb-3 text-sm font-semibold text-slate-700">État des clés API</h3>
-          <div className="space-y-2">
-            {[
-              { key: 'groq', label: 'Groq', definie: config.cle_groq_definie },
-              { key: 'anthropic', label: 'Anthropic (Claude)', definie: config.cle_anthropic_definie },
-              { key: 'openai', label: 'OpenAI (GPT)', definie: config.cle_openai_definie },
-            ].map(({ key, label, definie }) => (
-              <div key={key} className="flex items-center justify-between rounded-lg border border-slate-100 bg-slate-50 px-3 py-2">
-                <div className="flex items-center gap-2">
-                  <span className={`h-2 w-2 rounded-full ${definie ? 'bg-emerald-500' : 'bg-slate-300'}`} />
-                  <span className="text-xs text-slate-700">{label}</span>
-                  {config.provider === key && (
-                    <span className="rounded-full bg-[#0B1F4D] px-2 py-0.5 text-[10px] font-semibold text-white">Actif</span>
-                  )}
-                </div>
-                <span className={`text-xs font-medium ${definie ? 'text-emerald-600' : 'text-slate-400'}`}>
-                  {definie ? 'Clé définie' : 'Non configurée'}
-                </span>
-              </div>
-            ))}
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold text-slate-700">Configuration active</h3>
+            <button onClick={chargerConfig} className={btn('ghost')} title="Rafraîchir">
+              <RefreshCw className="h-4 w-4" />
+            </button>
           </div>
+          {config ? (
+            <div className="flex flex-wrap gap-2">
+              <span className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold ${PROVIDER_COLORS[config.provider] ?? 'bg-slate-100 text-slate-700 border-slate-200'}`}>
+                <Zap className="h-3 w-3" />
+                {PROVIDER_LABELS[config.provider] ?? config.provider}
+              </span>
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs text-slate-600">
+                {config.model}
+              </span>
+              <span className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs ${config.source === 'fichier' ? 'border-blue-200 bg-blue-50 text-blue-700' : 'border-slate-200 bg-slate-50 text-slate-500'}`}>
+                {config.source === 'fichier' ? 'Config personnalisée' : 'Config .env'}
+              </span>
+            </div>
+          ) : (
+            <p className="text-xs text-slate-400">Chargement...</p>
+          )}
         </div>
-      )}
+
+        {/* Tableau des clés définies */}
+        {config && (
+          <div className={iap}>
+            <h3 className="mb-3 text-sm font-semibold text-slate-700">État des clés API</h3>
+            <div className="space-y-2">
+              {[
+                { key: 'groq', label: 'Groq', definie: config.cle_groq_definie },
+                { key: 'anthropic', label: 'Anthropic (Claude)', definie: config.cle_anthropic_definie },
+                { key: 'openai', label: 'OpenAI (GPT)', definie: config.cle_openai_definie },
+              ].map(({ key, label, definie }) => (
+                <div key={key} className="flex items-center justify-between rounded-lg border border-slate-100 bg-slate-50 px-3 py-2">
+                  <div className="flex items-center gap-2">
+                    <span className={`h-2 w-2 rounded-full ${definie ? 'bg-emerald-500' : 'bg-slate-300'}`} />
+                    <span className="text-xs text-slate-700">{label}</span>
+                    {config.provider === key && (
+                      <span className="rounded-full bg-[#0B1F4D] px-2 py-0.5 text-[10px] font-semibold text-white">Actif</span>
+                    )}
+                  </div>
+                  <span className={`text-xs font-medium ${definie ? 'text-emerald-600' : 'text-slate-400'}`}>
+                    {definie ? 'Clé définie' : 'Non configurée'}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 };

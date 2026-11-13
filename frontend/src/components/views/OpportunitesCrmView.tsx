@@ -1,11 +1,13 @@
-import React, { useState, useEffect, useRef } from 'react';
+﻿import React, { useState, useEffect, useRef } from 'react';
+import { PageHeader } from '../PageHeader';
 import { apiService } from '../../services/api';
 import {
   Sparkles,
   Download,
   Check,
   Loader2,
-  ArrowRight
+  ArrowRight,
+  Zap
 } from 'lucide-react';
 import { MenuSection, OpportuniteCRM } from '../../types';
 import { AcceptedMarket } from '../../types/tdr';
@@ -595,10 +597,18 @@ export const OpportunitesCrmView: React.FC<OpportunitesCrmViewProps> = ({
   };
 
   return <div className="space-y-6 animate-in fade-in duration-300">
-    <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
-      <div><div className="flex items-center gap-2 mb-1"><span className="px-2.5 py-0.5 rounded text-[11px] font-extrabold bg-blue-100 text-blue-800">Cabinet BPO & Projets Contractuels</span><span className="text-xs text-slate-400 font-medium">• M2 TDR · M3 offres</span></div><h1 className="text-2xl font-extrabold text-[#11162A]">Opportunités & Contrats CRM</h1><p className="text-slate-600 text-xs mt-1">Préparez les documents contractuels à partir d’une opportunité, puis faites valider chaque volet.</p></div>
-      {generationBusy && <div className="flex items-center gap-2 text-xs font-semibold text-[#0B1F4D]"><Loader2 className="animate-spin" size={16}/>{activeAction === 'tdr' || activeAction === 'technical' || activeAction === 'financial' ? 'Génération en cours…' : 'Enregistrement…'}</div>}
-    </div>
+    <PageHeader
+      icon={<Zap size={22} />}
+      badge="M2-M3 · TDR & Offres"
+      title="Opportunites & Contrats CRM"
+      subtitle="Preparez les documents contractuels a partir d'une opportunite, puis faites valider chaque volet."
+      actions={generationBusy ? (
+        <div className="flex items-center gap-1.5 text-xs font-semibold text-white/80">
+          <Loader2 className="animate-spin" size={14}/>
+          {activeAction === 'tdr' || activeAction === 'technical' || activeAction === 'financial' ? 'Generation en cours...' : 'Enregistrement...'}
+        </div>
+      ) : undefined}
+    />
 
     {generationError && <div role="alert" className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs font-semibold">{generationError}</div>}
     {deleteError && <div role="alert" className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs font-semibold">{deleteError}</div>}

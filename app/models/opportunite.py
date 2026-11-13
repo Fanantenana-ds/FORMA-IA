@@ -27,6 +27,8 @@ class Domaine(str, Enum):
 class StatutOpportunite(str, Enum):
     EN_ATTENTE = "EN_ATTENTE"
     ANALYSEE = "ANALYSEE"
+    DEVIS_TRANSMIS = "DEVIS_TRANSMIS"
+    GAGNEE = "GAGNEE"
     ARCHIVEE = "ARCHIVEE"
 
 class Opportunite(TenantOwned, Base):

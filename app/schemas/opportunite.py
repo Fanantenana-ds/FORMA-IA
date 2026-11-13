@@ -44,6 +44,9 @@ class OpportuniteUpdate(BaseModel):
     echeance: datetime | None = None
     domaine: str
 
+class OpportuniteStatutUpdate(BaseModel):
+    statut: StatutOpportunite
+
 class OpportuniteAnalyseRequest(BaseModel):
     contenu: str | None = None
     url: HttpUrl | None = None

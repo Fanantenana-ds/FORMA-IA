@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+﻿import React, { useState } from 'react';
 import {
   Calendar,
   Users,
@@ -14,8 +14,10 @@ import {
   Plus,
   WalletCards,
   BadgeCheck,
-  CalendarCheck
+  CalendarCheck,
+  LayoutDashboard
 } from 'lucide-react';
+import { PageHeader } from '../PageHeader';
 import {
   ResponsiveContainer,
   Tooltip,
@@ -90,53 +92,23 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   return (
     <div className="space-y-8 pb-12 animate-in fade-in duration-300">
       {/* Top Title Banner */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-slate-200/80 shadow-xs">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-brand-gold/15 text-brand-navy">
-              Vue {DASHBOARD_VIEW_LABELS[currentRole]}
-            </span>
-            <span className="text-xs text-slate-500">• Vue de pilotage consolidée</span>
+      <PageHeader
+        icon={<LayoutDashboard size={22} />}
+        badge={`Vue ${DASHBOARD_VIEW_LABELS[currentRole]}`}
+        title="Tableau de bord"
+        subtitle="Suivez l'activite de formation, les opportunites commerciales et les principaux indicateurs financiers."
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            {currentRole === 'Dir.' && <>
+              <button type="button" onClick={onOpenNewSession} className="inline-flex items-center gap-1.5 rounded-xl bg-white/15 border border-white/25 px-3 py-2 text-xs font-bold text-white hover:bg-white/25 transition"><Plus size={13} /> Session</button>
+              <button type="button" onClick={onOpenNewOpportunity} className="inline-flex items-center gap-1.5 rounded-xl bg-brand-gold/20 border border-brand-gold/40 px-3 py-2 text-xs font-bold text-brand-goldLight hover:bg-brand-gold/30 transition"><Plus size={13} /> Opportunité</button>
+            </>}
+            <button type="button" onClick={handleRefreshClick} disabled={isRefreshing} className="flex h-8 w-8 items-center justify-center rounded-xl bg-white/10 border border-white/20 text-white hover:bg-white/20 transition">
+              <RefreshCw size={14} className={isRefreshing ? 'animate-spin' : ''} />
+            </button>
           </div>
-          <h1 className="text-2xl md:text-3xl font-extrabold text-[#11162A] tracking-tight">
-            Tableau de bord
-          </h1>
-          <p className="text-slate-600 text-sm mt-1 max-w-2xl font-normal leading-relaxed">
-            Suivez l’activité de formation, les opportunités commerciales et les principaux indicateurs financiers.
-          </p>
-        </div>
-
-        {/* Controls */}
-        <div className="flex flex-wrap items-center gap-2.5 self-start md:self-center">
-          {currentRole === 'Dir.' && <>
-            <button
-              type="button"
-              onClick={onOpenNewSession}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-brand-navy px-3 py-2.5 text-xs font-bold text-white shadow-sm transition hover:bg-brand-darkNavy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-gold focus-visible:ring-offset-2"
-            >
-              <Plus size={14} /> Nouvelle session
-            </button>
-            <button
-              type="button"
-              onClick={onOpenNewOpportunity}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-brand-gold/50 bg-brand-gold/10 px-3 py-2.5 text-xs font-bold text-brand-navy transition hover:bg-brand-gold/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-gold focus-visible:ring-offset-2"
-            >
-              <Plus size={14} /> Nouvelle opportunité
-            </button>
-          </>}
-          <button
-            type="button"
-            onClick={handleRefreshClick}
-            disabled={isRefreshing}
-            aria-label={isRefreshing ? 'Actualisation des données' : 'Actualiser les données du tableau de bord'}
-            aria-busy={isRefreshing}
-            className="p-2.5 text-slate-600 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl transition-all shadow-xs active:scale-95"
-            title="Rafraîchir les données"
-          >
-            <RefreshCw size={16} className={isRefreshing ? 'animate-spin text-brand-goldDark' : ''} />
-          </button>
-        </div>
-      </div>
+        }
+      />
 
       {isLoading && (
         <div className="p-3 rounded-xl bg-blue-50 border border-blue-200 text-blue-800 text-xs font-semibold flex items-center gap-2">
@@ -433,7 +405,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-brand-navy shadow-sm ring-1 ring-slate-200"><WalletCards size={22} /></span>
               <div className="mt-3 text-[11px] font-bold uppercase tracking-wide text-slate-500">Suivi prêt à démarrer</div>
               <h4 className="mt-1 text-sm font-bold text-slate-800">Aucune facture enregistrée</h4>
-              <p className="mt-1 max-w-xs text-xs leading-relaxed text-slate-600">Après la création d’un devis ou d’une facture, les montants et les statuts apparaîtront dans ce panneau.</p>
+              <p className="mt-1 max-w-xs text-xs leading-relaxed text-slate-600">Après la création d'un devis ou d'une facture, les montants et les statuts apparaîtront dans ce panneau.</p>
               <button type="button" onClick={() => onNavigateTo('facturation_devis')} className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-[#06132F] px-3 py-2 text-xs font-bold text-white transition hover:bg-[#06132F] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#06132F] focus-visible:ring-offset-2">
                 Ouvrir la facturation <ArrowUpRight size={13} />
               </button>

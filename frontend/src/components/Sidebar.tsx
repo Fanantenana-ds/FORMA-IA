@@ -140,29 +140,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
             Pilotage & Veille
           </div>
           <div className="space-y-1">
-            {navItem(
-              'dossiers_formation',
-              'Dossiers de formation',
-              <Workflow size={18} />
-            )}
-            {navItem(
-              'tableau_de_bord',
-              'Tableau de bord',
-              <LayoutDashboard size={18} />,
-              'Vue Rôle'
-            )}
-            {navItem(
-              'veille_marche',
-              'Veille marché IA',
-              <Search size={18} />,
-              'IA'
-            )}
-            {navItem(
-              'opportunites_crm',
-              'Génération TDR et OT',
-              <Zap size={18} />,
-              'IA'
-            )}
+            {navItem('dossiers_formation', 'Dossiers de formation', <Workflow size={18} />)}
+            {navItem('tableau_de_bord', 'Tableau de bord', <LayoutDashboard size={18} />, 'Vue Rôle')}
+            {navItem('veille_marche', 'Veille marché IA', <Search size={18} />, 'IA')}
+            {navItem('opportunites_crm', 'Génération TDR et OT', <Zap size={18} />, 'IA')}
           </div>
         </div>}
 
@@ -172,52 +153,22 @@ export const Sidebar: React.FC<SidebarProps> = ({
             Ressources Humaines
           </div>
           <div className="space-y-1">
-            {navItem(
-              'formateurs_staff',
-              'Formateurs & Staff',
-              <GraduationCap size={18} />
-            )}
-            {navItem(
-              'evaluation_competences',
-              'Évaluation Compétences',
-              <Award size={18} />
-            )}
+            {navItem('formateurs_staff', 'Formateurs & Staff', <GraduationCap size={18} />)}
+            {navItem('evaluation_competences', 'Évaluation Compétences', <Award size={18} />)}
           </div>
         </div>}
 
-        {/* FORMATION & FACTURATION */}
+        {/* FORMATION & GESTION */}
         <div>
           <div className="px-3 mb-2 text-[11px] font-bold tracking-wider uppercase text-slate-400">
             Formation & Gestion
           </div>
           <div className="space-y-1">
-            {navItem(
-              'sessions_groupes',
-              'Sessions & Groupes',
-              <CalendarDays size={18} />
-            )}
-            {navItem(
-              'suivi_presences',
-              'Suivi des présences',
-              <UserCheck size={18} />
-            )}
-            {navItem(
-              'facturation_devis',
-              'Facturation & Devis',
-              <ReceiptText size={18} />
-            )}
-            {navItem(
-              'espace_ia',
-              'Espace IA & Documents',
-              <BrainCircuit size={18} />,
-              pendingReviewCount ? `${pendingReviewCount} à valider` : 'IA',
-              pendingReviewCount > 0
-            )}
-            {navItem(
-              'gestion_utilisateurs',
-              'Gestion des utilisateurs',
-              <UserCog size={18} />
-            )}
+            {navItem('sessions_groupes', 'Sessions & Groupes', <CalendarDays size={18} />)}
+            {navItem('suivi_presences', 'Suivi des présences', <UserCheck size={18} />)}
+            {navItem('facturation_devis', 'Facturation & Devis', <ReceiptText size={18} />)}
+            {navItem('espace_ia', 'Espace IA & Documents', <BrainCircuit size={18} />, pendingReviewCount ? `${pendingReviewCount} à valider` : 'IA', pendingReviewCount > 0)}
+            {navItem('gestion_utilisateurs', 'Gestion des utilisateurs', <UserCog size={18} />)}
           </div>
         </div>
       </div>

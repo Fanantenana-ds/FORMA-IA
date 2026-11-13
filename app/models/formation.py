@@ -26,9 +26,9 @@ class Session(TenantOwned, Base):
     __tablename__ = "sessions"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    titre = Column(String(50), nullable=False)
+    titre = Column(String(200), nullable=False)
     formation_code = Column(String(50), nullable=True)
-    client = Column(String(50), nullable=True)
+    client = Column(String(200), nullable=True)
     lieu = Column(String(200), nullable=True)
     nb_participants_max = Column(Integer, nullable=True)
     date_debut = Column(Date, nullable=False)

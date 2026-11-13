@@ -193,6 +193,40 @@ class GroqProvider(LLMProvider):
             logger.exception(f"❌ [GroqProvider] Erreur inattendue : {e}")
             raise LLMError(f"Erreur Groq inattendue : {e}") from e
 
+    async def generate_stream(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        temperature: float = 0.4,
+        max_tokens: int = 1500,
+        reasoning_effort: str | None = None,
+    ):
+        """Streams response tokens as an async generator (plain text, no json_mode)."""
+        if not self.is_available():
+            raise LLMNotAvailableError("GroqProvider non disponible (clé API manquante).")
+        kwargs: dict[str, Any] = {
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "stream": True,
+        }
+        if reasoning_effort:
+            kwargs["reasoning_effort"] = reasoning_effort
+        try:
+            stream = await self.client.chat.completions.create(**kwargs)
+            async for chunk in stream:
+                if chunk.choices:
+                    delta = chunk.choices[0].delta.content
+                    if delta:
+                        yield delta
+        except (APITimeoutError, APIConnectionError, RateLimitError, APIError) as e:
+            logger.error(f"❌ [GroqProvider] Erreur streaming : {e}")
+            raise LLMError(f"Erreur streaming Groq : {e}") from e
+
     def get_model_name(self) -> str:
         return self.model
 

@@ -155,7 +155,7 @@ async def sync_preparation_to_backend(
         or "Formation",
         "date_debut": dates[0],
         "date_fin": dates[-1],
-        "statut": "brouillon",
+        "statut": "BROUILLON",
     }
     if client:
         session_payload["client"] = client

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Award, CheckCircle2, Star, BarChart2, ThumbsUp, Info, Clock, Sparkles, TrendingUp } from 'lucide-react';
+import { PageHeader } from '../PageHeader';
 import { Formateur } from '../../types';
 import { formateurFullName, specialitesList } from '../../services/formateurMapping';
 import { apiService } from '../../services/api';
@@ -138,42 +139,21 @@ export const EvaluationCompetencesView: React.FC<EvaluationCompetencesViewProps>
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
-      {/* Header Banner */}
-      <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="px-2.5 py-0.5 rounded text-[11px] font-extrabold bg-[#0B1F4D]/10 text-[#0B1F4D]">
-              Assurance Qualité
-            </span>
-            <span className="text-xs text-slate-400 font-medium">• Évaluation des formateurs</span>
-          </div>
-          <h1 className="text-2xl font-extrabold text-[#11162A]">Évaluation & Compétences</h1>
-          <p className="text-slate-600 text-xs mt-1">
-            Consultez les retours post-formation, les acquis mesurés et les recommandations disponibles pour chaque formateur.
-          </p>
-        </div>
+      <PageHeader
+        icon={<Award size={22} />}
+        badge="Assurance Qualité"
+        title="Évaluation & Compétences"
+        subtitle="Consultez les retours post-formation, les acquis mesurés et les recommandations pour chaque formateur."
+      />
 
-        {/* Tab Selector */}
-        <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl text-xs font-bold shrink-0">
-          <button
-            onClick={() => setActiveTab('par_formateur')}
-            className={`px-4 py-2.5 rounded-lg transition-all flex items-center gap-2 cursor-pointer ${
-              activeTab === 'par_formateur' ? 'bg-[#0B1F4D] text-white shadow-xs' : 'text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            <Star size={15} />
-            <span>Par formateur</span>
-          </button>
-          <button
-            onClick={() => setActiveTab('matrice')}
-            className={`px-4 py-2.5 rounded-lg transition-all flex items-center gap-2 cursor-pointer ${
-              activeTab === 'matrice' ? 'bg-[#0B1F4D] text-white shadow-xs' : 'text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            <BarChart2 size={15} />
-            <span>Matrice d'acquisition</span>
-          </button>
-        </div>
+      {/* Barre d'onglets */}
+      <div className="flex items-center gap-1 rounded-2xl border border-slate-200 bg-white px-3 py-2 shadow-xs">
+        <button onClick={() => setActiveTab('par_formateur')} className={`flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-semibold transition-all ${activeTab === 'par_formateur' ? 'bg-brand-navy text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-800'}`}>
+          <Star size={13} /><span>Par formateur</span>
+        </button>
+        <button onClick={() => setActiveTab('matrice')} className={`flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-semibold transition-all ${activeTab === 'matrice' ? 'bg-brand-navy text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-800'}`}>
+          <BarChart2 size={13} /><span>Matrice d'acquisition</span>
+        </button>
       </div>
 
       {/* Stats globales */}

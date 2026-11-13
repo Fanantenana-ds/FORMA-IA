@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
+﻿import React, { useEffect, useMemo, useState } from 'react';
+import { PageHeader } from '../PageHeader';
 import {
   Search,
   Sparkles,
@@ -130,7 +131,7 @@ export const VeilleMarcheView: React.FC<VeilleMarcheViewProps> = ({
       setActiveTab('acceptes');
       setSearchNote(acceptance.sessionError
         ? `Marché accepté, mais la session automatique n'a pas pu être créée : ${acceptance.sessionError}`
-        : 'Marché accepté et session planifiée une semaine après l’acceptation.');
+        : "Marché accepté et session planifiée une semaine après l'acceptation.");
     } catch (err) {
       setErrorMsg(describeVeilleError(err, 'accept'));
     } finally {
@@ -147,43 +148,21 @@ export const VeilleMarcheView: React.FC<VeilleMarcheViewProps> = ({
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
-      {/* Header Banner */}
-      <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-[#0B1F4D]/10 text-[#0B1F4D]">
-              Intelligence Artificielle & Veille
-            </span>
-            <span className="text-xs text-slate-400 font-medium">• Analyseur automatisé de marché</span>
-          </div>
-          <h1 className="text-2xl font-extrabold text-[#11162A]">Veille marché IA</h1>
-          <p className="text-slate-600 text-xs mt-1">
-            Repérez les appels d’offres et les besoins de formation, puis examinez leur pertinence avant de les intégrer au suivi commercial.
-          </p>
-        </div>
+      <PageHeader
+        icon={<Search size={22} />}
+        badge="M1 · Veille IA"
+        title="Veille marché IA"
+        subtitle="Repérez les appels d'offres et les besoins de formation, puis examinez leur pertinence avant de les integrer au suivi commercial."
+      />
 
-        {/* Tab Selector */}
-        <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl text-xs font-bold shrink-0">
-          <button
-            onClick={() => setActiveTab('trouves')}
-            className={`px-4 py-2.5 rounded-lg transition-all flex items-center gap-2 cursor-pointer ${
-              activeTab === 'trouves' ? 'bg-white text-[#11162A] shadow-xs' : 'text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            <Search size={15} className="text-[#0B1F4D]" />
-            <span>Marchés Trouvés ({foundList.length})</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('acceptes')}
-            className={`px-4 py-2.5 rounded-lg transition-all flex items-center gap-2 cursor-pointer ${
-              activeTab === 'acceptes' ? 'bg-[#0B1F4D] text-white shadow-xs' : 'text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            <CheckCircle2 size={15} />
-            <span>Marchés Acceptés ({acceptedList.length})</span>
-          </button>
-        </div>
+      {/* Barre d'onglets */}
+      <div className="flex items-center gap-1 rounded-2xl border border-slate-200 bg-white px-3 py-2 shadow-xs">
+        <button onClick={() => setActiveTab('trouves')} className={`flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-semibold transition-all ${activeTab === 'trouves' ? 'bg-brand-navy text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-800'}`}>
+          <Search size={13} /><span>Marchés Trouvés ({foundList.length})</span>
+        </button>
+        <button onClick={() => setActiveTab('acceptes')} className={`flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-semibold transition-all ${activeTab === 'acceptes' ? 'bg-brand-navy text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-800'}`}>
+          <CheckCircle2 size={13} /><span>Marchés Acceptés ({acceptedList.length})</span>
+        </button>
       </div>
 
       {/* Choix du mode : recherche manuelle ou détection automatique */}

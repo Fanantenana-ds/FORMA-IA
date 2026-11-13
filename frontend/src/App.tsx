@@ -513,7 +513,7 @@ export default function App() {
           onQuickNewOpportunity={() => setIsNewOppModalOpen(true)}
           onQuickNewSession={() => setIsNewSessionModalOpen(true)}
           onQuickNewInvoice={() => openInvoiceModal()}
-          onNavigateToFormateurs={() => navigateToSection('formateurs_staff')}
+          currentSection={currentSection}
         />
 
         <main className="flex-1 w-full max-w-[1600px] 2xl:max-w-[1760px] mx-auto p-3 sm:p-6 lg:p-7 2xl:px-9 overflow-y-auto">

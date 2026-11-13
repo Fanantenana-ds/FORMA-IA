@@ -68,7 +68,11 @@ class FakeBackend:
                 "absent": False}
 
     def posts(self):
-        return [c for c in self.calls if c[0] == "POST"]
+        """Créations de documents (hors validation automatique du document)."""
+        return [c for c in self.calls if c[0] == "POST" and not c[1].endswith("/valider")]
+
+    def validations(self):
+        return [c for c in self.calls if c[0] == "POST" and c[1].endswith("/valider")]
 
 
 @pytest.fixture
@@ -154,6 +158,8 @@ def test_sync_approuve_envoie_et_une_seule_fois(monkeypatch, backend):
     deuxieme = run(orch.synchroniser_backend(r1["_review_id"], opportunite_id=opp_id))
     assert deuxieme["already_synced"] is True
     assert len(backend.posts()) == 1
+    assert len(backend.validations()) == 1
+    assert backend.validations()[0][2] == {"approuve": True}
 
     # force=True : nouvel envoi volontaire
     run(orch.synchroniser_backend(r1["_review_id"], opportunite_id=opp_id, force=True))

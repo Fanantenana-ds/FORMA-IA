@@ -333,6 +333,7 @@ class ApiService {
     return mapSession(raw, trainer ? formateurFullName(trainer) : form.formateur);
   }
   async getFactures(): Promise<DevisFacture[]> { return arr<any>(await this.request('/factures?skip=0&limit=100')).map(mapInvoice); }
+  async getDossierEtat(opportunityId: string) { return this.request<any>(`/dossiers/${encodeURIComponent(opportunityId)}/etat`); }
   async getOffersByOpportunity(opportunityId: string) {
     return this.request<any>(`/offres${queryString({ opportunite_id: opportunityId, skip: '0', limit: '100' })}`);
   }

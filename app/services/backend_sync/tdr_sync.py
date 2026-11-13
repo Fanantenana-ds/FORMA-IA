@@ -118,4 +118,14 @@ async def sync_tdr_to_backend(
         verify_path="/documents/{id}",
         label="TDR",
     )
+    if sent["sent"] and sent["resource_id"]:
+        # Le TDR n'est synchronisé qu'après approbation humaine de la revue :
+        # le document enregistré porte donc déjà ce statut validé.
+        validation = await base_sync.backend_request(
+            "POST", f"/documents/{sent['resource_id']}/valider", json={"approuve": True},
+        )
+        if not validation["ok"]:
+            logger.warning(
+                "⚠️ TDR enregistré mais statut « validé » non appliqué : %s", validation["error"]
+            )
     return _legacy(sent)

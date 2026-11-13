@@ -19,7 +19,7 @@ type Props = {
 };
 type Dossier = { key: string; opportunity?: OpportuniteCRM; session?: Session };
 type Review = Record<string, any>;
-type Stage = { title: string; detail: string; state: 'done' | 'pending' | 'future' | 'warning'; reviewId?: string };
+type Stage = { title: string; detail: string; state: 'done' | 'pending' | 'future' | 'warning'; reviewId?: string; cle?: string; cible?: MenuSection };
 
 const asArray = (value: any, key?: string): any[] => {
   const list = Array.isArray(value) ? value : key ? value?.[key] : value;
@@ -74,6 +74,12 @@ export const DossiersFormationView: React.FC<Props> = ({ opportunites, sessions,
   const [preparationNotice, setPreparationNotice] = useState('');
   const [markingWon, setMarkingWon] = useState(false);
   const [reviews, setReviews] = useState<Review[]>([]);
+  const [dossierEtat, setDossierEtat] = useState<any>(null);
+  const [sessionStart, setSessionStart] = useState('');
+  const [sessionEnd, setSessionEnd] = useState('');
+  const [sessionPlace, setSessionPlace] = useState('');
+  const [creatingSession, setCreatingSession] = useState(false);
+  const [sessionError, setSessionError] = useState('');
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [detailError, setDetailError] = useState('');
   const [loadingReviews, setLoadingReviews] = useState(false);
@@ -107,13 +113,14 @@ export const DossiersFormationView: React.FC<Props> = ({ opportunites, sessions,
     setPreparationRoomRate('');
     setPreparationError('');
     setPreparationNotice('');
+    setSessionStart(''); setSessionEnd(''); setSessionPlace(''); setSessionError('');
   }, [selectedKey]);
 
   const refreshDetail = useCallback(async () => {
     if (!selected) return;
     setLoadingDetail(true); setDetailError('');
     setOffers([]); setParticipants([]); setSupports([]); setEligibility(null);
-    setPreparationProject(null); setPreparationBudget(null); setPreparationSchedule([]);
+    setPreparationProject(null); setPreparationBudget(null); setPreparationSchedule([]); setDossierEtat(null);
     const sessionId = selected.session?.id;
     const opportunityId = selected.opportunity?.id;
     const tasks: Promise<any>[] = [
@@ -122,9 +129,13 @@ export const DossiersFormationView: React.FC<Props> = ({ opportunites, sessions,
       sessionId ? apiService.getSupports({ session_id: sessionId }) : Promise.resolve({ data: [] }),
       sessionId ? apiService.getM6Eligibility(sessionId) : Promise.resolve(null),
       opportunityId ? apiService.getProjects() : Promise.resolve([]),
+      opportunityId ? apiService.getDossierEtat(opportunityId) : Promise.resolve(null),
     ];
     const results = await Promise.allSettled(tasks);
-    const errors = results.filter(result => result.status === 'rejected');
+    const labels = ['offres', 'participants', 'supports', 'éligibilité', 'projets', 'état du dossier'];
+    // L'éligibilité est refusée (409) tant qu'aucune séance n'est planifiée : état normal, pas une panne.
+    const errors = results.map((result, index) => ({ result, index }))
+      .filter(({ result, index }) => result.status === 'rejected' && index !== 3);
     if (results[0].status === 'fulfilled') {
       const loadedOffers = asArray(results[0].value, 'data').length ? asArray(results[0].value, 'data') : asArray(results[0].value, 'offres');
       setOffers(loadedOffers);
@@ -148,7 +159,8 @@ export const DossiersFormationView: React.FC<Props> = ({ opportunites, sessions,
         if (scheduleResult.status === 'fulfilled') setPreparationSchedule(asArray(scheduleResult.value));
       }
     }
-    if (errors.length) setDetailError(`${errors.length} donnée(s) n’ont pas pu être chargée(s). Le reste du dossier reste consultable.`);
+    if (results[5].status === 'fulfilled') setDossierEtat(results[5].value);
+    if (errors.length) setDetailError(`Données non chargées : ${errors.map(({ index }) => labels[index]).join(', ')}. Le reste du dossier reste consultable.`);
     setLoadingDetail(false);
   }, [selected]);
 
@@ -231,7 +243,7 @@ export const DossiersFormationView: React.FC<Props> = ({ opportunites, sessions,
   const attestations = latest('agent_5_attestations');
   const report = latest('agent_6_report');
 
-  const stages: Stage[] = selected ? [
+  const clientStages: Stage[] = selected ? [
     { title: 'Opportunité identifiée', detail: selected.opportunity ? `${selected.opportunity.entreprise} · ${selected.opportunity.domaineIA} · ${selected.opportunity.etape}` : 'Session sans opportunité rattachée par identifiant.', state: selected.opportunity ? 'done' : 'warning' },
     { title: 'TDR', detail: tdrReview ? `${statusLabel(tdrReview.status)} · ${tdrReview.summary ?? tdrReview.review_id}` : selected.opportunity ? 'Aucune revue TDR reliée à cette opportunité.' : 'Lien opportunité absent : TDR non rattachable automatiquement.', state: tdrReview?.status === 'approved' ? 'done' : tdrReview ? 'pending' : selected.opportunity ? 'pending' : 'warning', reviewId: reviewId(tdrReview) },
     { title: 'Offre technique', detail: offers.some(item => item.trame_technique) ? `${offers.filter(item => item.trame_technique).length} version(s) enregistrée(s) dans le Backend` : technicalReview ? `${statusLabel(technicalReview.status)} · ${technicalReview.summary ?? technicalReview.review_id}` : 'Aucune offre technique enregistrée ou revue IA reliée.', state: offers.some(item => item.trame_technique) ? 'done' : technicalReview ? technicalReview.status === 'approved' ? 'done' : 'pending' : selected.opportunity ? 'pending' : 'future', reviewId: reviewId(technicalReview) },
@@ -245,6 +257,28 @@ export const DossiersFormationView: React.FC<Props> = ({ opportunites, sessions,
     { title: 'Rapport final', detail: report ? `${statusLabel(report.status)} · ${report.summary ?? report.review_id}` : session ? 'Aucun rapport final relié à cette session.' : 'Disponible après la formation.', state: report?.status === 'approved' ? 'done' : report ? 'pending' : session?.statut === 'Terminée' ? 'pending' : 'future', reviewId: reviewId(report) },
     { title: 'Facturation', detail: session ? invoices.length ? `${invoices.length} document(s) de facturation lié(s) à la session` : 'Aucune facture liée à cette session.' : 'Disponible après création de la session.', state: invoices.length ? 'done' : session ? 'pending' : 'future' },
   ] : [];
+
+  const reviewParCle: Record<string, Review | undefined> = {
+    tdr: tdrReview, offre_technique: technicalReview, offre_financiere: financialReview,
+    preparation: preparationReview, attestations,
+  };
+  const serverStages: Stage[] | null = dossierEtat?.etapes && (!selected?.session || dossierEtat.session_id === selected.session.id)
+    ? [
+      ...dossierEtat.etapes.map((etape: any): Stage => {
+        const review = reviewParCle[etape.cle];
+        // La validation IA fait foi : une revue approuvée = étape terminée, même si la base n'est pas encore synchronisée.
+        if (review?.status === 'approved') {
+          return { title: etape.titre, detail: `${statusLabel(review.status)} · ${review.summary ?? review.review_id}`, state: 'done', cle: etape.cle, cible: etape.cible };
+        }
+        return {
+          title: etape.titre, detail: etape.detail, state: etape.etat, cle: etape.cle, cible: etape.cible,
+          reviewId: etape.etat === 'done' || review?.status !== 'pending_review' ? undefined : reviewId(review),
+        };
+      }),
+      ...clientStages.filter(stage => stage.title === 'Rapport final'),
+    ]
+    : null;
+  const stages: Stage[] = serverStages ?? clientStages;
 
   // Phase du dossier : Prospection si l'opportunité n'est pas encore "Gagnée"
   const opportunityEtape = selected?.opportunity?.etape;
@@ -269,6 +303,27 @@ export const DossiersFormationView: React.FC<Props> = ({ opportunites, sessions,
     } finally {
       setMarkingWon(false);
     }
+  };
+
+  const canCreateSession = Boolean(selected?.opportunity && !selected.session && selected.opportunity.etape === 'Gagnée' && canManagePreparation);
+  const createSessionFromOpportunity = async () => {
+    const opportunity = selected?.opportunity;
+    if (!opportunity) return;
+    const start = sessionStart || String(preparationProject?.date_debut ?? '').slice(0, 10);
+    const end = sessionEnd || String(preparationProject?.date_fin ?? '').slice(0, 10);
+    if (!start || !end || end < start) { setSessionError('Renseignez des dates valides (la fin ne peut pas précéder le début).'); return; }
+    setCreatingSession(true); setSessionError('');
+    try {
+      await apiService.createSession({
+        intitule: opportunity.besoinFormation || `Formation ${opportunity.entreprise}`,
+        client: opportunity.entreprise, opportuniteId: opportunity.id,
+        dates: start, dateFin: end, lieu: sessionPlace || undefined,
+        capacityMax: opportunity.participantsEstimes || undefined,
+      });
+      onRefreshData();
+    } catch (error) {
+      setSessionError(error instanceof Error ? error.message : 'Création de la session impossible.');
+    } finally { setCreatingSession(false); }
   };
 
   const openReview = (reviewId?: string) => {
@@ -454,6 +509,21 @@ export const DossiersFormationView: React.FC<Props> = ({ opportunites, sessions,
               </div>
               {detailError && <div className="mt-4 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800"><AlertCircle size={15} /> {detailError}</div>}
             </div>
+            {canCreateSession && !loadingDetail && (
+              <div className="mx-5 mt-4 rounded-xl border border-slate-200 bg-white p-4">
+                <div className="text-sm font-bold text-brand-navy">Créer la session de formation</div>
+                <p className="mt-1 text-xs text-slate-500">L’opportunité est gagnée : la session reprend le client, l’intitulé et l’effectif estimé du dossier.{preparationProject?.date_debut ? ' Les dates viennent de la préparation.' : ''}</p>
+                <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                  <label className="text-xs font-semibold text-slate-600">Début<input type="date" value={sessionStart || String(preparationProject?.date_debut ?? '').slice(0, 10)} onChange={e => setSessionStart(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" /></label>
+                  <label className="text-xs font-semibold text-slate-600">Fin<input type="date" value={sessionEnd || String(preparationProject?.date_fin ?? '').slice(0, 10)} onChange={e => setSessionEnd(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" /></label>
+                  <label className="text-xs font-semibold text-slate-600">Lieu<input value={sessionPlace} onChange={e => setSessionPlace(e.target.value)} placeholder="Facultatif" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" /></label>
+                </div>
+                {sessionError && <p className="mt-2 text-xs font-semibold text-red-600">{sessionError}</p>}
+                <button type="button" disabled={creatingSession} onClick={() => void createSessionFromOpportunity()} className="mt-3 inline-flex items-center gap-2 rounded-lg bg-brand-gold px-4 py-2 text-sm font-bold text-brand-darkNavy hover:bg-brand-goldDark disabled:opacity-60">
+                  {creatingSession ? <Loader2 size={15} className="animate-spin" /> : <GraduationCap size={15} />} Créer la session
+                </button>
+              </div>
+            )}
             {loadingDetail || loadingReviews ? <div className="flex items-center gap-2 p-5 text-sm text-slate-500"><Loader2 size={17} className="animate-spin" /> Chargement des éléments rattachés…</div> : null}
 
             {/* Prochaine action recommandée */}
@@ -467,9 +537,13 @@ export const DossiersFormationView: React.FC<Props> = ({ opportunites, sessions,
                   <div className="mt-0.5 text-sm font-bold text-brand-navy truncate">{nextPendingStage.title}</div>
                   <div className="text-xs text-slate-600 truncate">{nextPendingStage.detail}</div>
                 </div>
-                {nextPendingStage.reviewId && (
+                {nextPendingStage.reviewId ? (
                   <button onClick={() => openReview(nextPendingStage.reviewId)} className="shrink-0 rounded-lg bg-brand-navy px-3 py-2 text-xs font-bold text-white hover:bg-brand-darkNavy transition-colors">
                     Valider →
+                  </button>
+                ) : nextPendingStage.cible && (
+                  <button onClick={() => onNavigateTo(nextPendingStage.cible!)} className="shrink-0 rounded-lg bg-brand-navy px-3 py-2 text-xs font-bold text-white hover:bg-brand-darkNavy transition-colors">
+                    Ouvrir →
                   </button>
                 )}
               </div>

@@ -338,6 +338,9 @@ class ApiService {
   }
   async getProjectBudget(projectId: string) { return this.request<any>(`/projets/${encodeURIComponent(projectId)}/budget`); }
   async getProjectSchedule(projectId: string) { return this.request<any[]>(`/projets/${encodeURIComponent(projectId)}/edt`); }
+  async saveProjectBudget(projectId: string, body: { cout_formateur: number; cout_salle: number; cout_supports: number; valide: boolean }) {
+    return this.request<any>(`/projets/${encodeURIComponent(projectId)}/budget`, this.json('POST', body));
+  }
   async createFacture(form: Partial<DevisFacture>) {
     const raw = await this.request<any>('/factures', this.json('POST', {
       client: form.client?.trim() || undefined,
@@ -434,6 +437,10 @@ class ApiService {
   async rejectTdr(id: string, reviewer_note: string) { return this.request(`/ia/tdr/reviews/${id}/reject`, this.json('POST', { reviewer_note }), { ia: true }); }
   async syncTdr(id: string, opportunite_id?: string) { return this.request('/ia/tdr/synchroniser', this.json('POST', { review_id: id, opportunite_id }), { ia: true, timeout: 120000 }); }
   async syncOffer(id: string, opportunite_id?: string) { return this.request('/ia/offres/synchroniser', this.json('POST', { review_id: id, opportunite_id }), { ia: true, timeout: 120000 }); }
+  async generatePreparation(body: unknown) { return this.request<any>('/ia/preparation/generer-complet', this.json('POST', body), { ia: true, timeout: 120000 }); }
+  async syncPreparation(reviewId: string, formateurId?: string) {
+    return this.request<any>('/ia/preparation/synchroniser', this.json('POST', { review_id: reviewId, formateur_id: formateurId }), { ia: true, timeout: 120000 });
+  }
   async createOffer(body: unknown) { return this.request<any>('/offres', this.json('POST', body)); }
   async downloadTdr(filename: string) {
     if (!tokenStore.get()) throw new ApiError('Votre session frontend est affichée comme ouverte, mais son jeton est absent. Reconnectez-vous puis réessayez.', 401);

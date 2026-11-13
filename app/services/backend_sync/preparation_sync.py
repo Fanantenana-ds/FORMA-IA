@@ -122,8 +122,8 @@ async def sync_preparation_to_backend(
         edt: résultat de EDTGeneratorService.generate()
             ({titre_formation, jours: [{date, sessions: [...]}]}).
         projet_info: {"client": ...} (facultatif).
-        budget: résultat du BudgetCalculatorService (non persisté,
-            voir en-tête du fichier).
+        budget: résultat du BudgetCalculatorService, dont les trois postes
+            compatibles avec BudgetCreate sont persistés après création.
         formateur_id: UUID d'un utilisateur Backend (facultatif).
         opportunite_id: UUID de l'opportunité liée (facultatif).
         offre_id: UUID de l'offre liée (facultatif).
@@ -131,7 +131,7 @@ async def sync_preparation_to_backend(
     Returns:
         Résultat standard (base_sync.new_result) pour le PROJET, plus :
           "edt":    {"sent": int, "failed": int}
-          "budget": None ou {"sent": False, "skipped": True, "reason": str}
+          "budget": None, un résultat d'envoi ou un résultat ignoré avec motif.
     """
     result = base_sync.new_result(edt={"sent": 0, "failed": 0}, budget=None)
     if not result["enabled"]:

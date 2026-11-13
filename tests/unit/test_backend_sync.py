@@ -194,6 +194,24 @@ def test_401_sans_identifiants_echoue_proprement(monkeypatch):
     assert "401" in result["error"]
 
 
+def test_backend_request_utilise_le_jwt_du_tenant_sans_relogin_service(monkeypatch):
+    monkeypatch.setattr(base_sync, "get_request_auth_token", lambda: "jwt-directeur")
+    appels = []
+
+    def handler(request):
+        appels.append((request.url.path, request.headers.get("authorization")))
+        assert not request.url.path.endswith("/auth/login")
+        return httpx.Response(401, json={"detail": "non autorisé"})
+
+    result = run(base_sync.backend_request(
+        "GET", "/opportunites/demo-id",
+        transport=httpx.MockTransport(handler),
+    ))
+
+    assert result["status_code"] == 401
+    assert appels == [("/api/v1/opportunites/demo-id", "Bearer jwt-directeur")]
+
+
 def test_utilitaires():
     assert base_sync.is_valid_uuid(new_id())
     assert not base_sync.is_valid_uuid("123")

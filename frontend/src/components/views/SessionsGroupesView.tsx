@@ -353,13 +353,13 @@ export const SessionsGroupesView: React.FC<SessionsGroupesViewProps> = ({
             <div>
               <div className="flex items-center gap-2 mb-1">
                 <span className="px-2.5 py-0.5 rounded text-[11px] font-extrabold bg-[#0B1F4D]/10 text-[#0B1F4D]">
-                  Planning & Promos
+                  M5 — 6 Agents IA
                 </span>
-                <span className="text-xs text-slate-400 font-medium">• Suivi opérationnel</span>
+                <span className="text-xs text-slate-400 font-medium">· Formulaires · Niveaux · Satisfaction · Présences · Attestations · Rapport</span>
               </div>
               <h1 className="text-2xl font-extrabold text-[#11162A]">Sessions & Groupes</h1>
               <p className="text-slate-600 text-xs mt-1">
-                Organisez les sessions, suivez leurs groupes et inscrivez les participants retenus.
+                Organisez les sessions, activez les agents IA de suivi et générez les attestations automatiquement.
               </p>
             </div>
 

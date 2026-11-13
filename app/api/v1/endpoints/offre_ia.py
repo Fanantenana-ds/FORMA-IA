@@ -13,9 +13,10 @@ from app.orchestrator.offre_orchestrator import (
     OffreOrchestrator,
     get_offre_orchestrator,
 )
-from app.schemas.common import RouteResponse
-from app.utils.security import verify_api_key
 from app.core.dependencies import require_role
+from app.schemas.common import RouteResponse
+from app.services.backend_sync.request_context import bind_backend_auth_token
+from app.utils.security import verify_api_key
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +34,7 @@ def vlog(msg: str, level: str = "info") -> None:
 router = APIRouter(
     prefix="/ia/offres",
     tags=["M3 — IA Offres"],
-    dependencies=[Depends(verify_api_key)],
+    dependencies=[Depends(verify_api_key), Depends(bind_backend_auth_token)],
 )
 
 

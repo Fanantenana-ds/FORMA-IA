@@ -14,6 +14,7 @@ from app.orchestrator.preparation_orchestrator import (
     get_preparation_orchestrator,
 )
 from app.schemas.common import RouteResponse
+from app.services.backend_sync.request_context import bind_backend_auth_token
 from app.utils.security import verify_api_key
 
 logger = logging.getLogger(__name__)
@@ -32,7 +33,7 @@ def vlog(msg: str, level: str = "info") -> None:
 router = APIRouter(
     prefix="/ia/preparation",
     tags=["Préparation — IA"],
-    dependencies=[Depends(verify_api_key)],
+    dependencies=[Depends(verify_api_key), Depends(bind_backend_auth_token)],
 )
 
 
@@ -358,12 +359,12 @@ async def regenerer(
     response_model=RouteResponse,
     summary="[PREP] Enregistrer une préparation APPROUVÉE dans le Backend",
     description=(
-        "Enregistre l'EDT dans le Backend : une session (POST /sessions) et "
-        "une séance par jour d'EDT.\n\n"
+        "Enregistre le projet de formation, une séance par jour d'EDT et le "
+        "budget prévisionnel lorsqu'il contient des postes persistables.\n\n"
         "⚠️ Refusé (422) tant que le review n'est pas **approuvé**.\n\n"
-        "Le **budget n'est pas persisté** : le Backend n'a pas de route pour "
-        "lui (`data.backend_sync.budget.skipped`). Un seul envoi par review "
-        "(sauf `force`). Nécessite BACKEND_SYNC_ENABLED=true."
+        "Le budget est créé sans validation ; sa validation reste une action "
+        "distincte. Un seul envoi par review (sauf `force`, qui crée un "
+        "nouveau projet). Nécessite BACKEND_SYNC_ENABLED=true."
     ),
 )
 async def synchroniser(

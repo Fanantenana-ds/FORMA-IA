@@ -19,6 +19,7 @@ from app.api.v1.endpoints import formation_ia
 from app.core.tenant_context import set_tenant_id
 from app.services.hitl import hitl_helper
 from app.services.backend_sync.opportunity_fetcher import opportunity_to_brief
+from app.services.backend_sync.request_context import get_request_auth_token
 from app.utils import security
 from app.utils.security import verify_api_key
 
@@ -174,6 +175,31 @@ def test_from_opportunite_success(client, monkeypatch):
     body = resp.json()
     assert body["success"] is True
     assert body["brief"]["objectifs"] == "Formation IA"
+
+
+def test_from_opportunite_transmet_le_jwt_du_directeur_dans_le_contexte_backend(
+    client, monkeypatch
+):
+    client.app.dependency_overrides[verify_api_key] = lambda: object()
+    observe = {}
+
+    async def fetch(opp_id):
+        observe["opportunite_id"] = opp_id
+        observe["auth_token"] = get_request_auth_token()
+        return {"id": opp_id, "objet": "Formation IA"}
+
+    monkeypatch.setattr(routes_tdr, "fetch_opportunite_by_id", fetch)
+    response = client.get(
+        "/ia/tdr/from-opportunite/abc-123",
+        headers={"Authorization": "Bearer jwt-directeur"},
+    )
+
+    assert response.status_code == 200
+    assert observe == {
+        "opportunite_id": "abc-123",
+        "auth_token": "jwt-directeur",
+    }
+    assert get_request_auth_token() is None
 
 
 def test_from_opportunite_introuvable(client, monkeypatch):

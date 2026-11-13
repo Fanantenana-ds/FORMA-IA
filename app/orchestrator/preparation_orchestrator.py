@@ -411,11 +411,18 @@ class PreparationOrchestrator(BaseOrchestrator):
         inputs = data.get("_inputs") or {}
 
         async def _envoyer() -> dict[str, Any]:
+            projet_info = inputs.get("projet_info") or {}
+            offre_data = inputs.get("offre_data") or {}
             return await preparation_sync.sync_preparation_to_backend(
                 edt=data.get("edt") or {},
-                projet_info=inputs.get("projet_info"),
+                projet_info=projet_info,
                 budget=data.get("budget"),
                 formateur_id=formateur_id,
+                opportunite_id=(
+                    projet_info.get("opportunite_id")
+                    or offre_data.get("opportunite_id")
+                ),
+                offre_id=projet_info.get("offre_id") or offre_data.get("id"),
             )
 
         result = await review_sync.sync_once(review_id, _envoyer, force=force)

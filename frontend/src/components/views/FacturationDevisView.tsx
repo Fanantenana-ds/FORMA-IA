@@ -107,13 +107,13 @@ export const FacturationDevisView: React.FC<FacturationDevisViewProps> = ({
         <div>
           <div className="flex items-center gap-2 mb-1">
             <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-brand-gold/15 text-brand-navy">
-              Gestion Financière
+              M7 — Facturation IA
             </span>
-            <span className="text-xs text-slate-400">• Devis, règlements et relances</span>
+            <span className="text-xs text-slate-400">· Devis · Règlements · Relances IA automatiques</span>
           </div>
           <h1 className="text-2xl font-extrabold text-[#11162A]">Facturation & Devis</h1>
           <p className="text-slate-600 text-xs mt-1">
-            Préparez les devis et les factures, enregistrez les règlements et suivez les soldes clients.
+            Calculez les montants par IA, générez les relances automatiquement et suivez les règlements.
           </p>
         </div>
 

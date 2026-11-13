@@ -6,8 +6,8 @@
 # synchronisation (M1, M2, M3, Préparation, M5, M7) :
 #
 #   - lecture de la configuration (.env)
-#   - authentification : token fixe OU login automatique
-#   - re-login automatique + 1 nouvelle tentative sur HTTP 401
+#   - authentification : JWT utilisateur de la requête, token fixe ou login
+#   - re-login automatique du compte de service après un HTTP 401
 #   - skip gracieux si l'endpoint Backend est absent (404 / 405)
 #   - vérification par GET après un POST (couche 2)
 #
@@ -34,6 +34,8 @@ import uuid
 from typing import Any
 
 import httpx
+
+from app.services.backend_sync.request_context import get_request_auth_token
 
 logger = logging.getLogger(__name__)
 
@@ -153,7 +155,8 @@ async def backend_request(
     transport: httpx.AsyncBaseTransport | None = None,
 ) -> dict[str, Any]:
     """
-    Appelle le Backend avec authentification et re-login sur 401.
+    Appelle le Backend avec le JWT utilisateur courant, si présent, ou le
+    compte de service. Seul le compte de service est renouvelé après un 401.
 
     Retourne toujours un dict (ne lève jamais d'exception réseau) :
       {
@@ -173,7 +176,8 @@ async def backend_request(
         "absent": False,
     }
     url = f"{cfg['api_url']}/{path.lstrip('/')}"
-    token = await get_token(transport=transport)
+    request_token = get_request_auth_token()
+    token = request_token or await get_token(transport=transport)
 
     response: httpx.Response | None = None
     for attempt in (1, 2):
@@ -196,7 +200,7 @@ async def backend_request(
             return result
 
         # Token expiré → un seul re-login puis nouvelle tentative
-        if response.status_code == 401 and attempt == 1:
+        if response.status_code == 401 and attempt == 1 and not request_token:
             logger.info("ℹ️ Token refusé (401) → nouveau login")
             token = await get_token(force_refresh=True, transport=transport)
             if token:

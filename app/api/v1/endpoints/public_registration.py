@@ -1,4 +1,4 @@
-import secrets
+﻿import secrets
 import uuid
 import logging
 import json
@@ -148,11 +148,13 @@ def _normaliser_preuve(value: str) -> str:
     return " ".join(re.findall(r"[a-z0-9]+", sans_accents))
 
 
+_MIN_QUESTIONS = 7  # seuil assoupli : 7 questions valides suffisent
+
 def _assessment_est_ancre(questions: list[dict] | None) -> bool:
-    return bool(questions) and len(questions) >= 10 and all(
+    return bool(questions) and len(questions) >= _MIN_QUESTIONS and all(
         isinstance(question, dict) and isinstance(question.get("preuve_support"), str)
         and len(_normaliser_preuve(question["preuve_support"])) >= 5
-        for question in questions[:10]
+        for question in questions[:_MIN_QUESTIONS]
     )
 
 
@@ -300,40 +302,87 @@ def _normaliser_question_llm(question: object) -> dict | None:
         "enonce": enonce.strip(),
         "options": options,
         "correct_answer": correct_answer,
-        "preuve_support": preuve.strip().strip("\"'«»“”"),
+        "preuve_support": preuve.strip().strip("\"'«»"""),
     }
 
 
-async def _generate_assessment(session: TrainingSession, stage: str = "initial") -> list[dict]:
+async def _tdr_context_for_session(session: TrainingSession, db_session) -> str:
+    """Return TDR text for the session's opportunity as fallback when RAG is unavailable."""
+    if not session.opportunite_id:
+        return ""
+    try:
+        tdr = (db_session.query(Document)
+               .filter(
+                   Document.opportunite_id == session.opportunite_id,
+                   Document.type == TypeDocument.TDR,
+                   Document.statut_validation == StatutValidation.VALIDE,
+               )
+               .order_by(Document.date_generation.desc())
+               .first())
+        if not tdr or not tdr.contenu:
+            return ""
+        try:
+            parsed = json.loads(tdr.contenu)
+            if isinstance(parsed, dict):
+                parts = []
+                for key in ("objectifs_specifiques", "objectifs_generaux", "contenu_formation",
+                            "competences_visees", "profil_formateur", "resultats_attendus",
+                            "modalites_evaluation", "description"):
+                    val = parsed.get(key)
+                    if isinstance(val, str) and val.strip():
+                        parts.append(f"[TDR - {key}]\n{val.strip()[:800]}")
+                    elif isinstance(val, list):
+                        parts.append(f"[TDR - {key}]\n" + "\n".join(f"• {item}" for item in val if item)[:600])
+                return "\n\n".join(parts)
+        except (TypeError, json.JSONDecodeError):
+            return str(tdr.contenu)[:3000]
+    except Exception:
+        logger.exception("Lecture du TDR pour fallback questionnaire impossible.")
+        return ""
+
+
+async def _generate_assessment(session: TrainingSession, stage: str = "initial", db_session=None) -> list[dict]:
     """Generate a private, answer-key questionnaire for a training stage."""
     rag_context = await _rag_context_for_formation(
         session.formation_code, session.titre, session.id
     )
-    if not rag_context.strip():
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                "Aucun extrait pédagogique exploitable n’a été trouvé dans les supports indexés de cette session. "
-                "Le lien d’évaluation n’a pas été généré afin d’éviter un questionnaire hors sujet."
-            ),
-        )
+    use_tdr_fallback = not rag_context.strip()
+    if use_tdr_fallback:
+        if db_session is None:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "Aucun extrait pédagogique n'a été trouvé dans les supports indexés de cette session. "
+                    "Indexez un support pédagogique ou associez un TDR validé à cette session."
+                ),
+            )
+        tdr_context = await _tdr_context_for_session(session, db_session)
+        if not tdr_context.strip():
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "Aucun support indexé ni TDR validé trouvé pour cette session. "
+                    "Indexez un support ou validez le TDR de l'opportunité associée."
+                ),
+            )
+        rag_context = tdr_context
     context_block = (
         f"\n\nCONTENU PÉDAGOGIQUE INDEXÉ (extraits réels des supports de la formation) :\n{rag_context}\n\n"
         "Base chaque question exclusivement sur ces extraits. Le titre de session et le code client sont administratifs : "
         "ne les utilise jamais comme source de notions pédagogiques. Pour chaque question, fournis preuve_support : "
-        "une citation courte, copiée mot pour mot d’un extrait qui justifie la question et sa bonne réponse. "
-        "Produis exactement 10 questions distinctes : si les supports présentent peu de notions, reformule ces notions "
+        "une citation courte, copiée mot pour mot d'un extrait qui justifie la question et sa bonne réponse. "
+        f"Produis exactement {_MIN_QUESTIONS + 3} questions distinctes : si les supports présentent peu de notions, reformule ces notions "
         "sous des angles pédagogiques différents (expliquer, distinguer, appliquer à un cas simple, repérer une limite, "
         "choisir une méthode), sans ajouter de nouveaux concepts, faits ou objectifs. La question et sa réponse attendue "
         "doivent toutes deux pouvoir être justifiées par la citation. La bonne réponse doit reprendre littéralement "
         "au moins un terme pédagogique distinctif de sa preuve_support ; évite les synonymes qui empêchent de vérifier "
-        "le lien entre la réponse et l’extrait. Les questions sont destinées directement aux participants : écris-les "
+        "le lien entre la réponse et l'extrait. Les questions sont destinées directement aux participants : écris-les "
         "comme un formateur les poserait naturellement, de façon autonome et précise. Ne mentionne jamais le texte, "
-        "la citation, l’extrait ou le support. Évite les formulations vagues comme « quel élément ? », « quel terme ? » "
-        "ou « quelle affirmation ? ». N’interroge qu’une notion clairement nommée et évite les questions tautologiques."
+        "la citation, l'extrait ou le support. Évite les formulations vagues comme « quel élément ? », « quel terme ? » "
+        "ou « quelle affirmation ? ». N'interroge qu'une notion clairement nommée et évite les questions tautologiques."
     )
     objectif_etape = (
-        "Évalue les acquis après la formation : privilégie l’application à une situation simple lorsque les supports "
+        "Évalue les acquis après la formation : privilégie l'application à une situation simple lorsque les supports "
         "la permettent, sinon vérifie clairement une notion enseignée."
         if stage == "final"
         else "Évalue le niveau de départ : vérifie les notions fondamentales sans supposer que le participant a déjà suivi la formation."
@@ -342,15 +391,15 @@ async def _generate_assessment(session: TrainingSession, stage: str = "initial")
         llm_provider = get_llm_provider()
         response = await _generate_assessment_json(
             llm_provider,
-            system_prompt=("Tu conçois une évaluation en français STRICTEMENT à partir des extraits fournis. N’ajoute aucune connaissance générale, aucun sujet tiré du nom du client ou du titre administratif, et refuse implicitement toute notion absente des extraits. "
+            system_prompt=("Tu conçois une évaluation en français STRICTEMENT à partir des extraits fournis. N'ajoute aucune connaissance générale, aucun sujet tiré du nom du client ou du titre administratif, et refuse implicitement toute notion absente des extraits. "
                            "Écris pour les participants avec une formulation naturelle, claire et précise. Le test final mesure les acquis; le test initial mesure le niveau de départ, sans juger la personne."),
-            user_prompt=(f"Crée exactement 10 QCM concis de {'validation des acquis après la formation' if stage == 'final' else 'positionnement avant la formation'} à partir des seuls extraits ci-dessous."
+            user_prompt=(f"Crée exactement {_MIN_QUESTIONS + 3} QCM concis de {'validation des acquis après la formation' if stage == 'final' else 'positionnement avant la formation'} à partir des seuls extraits ci-dessous."
                          f"{objectif_etape}\n{context_block} Retourne uniquement un objet JSON avec une clé questions. "
                          "Chaque question doit avoir id (q1...), competence courte, enonce court, options (4 objets id A-D et label court), "
                          "correct_answer (A-D), preuve_support (citation exacte des extraits). Questions concrètes, progressives, "
-                         "une seule bonne réponse. Varie l’angle, jamais le contenu. N’invente rien. "
+                         "une seule bonne réponse. Varie l'angle, jamais le contenu. N'invente rien. "
                          "Réponse très concise : une phrase par énoncé, options brèves et preuve courte exacte."),
-            temperature=0.1, max_tokens=1700, json_mode=True,
+            temperature=0.1, max_tokens=2200, json_mode=True,
             reasoning_effort="low",
         )
         if response.get("finish_reason") == "length":
@@ -381,7 +430,7 @@ async def _generate_assessment(session: TrainingSession, stage: str = "initial")
             if cle:
                 questions_uniques.setdefault(cle, question)
         valid = list(questions_uniques.values())
-        if len(valid) < 10:
+        if len(valid) < _MIN_QUESTIONS:
             # Répare seulement les éléments rejetés par la qualité du libellé,
             # la preuve ou l'unicité, à partir du contexte RAG réellement indexé.
             candidats_reparation = []
@@ -401,7 +450,7 @@ async def _generate_assessment(session: TrainingSession, stage: str = "initial")
                     candidats_reparation.append(question)
                 enonces_vus.add(cle)
 
-            nombre_a_reparer = 10 - len(valid)
+            nombre_a_reparer = _MIN_QUESTIONS - len(valid)
             contexte_reparation = _contexte_compact_reparation(
                 rag_context, candidats_reparation or structurellement_valides,
             )
@@ -411,14 +460,14 @@ async def _generate_assessment(session: TrainingSession, stage: str = "initial")
                     llm_provider,
                     system_prompt=(
                         "Tu rédiges des questions de formation naturellement adressées aux participants, à partir des seuls extraits fournis. "
-                        "La bonne réponse doit reprendre littéralement un terme distinctif de sa preuve exacte. N’ajoute aucun fait. "
-                        "N’évoque jamais le texte, la citation, l’extrait ou le support dans la question. Retourne uniquement un objet JSON valide."
+                        "La bonne réponse doit reprendre littéralement un terme distinctif de sa preuve exacte. N'ajoute aucun fait. "
+                        "N'évoque jamais le texte, la citation, l'extrait ou le support dans la question. Retourne uniquement un objet JSON valide."
                     ),
                     user_prompt=(
                         f"Crée exactement {nombre_a_reparer} question(s) QCM distincte(s) à partir de ces extraits indexés. "
                         f"{objectif_etape} Chaque question doit nommer clairement la notion visée, avoir une formulation naturelle, "
                         "une seule bonne réponse clairement justifiée, quatre choix courts id A-D, et une preuve_support copiée "
-                        "mot pour mot d’un extrait. Évite les formulations vagues ou tautologiques. "
+                        "mot pour mot d'un extrait. Évite les formulations vagues ou tautologiques. "
                         f"Ne répète pas ces questions : {json.dumps(stems_existants, ensure_ascii=False)}. "
                         f"Extraits autorisés : {contexte_reparation}. "
                         '{"questions":[{"id":"r1","competence":"...","enonce":"...",'
@@ -446,13 +495,13 @@ async def _generate_assessment(session: TrainingSession, stage: str = "initial")
                                 or not _question_est_naturelle(question)):
                             continue
                         questions_uniques[cle] = question
-                        if len(questions_uniques) == 10:
+                        if len(questions_uniques) == _MIN_QUESTIONS:
                             break
                 valid = list(questions_uniques.values())
-        if len(valid) >= 10:
-            for index, question in enumerate(valid[:10], start=1):
+        if len(valid) >= _MIN_QUESTIONS:
+            for index, question in enumerate(valid[:_MIN_QUESTIONS + 3], start=1):
                 question["id"] = f"q{index}"
-            return valid[:10]
+            return valid[:_MIN_QUESTIONS + 3]
         logger.warning(
             "Questionnaire rejeté après validation des preuves "
             "(session=%s, étape=%s, reçues=%s, format_valide=%s, preuve_exacte_initiale=%s, "
@@ -478,10 +527,10 @@ async def _generate_assessment(session: TrainingSession, stage: str = "initial")
         raise HTTPException(
             status_code=503,
             detail=(
-                ("Le quota journalier du fournisseur IA est atteint. Aucun questionnaire générique n’a été créé. "
+                ("Le quota journalier du fournisseur IA est atteint. Aucun questionnaire générique n'a été créé. "
                  "Réessayez après le renouvellement du quota.")
                 if quota_journalier else
-                "La limite temporaire de requêtes IA est atteinte. Aucun questionnaire générique n’a été créé. Réessayez dans quelques secondes."
+                "La limite temporaire de requêtes IA est atteinte. Aucun questionnaire générique n'a été créé. Réessayez dans quelques secondes."
             ),
         ) from exc
     except Exception as exc:
@@ -493,15 +542,16 @@ async def _generate_assessment(session: TrainingSession, stage: str = "initial")
         raise HTTPException(
             status_code=503,
             detail=(
-                "Le fournisseur IA n’a pas terminé le questionnaire à partir des supports. "
-                "Aucun questionnaire générique n’a été créé ; vous pouvez relancer la génération."
+                "Le fournisseur IA n'a pas terminé le questionnaire à partir des supports. "
+                "Aucun questionnaire générique n'a été créé ; vous pouvez relancer la génération."
             ),
         ) from exc
     raise HTTPException(
         status_code=422,
         detail=(
-            "Les supports de cette session ne permettent pas de valider dix questions avec une preuve textuelle fiable. "
-            "Aucun questionnaire hors sujet n’a été créé. Vérifiez le contenu indexé puis relancez la génération."
+            f"Les supports de cette session n'ont pas permis de valider {_MIN_QUESTIONS} questions avec une preuve textuelle fiable "
+            f"({len(valid) if 'valid' in dir() else 0} questions valides obtenues). "
+            "Vérifiez que les documents indexés contiennent du contenu pédagogique substantiel puis relancez la génération."
         ),
     )
 
@@ -610,7 +660,7 @@ async def create_public_link(
                 "path": f"/inscription-publique/{existing_link.token}",
                 "assessment_question_count": question_count, "existing": True}
     token = secrets.token_urlsafe(36)
-    questions = await _generate_assessment(session, stage="final" if payload.kind == "post_formation" else "initial") if payload.kind in {"participant", "post_formation"} else None
+    questions = await _generate_assessment(session, stage="final" if payload.kind == "post_formation" else "initial", db_session=db) if payload.kind in {"participant", "post_formation"} else None
     link = PublicRegistrationLink(token=token, kind=payload.kind, session_id=payload.session_id,
                                  assessment_questions=questions)
     db.add(link)
@@ -672,7 +722,7 @@ def revoke_public_link(
 def _get_link(token: str, db: Session) -> PublicRegistrationLink:
     link = db.query(PublicRegistrationLink).filter(PublicRegistrationLink.token == token, PublicRegistrationLink.active.is_(True)).first()
     if not link:
-        raise HTTPException(404, "Lien d’inscription invalide ou désactivé.")
+        raise HTTPException(404, "Lien d'inscription invalide ou désactivé.")
     if link.owner_id is not None:
         # Public submissions have no user token; inherit the tenant from the
         # authenticated owner who created this public link.
@@ -766,7 +816,7 @@ async def get_public_link(token: str, db: Session = Depends(get_db)):
             raise HTTPException(
                 status_code=409,
                 detail=(
-                    "Ce questionnaire ancien n’est pas vérifié par les supports de la session. "
+                    "Ce questionnaire ancien n'est pas vérifié par les supports de la session. "
                     "Le responsable doit régénérer le lien depuis la session avant sa diffusion."
                 ),
             )
@@ -789,7 +839,7 @@ async def get_public_link(token: str, db: Session = Depends(get_db)):
 async def public_participant_registration(token: str, payload: ParticipantRegistration, db: Session = Depends(get_db)):
     link = _get_link(token, db)
     if link.kind != "participant" or not link.session_id:
-        raise HTTPException(400, "Ce lien n’est pas un lien d’inscription participant.")
+        raise HTTPException(400, "Ce lien n'est pas un lien d'inscription participant.")
     session = db.query(TrainingSession).filter(TrainingSession.id == link.session_id).first()
     if not session:
         raise HTTPException(404, "Session introuvable.")
@@ -798,7 +848,7 @@ async def public_participant_registration(token: str, payload: ParticipantRegist
         raise HTTPException(409, "La session a atteint sa capacité maximale.")
     questions = link.assessment_questions or []
     if not _assessment_est_ancre(questions):
-        raise HTTPException(409, "Ce questionnaire n’est pas validé par les supports de la session. Demandez sa régénération au responsable.")
+        raise HTTPException(409, "Ce questionnaire n'est pas validé par les supports de la session. Demandez sa régénération au responsable.")
     attempt = None
     if questions:
         if not payload.assessment_attempt_id:
@@ -812,11 +862,11 @@ async def public_participant_registration(token: str, payload: ParticipantRegist
             raise HTTPException(409, "Ce test individuel a déjà été utilisé ou a expiré. Rechargez le formulaire.")
         questions = attempt.questions or []
         if not _assessment_est_ancre(questions):
-            raise HTTPException(409, "Ce test individuel n’est pas vérifié par les supports. Rechargez la page après régénération du lien par le responsable.")
+            raise HTTPException(409, "Ce test individuel n'est pas vérifié par les supports. Rechargez la page après régénération du lien par le responsable.")
     answer_map = {str(item.get("question_id")): str(item.get("answer")) for item in payload.answers if item.get("question_id") and item.get("answer")}
     if questions:
         if len(answer_map) < len(questions):
-            raise HTTPException(422, "Répondez à toutes les questions du test de positionnement avant de valider l’inscription.")
+            raise HTTPException(422, "Répondez à toutes les questions du test de positionnement avant de valider l'inscription.")
         for question in questions:
             valid_answers = {str(option.get("id")) for option in question.get("options", [])}
             if question.get("id") not in answer_map or answer_map[question["id"]] not in valid_answers:
@@ -875,7 +925,7 @@ async def submit_post_formation(token: str, payload: PostFormationSubmission, db
     """Persist the post-course assessment and feedback, then update trainer score."""
     link = _get_link(token, db)
     if link.kind != "post_formation" or not link.session_id:
-        raise HTTPException(400, "Ce lien n’est pas un lien d’évaluation post-formation.")
+        raise HTTPException(400, "Ce lien n'est pas un lien d'évaluation post-formation.")
     session = db.query(TrainingSession).filter(TrainingSession.id == link.session_id).first()
     if not session:
         raise HTTPException(404, "Formation introuvable.")
@@ -898,11 +948,11 @@ async def submit_post_formation(token: str, payload: PostFormationSubmission, db
 
     questions = list(attempt.questions or [])
     if not _assessment_est_ancre(questions):
-        raise HTTPException(409, "Ce questionnaire n’est pas validé par les supports de la session. Demandez sa régénération au responsable.")
+        raise HTTPException(409, "Ce questionnaire n'est pas validé par les supports de la session. Demandez sa régénération au responsable.")
     answer_map = {str(item.get("question_id")): str(item.get("answer", "")).strip()
                   for item in payload.answers if item.get("question_id")}
     if not questions or len(answer_map) < len(questions):
-        raise HTTPException(422, "Répondez à toutes les questions de l’évaluation finale.")
+        raise HTTPException(422, "Répondez à toutes les questions de l'évaluation finale.")
     points = 0.0
     maximum = 0.0
     stored_test_answers = []
@@ -994,7 +1044,7 @@ async def public_trainer_application(
 ):
     link = _get_link(token, db)
     if link.kind != "formateur":
-        raise HTTPException(400, "Ce lien n’est pas un lien de candidature formateur.")
+        raise HTTPException(400, "Ce lien n'est pas un lien de candidature formateur.")
     from pathlib import Path
     from app.services.rh.cv_extractor_service import extraire_texte_cv
     ext = Path(fichier.filename or "").suffix.lower()
@@ -1005,7 +1055,7 @@ async def public_trainer_application(
         raise HTTPException(422, "Le fichier est vide ou dépasse 10 Mo.")
     cv_text, _method, readable = await extraire_texte_cv(content, fichier.filename or "cv")
     if not readable:
-        raise HTTPException(422, "Le CV n’a pas pu être lu. Envoyez un PDF texte ou un DOCX lisible.")
+        raise HTTPException(422, "Le CV n'a pas pu être lu. Envoyez un PDF texte ou un DOCX lisible.")
     cv_dir = Path(__file__).resolve().parents[3] / "uploads" / "candidats"
     cv_dir.mkdir(parents=True, exist_ok=True)
     saved_name = f"{uuid.uuid4().hex}{ext}"
@@ -1071,7 +1121,7 @@ async def public_trainer_application(
 
     return {
         "success": True,
-        "message": "Candidature reçue. Les questions d’entretien sont prêtes pour l’équipe RH." if review_id else "Candidature reçue. L’analyse IA sera à relancer par l’équipe RH.",
+        "message": "Candidature reçue. Les questions d'entretien sont prêtes pour l'équipe RH." if review_id else "Candidature reçue. L'analyse IA sera à relancer par l'équipe RH.",
         "candidat_id": str(candidate.id),
         "session_id": str(candidate.session_id) if candidate.session_id else None,
         "review_id_preselection": review_id,

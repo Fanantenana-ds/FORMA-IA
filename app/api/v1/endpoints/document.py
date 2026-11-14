@@ -547,6 +547,32 @@ def telecharger_bilan_formations(
     )
 
 
+@router.patch(
+    "/rag/supports/{doc_hash}/rattacher-session",
+    status_code=200,
+    summary="Rattacher un support RAG à une session de formation",
+    description="Met à jour le champ session_id du support dans le registre. Utile pour lier un document déjà indexé à une session spécifique.",
+)
+def rattacher_support_session(
+    doc_hash: str,
+    session_id: UUID,
+    current_user: User = Depends(require_role("DIRECTION", "ASSISTANT")),
+    db: Session = Depends(get_db),
+):
+    if not doc_hash.isalnum() or len(doc_hash) != 64:
+        raise HTTPException(status_code=422, detail="Hash invalide (SHA-256 attendu, 64 caractères hexadécimaux).")
+    entree = registre.obtenir_entree(doc_hash)
+    if entree is None:
+        raise HTTPException(status_code=404, detail="Support RAG introuvable dans le registre.")
+    from app.models.training_session import TrainingSession
+    session = db.query(TrainingSession).filter(TrainingSession.id == session_id).first()
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session de formation introuvable.")
+    entree.session_id = str(session_id)
+    registre.enregistrer_entree(entree)
+    return {"success": True, "doc_hash": doc_hash, "session_id": str(session_id), "message": "Support rattaché à la session avec succès."}
+
+
 @router.delete(
     "/rag/supports/{doc_hash}",
     status_code=200,

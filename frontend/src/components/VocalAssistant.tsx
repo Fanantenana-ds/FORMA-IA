@@ -12,6 +12,7 @@ type Props = {
   onCreateSession: () => void;
   onCreateOpportunity: () => void;
   onCreateInvoice: () => void;
+  dashboardStats?: Record<string, unknown> | null;
 };
 
 const actionSections: Record<string, MenuSection> = {
@@ -60,7 +61,8 @@ type HistoryItem =
 
 export const VocalAssistant: React.FC<Props> = ({
   currentRole, currentSection, sessions, onNavigate,
-  onCreateSession, onCreateOpportunity: _onCreateOpportunity, onCreateInvoice: _onCreateInvoice
+  onCreateSession, onCreateOpportunity: _onCreateOpportunity, onCreateInvoice: _onCreateInvoice,
+  dashboardStats
 }) => {
   const [open, setOpen] = useState(false);
   const [recording, setRecording] = useState(false);
@@ -119,7 +121,8 @@ export const VocalAssistant: React.FC<Props> = ({
         texte: command,
         ecran_actuel: currentSection,
         contexte_action: clarificationContext.current,
-        sessions_disponibles: sessionsDisponibles
+        sessions_disponibles: sessionsDisponibles,
+        dashboard_stats: dashboardStats ?? null
       });
       setAnswer(result);
       const spoken = result.texte_a_lire || result.reponse_vocale;

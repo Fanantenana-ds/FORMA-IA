@@ -1,36 +1,80 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { PageHeader } from '../PageHeader';
 import { LLMConfigPanel } from './LLMConfigPanel';
+import { ConfirmDialog, useConfirmDialog } from '../ConfirmDialog';
 
-function renderMarkdown(text: string): string {
+function extractText(raw: string): string {
+  const trimmed = raw.trim();
+  // Parse JSON brut {"reponse":"..."} ou {"response":"..."} renvoyé par certains agents
+  if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      const val = parsed.reponse ?? parsed.response ?? parsed.text ?? parsed.content ?? parsed.message;
+      if (typeof val === 'string' && val.trim()) return val.trim();
+    } catch { /* pas du JSON valide, continuer */ }
+  }
+  return raw;
+}
+
+function renderMarkdown(rawText: string): string {
+  const text = extractText(rawText);
   return text
-    // Headings
-    .replace(/^### (.+)$/gm, '<h4 class="text-sm font-extrabold text-slate-800 mt-4 mb-1.5 flex items-center gap-1.5"><span class="inline-block w-1 h-4 rounded-full bg-brand-gold/60 mr-1"></span>$1</h4>')
-    .replace(/^## (.+)$/gm, '<h3 class="text-base font-extrabold text-[#0B1F4D] mt-5 mb-2 pb-1.5 border-b-2 border-brand-gold/30">$1</h3>')
-    .replace(/^# (.+)$/gm, '<h2 class="text-lg font-extrabold text-[#06132F] mt-5 mb-2">$1</h2>')
-    // Bold — couleur navy pour ressortir
-    .replace(/\*\*\*(.+?)\*\*\*/g, '<strong class="font-extrabold text-[#0B1F4D]"><em>$1</em></strong>')
-    .replace(/\*\*(.+?)\*\*/g, '<strong class="font-extrabold text-[#0B1F4D]">$1</strong>')
-    .replace(/\*(.+?)\*/g, '<em class="italic text-slate-600 not-italic font-medium">$1</em>')
+    // Headings — taille plus grande, couleur forte
+    .replace(/^### (.+)$/gm, '<h4 class="text-[15px] font-extrabold text-slate-900 mt-4 mb-1 leading-[1.5] flex items-center gap-1.5"><span class="inline-block w-1.5 h-5 rounded-full bg-brand-gold mr-1.5"></span>$1</h4>')
+    .replace(/^## (.+)$/gm, '<h3 class="text-[16px] font-extrabold text-[#0B1F4D] mt-5 mb-0 pb-1 leading-[1.5] border-b-2 border-brand-gold/40">$1</h3>')
+    .replace(/^# (.+)$/gm, '<h2 class="text-[18px] font-extrabold text-[#06132F] mt-6 mb-3">$1</h2>')
+    // Bold — couleur navy sombre très visible
+    .replace(/\*\*\*(.+?)\*\*\*/g, '<strong class="font-extrabold text-[#06132F]"><em>$1</em></strong>')
+    .replace(/\*\*(.+?)\*\*/g, '<strong class="font-extrabold text-[#06132F]">$1</strong>')
+    .replace(/\*(.+?)\*/g, '<em class="italic text-slate-700 font-semibold">$1</em>')
     // Inline code
-    .replace(/`([^`]+)`/g, '<code class="bg-[#0B1F4D]/8 text-[#0B1F4D] rounded-md px-1.5 py-0.5 text-[11px] font-mono border border-[#0B1F4D]/12">$1</code>')
+    .replace(/`([^`]+)`/g, '<code class="bg-slate-100 text-[#0B1F4D] rounded-md px-2 py-0.5 text-[13px] font-mono font-semibold border border-slate-200">$1</code>')
+    // "Support : Titre"
+    .replace(/^Support\s*:\s*(.+)$/gm, '<div class="mt-5 mb-2.5 flex items-center gap-2 rounded-lg bg-[#0B1F4D]/8 px-3.5 py-2.5"><span class="text-[13px]">📚</span><span class="text-[14px] font-extrabold text-[#0B1F4D]">$1</span></div>')
+    // "Synthèse globale"
+    .replace(/^Synthèse globale$/gm, '<div class="mt-6 mb-2.5 flex items-center gap-2 border-t-2 border-slate-200 pt-4"><span class="text-[13px]">✨</span><span class="text-[14px] font-extrabold text-[#0B1F4D] uppercase tracking-wide">Synthèse globale</span></div>')
+    // Extrait pertinent
+    .replace(/Extrait pertinent\s*:\s*«\s*([\s\S]*?)\s*»/g, '<div class="my-4 rounded-xl border border-brand-gold/40 bg-amber-50 px-4 py-3.5"><div class="mb-2 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-widest text-amber-800"><span>📄</span>Extrait pertinent</div><p class="text-[14px] leading-relaxed text-slate-800 italic">$1</p></div>')
     // Blockquote
-    .replace(/^> (.+)$/gm, '<blockquote class="border-l-4 border-brand-gold/50 pl-3 my-2 text-slate-600 italic text-[12px] bg-amber-50/40 py-1 rounded-r-lg">$1</blockquote>')
+    .replace(/^> (.+)$/gm, '<blockquote class="border-l-4 border-brand-gold/60 pl-4 my-3 text-slate-700 italic text-[14px] bg-amber-50/60 py-2 rounded-r-xl font-medium">$1</blockquote>')
     // Source references [file, p. X]
-    .replace(/\[([^\]]+,\s*(?:p\.|diapo)\s*\d+[^\]]*)\]/g, '<span class="inline-flex items-center gap-0.5 text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2 py-0.5 ml-0.5">📎 $1</span>')
+    .replace(/\[([^\]]+,\s*(?:p\.|diapo)\s*\d+[^\]]*)\]/g, '<span class="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-300 rounded-full px-2.5 py-0.5 ml-1">📎 $1</span>')
     // Bullet lists
-    .replace(/^- (.+)$/gm, '<li class="ml-1 flex gap-2"><span class="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-brand-gold/70"></span><span>$1</span></li>')
-    .replace(/(<li[^>]*>.*<\/li>(\n|$))+/gs, (m) => `<ul class="pl-2 my-2.5 space-y-1.5 text-slate-700 text-[13px]">${m}</ul>`)
+    .replace(/^- (.+)$/gm, '<li class="flex gap-2.5 items-start"><span class="mt-2 h-2 w-2 shrink-0 rounded-full bg-brand-gold"></span><span class="text-slate-800">$1</span></li>')
+    .replace(/(<li[^>]*>.*<\/li>(\n|$))+/gs, (m) => `<ul class="pl-1 my-3 space-y-2 text-[14px]">${m}</ul>`)
     // Numbered lists
-    .replace(/^(\d+)\. (.+)$/gm, '<li class="ml-1 text-slate-700" style="list-style-type:decimal">$2</li>')
-    .replace(/(<li[^>]*style="list-style-type:decimal"[^>]*>.*<\/li>(\n|$))+/gs, (m) => `<ol class="list-decimal pl-5 my-2.5 space-y-1.5 text-slate-700 text-[13px]">${m}</ol>`)
+    .replace(/^(\d+)\. (.+)$/gm, '<li class="text-slate-800 text-[14px]" style="list-style-type:decimal">$2</li>')
+    .replace(/(<li[^>]*style="list-style-type:decimal"[^>]*>.*<\/li>(\n|$))+/gs, (m) => `<ol class="list-decimal pl-6 my-3 space-y-2 text-[14px] text-slate-800">${m}</ol>`)
+    // Markdown tables — rendu premium avec bouton CSV
+    .replace(/((?:^\|.+\|\n)+)/gm, (block) => {
+      const lines = block.trim().split('\n').filter(l => l.trim());
+      const isSep = (l: string) => /^\|[\s|:-]+\|$/.test(l.trim());
+      const parseRow = (l: string) => l.trim().replace(/^\||\|$/g, '').split('|').map(c => c.trim());
+      const headers = parseRow(lines[0]);
+      const dataLines = lines.filter((l, i) => i > 0 && !isSep(l));
+      const rows = dataLines.map(parseRow);
+      const thCells = headers.map(h => `<th class="px-4 py-3 text-left text-[11px] font-extrabold uppercase tracking-widest text-[#0B1F4D]/70 bg-slate-50 border-b-2 border-brand-gold/50">${h}</th>`).join('');
+      const trRows = rows.map((r, ri) => {
+        const tds = r.map((c, ci) => ci === 0
+          ? `<td class="px-4 py-[10px] text-[13px] font-semibold text-[#0B1F4D] leading-[1.5]">${c}</td>`
+          : `<td class="px-4 py-[10px] text-[13px] text-slate-600 leading-[1.5]">${c}</td>`
+        ).join('');
+        return `<tr class="${ri % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'} hover:bg-brand-gold/4 transition-colors border-b border-slate-100 last:border-0">${tds}</tr>`;
+      }).join('');
+      return `<div class="mt-0 mb-4 overflow-hidden rounded-xl border border-slate-200 shadow-sm -mx-1">
+  <div class="overflow-x-auto"><table class="w-full border-collapse">
+    <thead><tr>${thCells}</tr></thead>
+    <tbody>${trRows}</tbody>
+  </table></div>
+</div>`;
+    })
     // Horizontal rule
-    .replace(/^---$/gm, '<hr class="border-slate-200 my-4" />')
+    .replace(/^---$/gm, '<hr class="border-slate-300 my-5" />')
     // Paragraphs
-    .replace(/\n\n/g, '</p><p class="mt-3 text-[13px] leading-relaxed text-slate-700">')
+    .replace(/\n\n/g, '</p><p class="mt-3.5 text-[14px] leading-[1.75] text-slate-800">')
     .replace(/\n/g, '<br />')
     // Wrap
-    .replace(/^(.+)/, '<p class="text-[13px] leading-relaxed text-slate-700">$1')
+    .replace(/^(.+)/, '<p class="text-[14px] leading-[1.75] text-slate-800">$1')
     + '</p>';
 }
 import { AlertCircle, Archive, Award, Check, CheckCheck, Copy, Download, Eye, FileText, Loader2, MessageCircle, Paperclip, Pencil, PlusCircle, Send, ShieldCheck, ThumbsDown, ThumbsUp, Trash2, Upload, X, Zap } from 'lucide-react';
@@ -161,21 +205,36 @@ const ReviewContent: React.FC<{ value: any }> = ({ value }) => {
   return <div className="max-h-[560px] space-y-3 overflow-auto rounded-2xl bg-slate-50 p-3">{renderNode(content)}</div>;
 };
 
-export const EspaceIAView: React.FC<{ readOnly?: boolean; trainerMode?: boolean; onNavigateToSection?: (section: MenuSection) => void }> = ({ readOnly = false, trainerMode = false, onNavigateToSection }) => {
-  const [tab, setTab] = useState<Tab>(readOnly ? 'supports' : 'reviews');
+export const EspaceIAView: React.FC<{ readOnly?: boolean; trainerMode?: boolean; onNavigateToSection?: (section: MenuSection) => void; dashboardStats?: Record<string, unknown> | null }> = ({ readOnly = false, trainerMode = false, onNavigateToSection, dashboardStats }) => {
+  const [tab, setTab] = useState<Tab>(() => {
+    if (readOnly) return 'supports';
+    try {
+      const stored = sessionStorage.getItem('formaia-espace-tab');
+      if (stored === 'supports') return 'supports';
+    } catch { /* ignore */ }
+    return 'reviews';
+  });
   const [reviews, setReviews] = useState<any[]>([]);
   const [history, setHistory] = useState<any[]>([]);
   const [historyStatus, setHistoryStatus] = useState<'all' | 'approved' | 'rejected'>('all');
   const [selected, setSelected] = useState<any>(null);
   const [attestationPreview, setAttestationPreview] = useState<{ numero: string; url: string } | null>(null);
   const [attestationBusy, setAttestationBusy] = useState('');
+  const [reportDownloadBusy, setReportDownloadBusy] = useState(false);
+  const [reportDocxDownloadBusy, setReportDocxDownloadBusy] = useState(false);
   const [reviewLoading, setReviewLoading] = useState(false);
   const [reviewsLoading, setReviewsLoading] = useState(false);
   const [deletingReviewId, setDeletingReviewId] = useState('');
   const [supports, setSupports] = useState<any[]>([]);
   const [formations, setFormations] = useState<any[]>([]);
   const [sessions, setSessions] = useState<any[]>([]);
-  const [sessionId, setSessionId] = useState('');
+  const [sessionId, setSessionId] = useState(() => {
+    try {
+      const stored = sessionStorage.getItem('formaia-espace-session');
+      if (stored) return stored;
+    } catch { /* ignore */ }
+    return '';
+  });
   const [chatModule, setChatModule] = useState('');
   const [formationCode, setFormationCode] = useState('');
   const [module, setModule] = useState('');
@@ -199,6 +258,14 @@ export const EspaceIAView: React.FC<{ readOnly?: boolean; trainerMode?: boolean;
   const [continueMarket, setContinueMarket] = useState(false);
   const [streamingStatus, setStreamingStatus] = useState('');
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const { confirm, dialogProps } = useConfirmDialog();
+
+  useEffect(() => {
+    try {
+      sessionStorage.removeItem('formaia-espace-tab');
+      sessionStorage.removeItem('formaia-espace-session');
+    } catch { /* ignore */ }
+  }, []);
 
   const loadReviews = async () => {
     // La revue M2 est la source principale : l'afficher sans attendre les
@@ -241,12 +308,16 @@ export const EspaceIAView: React.FC<{ readOnly?: boolean; trainerMode?: boolean;
     setConversationsLoading(true);
     try {
       const result = await apiService.getRagConversations();
-      setRagConversations(Array.isArray(result?.data) ? result.data : []);
-    } catch { /* silencieux — la liste des conversations est optionnelle */ }
-    finally { setConversationsLoading(false); }
+      const list = Array.isArray(result?.data) ? result.data : [];
+      setRagConversations(list);
+    } catch (err) {
+      console.warn('[RAG] loadRagConversations failed:', err);
+    } finally { setConversationsLoading(false); }
   };
 
   const newConversation = () => {
+    // Rafraîchir la sidebar pour que la conversation précédente apparaisse dans l'historique
+    if (conversationId) loadRagConversations();
     setConversationId(null);
     setMessages([]);
     setDraft('');
@@ -270,7 +341,8 @@ export const EspaceIAView: React.FC<{ readOnly?: boolean; trainerMode?: boolean;
   };
 
   const deleteRagConversation = async (id: string) => {
-    if (!window.confirm('Supprimer cette conversation ? Cette action est irréversible.')) return;
+    const ok = await confirm({ title: 'Supprimer la conversation', message: 'Cette action est irréversible. Toutes les réponses échangées seront perdues.', confirmLabel: 'Supprimer', variant: 'danger' });
+    if (!ok) return;
     try {
       await apiService.deleteRagConversation(id);
       if (conversationId === id) newConversation();
@@ -343,6 +415,13 @@ export const EspaceIAView: React.FC<{ readOnly?: boolean; trainerMode?: boolean;
     }
   };
   useEffect(() => { setError(''); setNotice(''); if (tab === 'reviews') void refreshReviews(); if (tab === 'history') loadHistory().catch(e => setError(errorText(e))); if (tab === 'supports' || tab === 'chat') loadSupports().catch(e => setError(errorText(e))); if (tab === 'chat') loadRagConversations(); if (tab === 'syllabus') apiService.getRagFormations().then(data => setFormations(Array.isArray(data) ? data : data.data ?? data.formations ?? [])).catch(e => setError(errorText(e))); }, [tab, formationCode, sessionId]);
+
+  // Rafraîchissement périodique de la sidebar quand on est sur le chat
+  useEffect(() => {
+    if (tab !== 'chat') return;
+    const interval = setInterval(() => { void loadRagConversations(); }, 8000);
+    return () => clearInterval(interval);
+  }, [tab]);
   // Continue à refléter les étapes réellement enregistrées côté backend,
   // y compris lorsque l'indexation dépasse le délai d'attente de l'upload.
   useEffect(() => {
@@ -516,6 +595,36 @@ export const EspaceIAView: React.FC<{ readOnly?: boolean; trainerMode?: boolean;
     } catch (e) { setError(errorText(e)); }
     finally { setBusy(false); }
   };
+  const downloadReport = async () => {
+    const id = selected?.review_id ?? selected?.id;
+    if (!id) return;
+    setReportDownloadBusy(true);
+    try {
+      const blob = await apiService.downloadReportPdf(id);
+      if (!(blob instanceof Blob) || blob.size === 0) throw new Error('Le serveur n\'a retourné aucun PDF.');
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = `rapport-formation-${id}.pdf`;
+      document.body.appendChild(a); a.click();
+      document.body.removeChild(a); URL.revokeObjectURL(url);
+    } catch (e) { setError(errorText(e)); }
+    finally { setReportDownloadBusy(false); }
+  };
+  const downloadReportDocx = async () => {
+    const id = selected?.review_id ?? selected?.id;
+    if (!id) return;
+    setReportDocxDownloadBusy(true);
+    try {
+      const blob = await apiService.downloadReportDocx(id);
+      if (!(blob instanceof Blob) || blob.size === 0) throw new Error('Le serveur n\'a retourné aucun document Word.');
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = `rapport-formation-${id}.docx`;
+      document.body.appendChild(a); a.click();
+      document.body.removeChild(a); URL.revokeObjectURL(url);
+    } catch (e) { setError(errorText(e)); }
+    finally { setReportDocxDownloadBusy(false); }
+  };
   const reviewAction = async (approve: boolean) => {
     const id = selected?.review_id ?? selected?.id;
     if (!id) return;
@@ -662,7 +771,8 @@ export const EspaceIAView: React.FC<{ readOnly?: boolean; trainerMode?: boolean;
   const deleteReview = async (item: any) => {
     const id = String(item.review_id ?? item.id ?? '');
     if (!id || deletingReviewId) return;
-    if (!window.confirm('Supprimer cette validation en attente ? Cette action ne peut pas être annulée.')) return;
+    const _ok1 = await confirm({ title: 'Supprimer la validation', message: 'Cette validation en attente sera définitivement supprimée. Cette action ne peut pas être annulée.', confirmLabel: 'Supprimer', variant: 'danger' });
+    if (!_ok1) return;
     setDeletingReviewId(id); setError(''); setNotice('');
     try {
       const isRag = String(item.agent_id ?? '').startsWith('agent_rag_');
@@ -726,7 +836,7 @@ export const EspaceIAView: React.FC<{ readOnly?: boolean; trainerMode?: boolean;
     if (trainerMode && !sessionId) { setError("Sélectionnez d'abord une session qui vous est affectée."); return; }
     setMessages(prev => [...prev, { role: 'user', text: message }, { role: 'assistant', text: '' }]); setDraft(''); setBusy(true); setError(''); setStreamingStatus("Connexion à l'assistant documentaire…");
     try {
-      await apiService.chatRagStream({ message, conversation_id: conversationId, formation_code: formationCode || null, session_id: sessionId || null, module: chatModule || null }, event => {
+      await apiService.chatRagStream({ message, conversation_id: conversationId, formation_code: formationCode || null, session_id: sessionId || null, module: chatModule || null, dashboard_stats: dashboardStats ?? null }, event => {
         if (event.type === 'status') setStreamingStatus(event.message ?? 'Préparation de la réponse…');
         if (event.type === 'token') {
           const fragment = event.text ?? '';
@@ -778,6 +888,7 @@ export const EspaceIAView: React.FC<{ readOnly?: boolean; trainerMode?: boolean;
     ...(!readOnly ? [{ id: 'config_llm' as const, label: 'Config LLM', icon: <Zap size={15} /> }] : []),
   ];
   return <div className="space-y-6 animate-in fade-in duration-300">
+    <ConfirmDialog {...dialogProps} />
     <PageHeader
       icon={<Zap size={22} />}
       badge="Pipeline IA"
@@ -827,7 +938,34 @@ export const EspaceIAView: React.FC<{ readOnly?: boolean; trainerMode?: boolean;
       <section className={panel}><div className="mb-4 flex flex-wrap items-center justify-between gap-3"><h2 className="font-extrabold text-[#11162A]">À valider</h2><div className="flex items-center gap-2"><span className="text-xs bg-emerald-50 text-emerald-700 rounded-full px-2.5 py-1 font-bold">{reviews.length}</span><button type="button" onClick={() => void refreshReviews()} disabled={reviewsLoading} className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-[11px] font-bold text-slate-600 disabled:opacity-50">{reviewsLoading ? 'Actualisation…' : 'Actualiser'}</button></div></div>
         {reviews.length ? <div className="space-y-2">{reviews.map((r, i) => { const id = String(r.review_id ?? r.id ?? i); return <div key={id} className={`flex items-center gap-2 rounded-xl border p-2 ${selected?.review_id === id ? 'border-[#0B1F4D] bg-emerald-50/50' : 'border-slate-200 hover:border-slate-300'}`}><button onClick={() => openReview(r)} className="min-w-0 flex-1 p-1 text-left"><div className="truncate font-bold text-sm text-[#11162A]">{r.title ?? r.titre ?? r.summary ?? r.agent_id ?? 'Contenu généré'}</div><div className="mt-1 truncate text-[11px] text-slate-500">{r.agent_id ?? r.type ?? 'Agent IA'} · {r.created_at ? new Date(r.created_at).toLocaleString('fr-FR') : r.date_creation ?? ''}</div></button><button type="button" aria-label={`Supprimer la validation ${id}`} title="Supprimer cette validation" disabled={deletingReviewId !== '' || busy} onClick={() => void deleteReview(r)} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-red-100 bg-red-50 text-red-600 transition hover:bg-red-100 disabled:cursor-wait disabled:opacity-50">{deletingReviewId === id ? <Loader2 size={15} className="animate-spin" /> : <Trash2 size={15} />}</button></div>; })}</div> : reviewsLoading ? <p className="text-xs text-slate-500">Chargement des validations…</p> : <p className="text-xs text-slate-500">Aucun contenu en attente de validation.</p>}
       </section>
-      <section className={panel}>{selected ? <><div className="flex items-start justify-between gap-3"><div><h2 className="font-extrabold text-[#11162A]">{selected.summary ?? selected.title ?? 'Aperçu du contenu à valider'}</h2><p className="text-[11px] text-slate-500 mt-1">{selected.agent_id ?? selected.type ?? selected.review_id} · {selected.criticity ?? ''} · {selected.created_at ? new Date(selected.created_at).toLocaleString('fr-FR') : ''}</p></div><div className="flex items-center gap-2">{selected.agent_id === 'agent_5_attestations' && selected.status === 'approved' && <button type="button" disabled={attestationBusy !== ''} onClick={()=>void downloadAttestationZip()} className="flex items-center gap-1.5 rounded-lg bg-[#11162A] px-3 py-2 text-[11px] font-bold text-white disabled:opacity-50"><Archive size={14}/>Télécharger le ZIP</button>}<button onClick={() => setSelected(null)} className="p-1.5 text-slate-400 hover:text-slate-700"><X size={16} /></button></div></div>{!reviewLoading && !documentEdit && editableDocument(selected) && <button type="button" onClick={() => setDocumentEdit(structuredClone(editableDocument(selected)))} className="mt-3 rounded-lg bg-slate-100 px-3 py-2 text-xs font-bold text-slate-700">Modifier manuellement</button>}{reviewLoading ? <div className="mt-6 flex min-h-48 items-center justify-center gap-2 text-sm font-semibold text-slate-500"><Loader2 size={18} className="animate-spin text-[#0B1F4D]" />Chargement du dossier…</div> : <>{documentEdit ? <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 p-3"><p className="mb-3 text-xs text-blue-900">Modifiez les champs, enregistrez, puis approuvez la version mise à jour. Les montants calculés de l'offre financière restent à ajuster dans le dossier marché.</p><div className="max-h-[560px] overflow-auto rounded-lg bg-white p-3"><DocumentFields value={documentEdit} onChange={(path, value) => setDocumentEdit(current => current ? setDocumentField(current, path, value) : null)} allowNumbers={selected.agent_id !== 'agent_m3_financiere'} /></div><div className="mt-3 flex justify-end gap-2"><button type="button" onClick={() => setDocumentEdit(null)} className="rounded-lg bg-white px-3 py-2 text-xs font-bold text-slate-700">Annuler</button><button type="button" disabled={busy} onClick={() => void saveManualDocument()} className="rounded-lg bg-blue-800 px-3 py-2 text-xs font-bold text-white disabled:opacity-50">Enregistrer les modifications</button></div></div> : selected.agent_id === 'agent_5_attestations' ? <div className="mt-4 space-y-4"><div className="grid gap-3 sm:grid-cols-3"><div className="rounded-xl bg-emerald-50 p-3"><div className="text-[10px] font-bold uppercase text-emerald-700">Attestations préparées</div><div className="mt-1 text-2xl font-extrabold text-emerald-800">{selected.data?.total_pdf_generated ?? selected.data?.attestations?.length ?? 0}</div></div><div className="rounded-xl bg-slate-50 p-3"><div className="text-[10px] font-bold uppercase text-slate-500">Lot de formation</div><div className="mt-1 truncate text-sm font-extrabold text-[#11162A]">{selected.meta?.session_title ?? selected.data?.session_id ?? 'Session'}</div></div><div className="rounded-xl bg-amber-50 p-3"><div className="text-[10px] font-bold uppercase text-amber-700">Validation</div><div className="mt-1 text-sm font-extrabold text-amber-800">{selected.status === 'approved' ? 'Lot approuvé' : 'Requise avant remise'}</div></div></div><div className="space-y-3">{(selected.data?.attestations ?? []).map((item:any)=><article key={item.numero_unique} className="overflow-hidden rounded-2xl border border-slate-200 bg-white"><div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 p-4"><div><div className="flex flex-wrap items-center gap-2"><h3 className="font-extrabold text-[#11162A]">{[item.participant?.prenom,item.participant?.nom].filter(Boolean).join(' ') || item.participant?.nom}</h3><span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-extrabold text-emerald-800">{item.participant?.taux_presence != null ? `${item.participant.taux_presence}% de présence` : 'Éligible · ≥75%'}</span><span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${item.approval_status === 'approved' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>{item.approval_status === 'approved' ? 'Approuvée' : 'À valider'}</span></div><p className="mt-1 text-[11px] text-slate-500">{item.numero_unique} · {item.content?.details?.formation ?? ''}</p></div><div className="flex flex-wrap gap-2"><button type="button" disabled={attestationBusy!==''} onClick={()=>void previewAttestation(item)} className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-[11px] font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50"><Eye size={14}/>{attestationBusy===item.numero_unique?'Ouverture…':'Aperçu PDF'}</button>{item.approval_status === 'approved' ? <button type="button" disabled={attestationBusy!==''} onClick={()=>void downloadAttestation(item)} className="flex items-center gap-1.5 rounded-lg bg-emerald-700 px-3 py-2 text-[11px] font-bold text-white disabled:opacity-50"><Download size={14}/>Télécharger</button> : item.approval_status !== 'approved' && <button type="button" disabled={attestationBusy!==''} onClick={()=>void approveOneAttestation(item)} className="flex items-center gap-1.5 rounded-lg bg-[#0B1F4D] px-3 py-2 text-[11px] font-bold text-white disabled:opacity-50"><Check size={14}/>{attestationBusy===item.numero_unique?'Validation…':'Approuver'}</button>}</div></div>{attestationPreview?.numero === item.numero_unique && <iframe title={`Aperçu ${item.numero_unique}`} src={attestationPreview.url} className="h-[520px] w-full bg-slate-100"/>}</article>)}</div><div className="rounded-xl border border-blue-100 bg-blue-50/70 p-3 text-[11px] leading-relaxed text-blue-900">Vérifiez le nom, les dates, les compétences et le numéro de chaque document. Les téléchargements individuels et le ZIP sont ouverts après validation.</div></div> : <div className="mt-4"><ReviewContent value={selected} /></div>}<textarea disabled={documentEdit !== null} value={reviewNote} onChange={e => setReviewNote(e.target.value)} placeholder="Note de validation, motif de rejet ou correction demandée" rows={2} className="mt-3 w-full p-3 bg-white border border-slate-300 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#0B1F4D]" /><div className="flex justify-end gap-2 mt-3"><button disabled={busy || documentEdit !== null} onClick={() => reviewAction(false)} className="px-4 py-2 bg-red-50 text-red-700 rounded-lg text-xs font-bold">Rejeter</button>{['agent_m2_tdr', 'agent_m3_technique', 'agent_m3_financiere'].includes(String(selected.agent_id)) && <button disabled={busy || reviewLoading || documentEdit !== null} onClick={() => void correctDocument()} className="px-4 py-2 bg-blue-50 text-blue-800 rounded-lg text-xs font-bold">Demander une correction à l'IA</button>}<button disabled={busy || documentEdit !== null} onClick={() => reviewAction(true)} className="px-4 py-2 bg-[#0B1F4D] text-white rounded-lg text-xs font-bold flex gap-1.5 items-center">{busy ? <Loader2 size={14} className="animate-spin" /> : selected.agent_id === 'agent_5_attestations' ? <CheckCheck size={14}/> : <Check size={14} />}{selected.agent_id === 'agent_5_attestations' ? 'Approuver toutes' : 'Approuver'}</button></div></>}</> : <div className="h-full min-h-56 flex flex-col items-center justify-center text-center text-slate-400"><FileText size={30} className="mb-2" /><p className="text-xs font-semibold">Sélectionnez un contenu pour le consulter.</p></div>}</section>
+      <section className={panel}>{selected ? <><div className="flex items-start justify-between gap-3"><div><h2 className="font-extrabold text-[#11162A]">{selected.summary ?? selected.title ?? 'Aperçu du contenu à valider'}</h2><p className="text-[11px] text-slate-500 mt-1">{selected.agent_id ?? selected.type ?? selected.review_id} · {selected.criticity ?? ''} · {selected.created_at ? new Date(selected.created_at).toLocaleString('fr-FR') : ''}</p></div><div className="flex items-center gap-2">{selected.agent_id === 'agent_5_attestations' && selected.status === 'approved' && <button type="button" disabled={attestationBusy !== ''} onClick={()=>void downloadAttestationZip()} className="flex items-center gap-1.5 rounded-lg bg-[#11162A] px-3 py-2 text-[11px] font-bold text-white disabled:opacity-50"><Archive size={14}/>Télécharger le ZIP</button>}{selected.agent_id === 'agent_6_report' && selected.status === 'approved' && <><button type="button" disabled={reportDocxDownloadBusy || reportDownloadBusy} onClick={()=>void downloadReportDocx()} className="flex items-center gap-1.5 rounded-lg bg-[#0B1F4D] px-3 py-2 text-[11px] font-bold text-white disabled:opacity-50"><Download size={14}/>{reportDocxDownloadBusy ? 'Génération Word…' : 'Télécharger Word'}</button><button type="button" disabled={reportDownloadBusy || reportDocxDownloadBusy} onClick={()=>void downloadReport()} className="flex items-center gap-1.5 rounded-lg bg-[#0B1F4D] px-3 py-2 text-[11px] font-bold text-white disabled:opacity-50"><Download size={14}/>{reportDownloadBusy ? 'Génération PDF…' : 'Télécharger PDF'}</button></>}<button onClick={() => setSelected(null)} className="p-1.5 text-slate-400 hover:text-slate-700"><X size={16} /></button></div></div>{!reviewLoading && !documentEdit && editableDocument(selected) && <button type="button" onClick={() => setDocumentEdit(structuredClone(editableDocument(selected)))} className="mt-3 rounded-lg bg-slate-100 px-3 py-2 text-xs font-bold text-slate-700">Modifier manuellement</button>}{reviewLoading ? <div className="mt-6 flex min-h-48 items-center justify-center gap-2 text-sm font-semibold text-slate-500"><Loader2 size={18} className="animate-spin text-[#0B1F4D]" />Chargement du dossier…</div> : <>{documentEdit ? <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 p-3"><p className="mb-3 text-xs text-blue-900">Modifiez les champs, enregistrez, puis approuvez la version mise à jour. Les montants calculés de l'offre financière restent à ajuster dans le dossier marché.</p><div className="max-h-[560px] overflow-auto rounded-lg bg-white p-3"><DocumentFields value={documentEdit} onChange={(path, value) => setDocumentEdit(current => current ? setDocumentField(current, path, value) : null)} allowNumbers={selected.agent_id !== 'agent_m3_financiere'} /></div><div className="mt-3 flex justify-end gap-2"><button type="button" onClick={() => setDocumentEdit(null)} className="rounded-lg bg-white px-3 py-2 text-xs font-bold text-slate-700">Annuler</button><button type="button" disabled={busy} onClick={() => void saveManualDocument()} className="rounded-lg bg-blue-800 px-3 py-2 text-xs font-bold text-white disabled:opacity-50">Enregistrer les modifications</button></div></div> : selected.agent_id === 'agent_5_attestations' ? <div className="mt-4 space-y-4"><div className="grid gap-3 sm:grid-cols-3"><div className="rounded-xl bg-emerald-50 p-3"><div className="text-[10px] font-bold uppercase text-emerald-700">Attestations préparées</div><div className="mt-1 text-2xl font-extrabold text-emerald-800">{selected.data?.total_pdf_generated ?? selected.data?.attestations?.length ?? 0}</div></div><div className="rounded-xl bg-slate-50 p-3"><div className="text-[10px] font-bold uppercase text-slate-500">Lot de formation</div><div className="mt-1 truncate text-sm font-extrabold text-[#11162A]">{selected.meta?.session_title ?? selected.data?.session_id ?? 'Session'}</div></div><div className="rounded-xl bg-amber-50 p-3"><div className="text-[10px] font-bold uppercase text-amber-700">Validation</div><div className="mt-1 text-sm font-extrabold text-amber-800">{selected.status === 'approved' ? 'Lot approuvé' : 'Requise avant remise'}</div></div></div><div className="space-y-3">{(selected.data?.attestations ?? []).map((item:any)=><article key={item.numero_unique} className="overflow-hidden rounded-2xl border border-slate-200 bg-white"><div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 p-4"><div><div className="flex flex-wrap items-center gap-2"><h3 className="font-extrabold text-[#11162A]">{[item.participant?.prenom,item.participant?.nom].filter(Boolean).join(' ') || item.participant?.nom}</h3><span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-extrabold text-emerald-800">{item.participant?.taux_presence != null ? `${item.participant.taux_presence}% de présence` : 'Éligible · ≥75%'}</span><span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${item.approval_status === 'approved' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>{item.approval_status === 'approved' ? 'Approuvée' : 'À valider'}</span></div><p className="mt-1 text-[11px] text-slate-500">{item.numero_unique} · {item.content?.details?.formation ?? ''}</p></div><div className="flex flex-wrap gap-2"><button type="button" disabled={attestationBusy!==''} onClick={()=>void previewAttestation(item)} className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-[11px] font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50"><Eye size={14}/>{attestationBusy===item.numero_unique?'Ouverture…':'Aperçu PDF'}</button>{item.approval_status === 'approved' ? <button type="button" disabled={attestationBusy!==''} onClick={()=>void downloadAttestation(item)} className="flex items-center gap-1.5 rounded-lg bg-emerald-700 px-3 py-2 text-[11px] font-bold text-white disabled:opacity-50"><Download size={14}/>Télécharger</button> : item.approval_status !== 'approved' && <button type="button" disabled={attestationBusy!==''} onClick={()=>void approveOneAttestation(item)} className="flex items-center gap-1.5 rounded-lg bg-[#0B1F4D] px-3 py-2 text-[11px] font-bold text-white disabled:opacity-50"><Check size={14}/>{attestationBusy===item.numero_unique?'Validation…':'Approuver'}</button>}</div></div>{attestationPreview?.numero === item.numero_unique && <iframe title={`Aperçu ${item.numero_unique}`} src={attestationPreview.url} className="h-[520px] w-full bg-slate-100"/>}</article>)}</div><div className="rounded-xl border border-blue-100 bg-blue-50/70 p-3 text-[11px] leading-relaxed text-blue-900">Vérifiez le nom, les dates, les compétences et le numéro de chaque document. Les téléchargements individuels et le ZIP sont ouverts après validation.</div></div> : selected.agent_id === 'agent_6_report' ? <div className="mt-4 space-y-4">
+  {/* KPIs résumé */}
+  <div className="grid grid-cols-3 gap-3">
+    {[
+      { label: 'Inscrits', value: selected.data?.statistiques_participants?.total_inscrits ?? selected.data?.presentation?.nombre_participants ?? '—' },
+      { label: 'Présents', value: selected.data?.statistiques_participants?.total_presents ?? '—' },
+      { label: 'Taux présence', value: selected.data?.statistiques_participants?.taux_presence_moyen ?? '—' },
+    ].map(kpi => (
+      <div key={kpi.label} className="rounded-xl border border-[#0B1F4D]/10 bg-[#F4F6FA] p-3 text-center">
+        <div className="text-xl font-extrabold text-[#0B1F4D]">{String(kpi.value)}</div>
+        <div className="text-[10px] font-semibold uppercase text-slate-500 mt-0.5">{kpi.label}</div>
+      </div>
+    ))}
+  </div>
+  {/* Résumé exécutif */}
+  {selected.data?.resume_executif && <div className="rounded-xl border-l-4 border-[#C9A84C] bg-amber-50/60 p-3"><p className="text-xs font-bold uppercase text-[#C9A84C] mb-1">Résumé exécutif</p><p className="text-sm leading-relaxed text-slate-800">{selected.data.resume_executif}</p></div>}
+  {/* Satisfaction */}
+  {selected.data?.satisfaction?.note_globale && <div className="rounded-xl bg-slate-50 p-3"><p className="text-[10px] font-bold uppercase text-slate-500 mb-2">Satisfaction</p><div className="flex flex-wrap gap-3">{[
+    ['Globale', selected.data.satisfaction.note_globale],
+    ['Formateur', selected.data.satisfaction.note_formateur],
+    ['Contenu', selected.data.satisfaction.note_contenu],
+  ].map(([l, v]) => <div key={String(l)} className="text-center"><div className="text-base font-extrabold text-[#0B1F4D]">{String(v)}</div><div className="text-[9px] text-slate-500">{String(l)}</div></div>)}</div></div>}
+  {/* Recommandations */}
+  {Array.isArray(selected.data?.recommandations) && selected.data.recommandations.length > 0 && <div><p className="text-[10px] font-bold uppercase text-slate-500 mb-2">Recommandations</p><ol className="space-y-1.5">{selected.data.recommandations.map((r: string, i: number) => <li key={i} className="flex gap-2 text-xs text-slate-800"><span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#0B1F4D] text-[9px] font-bold text-white">{i + 1}</span><span className="leading-relaxed">{r}</span></li>)}</ol></div>}
+  {/* Conclusion */}
+  {selected.data?.conclusion && <div className="rounded-xl bg-emerald-50/60 border border-emerald-100 p-3"><p className="text-[10px] font-bold uppercase text-emerald-700 mb-1">Conclusion</p><p className="text-xs leading-relaxed text-slate-800">{selected.data.conclusion}</p></div>}
+  {selected.status !== 'approved' && <div className="rounded-xl border border-blue-100 bg-blue-50/70 p-3 text-[11px] leading-relaxed text-blue-900">Vérifiez le contenu du rapport. Après approbation, le PDF ALTIORA sera disponible au téléchargement.</div>}
+</div> : <div className="mt-4"><ReviewContent value={selected} /></div>}<textarea disabled={documentEdit !== null} value={reviewNote} onChange={e => setReviewNote(e.target.value)} placeholder="Note de validation, motif de rejet ou correction demandée" rows={2} className="mt-3 w-full p-3 bg-white border border-slate-300 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#0B1F4D]" /><div className="flex justify-end gap-2 mt-3"><button disabled={busy || documentEdit !== null} onClick={() => reviewAction(false)} className="px-4 py-2 bg-red-50 text-red-700 rounded-lg text-xs font-bold">Rejeter</button>{['agent_m2_tdr', 'agent_m3_technique', 'agent_m3_financiere'].includes(String(selected.agent_id)) && <button disabled={busy || reviewLoading || documentEdit !== null} onClick={() => void correctDocument()} className="px-4 py-2 bg-blue-50 text-blue-800 rounded-lg text-xs font-bold">Demander une correction à l'IA</button>}<button disabled={busy || documentEdit !== null} onClick={() => reviewAction(true)} className="px-4 py-2 bg-[#0B1F4D] text-white rounded-lg text-xs font-bold flex gap-1.5 items-center">{busy ? <Loader2 size={14} className="animate-spin" /> : selected.agent_id === 'agent_5_attestations' ? <CheckCheck size={14}/> : <Check size={14} />}{selected.agent_id === 'agent_5_attestations' ? 'Approuver toutes' : 'Approuver'}</button></div></>}</> : <div className="h-full min-h-56 flex flex-col items-center justify-center text-center text-slate-400"><FileText size={30} className="mb-2" /><p className="text-xs font-semibold">Sélectionnez un contenu pour le consulter.</p></div>}</section>
     </div>}
 
     {tab === 'history' && <div className="grid gap-4 lg:grid-cols-[minmax(260px,0.8fr)_minmax(0,1.2fr)]">
@@ -881,11 +1019,23 @@ export const EspaceIAView: React.FC<{ readOnly?: boolean; trainerMode?: boolean;
     } catch (e) { setError(errorText(e)); }
   };
   const handleDelete = async () => {
-    if (!docHash || !window.confirm(`Supprimer définitivement « ${s.fichier ?? s.nom_fichier ?? s.filename ?? 'ce support'} » ? Le fichier et ses éventuels chunks seront supprimés.`)) return;
+    const _ok2 = await confirm({ title: 'Supprimer le support', message: `Le fichier « ${s.fichier ?? s.nom_fichier ?? s.filename ?? 'ce support'} » et ses chunks seront définitivement supprimés.`, confirmLabel: 'Supprimer', variant: 'danger' });
+    if (!docHash || !_ok2) return;
     try {
       await apiService.deleteSupport(docHash);
       setSupports(prev => prev.filter(sup => (sup.hash ?? sup.doc_hash ?? sup.id) !== docHash));
       setNotice('Support supprimé, ainsi que son fichier et ses éventuels chunks indexés.');
+    } catch (e) { setError(errorText(e)); }
+  };
+  const targetSession = sessions.find((item: any) => item.id === sessionId);
+  const alreadyLinked = s.session_id === sessionId;
+  const canLink = !readOnly && docHash && sessionId && (status === 'indexe' || status === 'deja_indexe') && !alreadyLinked;
+  const handleLinkToSession = async () => {
+    if (!docHash || !sessionId) return;
+    try {
+      await apiService.linkSupportToSession(docHash, sessionId);
+      setSupports(prev => prev.map(sup => (sup.hash ?? sup.doc_hash) === docHash ? { ...sup, session_id: sessionId } : sup));
+      setNotice(`Support rattaché à la session « ${targetSession?.titre ?? sessionId} ». L'étape pipeline passera au vert après actualisation du dossier.`);
     } catch (e) { setError(errorText(e)); }
   };
   return (
@@ -902,6 +1052,16 @@ export const EspaceIAView: React.FC<{ readOnly?: boolean; trainerMode?: boolean;
       </div>
       <div className="flex flex-col items-end gap-1.5 shrink-0">
         <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${supportStatusStyle[status] ?? 'bg-slate-100 text-slate-600'}`}>{supportStatusLabel[status] ?? status}</span>
+        {canLink && (
+          <button type="button" onClick={handleLinkToSession} title={`Rattacher ce support à la session « ${targetSession?.titre ?? sessionId} »`} className="flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-[#0B1F4D] text-white hover:bg-[#0A1628] transition">
+            <span>+</span> Appliquer à la session
+          </button>
+        )}
+        {!readOnly && alreadyLinked && (status === 'indexe' || status === 'deja_indexe') && sessionId && (
+          <span className="flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-emerald-50 border border-emerald-200 text-emerald-700">
+            ✓ Dans cette session
+          </span>
+        )}
         {!readOnly && canArchive && (
           <button type="button" onClick={handleArchive} title="Archiver ce support (retire les chunks, fichier conservé)" className="flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-amber-50 border border-amber-200 text-amber-700 hover:bg-amber-100 transition">
             Archiver
@@ -924,10 +1084,10 @@ export const EspaceIAView: React.FC<{ readOnly?: boolean; trainerMode?: boolean;
     </div>}
 
     {tab === 'chat' && (
-      <div className={`grid gap-4 ${ragConversations.length > 0 && sidebarOpen ? 'lg:grid-cols-[260px_minmax(0,1fr)]' : ''}`}>
+      <div className={`grid gap-4 ${sidebarOpen ? 'lg:grid-cols-[260px_minmax(0,1fr)]' : ''}`}>
 
         {/* ── Sidebar conversations ── */}
-        {ragConversations.length > 0 && sidebarOpen && (
+        {sidebarOpen && (
           <aside className="flex flex-col gap-0 h-fit rounded-2xl overflow-hidden border border-slate-200 shadow-sm"
             style={{ background: 'linear-gradient(180deg, #0B1F4D 0%, #06132F 100%)' }}>
             {/* Header sidebar */}
@@ -951,6 +1111,13 @@ export const EspaceIAView: React.FC<{ readOnly?: boolean; trainerMode?: boolean;
             </div>
             {/* Liste conversations */}
             <div className="px-3 pb-3 space-y-1 max-h-[420px] overflow-y-auto">
+              {ragConversations.length === 0 && !conversationsLoading && (
+                <div className="py-6 text-center">
+                  <MessageCircle size={22} className="mx-auto mb-2 text-white/20" />
+                  <p className="text-[11px] text-white/30">Aucune discussion pour le moment.</p>
+                  <p className="text-[10px] text-white/20 mt-0.5">Posez votre première question ci-contre.</p>
+                </div>
+              )}
               {ragConversations.map((conv: any) => (
                 <div key={conv.conversation_id}
                   className="group relative rounded-xl p-2.5 transition-all cursor-pointer"
@@ -995,7 +1162,7 @@ export const EspaceIAView: React.FC<{ readOnly?: boolean; trainerMode?: boolean;
             style={{ background: 'linear-gradient(135deg, #0B1F4D 0%, #06132F 100%)', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
             <div className="flex items-center gap-3 min-w-0">
               {/* Bouton toggle sidebar */}
-              {ragConversations.length > 0 && !sidebarOpen && (
+              {!sidebarOpen && (
                 <button type="button" onClick={() => setSidebarOpen(true)} title="Afficher les conversations"
                   className="flex items-center gap-1.5 shrink-0 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-all"
                   style={{ background: 'rgba(212,175,55,0.12)', border: '1px solid rgba(212,175,55,0.3)', color: '#D4AF37' }}>
@@ -1074,61 +1241,95 @@ export const EspaceIAView: React.FC<{ readOnly?: boolean; trainerMode?: boolean;
                 ? 2 : /recherche|passage|support|document/.test(progressLabel) ? 1 : 0;
               return (
                 <div key={i} className={`group flex flex-col ${isUser ? 'items-end' : 'items-start'} mb-2`}>
-                  <div className={`max-w-[85%] ${isUser ? '' : ''}`}>
+                  {/* Avatar agent */}
+                  {!isUser && (
+                    <div className="mb-2 flex items-center gap-2">
+                      {/* Avatar hexagonal premium */}
+                      <div className="relative flex-shrink-0">
+                        <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-[#0B1F4D] via-[#1a3570] to-[#06132F] shadow-md ring-2 ring-brand-gold/30">
+                          <Zap size={13} className="text-brand-gold drop-shadow-sm" />
+                        </div>
+                        {/* Point vert "en ligne" */}
+                        <span className="absolute -bottom-0.5 -right-0.5 flex h-2.5 w-2.5 items-center justify-center rounded-full bg-white">
+                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                        </span>
+                      </div>
+                      <div className="flex flex-col">
+                        <span className="text-[11px] font-extrabold tracking-wide text-[#0B1F4D]">FORMA-IA</span>
+                        <span className="text-[9px] font-medium uppercase tracking-widest text-slate-400">Assistant pédagogique</span>
+                      </div>
+                    </div>
+                  )}
+                  <div className={isUser ? 'max-w-[78%]' : 'w-full'}>
                     {/* Bulle message */}
-                    <div className={`relative px-4 py-3 rounded-2xl text-sm leading-relaxed ${isUser
-                      ? 'text-white rounded-br-sm'
-                      : 'text-slate-800 rounded-bl-sm bg-white border border-slate-200'}`}
+                    <div className={`relative ${isUser
+                      ? 'px-5 py-3.5 rounded-2xl rounded-br-sm text-white text-[14px] leading-relaxed font-medium'
+                      : 'px-1 py-0'}`}
                       style={isUser ? {
                         background: 'linear-gradient(135deg, #0B1F4D 0%, #06132F 100%)',
-                        boxShadow: '0 4px 16px rgba(11,31,77,0.25)',
-                      } : {
-                        boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
-                      }}>
+                        boxShadow: '0 4px 16px rgba(11,31,77,0.22)',
+                      } : undefined}>
 
                       {/* Loader streaming */}
                       {isStreaming && !m.text ? (
-                        <div className="min-w-56 space-y-3" role="status" aria-live="polite">
-                          <div className="flex items-center gap-2 text-xs font-semibold text-slate-600">
-                            <Loader2 size={13} className="animate-spin text-[#0B1F4D]" />
-                            <span>{streamingStatus || 'Préparation…'}</span>
+                        /* ── Bulle "en train de réfléchir" ── */
+                        <div className="min-w-[260px] space-y-3.5 rounded-2xl border border-slate-100 bg-slate-50/80 px-5 py-4" role="status" aria-live="polite">
+                          {/* Trois points animés */}
+                          <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-1.5">
+                              {[0, 1, 2].map(d => (
+                                <span key={d} className="h-2.5 w-2.5 rounded-full bg-[#0B1F4D]"
+                                  style={{ animation: `bounce 1.2s ease-in-out ${d * 0.2}s infinite` }} />
+                              ))}
+                            </div>
+                            <span className="text-[12px] font-semibold text-slate-500 italic">{streamingStatus || 'FORMA-IA réfléchit…'}</span>
                           </div>
-                          <div className="flex gap-2 text-[10px]">
-                            {['Compréhension', 'Recherche RAG', 'Rédaction'].map((stage, si) => (
-                              <div key={stage} className="flex items-center gap-1 rounded-lg px-2 py-1 transition-colors"
-                                style={{
-                                  background: si < activeStage ? 'rgba(16,122,96,0.08)' : si === activeStage ? '#fff' : 'rgba(0,0,0,0.03)',
-                                  border: `1px solid ${si < activeStage ? 'rgba(16,122,96,0.25)' : si === activeStage ? 'rgba(11,31,77,0.2)' : 'rgba(0,0,0,0.08)'}`,
-                                  color: si < activeStage ? '#167a60' : si === activeStage ? '#0B1F4D' : '#94a3b8',
-                                  fontWeight: si === activeStage ? 700 : 500,
-                                }}>
-                                <span>{si < activeStage ? '✓' : si === activeStage ? '●' : '○'}</span>{stage}
+                          {/* Pipeline étapes */}
+                          <div className="flex items-center gap-0 text-[10px]">
+                            {[
+                              { label: 'Analyse', icon: '🔍' },
+                              { label: 'Recherche', icon: '📚' },
+                              { label: 'Rédaction', icon: '✍️' },
+                            ].map(({ label, icon }, si) => (
+                              <div key={label} className="flex items-center">
+                                <div className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 transition-all duration-500"
+                                  style={{
+                                    background: si < activeStage ? 'rgba(16,185,129,0.1)' : si === activeStage ? 'rgba(11,31,77,0.08)' : 'rgba(0,0,0,0.03)',
+                                    border: `1px solid ${si < activeStage ? 'rgba(16,185,129,0.4)' : si === activeStage ? 'rgba(11,31,77,0.2)' : 'rgba(0,0,0,0.07)'}`,
+                                    color: si < activeStage ? '#059669' : si === activeStage ? '#0B1F4D' : '#cbd5e1',
+                                    fontWeight: si === activeStage ? 700 : 500,
+                                    transform: si === activeStage ? 'scale(1.05)' : 'scale(1)',
+                                  }}>
+                                  <span style={{ fontSize: 11 }}>{si < activeStage ? '✓' : icon}</span>
+                                  <span>{label}</span>
+                                </div>
+                                {si < 2 && <div className="h-px w-3 mx-0.5" style={{ background: si < activeStage ? '#059669' : '#e2e8f0' }} />}
                               </div>
                             ))}
                           </div>
                         </div>
                       ) : <>
                         {isStreaming && m.text && (
-                          <div className="mb-2 flex items-center gap-1.5 text-[10px] font-semibold text-emerald-700">
-                            <span className="relative flex h-1.5 w-1.5">
-                              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60" />
-                              <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                          <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold text-[#0B1F4D]/60">
+                            <span className="relative flex h-2 w-2">
+                              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#0B1F4D] opacity-40" />
+                              <span className="relative inline-flex h-2 w-2 rounded-full bg-[#0B1F4D]" />
                             </span>
-                            Rédaction en cours…
+                            Streaming en cours…
                           </div>
                         )}
                         {m.text
                           ? isUser
-                            ? <span className="whitespace-pre-wrap text-[13px] leading-relaxed">{m.text}{isStreaming && <span className="inline-block w-0.5 h-3.5 bg-white/70 ml-0.5 align-middle animate-pulse" />}</span>
+                            ? <span className="whitespace-pre-wrap text-[14px] leading-relaxed">{m.text}{isStreaming && <span className="inline-block w-0.5 h-4 bg-white/80 ml-0.5 align-middle animate-pulse" />}</span>
                             : isStreaming
-                              ? <div className="prose-chat"><span dangerouslySetInnerHTML={{ __html: renderMarkdown(m.text) }} /><span className="inline-block w-0.5 h-4 bg-[#0B1F4D]/70 ml-0.5 align-middle animate-[pulse_0.8s_ease-in-out_infinite]" /></div>
-                              : <div className="prose-chat"><span dangerouslySetInnerHTML={{ __html: renderMarkdown(m.text) }} /></div>
+                              ? <div className="prose-chat rounded-2xl border border-slate-100 bg-white px-5 py-4 shadow-sm"><span dangerouslySetInnerHTML={{ __html: renderMarkdown(m.text) }} /><span className="inline-block w-[2px] h-[18px] bg-[#0B1F4D] ml-0.5 align-middle rounded-full animate-[pulse_0.7s_ease-in-out_infinite]" /></div>
+                              : <div className="prose-chat rounded-2xl border border-slate-100 bg-white px-5 py-4 shadow-sm"><span dangerouslySetInnerHTML={{ __html: renderMarkdown(m.text) }} /></div>
                           : isStreaming ? null : ''}
                       </>}
 
                       {/* Actions hover */}
                       {m.text && !isStreaming && (
-                        <div className={`absolute -bottom-6 ${isUser ? 'right-0' : 'left-0'} flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition`}>
+                        <div className={`${isUser ? 'absolute -bottom-6 right-0' : 'mt-1.5 pl-1'} flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition`}>
                           <button type="button" onClick={() => copyMessage(m.text, i)}
                             className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-white border border-slate-200 text-[10px] text-slate-500 hover:text-[#0B1F4D] shadow-sm transition">
                             {copiedMsgIdx === i ? <Check size={10} className="text-emerald-600" /> : <Copy size={10} />}

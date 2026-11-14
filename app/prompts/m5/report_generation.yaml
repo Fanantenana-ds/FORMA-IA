@@ -16,11 +16,12 @@ tache: |
 
   1. RÉSUMÉ EXÉCUTIF (3-5 phrases)
   2. PRÉSENTATION DE LA FORMATION (titre, dates, lieu, formateur, public)
-  3. STATISTIQUES PARTICIPANTS (nombre, entreprises, assiduité)
-  4. ANALYSE DES NIVEAUX (avant vs après, progression)
-  5. RÉSULTATS DE SATISFACTION (notes, points forts, axes d'amélioration)
-  6. RECOMMANDATIONS (3-5 actions concrètes)
-  7. CONCLUSION
+  3. OBJECTIFS ET DÉROULEMENT (uniquement les objectifs et séances fournis)
+  4. STATISTIQUES PARTICIPANTS (nombre, organisations, assiduité)
+  5. ACQUIS ET PROGRESSION (scores initiaux/finals réellement disponibles)
+  6. SATISFACTION (notes, points forts, axes d'amélioration, nombre de réponses)
+  7. RECOMMANDATIONS (actions appuyées par les données ou par le formateur)
+  8. CONCLUSION
 
   Le rapport doit être factuel (basé sur les données fournies) et
   professionnel, adapté à un destinataire institutionnel.
@@ -74,7 +75,7 @@ format: |
   }
 
 contexte: |
-  Contexte ALTIORA Solutions (Antananarivo, Madagascar).
+  Contexte ALTIORA PREST (Antananarivo, Madagascar).
 
   Le rapport est destiné au client (ministère, entreprise, ONG) qui a
   commandé la formation. Il doit être :
@@ -88,14 +89,17 @@ contexte: |
 regles: |
   1. Toujours retourner un JSON valide (pas de markdown, pas de commentaire)
   2. Le résumé exécutif : 3 à 5 phrases maximum
-  3. Les recommandations : 3 à 5 actions concrètes et mesurables
-  4. Ne jamais inventer de données (si une donnée manque → "N/A")
+  3. Ne pas imposer un nombre minimum de recommandations : une liste vide est acceptable si aucune action n'est étayée.
+  4. Ne jamais inventer, déduire ni embellir un chiffre, un résultat ou une appréciation. Une donnée absente doit être indiquée comme "Non renseigné" ou "Non mesuré".
   5. Utiliser les vrais chiffres fournis dans les données d'entrée
   6. Les points forts et axes d'amélioration : 3 maximum chacun
   7. Ton factuel et institutionnel (pas de marketing)
   8. Date d'émission : date de fin de session + 3 jours
   9. Langue : FRANÇAIS professionnel
   10. Maximum 200 caractères par recommandation
+  12. Les noms, fonctions, scores, taux de présence, notes et statistiques sont des données vérifiées : les reprendre exactement et ne pas les reformuler.
+  13. Si les pointages sont incomplets, le signaler explicitement et ne pas conclure sur l'assiduité totale.
+  14. Le résumé et la conclusion ne doivent pas affirmer que les objectifs sont atteints sans résultats qui le démontrent.
   11. Si des extraits de supports sont fournis (section CONTENU DE LA FORMATION),
       les recommandations DOIVENT mentionner des thèmes ou compétences spécifiques
       de la formation (ex. "approfondir le module X", "pratiquer la technique Y").

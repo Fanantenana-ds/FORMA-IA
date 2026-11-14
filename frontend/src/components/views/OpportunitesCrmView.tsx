@@ -1,5 +1,6 @@
 ﻿import React, { useState, useEffect, useRef } from 'react';
 import { PageHeader } from '../PageHeader';
+import { ConfirmDialog, useConfirmDialog } from '../ConfirmDialog';
 import { apiService } from '../../services/api';
 import {
   Sparkles,
@@ -194,6 +195,7 @@ export const OpportunitesCrmView: React.FC<OpportunitesCrmViewProps> = ({
   const [deletingOpportunityId, setDeletingOpportunityId] = useState('');
   const restoredWorkflowMarket = useRef('');
   const skipWorkflowWrite = useRef(false);
+  const { confirm, dialogProps } = useConfirmDialog();
   const voicePrefillRef = useRef<Record<string, unknown> | null>(null);
   const acceptedMarketsRef = useRef(acceptedMarkets);
   acceptedMarketsRef.current = acceptedMarkets;
@@ -230,7 +232,8 @@ export const OpportunitesCrmView: React.FC<OpportunitesCrmViewProps> = ({
   };
 
   const deleteOpportunity = async (id: string, title: string) => {
-    if (!window.confirm(`Supprimer l’opportunité acceptée « ${title} » ?`)) return;
+    const ok = await confirm({ title: "Supprimer l’opportunité", message: `L’opportunité « ${title} » sera définitivement supprimée ainsi que tous ses documents associés.`, confirmLabel: 'Supprimer', variant: 'danger' });
+    if (!ok) return;
     setDeletingOpportunityId(id);
     setDeleteError('');
     try {
@@ -597,6 +600,7 @@ export const OpportunitesCrmView: React.FC<OpportunitesCrmViewProps> = ({
   };
 
   return <div className="space-y-6 animate-in fade-in duration-300">
+    <ConfirmDialog {...dialogProps} />
     <PageHeader
       icon={<Zap size={22} />}
       badge="M2-M3 · TDR & Offres"

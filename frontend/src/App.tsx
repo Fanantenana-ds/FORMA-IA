@@ -130,8 +130,12 @@ export default function App() {
   const [isNewSessionModalOpen, setIsNewSessionModalOpen] = useState<boolean>(false);
   const [isNewInvoiceModalOpen, setIsNewInvoiceModalOpen] = useState<boolean>(false);
   const [invoiceSessionId, setInvoiceSessionId] = useState('');
-  const openInvoiceModal = (sessionId?: string) => {
+  const [invoiceMontantHT, setInvoiceMontantHT] = useState<number | undefined>();
+  const [invoiceClient, setInvoiceClient] = useState<string | undefined>();
+  const openInvoiceModal = (sessionId?: string, montantHT?: number, client?: string) => {
     setInvoiceSessionId(sessionId ?? '');
+    setInvoiceMontantHT(montantHT);
+    setInvoiceClient(client);
     setIsNewInvoiceModalOpen(true);
   };
 
@@ -560,20 +564,25 @@ export default function App() {
         acceptedMarkets={veilles}
         formateurs={formateurs}
         isNewInvoiceModalOpen={isNewInvoiceModalOpen}
-        onCloseNewInvoiceModal={() => { setIsNewInvoiceModalOpen(false); setInvoiceSessionId(''); }}
+        onCloseNewInvoiceModal={() => { setIsNewInvoiceModalOpen(false); setInvoiceSessionId(''); setInvoiceMontantHT(undefined); setInvoiceClient(undefined); }}
         onCreateInvoice={handleCreateInvoice}
         sessions={sessions}
         invoiceSessionId={invoiceSessionId}
+        invoiceMontantHT={invoiceMontantHT}
+        invoiceClient={invoiceClient}
       />
-      <VocalAssistant
-        currentRole={currentRole}
-        currentSection={currentSection}
-        sessions={sessions}
-        onNavigate={navigateToSection}
-        onCreateSession={() => setIsNewSessionModalOpen(true)}
-        onCreateOpportunity={() => setIsNewOppModalOpen(true)}
-        onCreateInvoice={() => openInvoiceModal()}
-      />
+      {currentRole !== 'Form.' && (
+        <VocalAssistant
+          currentRole={currentRole}
+          currentSection={currentSection}
+          sessions={sessions}
+          onNavigate={navigateToSection}
+          onCreateSession={() => setIsNewSessionModalOpen(true)}
+          onCreateOpportunity={() => setIsNewOppModalOpen(true)}
+          onCreateInvoice={() => openInvoiceModal()}
+          dashboardStats={kpis as Record<string, unknown>}
+        />
+      )}
     </div>
   </LanguageProvider>
   );

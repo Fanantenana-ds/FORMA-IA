@@ -15,6 +15,13 @@ class ChatRequest(BaseModel):
     formation_code: str | None = None
     session_id: UUID | None = None
     module: str | None = None
+    dashboard_stats: Dict[str, Any] | None = Field(
+        default=None,
+        description=(
+            "Indicateurs temps réel du tableau de bord (KPIs) envoyés par le frontend. "
+            "Injectés dans le prompt si la question porte sur les statistiques ou l'état de la plateforme."
+        ),
+    )
 
 
 class ChatSource(BaseModel):

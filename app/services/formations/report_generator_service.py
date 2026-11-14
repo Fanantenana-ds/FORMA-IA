@@ -10,7 +10,7 @@ Stratégie (A + Fallback B) :
 📝 LOGS  : contrôle via .env → VERBOSE_LOGS=true|false
 📝 HITL  : validation humaine via hitl_helper.create_review()
 
-Auteur  : Équipe IA — ALTIORA Solutions
+Auteur  : Équipe IA — ALTIORA PREST
 Version : 1.2.0 (verbose + HITL)
 """
 
@@ -97,7 +97,7 @@ class ReportGeneratorService:
             "=== SESSION ===",
             f"- Titre : {s.get('titre', 'N/A')}",
             f"- Domaine : {s.get('domaine', 'N/A')}",
-            f"- Niveau cible : {s.get('niveau_cible', 'N/A')}",
+            f"- Niveau cible : {s.get('niveau_cible', 'Non renseigné')}",
             f"- Date début : {s.get('date_debut', 'N/A')}",
             f"- Date fin : {s.get('date_fin', 'N/A')}",
             f"- Lieu : {s.get('lieu', 'N/A')}",
@@ -125,7 +125,31 @@ class ReportGeneratorService:
             f"- Points forts : {', '.join(s.get('points_forts', [])) or 'N/A'}",
             f"- Axes d'amélioration : {', '.join(s.get('axes_amelioration', [])) or 'N/A'}",
             f"- Taux recommandation : {s.get('taux_recommandation', 'N/A')}",
+            f"- Nombre de réponses de satisfaction : {s.get('nb_reponses_satisfaction', 0)}",
         ]
+
+        if s.get("objectifs"):
+            lines += ["", "=== OBJECTIFS PÉDAGOGIQUES RENSEIGNÉS ===", *[f"- {item}" for item in s["objectifs"]]]
+        if s.get("deroulement"):
+            lines += ["", "=== SÉANCES RÉELLEMENT PLANIFIÉES ==="]
+            lines.extend(
+                f"- {item.get('date', 'Date non renseignée')} {item.get('horaires', '')} — {item.get('theme', '')} ({item.get('duree', '')})"
+                for item in s["deroulement"][:40]
+            )
+        if s.get("resultats_individuels"):
+            lines += ["", "=== SCORES INDIVIDUELS ENREGISTRÉS ==="]
+            lines.extend(
+                f"- {item.get('nom', 'Participant')} : initial {item.get('score_avant', 'non renseigné')}/100, final {item.get('score_apres', 'non renseigné')}/100"
+                for item in s["resultats_individuels"][:60]
+            )
+        if s.get("observations_formateur"):
+            lines += ["", "=== OBSERVATIONS DU FORMATEUR ===", str(s["observations_formateur"])]
+        if s.get("methodes_pedagogiques"):
+            lines += ["", "=== MÉTHODES RENSEIGNÉES ===", *[f"- {item}" for item in s["methodes_pedagogiques"]]]
+        if s.get("outils"):
+            lines += ["", "=== OUTILS / SUPPORTS RENSEIGNÉS ===", *[f"- {item}" for item in s["outils"]]]
+        if s.get("recommandations_formateur"):
+            lines += ["", "=== RECOMMANDATIONS DU FORMATEUR ===", *[f"- {item}" for item in s["recommandations_formateur"]]]
 
         if contexte_rag:
             lines += [
@@ -200,6 +224,37 @@ class ReportGeneratorService:
             "duration_seconds": elapsed,
             "session_id": session_data.get("id"),
         }
+        content["titre_rapport"] = f"RAPPORT DE FORMATION — {session_data.get('titre') or 'Formation'}"
+        presentation = dict(content.get("presentation") or {})
+        try:
+            date_range = self._format_date_range(
+                str(session_data.get("date_debut") or ""),
+                str(session_data.get("date_fin") or ""),
+            )
+        except (TypeError, ValueError):
+            date_range = "Période non renseignée"
+        presentation.update({
+            "titre_formation": session_data.get("titre") or "Non renseigné",
+            "dates": date_range,
+            "lieu": session_data.get("lieu") or "Non renseigné",
+            "formateur": session_data.get("formateur") or "Non renseigné",
+            "public_cible": session_data.get("public_cible") or "Non renseigné",
+            "duree": f"{session_data['duree_jours']} jour(s)" if session_data.get("duree_jours") else "Non renseignée",
+            "nombre_participants": session_data.get("total_inscrits", 0),
+        })
+        content["presentation"] = presentation
+        for key in (
+            "client", "domaine", "objectifs", "deroulement", "methodes_pedagogiques",
+            "outils", "participants", "resultats_individuels", "observations_formateur",
+            "recommandations_formateur", "pointages_manquants", "statistiques_participants",
+            "satisfaction", "analyse_niveaux",
+        ):
+            if key in session_data:
+                content[key] = session_data[key]
+        content.setdefault("participants", [])
+        content.setdefault("resultats_individuels", [])
+        content.setdefault("objectifs", [])
+        content.setdefault("deroulement", [])
 
         # ⏳ HITL — Créer un review (CRITIQUE)
         review_id = create_review(
@@ -259,8 +314,8 @@ class ReportGeneratorService:
         for k in required:
             if k not in data:
                 raise ValueError(f"Clé manquante : '{k}'")
-        if not isinstance(data["recommandations"], list) or len(data["recommandations"]) < 3:
-            raise ValueError("'recommandations' : liste de 3 éléments minimum")
+        if not isinstance(data["recommandations"], list):
+            raise ValueError("'recommandations' doit être une liste")
 
     # --------------------------------------------------------
     # FALLBACK TEMPLATE
@@ -277,8 +332,8 @@ class ReportGeneratorService:
                 f"{s.get('lieu', 'N/A')}. Elle a réuni "
                 f"{s.get('total_inscrits', 0)} participants pour un total de "
                 f"{s.get('duree_jours', 2)} jours. Le taux de présence moyen "
-                f"est de {s.get('taux_presence', 'N/A')} et la satisfaction "
-                f"globale atteint {s.get('note_globale', 'N/A')}."
+                f"est de {s.get('taux_presence', 'Non calculé')}. "
+                f"La satisfaction a été mesurée auprès de {s.get('nb_reponses_satisfaction', 0)} répondant(s)."
             ),
             "presentation": {
                 "titre_formation": s.get("titre", "N/A"),
@@ -309,7 +364,11 @@ class ReportGeneratorService:
                     "debutants": "N/A", "intermediaires": "N/A", "avances": "N/A",
                 }),
                 "progression_globale": s.get("progression", "N/A"),
-                "commentaire": "Analyse de la progression des participants.",
+                "commentaire": (
+                    f"{s.get('nb_scores_complets', 0)} participant(s) disposent des deux scores nécessaires."
+                    if s.get('nb_scores_complets') else
+                    "Aucun ensemble complet de scores initiaux et finaux n’est disponible pour une comparaison."
+                ),
             },
             "satisfaction": {
                 "note_globale": s.get("note_globale", "N/A"),
@@ -321,16 +380,14 @@ class ReportGeneratorService:
                 "axes_amelioration": s.get("axes_amelioration", []),
                 "taux_recommandation": s.get("taux_recommandation", "N/A"),
             },
-            "recommandations": [
-                "Reconduire cette formation pour d'autres promotions.",
-                "Renforcer les exercices pratiques sur les concepts avancés.",
-                "Adapter le rythme pour les participants débutants.",
-            ],
+            "recommandations": s.get("recommandations_formateur", []),
             "conclusion": (
-                f"La formation a atteint ses objectifs pédagogiques avec une "
-                f"satisfaction de {s.get('note_globale', 'N/A')}. Les "
-                f"recommandations ci-dessus permettront d'améliorer les "
-                f"prochaines sessions."
+                f"La session « {s.get('titre', 'Formation')} » s'est déroulée du "
+                f"{s.get('date_debut', 'date non renseignée')} au {s.get('date_fin', 'date non renseignée')}. "
+                f"{s.get('total_inscrits', 0)} participant(s) étaient inscrits ; "
+                f"{s.get('total_presents', 0)} ont été présents à au moins une séance. "
+                "Les résultats d’apprentissage et retours de satisfaction sont détaillés "
+                "uniquement lorsqu’ils sont disponibles."
             ),
             "lieu_emission": s.get("lieu_emission", "Antananarivo"),
             "date_emission": self._default_emission_date(date_fin),

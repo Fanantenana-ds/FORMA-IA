@@ -26,7 +26,8 @@ import {
   ExternalLink,
 } from 'lucide-react';
 import { PageHeader } from '../PageHeader';
-import { Session, PresenceRecord, MenuSection } from '../../types';
+import { ConfirmDialog, useConfirmDialog } from '../ConfirmDialog';
+import { Session, PresenceRecord, MenuSection, OpportuniteCRM } from '../../types';
 import { apiService } from '../../services/api';
 import { SessionsM5Panel } from './SessionsM5Panel';
 import { listenForVoiceAction, type VoiceActionContext } from '../../services/voiceActionContext';
@@ -39,7 +40,8 @@ interface SessionsGroupesViewProps {
   canDeleteSessions?: boolean;
   readOnly?: boolean;
   onNavigateToSection?: (section: MenuSection) => void;
-  onOpenNewInvoice?: (sessionId?: string) => void;
+  onOpenNewInvoice?: (sessionId?: string, montantHT?: number, client?: string) => void;
+  opportunites?: OpportuniteCRM[];
 }
 
 const mapSessionParticipant = (p: any, sessionId: string, sessionTitle: string): PresenceRecord => ({
@@ -62,7 +64,8 @@ export const SessionsGroupesView: React.FC<SessionsGroupesViewProps> = ({
   canDeleteSessions = false,
   readOnly = false,
   onNavigateToSection,
-  onOpenNewInvoice
+  onOpenNewInvoice,
+  opportunites = []
 }) => {
   // Navigation State: null = list of sessions, session ID = detail view
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
@@ -128,6 +131,7 @@ export const SessionsGroupesView: React.FC<SessionsGroupesViewProps> = ({
   const [publicLinkTokens, setPublicLinkTokens] = useState<{ participant?: string; formateur?: string; post_formation?: string }>({});
   const [publicLinkBusy, setPublicLinkBusy] = useState(false);
   const [deletingLinkKind, setDeletingLinkKind] = useState<'participant' | 'formateur' | 'post_formation' | null>(null);
+  const { confirm, dialogProps } = useConfirmDialog();
   const [publicLinkError, setPublicLinkError] = useState('');
   const [publicLinkNotice, setPublicLinkNotice] = useState('');
   const [copiedKind, setCopiedKind] = useState<string | null>(null);
@@ -174,7 +178,8 @@ export const SessionsGroupesView: React.FC<SessionsGroupesViewProps> = ({
     const token = publicLinkTokens[kind];
     if (!token) { setPublicLinkError('Le jeton de révocation de ce lien est indisponible. Actualisez la session puis réessayez.'); return; }
     const label = kind === 'participant' ? 'inscription participants' : kind === 'formateur' ? 'candidature formateur' : 'évaluation post-formation';
-    if (!window.confirm(`Désactiver le lien « ${label} » ? L'URL ne sera plus accessible. Les inscriptions et réponses déjà reçues seront conservées.`)) return;
+    const ok = await confirm({ title: `Désactiver le lien "${label}"`, message: "L'URL ne sera plus accessible. Les inscriptions et réponses déjà reçues seront conservées.", confirmLabel: 'Désactiver', variant: 'warning' });
+    if (!ok) return;
     setDeletingLinkKind(kind); setPublicLinkError('');
     try {
       await apiService.revokePublicRegistrationLink(token);
@@ -244,7 +249,8 @@ export const SessionsGroupesView: React.FC<SessionsGroupesViewProps> = ({
   };
 
   const deleteSession = async (session: Session) => {
-    if (!window.confirm(`Supprimer la formation « ${session.intitule} » et ses séances ?`)) return;
+    const ok = await confirm({ title: 'Supprimer la session', message: `La formation « ${session.intitule} » et toutes ses séances seront définitivement supprimées.`, confirmLabel: 'Supprimer', variant: 'danger' });
+    if (!ok) return;
     setDeletingSessionId(session.id);
     setSessionDeleteError('');
     try {
@@ -368,6 +374,7 @@ export const SessionsGroupesView: React.FC<SessionsGroupesViewProps> = ({
 
   return (
     <div className="space-y-6 animate-in fade-in duration-200">
+      <ConfirmDialog {...dialogProps} />
       {/* ========================================== */}
       {/* VUE 1 : LISTE DES SESSIONS ET GROUPES      */}
       {/* ========================================== */}
@@ -892,7 +899,7 @@ export const SessionsGroupesView: React.FC<SessionsGroupesViewProps> = ({
               </div>
             </div>
           </div>
-          <SessionsM5Panel sessionId={activeSession.id} sessionTitle={activeSession.intitule} domain={activeSession.domaine} formationCode={activeSession.formationCode} formateurId={activeSession.formateurId} tauxPresence={activeSession.tauxPresence} sessionStatus={activeSession.statut} sessionDateStart={activeSession.dateDebut} sessionDateEnd={activeSession.dateFin} sessionLocation={activeSession.lieu} sessionTrainer={activeSession.formateur} participants={sessionParticipants.map(p => ({ id:p.id, nom:p.apprenantNom, prenom:(p as any).prenom }))} trainerMode={readOnly} voiceAction={voiceAction} onNavigateToSection={onNavigateToSection} onOpenNewInvoice={onOpenNewInvoice} />
+          <SessionsM5Panel sessionId={activeSession.id} sessionTitle={activeSession.intitule} domain={activeSession.domaine} formationCode={activeSession.formationCode} formateurId={activeSession.formateurId} tauxPresence={activeSession.tauxPresence} sessionStatus={activeSession.statut} sessionDateStart={activeSession.dateDebut} sessionDateEnd={activeSession.dateFin} sessionLocation={activeSession.lieu} sessionTrainer={activeSession.formateur} participants={sessionParticipants.map(p => ({ id:p.id, nom:p.apprenantNom, prenom:(p as any).prenom }))} trainerMode={readOnly} voiceAction={voiceAction} onNavigateToSection={onNavigateToSection} opportuniteId={activeSession.opportuniteId} opportunites={opportunites} onOpenNewInvoice={onOpenNewInvoice} />
         </div>
       )}
 

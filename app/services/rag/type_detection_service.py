@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 TYPES_VALIDES = (
     "catalogue", "inventaire", "contenu_formation", "synthese_thematique",
     "localisation", "question_fond", "aide_plateforme", "conversationnel",
-    "hors_sujet", "incomprehensible",
+    "commande_texte", "hors_sujet", "incomprehensible",
 )
 
 _DOSSIER_PROMPTS = Path(__file__).resolve().parents[2] / "prompts" / "rag"
@@ -148,6 +148,18 @@ def detecter_type_regles(message: str) -> str:
     question_fond (la recherche vectorielle + le mode strict géreront
     naturellement les cas hors sujet en l'absence de contexte pertinent)."""
     normalise = _normaliser(message)
+    if re.match(
+        r"^(?:ameliore|reformule|corrige|resume|structure|traduis|"
+        r"mets en forme|evalue|complete|developpe|rends)\s+"
+        r"(?:ce texte|cette phrase|ce paragraphe|ce passage|ce contenu|"
+        r"la phrase|le texte|le paragraphe|ca|cela|ci-dessous|en [a-z]+\s*:)",
+        normalise,
+    ) or re.match(
+        r"^(?:ameliore|reformule|corrige|resume|structure|traduis|"
+        r"mets en forme|evalue|complete|developpe|rends)\s*:",
+        normalise,
+    ):
+        return "commande_texte"
     termes_support = ("support", "supports", "cours", "document", "documents")
     termes_resume = ("resume", "resumer", "synthese", "contenu", "contient")
     termes_exercices = ("exercice", "exercices", "question", "questions", "quiz", "oral", "participant")
@@ -266,6 +278,17 @@ async def detecter_type(
     """
     if filtre_conversationnel_evident(message):
         return "conversationnel"
+
+    # Les commandes courtes (« résume ça ») sont souvent prises à tort pour
+    # des messages inintelligibles avant l'appel au classifieur LLM.
+    if detecter_type_regles(message) == "commande_texte":
+        return "commande_texte"
+    if conv and re.fullmatch(
+        r"(?:ameliore|reformule|corrige|resume|structure|traduis|"
+        r"mets en forme|evalue|complete|developpe|rends)",
+        _normaliser(message),
+    ):
+        return "commande_texte"
 
     # Message inintelligible (frappe aléatoire, trop court, incompréhensible) :
     # ne pas appeler Voyage ni le LLM — demander poliment une reformulation.

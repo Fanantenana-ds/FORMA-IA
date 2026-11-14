@@ -90,6 +90,7 @@ async def chat(request: ChatRequest, current_user: User = Depends(get_current_te
             allowed_formation_codes=allowed_codes, allowed_session_ids=allowed_sessions,
             hide_references=hide_refs,
             user_id=str(current_user.id),
+            dashboard_stats=request.dashboard_stats,
         )
         return resultat
     except Exception as exc:
@@ -138,6 +139,7 @@ async def chat_stream(payload: ChatRequest, request: Request, current_user: User
                 user_id=str(current_user.id),
                 on_progress=progress,
                 on_token=on_token,
+                dashboard_stats=payload.dashboard_stats,
             )
 
         task = asyncio.create_task(executer())

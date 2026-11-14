@@ -16,10 +16,11 @@ type Props = {
   onRefreshData: () => void;
   onNavigateTo: (section: MenuSection) => void;
   canManagePreparation: boolean;
+  onOpenNewInvoice?: (sessionId?: string, montantHT?: number, client?: string) => void;
 };
 type Dossier = { key: string; opportunity?: OpportuniteCRM; session?: Session };
 type Review = Record<string, any>;
-type Stage = { title: string; detail: string; state: 'done' | 'pending' | 'future' | 'warning'; reviewId?: string; cle?: string; cible?: MenuSection };
+type Stage = { title: string; detail: string; state: 'done' | 'pending' | 'future' | 'warning'; reviewId?: string; cle?: string; cible?: MenuSection; action?: 'creer_facture' };
 
 const asArray = (value: any, key?: string): any[] => {
   const list = Array.isArray(value) ? value : key ? value?.[key] : value;
@@ -53,7 +54,7 @@ const formatDate = (value?: string) => {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString('fr-FR');
 };
 
-export const DossiersFormationView: React.FC<Props> = ({ opportunites, sessions, formateurs, factures, onRefreshData, onNavigateTo, canManagePreparation }) => {
+export const DossiersFormationView: React.FC<Props> = ({ opportunites, sessions, formateurs, factures, onRefreshData, onNavigateTo, canManagePreparation, onOpenNewInvoice }) => {
   const [selectedKey, setSelectedKey] = useState('');
   const [filter, setFilter] = useState('');
   const [offers, setOffers] = useState<any[]>([]);
@@ -252,30 +253,34 @@ export const DossiersFormationView: React.FC<Props> = ({ opportunites, sessions,
     { title: 'Formateur', detail: session ? trainer ? `${trainer.prenom ?? ''} ${trainer.nom}`.trim() : session.formateur !== 'À définir' ? `${session.formateur} · identifiant formateur non résolu` : 'Aucun formateur affecté à la session.' : 'À renseigner lors de la préparation de la session.', state: trainer || (session && session.formateur !== 'À définir') ? 'done' : session ? 'pending' : 'future' },
     { title: 'Session', detail: session ? `${session.intitule} · ${formatDate(session.dateDebut)} · ${session.lieu ?? 'Lieu à confirmer'} · ${session.statut}` : 'La session de formation n’est pas encore créée ou rattachée.', state: session ? 'done' : selected.opportunity ? 'pending' : 'warning' },
     { title: 'Participants inscrits', detail: session ? participants.length ? `${participants.length} participant(s) rattaché(s) à cette session.` : 'Aucun participant inscrit pour le moment.' : 'Disponible après création de la session.', state: session && participants.length > 0 ? 'done' : session ? 'pending' : 'future' },
-    { title: 'Supports pédagogiques · RAG', detail: session ? supports.length ? `${indexedSupportCount}/${supports.length} support(s) indexé(s) et exploitable(s) par le RAG.` : 'Aucun support pédagogique rattaché à cette session.' : 'Disponible après création de la session.', state: session && supports.length > 0 && indexedSupportCount === supports.length ? 'done' : session ? 'pending' : 'future' },
+    { title: 'Supports pédagogiques · RAG', detail: session ? supports.length ? `${indexedSupportCount}/${supports.length} support(s) indexé(s) et exploitable(s) par le RAG.` : 'Aucun support pédagogique rattaché à cette session.' : 'Disponible après création de la session.', state: session && supports.length > 0 && indexedSupportCount === supports.length ? 'done' : session ? 'pending' : 'future', cible: 'espace_ia' as const },
     { title: 'Présences et attestations', detail: session ? attendanceKnown ? `${eligibleCount} participant(s) éligible(s) selon le retour M6${attestations ? ` · attestation(s) ${statusLabel(attestations.status).toLowerCase()}` : ''}` : 'Éligibilité non chargée ou aucune donnée de présence disponible.' : 'Disponible après la formation.', state: attestations?.status === 'approved' ? 'done' : attendanceKnown ? 'pending' : 'future', reviewId: reviewId(attestations) },
     { title: 'Rapport final', detail: report ? `${statusLabel(report.status)} · ${report.summary ?? report.review_id}` : session ? 'Aucun rapport final relié à cette session.' : 'Disponible après la formation.', state: report?.status === 'approved' ? 'done' : report ? 'pending' : session?.statut === 'Terminée' ? 'pending' : 'future', reviewId: reviewId(report) },
-    { title: 'Facturation', detail: session ? invoices.length ? `${invoices.length} document(s) de facturation lié(s) à la session` : 'Aucune facture liée à cette session.' : 'Disponible après création de la session.', state: invoices.length ? 'done' : session ? 'pending' : 'future' },
+    { title: 'Facturation', detail: session ? invoices.length ? `${invoices.length} document(s) de facturation lié(s) à la session · cliquez pour voir` : 'Aucune facture liée à cette session. Créez-en une depuis ici.' : 'Disponible après création de la session.', state: invoices.length ? 'done' : session ? 'pending' : 'future', action: (!invoices.length && session?.statut === 'Terminée' && canManagePreparation) ? 'creer_facture' : undefined, cible: invoices.length ? 'facturation_devis' as const : undefined },
   ] : [];
 
   const reviewParCle: Record<string, Review | undefined> = {
     tdr: tdrReview, offre_technique: technicalReview, offre_financiere: financialReview,
     preparation: preparationReview, attestations,
   };
+  // Étapes dont l'état ne peut être calculé que côté client (données non trackées par le backend)
+  const clientOnlyTitles = new Set(['Supports pédagogiques · RAG', 'Rapport final']);
   const serverStages: Stage[] | null = dossierEtat?.etapes && (!selected?.session || dossierEtat.session_id === selected.session.id)
     ? [
-      ...dossierEtat.etapes.map((etape: any): Stage => {
-        const review = reviewParCle[etape.cle];
-        // La validation IA fait foi : une revue approuvée = étape terminée, même si la base n'est pas encore synchronisée.
-        if (review?.status === 'approved') {
-          return { title: etape.titre, detail: `${statusLabel(review.status)} · ${review.summary ?? review.review_id}`, state: 'done', cle: etape.cle, cible: etape.cible };
-        }
-        return {
-          title: etape.titre, detail: etape.detail, state: etape.etat, cle: etape.cle, cible: etape.cible,
-          reviewId: etape.etat === 'done' || review?.status !== 'pending_review' ? undefined : reviewId(review),
-        };
-      }),
-      ...clientStages.filter(stage => stage.title === 'Rapport final'),
+      ...dossierEtat.etapes
+        .filter((etape: any) => !clientOnlyTitles.has(etape.titre))
+        .map((etape: any): Stage => {
+          const review = reviewParCle[etape.cle];
+          // La validation IA fait foi : une revue approuvée = étape terminée, même si la base n'est pas encore synchronisée.
+          if (review?.status === 'approved') {
+            return { title: etape.titre, detail: `${statusLabel(review.status)} · ${review.summary ?? review.review_id}`, state: 'done', cle: etape.cle, cible: etape.cible };
+          }
+          return {
+            title: etape.titre, detail: etape.detail, state: etape.etat, cle: etape.cle, cible: etape.cible,
+            reviewId: etape.etat === 'done' || review?.status !== 'pending_review' ? undefined : reviewId(review),
+          };
+        }),
+      ...clientStages.filter(stage => clientOnlyTitles.has(stage.title)),
     ]
     : null;
   const stages: Stage[] = serverStages ?? clientStages;
@@ -303,6 +308,30 @@ export const DossiersFormationView: React.FC<Props> = ({ opportunites, sessions,
     } finally {
       setMarkingWon(false);
     }
+  };
+
+  const ouvrirModalFacture = async () => {
+    const opp = selected?.opportunity;
+    const sess = selected?.session;
+    // Priorité : session.client (nom court saisi à la création) > opp.entreprise (peut être un titre long)
+    const client = sess?.client ?? opp?.entreprise;
+    // Montant : offre financière approuvée > montantEstime
+    let montantHT: number | undefined = opp?.montantEstime && opp.montantEstime > 0 ? opp.montantEstime : undefined;
+    try {
+      const history = await apiService.getReviewHistory('approved', 'agent_m3_financiere');
+      const reviews: any[] = Array.isArray(history) ? history : (history?.reviews ?? history?.data ?? []);
+      const match = reviews.find((r: any) =>
+        r.data?.opportunite_id === opp?.id ||
+        r.data?._inputs?.tdr_data?.opportunite_id === opp?.id ||
+        r.opportunite_id === opp?.id
+      );
+      if (match) {
+        const grille = match.data?.grille_tarifaire ?? match.data?.resultat?.grille_tarifaire;
+        const net = grille?.net_a_payer ?? grille?.total_ttc ?? grille?.total_ht;
+        if (net > 0) montantHT = net;
+      }
+    } catch { /* fallback montantEstime déjà défini */ }
+    onOpenNewInvoice?.(sess?.id, montantHT, client);
   };
 
   const canCreateSession = Boolean(selected?.opportunity && !selected.session && selected.opportunity.etape === 'Gagnée' && canManagePreparation);
@@ -541,8 +570,17 @@ export const DossiersFormationView: React.FC<Props> = ({ opportunites, sessions,
                   <button onClick={() => openReview(nextPendingStage.reviewId)} className="shrink-0 rounded-lg bg-brand-navy px-3 py-2 text-xs font-bold text-white hover:bg-brand-darkNavy transition-colors">
                     Valider →
                   </button>
+                ) : nextPendingStage.action === 'creer_facture' ? (
+                  <button onClick={() => void ouvrirModalFacture()} className="shrink-0 rounded-lg bg-emerald-700 px-3 py-2 text-xs font-bold text-white hover:bg-emerald-800 transition-colors">
+                    Créer la facture →
+                  </button>
                 ) : nextPendingStage.cible && (
-                  <button onClick={() => onNavigateTo(nextPendingStage.cible!)} className="shrink-0 rounded-lg bg-brand-navy px-3 py-2 text-xs font-bold text-white hover:bg-brand-darkNavy transition-colors">
+                  <button onClick={() => {
+                    if (nextPendingStage.title === 'Supports pédagogiques · RAG' && session?.id) {
+                      try { sessionStorage.setItem('formaia-espace-tab', 'supports'); sessionStorage.setItem('formaia-espace-session', session.id); } catch { /* ignore */ }
+                    }
+                    onNavigateTo(nextPendingStage.cible!);
+                  }} className="shrink-0 rounded-lg bg-brand-navy px-3 py-2 text-xs font-bold text-white hover:bg-brand-darkNavy transition-colors">
                     Ouvrir →
                   </button>
                 )}
@@ -568,6 +606,9 @@ export const DossiersFormationView: React.FC<Props> = ({ opportunites, sessions,
                       <div className="flex flex-wrap items-center justify-between gap-2"><h4 className="text-sm font-semibold text-slate-900">{stage.title}</h4><StageBadge state={stage.state} /></div>
                       <p className="mt-1 text-sm leading-5 text-slate-600">{stage.detail}</p>
                       {stage.reviewId && <button onClick={() => openReview(stage.reviewId)} className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-brand-navy hover:text-brand-goldDark">{stage.state === 'pending' ? 'Ouvrir la validation IA' : 'Consulter le contenu associé'} <ArrowRight size={13} /></button>}
+                      {stage.action === 'creer_facture' && <button onClick={() => void ouvrirModalFacture()} className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 hover:text-emerald-900">Créer la facture liée <ArrowRight size={13} /></button>}
+                      {stage.cible && !stage.action && !stage.reviewId && <button onClick={() => { if (stage.title === 'Supports pédagogiques · RAG' && session?.id) { try { sessionStorage.setItem('formaia-espace-tab', 'supports'); sessionStorage.setItem('formaia-espace-session', session.id); } catch { /* ignore */ } } onNavigateTo(stage.cible!); }} className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-brand-navy hover:text-brand-goldDark">Ouvrir <ArrowRight size={13} /></button>}
+                      {stage.cible && stage.title === 'Facturation' && invoices.length > 0 && <button onClick={() => onNavigateTo('facturation_devis')} className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-brand-navy hover:text-brand-goldDark">Voir les factures <ArrowRight size={13} /></button>}
                     </div>
                   </div>)}
                 </div>

@@ -55,6 +55,10 @@ class CommandeVocaleRequest(BaseModel):
     sessions_disponibles: list[dict[str, Any]] = Field(default_factory=list, max_length=50)
     ecran_actuel: str | None = Field(default=None, max_length=64)
     formation_code: str | None = Field(default=None, max_length=100)
+    dashboard_stats: dict[str, Any] | None = Field(
+        default=None,
+        description="Indicateurs KPI temps réel du tableau de bord — injectés dans le contexte vocal.",
+    )
 
 
 class CommandeVocaleResponse(BaseModel):
@@ -112,11 +116,20 @@ async def analyser_commande(req: CommandeVocaleRequest, principal=Depends(get_cu
     logger.info("🎤 Commande vocale reçue : '%s'", req.texte[:80])
 
     try:
+        # Construire contexte dashboard si KPIs fournis et question concernée
+        contexte_action_complet = list(req.contexte_action or [])
+        if req.dashboard_stats:
+            from app.services.dashboard_context_service import (
+                construire_contexte_dashboard, est_question_dashboard,
+            )
+            if est_question_dashboard(req.texte):
+                contexte_action_complet.insert(0, construire_contexte_dashboard(req.dashboard_stats))
+
         result = await get_assistant_vocal_service().traiter(
             texte=req.texte,
             formations=req.formations_disponibles,
             conversation_id=req.conversation_id,
-            **({"contexte_action": [text[:500] for text in req.contexte_action]} if req.contexte_action else {}),
+            **({"contexte_action": [text[:800] for text in contexte_action_complet[-8:]]} if contexte_action_complet else {}),
             **({"sessions_disponibles": req.sessions_disponibles} if req.sessions_disponibles else {}),
             **({"owner": str(principal.id)} if getattr(principal, "id", None) is not None else {}),
             **({"ecran_actuel": req.ecran_actuel} if req.ecran_actuel else {}),

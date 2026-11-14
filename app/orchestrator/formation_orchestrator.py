@@ -262,6 +262,7 @@ class FormationOrchestrator(BaseOrchestrator):
         self,
         session_data: dict[str, Any],
         eligible_participants: list[dict[str, Any]],
+        certificate_title: str | None = None,
     ) -> dict[str, Any]:
         """Agent 5 — Génère les attestations (JSON + PDF)."""
         start = self._log_start(
@@ -286,8 +287,11 @@ class FormationOrchestrator(BaseOrchestrator):
             }
 
         try:
+            generation_context = dict(session_data)
+            if certificate_title:
+                generation_context["attestation_title"] = certificate_title.strip()
             result = await self.attestation_generator.generate_batch_with_pdf(
-                session_data, eligible_participants
+                generation_context, eligible_participants
             )
             self._attach_session_context(result, session_data, "agent_5_attestations")
             self._log_end(

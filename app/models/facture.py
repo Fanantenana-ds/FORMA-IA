@@ -24,7 +24,7 @@ class Facture(TenantOwned, Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     numero = Column(String(50), nullable=False, unique=True)
-    client = Column(String(50), nullable=False)
+    client = Column(String(300), nullable=False)
     client_adresse = Column(String(300), nullable=True)
     client_siret = Column(String(32), nullable=True)
     client_rcs = Column(String(120), nullable=True)

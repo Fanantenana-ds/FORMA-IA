@@ -49,7 +49,7 @@ interface ViewRouterProps {
   onOpenNewSession: () => void;
   /** Seule la Direction peut créer, modifier ou supprimer des formateurs. */
   canManageFormateurs: boolean;
-  onOpenNewInvoice: (sessionId?: string) => void;
+  onOpenNewInvoice: (sessionId?: string, montantHT?: number, client?: string) => void;
   authUser: AuthUser;
   avatarUrl: string | null;
   onUploadAvatar: (file: File) => Promise<void>;
@@ -110,6 +110,7 @@ export const ViewRouter: React.FC<ViewRouterProps> = ({
           onNavigateTo={onNavigateTo}
           onOpenNewOpportunity={onOpenNewOpportunity}
           onOpenNewSession={onOpenNewSession}
+          authUser={authUser}
         />
       );
 
@@ -163,6 +164,7 @@ export const ViewRouter: React.FC<ViewRouterProps> = ({
           readOnly={currentRole === 'Form.'}
           onNavigateToSection={onNavigateTo}
           onOpenNewInvoice={onOpenNewInvoice}
+          opportunites={opportunites}
         />
       );
 
@@ -190,11 +192,12 @@ export const ViewRouter: React.FC<ViewRouterProps> = ({
           onRefreshData={onRefreshData}
           onNavigateTo={onNavigateTo}
           canManagePreparation={currentRole === 'Dir.' || currentRole === 'Assis.'}
+          onOpenNewInvoice={onOpenNewInvoice}
         />
       );
 
     case 'espace_ia':
-      return <EspaceIAView readOnly={currentRole === 'Form.'} trainerMode={currentRole === 'Form.'} onNavigateToSection={onNavigateTo} />;
+      return <EspaceIAView readOnly={currentRole === 'Form.'} trainerMode={currentRole === 'Form.'} onNavigateToSection={onNavigateTo} dashboardStats={kpis as Record<string, unknown>} />;
 
     default:
       return (
@@ -211,6 +214,7 @@ export const ViewRouter: React.FC<ViewRouterProps> = ({
           onNavigateTo={onNavigateTo}
           onOpenNewOpportunity={onOpenNewOpportunity}
           onOpenNewSession={onOpenNewSession}
+          authUser={authUser}
         />
       );
   }

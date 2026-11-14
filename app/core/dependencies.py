@@ -101,11 +101,15 @@ def get_current_user(request: Request, credential: HTTPAuthorizationCredentials 
             or (path.startswith("/api/v1/ia/rag/documents/") and method == "GET")
             or (path.startswith("/api/v1/ia/rag/statut/") and method == "GET")
             or path.startswith("/api/v1/documents/rag/supports") and method == "GET"
+            # Historique des conversations RAG du formateur
+            or (path == "/api/v1/ia/rag/conversations" and method == "GET")
+            or (path.startswith("/api/v1/ia/rag/conversations/") and method in {"GET", "DELETE", "PATCH"})
         )
-        allowed_assistant_query = method == "POST" and path in {
-            "/api/v1/ia/rag/chat", "/api/v1/ia/rag/chat/stream", "/api/v1/ia/rag/rechercher",
-            "/api/v1/ia/rag/indexer-document", "/api/v1/documents/upload",
-        }
+        allowed_assistant_query = method == "POST" and (
+            path in {"/api/v1/ia/rag/chat", "/api/v1/ia/rag/chat/stream", "/api/v1/ia/rag/rechercher",
+                     "/api/v1/ia/rag/indexer-document", "/api/v1/documents/upload"}
+            or (path.startswith("/api/v1/ia/rag/conversations/") and path.endswith("/feedback"))
+        )
         allowed_trainer_session_create = (
             method == "POST"
             and path.startswith("/api/v1/sessions/")

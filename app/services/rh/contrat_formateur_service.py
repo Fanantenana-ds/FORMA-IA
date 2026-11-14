@@ -140,6 +140,20 @@ class ContratFormateurService:
         result = {
             "success": True,
             **content,
+            "formateur": {
+                "id": str(formateur["id"]) if formateur.get("id") else None,
+                "nom": formateur.get("nom"),
+                "adresse": formateur.get("adresse"),
+                "telephone": formateur.get("telephone"),
+                "email": formateur.get("email"),
+            },
+            "session": {
+                "titre": titre_session,
+                "dates": session.get("dates", []),
+                "nb_jours": nb_jours,
+                "lieu": session.get("lieu"),
+                "nb_participants": session.get("nb_participants"),
+            },
             "metadata": {
                 "source": source,
                 "generated_at": datetime.now().isoformat(),
@@ -151,6 +165,13 @@ class ContratFormateurService:
         tarif = formateur.get("tarif_journalier", 0)
         nb_jours = session.get("nb_jours", 1)
         total = tarif * nb_jours
+
+        formateur_id = formateur.get("id")
+        formateur_email = formateur.get("email")
+        if formateur_id:
+            result["metadata"]["formateur_id"] = str(formateur_id)
+        if formateur_email:
+            result["metadata"]["formateur_email"] = formateur_email
 
         review_id = create_review(
             agent_id=AGENT_ID,

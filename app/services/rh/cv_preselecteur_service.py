@@ -82,7 +82,7 @@ class CvPreselecteurService:
         self,
         cv_texte: str,
         criteres_poste: dict[str, Any],
-        temperature: float = 0.3,
+        temperature: float = 0.0,
         max_tokens: int = 4000,
     ) -> dict[str, Any]:
         start = datetime.now()

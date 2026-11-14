@@ -135,7 +135,7 @@ class DossierService:
             Document.statut_validation == StatutValidation.VALIDE,
         ).scalar() or 0
         supports = [e for e in registre.entrees_pour_session(str(session.id)) if e.collection == "support"]
-        indexes = sum(1 for e in supports if e.statut == "indexe")
+        indexes = sum(1 for e in supports if e.statut in ("indexe", "deja_indexe"))
         factures = db.query(Facture).filter(Facture.session_id == session.id).all()
 
         if supports and indexes == len(supports):

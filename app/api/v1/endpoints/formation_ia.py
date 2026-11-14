@@ -141,6 +141,15 @@ class GenerateReportRequest(BaseModel):
     session_data: dict[str, Any]
 
 
+class GenerateSessionReportRequest(BaseModel):
+    public_cible: str = Field(default="", max_length=1000)
+    objectifs: list[str] = Field(default_factory=list, max_length=20)
+    methodes_pedagogiques: list[str] = Field(default_factory=list, max_length=20)
+    outils: list[str] = Field(default_factory=list, max_length=30)
+    observations_formateur: str = Field(default="", max_length=5000)
+    recommandations_formateur: list[str] = Field(default_factory=list, max_length=20)
+
+
 class ApproveReviewRequest(BaseModel):
     reviewer_note: str | None = Field(None, max_length=1000)
 
@@ -148,6 +157,10 @@ class ApproveReviewRequest(BaseModel):
 class AttestationEditRequest(BaseModel):
     content: dict[str, Any]
     expected_updated_at: str = Field(..., min_length=1, max_length=80)
+
+
+class AttestationBatchRequest(BaseModel):
+    certificate_title: str = Field(default="", max_length=120)
 
 
 class AttestationDeleteRequest(BaseModel):
@@ -476,6 +489,21 @@ async def verifier_eligibilite_attestations(
     }
 
 
+@router.post("/sessions/{session_id}/attestations/titre", summary="[M6] Proposer le titre pédagogique du certificat")
+async def proposer_titre_attestation(
+    session_id: str,
+    current_user=Depends(require_role("DIRECTION", "ADMIN", "ASSISTANT")),
+    db: Session = Depends(get_db),
+    orchestrator: FormationOrchestrator = Depends(get_formation_orchestrator),
+) -> dict[str, Any]:
+    session_info, _, _, _ = _attestation_session_data(session_id, current_user, db)
+    generator = orchestrator.attestation_generator
+    if not generator:
+        raise HTTPException(status_code=503, detail="Le service de génération de titre est indisponible.")
+    suggestion = await generator.suggest_certificate_title(session_info)
+    return {"success": True, **suggestion}
+
+
 def _review_has_generated_attestation_pdf(review: dict[str, Any]) -> bool:
     """Un review vide ou dont les PDF ont disparu ne doit pas bloquer un nouvel essai."""
     output_dir = AttestationGeneratorService.OUTPUT_DIR.resolve()
@@ -492,6 +520,7 @@ def _review_has_generated_attestation_pdf(review: dict[str, Any]) -> bool:
 @router.post("/sessions/{session_id}/attestations/generer", summary="[M6] Générer les attestations PDF des participants éligibles")
 async def generer_attestations_session(
     session_id: str,
+    payload: AttestationBatchRequest | None = None,
     current_user=Depends(require_role("DIRECTION", "ADMIN", "ASSISTANT")),
     db: Session = Depends(get_db),
     orchestrator: FormationOrchestrator = Depends(get_formation_orchestrator),
@@ -512,14 +541,23 @@ async def generer_attestations_session(
         existing = _get(pending.get("review_id", "")) or {}
         if (str((existing.get("meta") or {}).get("session_id")) == str(session_id)
                 and _review_has_generated_attestation_pdf(existing)):
-            raise HTTPException(status_code=409, detail="Un lot d'attestations attend déjà sa validation pour cette session.")
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"Le lot {existing.get('review_id')} attend déjà sa validation pour cette session. "
+                    "Rechargez ce lot, modifiez son titre si nécessaire, puis validez-le avant de créer un nouveau lot."
+                ),
+            )
     for existing_item in list_reviews(status="approved", agent_id="agent_5_attestations"):
         existing = _get(existing_item.get("review_id", "")) or {}
         if (str((existing.get("meta") or {}).get("session_id")) == str(session_id)
                 and _review_has_generated_attestation_pdf(existing)):
             raise HTTPException(status_code=409, detail="Des attestations ont déjà été approuvées pour cette session.")
 
-    result = await orchestrator.generate_attestations(session_info, eligible)
+    certificate_title = str((payload.certificate_title if payload else "") or "").strip()
+    if len(certificate_title) > 120:
+        raise HTTPException(status_code=422, detail="Le titre de la formation ne peut pas dépasser 120 caractères.")
+    result = await orchestrator.generate_attestations(session_info, eligible, certificate_title or None)
     response_message = (
         "Aucun PDF n'a pu être généré. Consultez les erreurs par participant et relancez la préparation."
         if not result.get("total_pdf_generated")
@@ -677,6 +715,7 @@ async def telecharger_lot_attestations(review_id: str, _current_user=Depends(req
              summary="[M5] Agent 6 — Générer le rapport final")
 async def generate_report(
     payload: GenerateReportRequest,
+    _current_user=Depends(require_role("DIRECTION", "ADMIN", "ASSISTANT")),
     orchestrator: FormationOrchestrator = Depends(get_formation_orchestrator),
 ) -> RouteResponse:
     _log_request("POST", "/ia/formations/generate-report",
@@ -691,6 +730,289 @@ async def generate_report(
     except Exception as e:
         _handle_exception(e, "generate_report")
         return RouteResponse(success=False, message="")
+
+
+@router.post("/sessions/{session_id}/generate-report", response_model=RouteResponse,
+             summary="[M5] Générer un rapport depuis les données vérifiées de session")
+async def generate_session_report(
+    session_id: str,
+    payload: GenerateSessionReportRequest | None = None,
+    current_user=Depends(require_role("DIRECTION", "ADMIN", "ASSISTANT")),
+    db: Session = Depends(get_db),
+    orchestrator: FormationOrchestrator = Depends(get_formation_orchestrator),
+) -> RouteResponse:
+    """Assemble les données M5 tenant-scoped puis les soumet au contrôle HITL."""
+    try:
+        session_uuid = uuid.UUID(session_id)
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(status_code=422, detail="Identifiant de session invalide.") from exc
+
+    owner_id = current_user.owner_id or current_user.id
+    session = db.query(TrainingSession).filter(
+        TrainingSession.id == session_uuid,
+        TrainingSession.owner_id == owner_id,
+    ).first()
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session introuvable dans votre espace.")
+
+    seances = db.query(Seance).filter(
+        Seance.session_id == session.id,
+        Seance.owner_id == owner_id,
+    ).order_by(Seance.date, Seance.heure_debut).all()
+    inscriptions = db.query(Inscription).filter(
+        Inscription.session_id == session.id,
+        Inscription.owner_id == owner_id,
+    ).all()
+    participant_ids = [item.participant_id for item in inscriptions]
+    participants_db = db.query(Participant).filter(
+        Participant.id.in_(participant_ids), Participant.owner_id == owner_id,
+    ).all() if participant_ids else []
+    participants_by_id = {str(item.id): item for item in participants_db}
+    seance_ids = [item.id for item in seances]
+    presences = db.query(Presence).filter(
+        Presence.seance_id.in_(seance_ids), Presence.owner_id == owner_id,
+    ).all() if seance_ids else []
+    attendance = {(str(item.seance_id), str(item.participant_id)): item for item in presences}
+
+    roster: list[dict[str, Any]] = []
+    results: list[dict[str, Any]] = []
+    role_labels: list[str] = []
+    enterprise_names: list[str] = []
+    response_rows: list[dict[str, Any]] = []
+    missing_marks = 0
+    total_presence_rates: list[float] = []
+    for inscription in inscriptions:
+        participant = participants_by_id.get(str(inscription.participant_id))
+        if participant is None:
+            continue
+        name = " ".join(part for part in (participant.prenom, participant.nom) if part)
+        marks = [attendance.get((str(seance.id), str(participant.id))) for seance in seances]
+        absent_marks = sum(mark is None for mark in marks)
+        missing_marks += absent_marks
+        attended = sum(
+            mark is not None and getattr(mark.statut, "value", mark.statut) in {"PRESENT", "RETARD"}
+            for mark in marks
+        )
+        rate = round(attended / len(seances) * 100, 1) if seances else None
+        if rate is not None:
+            total_presence_rates.append(rate)
+        role = str(inscription.poste or "").strip()
+        company = str(participant.entreprise or "").strip()
+        if role and role not in role_labels:
+            role_labels.append(role)
+        if company and company not in enterprise_names:
+            enterprise_names.append(company)
+        roster.append({
+            "nom": name,
+            "fonction": role,
+            "entreprise": company,
+            "taux_presence": rate,
+            "taux_presence_affiche": f"{rate:.1f}%" if rate is not None else "Non calculable",
+            "nb_presences": attended,
+            "nb_seances": len(seances),
+            "pointages_manquants": absent_marks,
+        })
+        before = inscription.score_positionnement
+        after = inscription.score_test_final
+        if before is not None and after is not None:
+            delta = round(float(after) - float(before), 1)
+            results.append({
+                "nom": name,
+                "score_avant": before,
+                "score_apres": after,
+                "progression": delta,
+                "score_avant_affiche": f"{before}/100",
+                "score_apres_affiche": f"{after}/100",
+                "progression_affiche": f"{delta:+g} points",
+            })
+        if isinstance(inscription.reponses_satisfaction, dict) and inscription.reponses_satisfaction:
+            response_rows.append(inscription.reponses_satisfaction)
+
+    req = payload or GenerateSessionReportRequest()
+    trainer = db.query(Formateur).filter(
+        Formateur.id == session.formateur_id,
+        Formateur.owner_id == owner_id,
+    ).first() if session.formateur_id else None
+    trainer_name = " ".join(part for part in (getattr(trainer, "prenom", None), getattr(trainer, "nom", None)) if part)
+    requested_objectives = [item.strip() for item in req.objectifs if item.strip()]
+    requested_methods = [item.strip() for item in req.methodes_pedagogiques if item.strip()]
+    requested_tools = [item.strip() for item in req.outils if item.strip()]
+    requested_recommendations = [item.strip() for item in req.recommandations_formateur if item.strip()]
+    schedule = []
+    for seance in seances:
+        duration = str(seance.duree or "")
+        start = str(seance.heure_debut or "").strip()
+        end = str(seance.heure_fin or "").strip()
+        schedule.append({
+            "date": seance.date.strftime("%d/%m/%Y") if seance.date else "—",
+            "horaires": f"{start}–{end}" if start and end else "Horaires non renseignés",
+            "duree": duration or "Non renseignée",
+            "theme": seance.theme,
+        })
+
+    def average(key: str) -> float | None:
+        values = []
+        for row in response_rows:
+            value = row.get(key)
+            try:
+                if value not in (None, ""):
+                    values.append(float(value))
+            except (TypeError, ValueError):
+                continue
+        return round(sum(values) / len(values), 2) if values else None
+
+    recommendation_values = [str(row.get("recommandation", "")).strip().casefold() for row in response_rows]
+    reco_answers = [value for value in recommendation_values if value in {"oui", "non", "peut-être", "peut etre"}]
+    satisfaction_respondents = sum(
+        bool(item.score_satisfaction is not None)
+        or bool(isinstance(item.reponses_satisfaction, dict) and item.reponses_satisfaction)
+        for item in inscriptions
+    )
+    satisfaction = {
+        "note_globale": f"{average('note_globale')}/5" if average("note_globale") is not None else "Non mesurée",
+        "note_formateur": f"{average('note_formateur')}/5" if average("note_formateur") is not None else "Non mesurée",
+        "note_contenu": f"{average('note_contenu')}/5" if average("note_contenu") is not None else "Non mesurée",
+        "note_supports": f"{average('note_supports')}/5" if average("note_supports") is not None else "Non mesurée",
+        "note_organisation": f"{average('note_organisation')}/5" if average("note_organisation") is not None else "Non mesurée",
+        "taux_recommandation": f"{round(sum(value == 'oui' for value in reco_answers) / len(reco_answers) * 100)}%" if reco_answers else "Non mesuré",
+        "nb_reponses": satisfaction_respondents,
+        "points_forts": list(dict.fromkeys(str(row.get("points_forts", "")).strip() for row in response_rows if row.get("points_forts")))[:5],
+        "axes_amelioration": list(dict.fromkeys(str(row.get("points_faibles", row.get("suggestions", ""))).strip() for row in response_rows if row.get("points_faibles") or row.get("suggestions")))[:5],
+    }
+    note_global = average("note_globale")
+    if note_global is None:
+        stored_scores = [float(item.score_satisfaction) for item in inscriptions if item.score_satisfaction is not None]
+        if stored_scores:
+            satisfaction["note_globale"] = f"{sum(stored_scores) / len(stored_scores):.2f}/5"
+
+    before_scores = [float(item.score_avant) for item in results]
+    after_scores = [float(item.score_apres) for item in results]
+    mean_before = round(sum(before_scores) / len(before_scores), 1) if before_scores else None
+    mean_after = round(sum(after_scores) / len(after_scores), 1) if after_scores else None
+    levels_comment = (
+        f"Sur {len(results)} participant(s) disposant des deux résultats, le score moyen est passé de {mean_before}/100 à {mean_after}/100."
+        if results else "Aucune paire de scores initiaux et finaux complète n’est enregistrée ; la progression n’est pas calculée."
+    )
+    data = {
+        "id": str(session.id),
+        "titre": session.titre,
+        "client": session.client or "",
+        "domaine": session.formation_code or "Formation professionnelle",
+        "formation_code": session.formation_code or "",
+        "date_debut": session.date_debut.isoformat() if session.date_debut else "",
+        "date_fin": session.date_fin.isoformat() if session.date_fin else "",
+        "lieu": session.lieu or "Non renseigné",
+        "formateur": trainer_name or "Non renseigné",
+        "duree_jours": len({item.date for item in seances}),
+        "duree_heures": None,
+        "public_cible": req.public_cible.strip() or ", ".join(role_labels) or "Non renseigné",
+        "total_inscrits": len(roster),
+        "total_presents": sum((item["taux_presence"] or 0) > 0 for item in roster),
+        "taux_presence": f"{sum(total_presence_rates) / len(total_presence_rates):.1f}%" if total_presence_rates else "Non calculé",
+        "entreprises": enterprise_names,
+        "objectifs": requested_objectives,
+        "methodes_pedagogiques": requested_methods,
+        "outils": requested_tools,
+        "observations_formateur": req.observations_formateur.strip(),
+        "recommandations_formateur": requested_recommendations,
+        "deroulement": schedule,
+        "participants": roster,
+        "resultats_individuels": results,
+        "pointages_manquants": missing_marks,
+        "nb_scores_complets": len(results),
+        "nb_reponses_satisfaction": satisfaction_respondents,
+        "niveaux_avant": {"moyenne": mean_before} if mean_before is not None else {},
+        "niveaux_apres": {"moyenne": mean_after} if mean_after is not None else {},
+        "progression": f"{mean_after - mean_before:+.1f} points" if mean_before is not None and mean_after is not None else "Non calculée",
+        "note_globale": satisfaction["note_globale"],
+        "note_formateur": satisfaction["note_formateur"],
+        "note_contenu": satisfaction["note_contenu"],
+        "note_supports": satisfaction["note_supports"],
+        "note_organisation": satisfaction["note_organisation"],
+        "points_forts": satisfaction["points_forts"],
+        "axes_amelioration": satisfaction["axes_amelioration"],
+        "taux_recommandation": satisfaction["taux_recommandation"],
+        "satisfaction": satisfaction,
+        "statistiques_participants": {
+            "total_inscrits": len(roster),
+            "total_presents": sum((item["taux_presence"] or 0) > 0 for item in roster),
+            "taux_presence_moyen": f"{sum(total_presence_rates) / len(total_presence_rates):.1f}%" if total_presence_rates else "Non calculé",
+            "pointages_manquants": missing_marks,
+            "entreprises": enterprise_names,
+            "commentaire": f"Présence moyenne calculée sur {len(total_presence_rates)} participant(s) disposant de séances enregistrées." if total_presence_rates else "Aucun pointage exploitable pour calculer la présence.",
+        },
+        "analyse_niveaux": {
+            "avant": {"score_moyen": mean_before} if mean_before is not None else {},
+            "apres": {"score_moyen": mean_after} if mean_after is not None else {},
+            "progression_globale": f"{mean_after - mean_before:+.1f} points" if mean_before is not None and mean_after is not None else "Non calculée",
+            "commentaire": levels_comment,
+        },
+    }
+    start = time.perf_counter()
+    result = await orchestrator.generate_report(data)
+    elapsed = round(time.perf_counter() - start, 2)
+    return _build_response(result, "Rapport préparé depuis les données M5 et transmis pour validation.", elapsed)
+
+
+@router.get(
+    "/export-report-pdf/{review_id}",
+    summary="[M5] Exporter le rapport final approuvé en PDF ALTIORA",
+)
+async def export_report_pdf(
+    review_id: str,
+    _current_user=Depends(require_role("DIRECTION", "ADMIN", "ASSISTANT")),
+) -> StreamingResponse:
+    _log_request("GET", f"/ia/formations/export-report-pdf/{review_id}")
+    review = _get(review_id)
+    if review is None:
+        raise HTTPException(status_code=404, detail="Review introuvable.")
+    if review.get("agent_id") != "agent_6_report":
+        raise HTTPException(status_code=404, detail="Rapport introuvable.")
+    if review.get("status") != "approved":
+        raise HTTPException(status_code=403, detail="Le rapport doit être approuvé avant export.")
+    report_data: dict = review.get("data") or {}
+    if not report_data:
+        raise HTTPException(status_code=422, detail="Données du rapport absentes dans la review.")
+    try:
+        from app.services.formations.report_pdf_service import generate_report_pdf
+        pdf_bytes = generate_report_pdf(report_data)
+    except Exception as e:
+        logger.error("export-report-pdf : %s", e)
+        raise HTTPException(status_code=500, detail=f"Génération PDF impossible : {e}")
+    return StreamingResponse(
+        iter([pdf_bytes]),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="rapport-formation-{review_id}.pdf"'},
+    )
+
+
+@router.get(
+    "/export-report-docx/{review_id}",
+    summary="[M5] Exporter le rapport final approuvé en Word ALTIORA PREST",
+)
+async def export_report_docx(
+    review_id: str,
+    _current_user=Depends(require_role("DIRECTION", "ADMIN", "ASSISTANT")),
+) -> StreamingResponse:
+    review = _get(review_id)
+    if review is None or review.get("agent_id") != "agent_6_report":
+        raise HTTPException(status_code=404, detail="Rapport introuvable.")
+    if review.get("status") != "approved":
+        raise HTTPException(status_code=403, detail="Le rapport doit être approuvé avant export.")
+    report_data = review.get("data") or {}
+    if not report_data:
+        raise HTTPException(status_code=422, detail="Données du rapport absentes dans la review.")
+    try:
+        from app.services.formations.report_docx_service import generate_report_docx
+        docx_bytes = generate_report_docx(report_data)
+    except Exception as exc:
+        logger.exception("export-report-docx : génération impossible")
+        raise HTTPException(status_code=500, detail="Génération du document Word impossible.") from exc
+    return StreamingResponse(
+        iter([docx_bytes]),
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": f'attachment; filename="rapport-formation-{review_id}.docx"'},
+    )
 
 
 @router.get("/agents", summary="[M5] Liste des agents IA")

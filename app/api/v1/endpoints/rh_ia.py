@@ -835,7 +835,7 @@ async def telecharger_contrat_formateur(review_id: str):
         ("Formateur", " ".join(filter(None, [formateur.get("prenom"), formateur.get("nom")]))),
         ("Formation / mission", session.get("titre") or session.get("intitule") or session.get("formation")),
         ("Lieu", session.get("lieu")),
-        ("Période", session.get("dates") or session.get("date_debut")),
+        ("Période", ", ".join(map(str, session.get("dates", []))) if isinstance(session.get("dates"), list) else session.get("dates") or session.get("date_debut")),
         ("Référence", review_id),
     ):
         if value:
@@ -867,6 +867,144 @@ async def telecharger_contrat_formateur(review_id: str):
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         headers={"Content-Disposition": f'attachment; filename="{safe_name}"'},
     )
+
+
+@router.post(
+    "/contrat-formateur/{review_id}/envoyer",
+    summary="[M4-A4] Envoyer le contrat approuvé par email au formateur",
+)
+async def envoyer_contrat_formateur(
+    review_id: str,
+    _current_user=Depends(require_role("DIRECTION")),
+):
+    """Envoie le contrat DOCX approuvé en pièce jointe à l'adresse email du formateur."""
+    from app.services.hitl import get_review
+    from app.config.settings import settings
+    import smtplib
+    from email.mime.multipart import MIMEMultipart
+    from email.mime.text import MIMEText
+    from email.mime.base import MIMEBase
+    from email import encoders
+    from io import BytesIO
+    from datetime import datetime
+
+    review = get_review(review_id)
+    if not review:
+        raise HTTPException(status_code=404, detail="Contrat introuvable.")
+    if review.get("agent_id") != "agent_m4_contrat":
+        raise HTTPException(status_code=404, detail="Cette validation ne correspond pas a un contrat formateur.")
+    if review.get("status") != "approved":
+        raise HTTPException(status_code=409, detail="Le contrat doit etre approuve dans l'Espace IA avant l'envoi.")
+    meta = review.get("meta") or {}
+    if meta.get("contrat_sent"):
+        raise HTTPException(
+            status_code=409,
+            detail=f"Ce contrat a deja ete envoye le {meta.get('contrat_sent_at', 'date inconnue')}.",
+        )
+
+    data = review.get("data") or {}
+    metadata = data.get("metadata") or {}
+    formateur_email = metadata.get("formateur_email")
+    if not formateur_email:
+        raise HTTPException(status_code=422, detail="Aucune adresse email trouvee pour ce formateur. Verifiez sa fiche.")
+
+    # Rebuilder le DOCX (meme logique que le download)
+    body = data.get("texte_complet") or data.get("contenu") or data.get("contrat")
+    if not body:
+        raise HTTPException(status_code=422, detail="Le contenu du contrat est absent de cette validation.")
+
+    doc = WordDocument()
+    doc.add_heading("Contrat de prestation de services", level=0)
+    doc.add_paragraph("Entre les soussignes :")
+    formateur_info = data.get("formateur") or {}
+    session_info = data.get("session") or {}
+    metadata_rows = []
+    for label, value in (
+        ("Formateur", " ".join(filter(None, [formateur_info.get("prenom"), formateur_info.get("nom")]))),
+        ("Formation / mission", session_info.get("titre") or session_info.get("intitule")),
+        ("Lieu", session_info.get("lieu")),
+        ("Periode", ", ".join(map(str, session_info.get("dates", []))) if isinstance(session_info.get("dates"), list) else session_info.get("dates") or session_info.get("date_debut")),
+        ("Reference", review_id),
+    ):
+        if value:
+            metadata_rows.append((label, value))
+    if metadata_rows:
+        add_metadata_table(doc, metadata_rows)
+    doc.add_heading("Conditions de la prestation", level=1)
+    for line in str(body).splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        if line.upper().startswith(("ARTICLE ", "CHAPITRE ")):
+            doc.add_heading(line, level=2)
+        else:
+            doc.add_paragraph(line)
+    doc.add_paragraph("Fait a Antananarivo, le __________________")
+    signatures = doc.add_table(rows=1, cols=2)
+    signatures.cell(0, 0).text = "Pour ALTIORA PREST\n\nNom et signature :"
+    signatures.cell(0, 1).text = "Le formateur\n\nNom et signature :"
+    from app.services.document_design import style_docx_table
+    style_docx_table(signatures, header_row=False)
+    apply_docx_branding(doc, "Contrat de prestation formateur", format_tables=True)
+    buffer = BytesIO()
+    doc.save(buffer)
+    docx_bytes = buffer.getvalue()
+    safe_name = "contrat_formateur_" + "".join(c for c in review_id if c.isalnum() or c in "-_") + ".docx"
+
+    if not settings.SMTP_HOST or not settings.SMTP_USER or not settings.SMTP_PASSWORD:
+        raise HTTPException(status_code=503, detail="SMTP non configure. Renseignez SMTP_HOST, SMTP_USER, SMTP_PASSWORD dans le fichier .env.")
+
+    nom_formateur = " ".join(filter(None, [formateur_info.get("prenom"), formateur_info.get("nom")])) or "Formateur"
+    titre_session = session_info.get("titre") or session_info.get("intitule") or "Formation"
+
+    msg = MIMEMultipart()
+    msg["Subject"] = f"Contrat de prestation — {titre_session}"
+    msg["From"] = settings.SMTP_FROM or settings.SMTP_USER
+    msg["To"] = formateur_email
+    corps = (
+        f"Bonjour {nom_formateur},\n\n"
+        f"Veuillez trouver ci-joint votre contrat de prestation pour la formation : {titre_session}.\n\n"
+        f"Merci de bien vouloir le signer et nous le retourner.\n\n"
+        f"Cordialement,\nALTIORA PREST"
+    )
+    msg.attach(MIMEText(corps, "plain", "utf-8"))
+    part = MIMEBase("application", "vnd.openxmlformats-officedocument.wordprocessingml.document")
+    part.set_payload(docx_bytes)
+    encoders.encode_base64(part)
+    part.add_header("Content-Disposition", f'attachment; filename="{safe_name}"')
+    msg.attach(part)
+
+    try:
+        if settings.SMTP_PORT == 465:
+            with smtplib.SMTP_SSL(settings.SMTP_HOST, 465, timeout=20) as s:
+                s.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
+                s.sendmail(settings.SMTP_USER, formateur_email, msg.as_string())
+        else:
+            with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT or 587, timeout=20) as s:
+                s.ehlo(); s.starttls()
+                s.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
+                s.sendmail(settings.SMTP_USER, formateur_email, msg.as_string())
+    except smtplib.SMTPAuthenticationError:
+        raise HTTPException(status_code=503, detail="Echec authentification SMTP. Verifiez SMTP_USER et SMTP_PASSWORD dans .env.")
+    except smtplib.SMTPException as e:
+        raise HTTPException(status_code=503, detail=f"Erreur SMTP : {e}")
+    except OSError:
+        raise HTTPException(status_code=503, detail="Impossible de joindre le serveur SMTP. Verifiez SMTP_HOST et SMTP_PORT.")
+
+    from app.services.hitl import patch_review
+    sent_at = datetime.now().isoformat()
+    patch_review(review_id, {
+        "contrat_sent": True,
+        "contrat_sent_email": formateur_email,
+        "contrat_sent_at": sent_at,
+    })
+
+    return {
+        "success": True,
+        "message": f"Contrat envoye a {formateur_email}.",
+        "email": formateur_email,
+        "sent_at": sent_at,
+    }
 
 
 # =============================================================================

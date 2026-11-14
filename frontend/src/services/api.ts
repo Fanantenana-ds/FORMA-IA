@@ -377,8 +377,9 @@ class ApiService {
   async sendTrainerEmail(reviewId: string, email: string) { return this.request<any>('/ia/rh/email/envoyer', this.json('POST', { review_id: reviewId, email_destinataire: email }), { ia: true, timeout: 30000 }); }
   async getApprovedTrainerContracts() { return this.getReviewHistory('approved', 'agent_m4_contrat'); }
   async downloadTrainerContract(reviewId: string) { return this.request<Blob>(`/ia/rh/contrat-formateur/download/${encodeURIComponent(reviewId)}`, {}, { ia: true, timeout: 30000 }); }
+  async sendTrainerContract(reviewId: string) { return this.request<any>(`/ia/rh/contrat-formateur/${encodeURIComponent(reviewId)}/envoyer`, { method: 'POST' }, { ia: true, timeout: 30000 }); }
   async analyzeTrainerEvaluation(body: unknown) { return this.request<any>('/ia/rh/formateur/evaluer', this.json('POST', body), { ia: true, timeout: 120000 }); }
-  async sendVoiceCommand(body: { texte: string; ecran_actuel?: string; formations_disponibles?: string[]; contexte_action?: string[]; sessions_disponibles?: Array<{ id: string; titre: string; code: string; date_debut?: string; dates: string; formation_code?: string }> }) {
+  async sendVoiceCommand(body: { texte: string; ecran_actuel?: string; formations_disponibles?: string[]; contexte_action?: string[]; sessions_disponibles?: Array<{ id: string; titre: string; code: string; date_debut?: string; dates: string; formation_code?: string }>; dashboard_stats?: Record<string, unknown> | null }) {
     return this.request<any>('/ia/vocal/commande', this.json('POST', body), { ia: true, timeout: 60000 });
   }
   async executeVoiceAction(action: string, session_info: Record<string, unknown>, payload: Record<string, unknown> = {}) {
@@ -412,7 +413,7 @@ class ApiService {
   async getTrainerSatisfactionResponses() { return this.request<any[]>('/sessions/evaluations/satisfaction'); }
   async submitPublicTrainer(token: string, data: {nom:string;prenom:string;email:string;telephone?:string;specialite:string;fichier:File}) {
     const form = new FormData(); Object.entries(data).forEach(([key, value]) => form.append(key, value as string | Blob));
-    return this.request<any>(`/public/links/${encodeURIComponent(token)}/formateur`, {method:'POST',body:form}, {auth:false});
+    return this.request<any>(`/public/links/${encodeURIComponent(token)}/formateur`, {method:'POST',body:form}, {auth:false, ia:true, timeout:180000});
   }
   async getCandidates() { return this.request<any[]>('/rh/candidats'); }
   async getRecentCandidatures(heures = 48) { return this.request<any>(`/ia/rh/candidatures/recentes?heures=${heures}`, {}, { ia: true }); }
@@ -452,11 +453,15 @@ class ApiService {
   async getReviewHistory(status: 'approved' | 'rejected', agentId?: string) { const params = new URLSearchParams({ status }); if (agentId) params.set('agent_id', agentId); return this.request<any>(`/ia/formations/reviews?${params}`, {}, { ia: true, timeout: 30000 }); }
   async generateFormationForms(body: unknown) { return this.request<any>('/ia/formations/generate-forms', this.json('POST', body), { ia: true, timeout: 120000 }); }
   async getM6Eligibility(sessionId: string) { return this.request<any>(`/ia/formations/sessions/${encodeURIComponent(sessionId)}/attestations/eligibilite`, {}, { ia: true, timeout: 30000 }); }
-  async generateSessionAttestations(sessionId: string) { return this.request<any>(`/ia/formations/sessions/${encodeURIComponent(sessionId)}/attestations/generer`, this.json('POST', {}), { ia: true, timeout: 120000 }); }
+  async generateSessionAttestations(sessionId: string, certificateTitle: string) { return this.request<any>(`/ia/formations/sessions/${encodeURIComponent(sessionId)}/attestations/generer`, this.json('POST', { certificate_title: certificateTitle }), { ia: true, timeout: 120000 }); }
+  async suggestSessionAttestationTitle(sessionId: string) { return this.request<any>(`/ia/formations/sessions/${encodeURIComponent(sessionId)}/attestations/titre`, this.json('POST', {}), { ia: true, timeout: 60000 }); }
   async generateFormationReport(sessionData: unknown) { return this.request<any>('/ia/formations/generate-report', this.json('POST', { session_data: sessionData }), { ia: true, timeout: 120000 }); }
+  async generateSessionReport(sessionId: string, context: unknown) { return this.request<any>(`/ia/formations/sessions/${encodeURIComponent(sessionId)}/generate-report`, this.json('POST', context), { ia: true, timeout: 120000 }); }
   async previewAttestation(reviewId: string, numero: string) { return this.request<Blob>(`/ia/formations/reviews/${encodeURIComponent(reviewId)}/attestations/${encodeURIComponent(numero)}/preview`, {}, { ia: true }); }
   async downloadAttestation(reviewId: string, numero: string) { return this.request<Blob>(`/ia/formations/reviews/${encodeURIComponent(reviewId)}/attestations/${encodeURIComponent(numero)}/download`, {}, { ia: true }); }
   async downloadAttestationsZip(reviewId: string) { return this.request<Blob>(`/ia/formations/reviews/${encodeURIComponent(reviewId)}/attestations.zip`, {}, { ia: true }); }
+  async downloadReportPdf(reviewId: string) { return this.request<Blob>(`/ia/formations/export-report-pdf/${encodeURIComponent(reviewId)}`, {}, { ia: true }); }
+  async downloadReportDocx(reviewId: string) { return this.request<Blob>(`/ia/formations/export-report-docx/${encodeURIComponent(reviewId)}`, {}, { ia: true }); }
   async approveAttestationInBatch(reviewId: string, numero: string, reviewer_note?: string) { return this.request<any>(`/ia/formations/reviews/${encodeURIComponent(reviewId)}/attestations/${encodeURIComponent(numero)}/approve`, this.json('POST', { reviewer_note }), { ia: true }); }
   async editPendingAttestation(reviewId: string, numero: string, content: unknown, expected_updated_at: string) { return this.request<any>(`/ia/formations/reviews/${encodeURIComponent(reviewId)}/attestations/${encodeURIComponent(numero)}`, this.json('PUT', { content, expected_updated_at }), { ia: true, timeout: 30000 }); }
   async deletePendingAttestation(reviewId: string, numero: string, expected_updated_at: string) { return this.request<any>(`/ia/formations/reviews/${encodeURIComponent(reviewId)}/attestations/${encodeURIComponent(numero)}`, { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ expected_updated_at }) }, { ia: true, timeout: 30000 }); }
@@ -499,11 +504,12 @@ class ApiService {
   async getRagSessions() { return this.request<any>('/ia/rag/sessions', {}, { ia: true }); }
   async getRagIndexStatus(hash: string) { return this.request<any>(`/ia/rag/statut/${encodeURIComponent(hash)}`, {}, { ia: true }); }
   async indexSupport(chemin_fichier: string, formation_code: string, session_id: string, module?: string) { return this.request('/ia/rag/indexer-document', this.json('POST', { chemin_fichier, formation_code, session_id, module }), { ia: true }); }
+  async linkSupportToSession(docHash: string, sessionId: string) { return this.request<any>(`/documents/rag/supports/${encodeURIComponent(docHash)}/rattacher-session?session_id=${encodeURIComponent(sessionId)}`, { method: 'PATCH' }); }
   async archiveSupport(docHash: string) { return this.request<any>(`/ia/rag/documents/${docHash}/archiver`, this.json('PATCH', {}), { ia: true }); }
   async restoreSupport(docHash: string) { return this.request<any>(`/ia/rag/documents/${docHash}/restaurer`, this.json('PATCH', {}), { ia: true }); }
-  async chatRag(body: { message: string; conversation_id?: string | null; formation_code?: string | null; session_id?: string | null; module?: string | null }) { return this.request<any>('/ia/rag/chat', this.json('POST', body), { ia: true, timeout: 120000 }); }
+  async chatRag(body: { message: string; conversation_id?: string | null; formation_code?: string | null; session_id?: string | null; module?: string | null; dashboard_stats?: Record<string, unknown> | null }) { return this.request<any>('/ia/rag/chat', this.json('POST', body), { ia: true, timeout: 120000 }); }
   async chatRagStream(
-    body: { message: string; conversation_id?: string | null; formation_code?: string | null; session_id?: string | null; module?: string | null },
+    body: { message: string; conversation_id?: string | null; formation_code?: string | null; session_id?: string | null; module?: string | null; dashboard_stats?: Record<string, unknown> | null },
     onEvent: (event: any) => void,
   ) {
     const headers = new Headers({ Accept: 'text/event-stream', 'Content-Type': 'application/json' });

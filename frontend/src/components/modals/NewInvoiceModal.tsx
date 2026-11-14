@@ -8,6 +8,8 @@ interface NewInvoiceModalProps {
   onSubmit: (fac: Partial<DevisFacture>) => Promise<void>;
   sessions: Session[];
   initialSessionId?: string;
+  initialMontantHT?: number;
+  initialClient?: string;
 }
 
 export const NewInvoiceModal: React.FC<NewInvoiceModalProps> = ({
@@ -15,7 +17,9 @@ export const NewInvoiceModal: React.FC<NewInvoiceModalProps> = ({
   onClose,
   onSubmit,
   sessions,
-  initialSessionId
+  initialSessionId,
+  initialMontantHT,
+  initialClient
 }) => {
   const [client, setClient] = useState('');
   const [clientAdresse, setClientAdresse] = useState('');
@@ -36,12 +40,19 @@ export const NewInvoiceModal: React.FC<NewInvoiceModalProps> = ({
     if (!initialSessionId) {
       setSessionId('');
       setClient('');
+      setMontantHT('');
       return;
     }
     setSessionId(initialSessionId);
+    // Priorité client : initialClient (depuis l'opportunité) > session.client
     const selected = sessions.find(item => item.id === initialSessionId);
-    if (selected?.client) setClient(selected.client);
-  }, [isOpen, initialSessionId]);
+    const resolvedClient = initialClient || selected?.client || '';
+    if (resolvedClient) setClient(resolvedClient);
+    // Montant HT : offre financière approuvée > montantEstime (passé via initialMontantHT)
+    if (initialMontantHT && initialMontantHT > 0) {
+      setMontantHT(String(Math.round(initialMontantHT)));
+    }
+  }, [isOpen, initialSessionId, initialMontantHT, initialClient]);
 
   if (!isOpen) return null;
 

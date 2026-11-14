@@ -26,13 +26,13 @@ from app.services.rag.embedding_provider import get_embedding_provider
 from app.services.rag.formation_resolver_service import resoudre_formation
 from app.services.rag.knowledge_repository import KnowledgeRepository
 from app.services.rag.rate_limiter import DelaiDepasseError
-from app.services.rag.type_detection_service import detecter_type
+from app.services.rag.type_detection_service import detecter_type, detecter_type_regles
 
 logger = logging.getLogger(__name__)
 
 _DOSSIER_PROMPTS = Path(__file__).resolve().parents[1] / "prompts" / "rag"
 MENTION_FIXE = "\n\n*Réponse générée à partir des documents indexés.*"
-ATTENTE_MAX_CHAT_S = 3.0
+ATTENTE_MAX_CHAT_S = 1.5
 GUIDE_DEMARRAGE_PLATEFORME = """\
 **FORMA-IA** guide chaque étape du cycle de vie d'une formation, de la **détection d'une opportunité** jusqu'à la **facturation**. Les modules disponibles :
 
@@ -111,7 +111,10 @@ async def _appeler_llm_stream(
     generate_stream = getattr(llm, "generate_stream", None)
     if not callable(generate_stream):
         result = await _appeler_llm_json(nom_prompt, contenu, temperature, consigne_additionnelle, historique)
-        return result.get("reponse", "") if result else ""
+        if result:
+            texte_fallback = result.get("reponse") or result.get("response") or result.get("text") or ""
+            return str(texte_fallback).strip()
+        return ""
     contexte_historique = (
         f"\n\nHISTORIQUE DE LA CONVERSATION (pour contexte, ne pas répéter) :\n{historique}"
         if historique else ""
@@ -125,16 +128,59 @@ async def _appeler_llm_stream(
         + _SYSTEM_STREAMING_SUFFIX
     )
     tokens: list[str] = []
+    buffer = ""
+    json_wrapper_stripped = False
     try:
-        async for token in generate_stream(system, contenu, temperature=temperature, max_tokens=1500, reasoning_effort="low"):
+        async for token in generate_stream(system, contenu, temperature=temperature, max_tokens=1200, reasoning_effort="low"):
             tokens.append(token)
-            if on_token:
-                await on_token(token)
+            buffer += token
+            # Si le LLM génère du JSON {"reponse":"..."} malgré le suffix Markdown,
+            # détecter dès que possible et ne streamer que la valeur intérieure.
+            if not json_wrapper_stripped:
+                stripped = buffer.lstrip()
+                if stripped.startswith('{"reponse"') or stripped.startswith('{"response"'):
+                    # Attendre d'avoir le contenu après les guillemets d'ouverture
+                    import re as _re
+                    m = _re.search(r'\{"re(?:ponse|sponse)"\s*:\s*"([\s\S]*)', stripped)
+                    if m:
+                        json_wrapper_stripped = True
+                        inner = m.group(1)
+                        if on_token:
+                            await on_token(inner)
+                        continue
+                    elif len(buffer) > 30:
+                        # Pas de JSON reconnu après 30 chars — streamer normalement
+                        json_wrapper_stripped = True
+                        if on_token:
+                            await on_token(token)
+                    # Sinon : on accumule encore un peu avant de décider
+                elif len(buffer) > 15:
+                    # Commence clairement en Markdown — streamer normalement
+                    json_wrapper_stripped = True
+                    if on_token:
+                        for t in tokens:
+                            await on_token(t)
+            else:
+                if on_token:
+                    # En mode JSON détecté : streamer uniquement jusqu'à la fermeture
+                    clean = token.rstrip('}"')
+                    if clean:
+                        await on_token(clean)
     except Exception as exc:
         logger.warning("⚠️ Streaming LLM échoué : %s — repli sur batch", exc)
         result = await _appeler_llm_json(nom_prompt, contenu, temperature, consigne_additionnelle, historique)
         return result.get("reponse", "") if result else ""
-    return "".join(tokens)
+    full = "".join(tokens)
+    # Extraire la valeur si le résultat complet est un objet JSON
+    import json as _json, re as _re
+    try:
+        parsed = _json.loads(full.strip())
+        val = parsed.get("reponse") or parsed.get("response") or parsed.get("text") or ""
+        if isinstance(val, str) and val.strip():
+            return val.strip()
+    except Exception:
+        pass
+    return full
 
 
 async def _appeler_llm_json(
@@ -177,6 +223,45 @@ def _reponse_mode_strict(suggestion_texte: str = "") -> str:
     return base
 
 
+async def _reformuler_si_necessaire(message: str, conv=None) -> str:
+    """Enrichit uniquement les questions pédagogiques courtes et mal formées.
+    Ne touche jamais aux questions de catalogue, inventaire, localisation ou aide
+    qui ont leur propre routeur et ne bénéficient pas du contexte précédent."""
+    tokens = message.strip().split()
+    if detecter_type_regles(message) == "commande_texte":
+        return message
+    if conv and re.fullmatch(
+        r"(?:améliore|reformule|corrige|résume|structure|traduis|"
+        r"mets en forme|évalue|complète|développe|rends)",
+        message.strip().lower(),
+    ):
+        return message
+    # Question déjà bien formée : ne pas modifier
+    if len(tokens) >= 8:
+        return message
+    msg_lower = message.lower()
+    # Ne pas enrichir les questions avec leur propre intention claire
+    mots_intention_propre = (
+        "formation", "formations", "proposez", "catalogue", "liste",
+        "combien", "indexé", "support", "document", "inventaire",
+        "où", "ou", "localise", "localiser", "localisation",
+        "module", "plateforme", "forma-ia", "facture", "hitl", "tdr",
+        "bonjour", "bjr", "slt", "merci", "mrc", "salut",
+    )
+    if any(mot in msg_lower for mot in mots_intention_propre):
+        return message
+    # Enrichir uniquement les requêtes pédagogiques courtes sans intention claire
+    contexte_precedent = ""
+    if conv and conv.echanges:
+        for e in reversed(conv.echanges):
+            if e.role == "utilisateur" and e.texte.strip() != message.strip():
+                contexte_precedent = e.texte[:200]
+                break
+    if contexte_precedent:
+        return f"{contexte_precedent} — {message}"
+    return message
+
+
 class ChatOrchestrator:
     def __init__(self, repository: KnowledgeRepository | None = None):
         self.repository = repository or KnowledgeRepository()
@@ -196,6 +281,7 @@ class ChatOrchestrator:
         user_id: str | None = None,
         on_progress: Callable[[str, str], Awaitable[None]] | None = None,
         on_token: "Callable[[str], Awaitable[None]] | None" = None,
+        dashboard_stats: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         async def progress(stage: str, label: str) -> None:
             if on_progress:
@@ -210,7 +296,15 @@ class ChatOrchestrator:
 
         message_original = message
         await progress("status", "Analyse de votre question…")
-        type_detecte = await detecter_type(message, conv=conv, session_id=session_id)
+
+        # Reformuler la question si elle est trop courte ou mal formulée
+        # pour améliorer la détection du type et la recherche vectorielle.
+        message_pour_routage = await _reformuler_si_necessaire(message, conv)
+
+        type_detecte = await detecter_type(message_pour_routage, conv=conv, session_id=session_id)
+        # Si le routage échoue sur la version reformulée, retenter avec l'original
+        if type_detecte == "incomprehensible" and message_pour_routage != message:
+            type_detecte = await detecter_type(message, conv=conv, session_id=session_id)
         await progress("status", f"Question reconnue : {type_detecte.replace('_', ' ')}. Préparation de la recherche…")
 
         reponse_depuis_cache = False
@@ -226,6 +320,8 @@ class ChatOrchestrator:
             await progress("status", "Vérification des formations qui possèdent des supports indexés…")
         elif type_detecte == "inventaire":
             await progress("status", "Comptage des supports réellement indexés…")
+        elif type_detecte == "commande_texte":
+            await progress("status", "Traitement de votre instruction…")
 
         # Fix relance : "refaire"/"retry"/"encore" rejoue la dernière question réelle
         import unicodedata as _ud
@@ -258,6 +354,14 @@ class ChatOrchestrator:
 
         module_contexte = self._module_demande(message, session_id, module, conv)
 
+        # ── Contexte dashboard injecté si la question porte sur les KPIs ──
+        from app.services.dashboard_context_service import (
+            construire_contexte_dashboard, est_question_dashboard,
+        )
+        _contexte_dashboard: str | None = None
+        if dashboard_stats and est_question_dashboard(message):
+            _contexte_dashboard = construire_contexte_dashboard(dashboard_stats)
+
         try:
             if type_detecte == "catalogue":
                 texte, sources = await self._repondre_catalogue(allowed_formation_codes, allowed_session_ids, session_id)
@@ -277,11 +381,17 @@ class ChatOrchestrator:
                 if cache_utilise is True and not await self._cache_utilise_pour(message):
                     reponse_depuis_cache = True
             elif type_detecte == "aide_plateforme":
-                texte, sources, modele_requete, cache_utilise = await self._repondre_aide_plateforme(message, hide_references, conv=conv)
+                texte, sources, modele_requete, cache_utilise = await self._repondre_aide_plateforme(
+                    message, hide_references, conv=conv, contexte_dashboard=_contexte_dashboard,
+                )
                 if cache_utilise is True and not await self._cache_utilise_pour(message):
                     reponse_depuis_cache = True
+            elif type_detecte == "commande_texte":
+                texte, sources = await self._repondre_commande_texte(message, conv=conv, on_token=on_token)
             elif type_detecte == "conversationnel":
-                texte, sources = await self._repondre_conversationnel(message, conv=conv)
+                texte, sources = await self._repondre_conversationnel(
+                    message, conv=conv, contexte_dashboard=_contexte_dashboard,
+                )
             elif type_detecte == "incomprehensible":
                 texte, sources = self._repondre_incomprehensible(message), []
             else:  # hors_sujet
@@ -679,7 +789,43 @@ class ChatOrchestrator:
             "- « Où est expliqué le deep learning ? »"
         )
 
-    async def _repondre_conversationnel(self, message: str = "", conv: "memoire.Conversation | None" = None):
+    async def _repondre_commande_texte(
+        self, message: str, conv=None,
+        on_token: "Callable[[str], Awaitable[None]] | None" = None,
+    ) -> tuple[str, list]:
+        """Exécute une instruction directe sur un texte fourni par l'utilisateur
+        (améliorer, résumer, reformuler, corriger, traduire, structurer…).
+        Récupère aussi le dernier message de la conversation si le texte cible
+        était dans le message précédent."""
+        # Si le message courant est très court (instruction seule sans texte),
+        # chercher le texte dans le message précédent de l'utilisateur.
+        contenu_cible = message
+        tokens_msg = message.strip().split()
+        if len(tokens_msg) <= 6 and conv and conv.echanges:
+            for e in reversed(conv.echanges):
+                if e.role == "utilisateur" and e.texte.strip() != message.strip():
+                    contenu_cible = f"TEXTE FOURNI PRÉCÉDEMMENT :\n{e.texte}\n\nINSTRUCTION : {message}"
+                    break
+
+        historique = _formater_historique(conv) if conv else None
+        if on_token:
+            texte = await _appeler_llm_stream(
+                "commande_texte.yaml", contenu_cible, temperature=0.4,
+                historique=historique, on_token=on_token,
+            )
+        else:
+            result = await _appeler_llm_json("commande_texte.yaml", contenu_cible, temperature=0.4, historique=historique)
+            texte = (result.get("reponse") or result.get("response") or "") if result else ""
+        if not texte:
+            texte = "Je n'ai pas pu traiter votre demande. Pouvez-vous coller le texte sur lequel vous souhaitez travailler ?"
+        return texte, []
+
+    async def _repondre_conversationnel(
+        self,
+        message: str = "",
+        conv: "memoire.Conversation | None" = None,
+        contexte_dashboard: str | None = None,
+    ):
         # Si l'utilisateur a déjà échangé dans cette conversation,
         # ne pas répéter l'intro complète : réponse courte et contextualisée.
         deja_salue = conv and len(conv.echanges) >= 2
@@ -695,6 +841,10 @@ class ChatOrchestrator:
                 f"\n\nHISTORIQUE (ne pas répéter, juste s'en souvenir) :\n{historique_txt}"
                 if historique_txt else ""
             )
+            contexte_kpi = (
+                f"\n\nDONNÉES RÉELLES DU TABLEAU DE BORD (utilise ces chiffres pour répondre) :\n{contexte_dashboard}"
+                if contexte_dashboard else ""
+            )
             reponse = await llm.generate_with_retry(
                 system_prompt=(
                     "Tu es l'assistant conversationnel FORMA-IA d'ALTIORA PREST. "
@@ -705,13 +855,15 @@ class ChatOrchestrator:
                     "- Si c'est le premier échange, présente-toi brièvement en 2 phrases max.\n"
                     "- Abréviations fréquentes : bjr=bonjour, slt/slut=salut, cc=coucou, "
                     "mrc=merci, bsr=bonsoir. Interprète-les naturellement.\n"
+                    "- Si des données du tableau de bord sont fournies, utilise-les pour répondre avec les vrais chiffres.\n"
                     "- N'invente aucune donnée, résultat ou fonctionnalité.\n"
                     "- FORMA-IA accompagne : veille, TDR, offres, sessions, attestations, facturation, RAG.\n"
                     'Retourne UNIQUEMENT {"reponse":"..."}.'
                     + contexte_hist
+                    + contexte_kpi
                 ),
                 user_prompt=f"Message : {message}",
-                temperature=0.25, max_tokens=200, json_mode=True, max_retries=1,
+                temperature=0.25, max_tokens=400, json_mode=True, max_retries=1,
                 reasoning_effort="low",
             )
             import json
@@ -1073,14 +1225,18 @@ class ChatOrchestrator:
             rcache.mettre_en_cache(requete, cache_namespace, {"texte": texte, "sources": sources, "hide_references": hide_references}, formation_code, session_id)
         return texte, sources, modele_requete, cache_avant
 
-    async def _repondre_aide_plateforme(self, message, hide_references=False, conv=None):
+    async def _repondre_aide_plateforme(
+        self, message, hide_references=False, conv=None,
+        contexte_dashboard: str | None = None,
+    ):
         cache_avant = await self._cache_utilise_pour(message)
         provider = get_embedding_provider()
 
-        # Cache de réponse LLM (clé inclut la question uniquement — pas la conv)
-        cache_reponse = rcache.depuis_cache(message, "aide_plateforme")
-        if cache_reponse:
-            return cache_reponse["texte"], cache_reponse["sources"], provider.modele_requete, True
+        # Cache désactivé si contexte dashboard présent (données temps réel)
+        if not contexte_dashboard:
+            cache_reponse = rcache.depuis_cache(message, "aide_plateforme")
+            if cache_reponse:
+                return cache_reponse["texte"], cache_reponse["sources"], provider.modele_requete, True
 
         resultats = await recherche.rechercher(
             message, collection="aide_plateforme", top_k=5, seuil_min=0.20,
@@ -1088,14 +1244,16 @@ class ChatOrchestrator:
         )
 
         historique = _formater_historique(conv)
+        suffix_dashboard = (
+            f"\n\nDONNÉES RÉELLES DU TABLEAU DE BORD (utilise ces chiffres pour répondre) :\n{contexte_dashboard}"
+            if contexte_dashboard else ""
+        )
 
         if not resultats:
-            # Aucun document indexé : utiliser le guide statique + historique pour répondre
-            # à des relances contextuelles ("explique l'étape 4" après avoir vu le guide).
             contexte_guide = GUIDE_DEMARRAGE_PLATEFORME
             resultat = await _appeler_llm_json(
                 "reponse_aide_plateforme.yaml",
-                f"QUESTION : {message}\n\nGUIDE FORMA-IA :\n{contexte_guide}",
+                f"QUESTION : {message}\n\nGUIDE FORMA-IA :\n{contexte_guide}{suffix_dashboard}",
                 temperature=0.4,
                 historique=historique,
             )
@@ -1111,7 +1269,7 @@ class ChatOrchestrator:
         )
         resultat = await _appeler_llm_json(
             "reponse_aide_plateforme.yaml",
-            f"QUESTION : {message}\n\nEXTRAITS DU GUIDE :\n{contexte}",
+            f"QUESTION : {message}\n\nEXTRAITS DU GUIDE :\n{contexte}{suffix_dashboard}",
             temperature=0.4,
             historique=historique,
         )

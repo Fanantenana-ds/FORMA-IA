@@ -20,6 +20,11 @@ tache: |
   supports indexés ou le syllabus approuvé, sinon les thèmes réellement
   enregistrés aux séances. N'invente jamais une compétence à partir du seul
   titre de la formation. Si les sources sont insuffisantes, refuse la génération.
+  Le champ details.formation affiché sur le certificat doit nommer la formation
+  réellement suivie en quelques mots, à partir des sources pédagogiques. Ne
+  recopie pas un intitulé administratif provenant d'un appel d'offres, d'un
+  recrutement, d'un marché ou d'une offre de formation. Si le contenu ne permet
+  pas d'identifier le sujet, utilise « Formation professionnelle ».
   L'attestation confirme une participation : elle ne certifie pas la maîtrise
   individuelle d'une compétence sans résultat d'évaluation lié à cette compétence.
 
@@ -42,7 +47,7 @@ format: |
     "introduction": "Le Directeur d'ALTIORA PREST atteste que Monsieur/Madame [NOM]",
     "corps": "a suivi la formation professionnelle intitulée :",
     "details": {
-      "formation": "Titre complet de la formation",
+      "formation": "Intitulé court et naturel du contenu réellement suivi (4 à 9 mots)",
       "dates": "15 au 16 Octobre 2026",
       "lieu": "Antananarivo, Madagascar",
       "duree": "2 jours (durée horaire observée si disponible)",
@@ -80,3 +85,4 @@ regles: |
   8. Maximum 120 caractères par compétence
   9. Ne jamais écrire "N/A" ou laisser un champ vide — adapter avec les données disponibles
   10. Ne pas prétendre à une réussite ou à une maîtrise individuelle sans résultat d'évaluation explicite
+  11. Le titre visible de la formation est fondé sur les thèmes des séances, le syllabus approuvé ou les supports indexés ; jamais sur le titre commercial ou administratif de l'offre.

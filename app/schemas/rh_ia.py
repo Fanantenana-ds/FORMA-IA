@@ -89,6 +89,7 @@ class EmailRhRequest(BaseModel):
 
 
 class FormateurInfo(BaseModel):
+    id: str | None = None
     nom: str = Field(..., min_length=2)
     adresse: str | None = None
     telephone: str | None = None

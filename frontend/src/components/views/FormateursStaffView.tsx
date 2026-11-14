@@ -389,13 +389,32 @@ export const FormateursStaffView: React.FC<FormateursStaffViewProps> = ({
     }
   };
 
+  // Détection des sessions sans formateur et chevauchements de dates
+  const sessionsNonAffectees = sessions.filter(s => !s.formateur);
+  const sessionsAvecDates = sessions.filter(s => s.dateDebut && s.dateFin);
+  const chevauchements: Session[] = [];
+  for (let i = 0; i < sessionsAvecDates.length; i++) {
+    for (let j = i + 1; j < sessionsAvecDates.length; j++) {
+      const a = sessionsAvecDates[i];
+      const b = sessionsAvecDates[j];
+      const debutA = new Date(a.dateDebut!), finA = new Date(a.dateFin!);
+      const debutB = new Date(b.dateDebut!), finB = new Date(b.dateFin!);
+      if (debutA <= finB && debutB <= finA) {
+        if (!chevauchements.find(s => s.id === a.id)) chevauchements.push(a);
+        if (!chevauchements.find(s => s.id === b.id)) chevauchements.push(b);
+      }
+    }
+  }
+  const aConflitDeDates = chevauchements.length > 0;
+  const formateursDispo = formateurs.filter(f => f.statut === 'Disponible');
+
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
       <PageHeader
         icon={<GraduationCap size={22} />}
-        badge="Ressources Humaines"
+        badge="M4 · Ressources Humaines"
         title="Formateurs & Staff"
-        subtitle="Gérez les profils, les spécialités, les disponibilités et les candidatures des formateurs."
+        subtitle="Affectez les formateurs internes ou recrutez selon la charge de sessions simultanées."
         actions={canManage ? (
           <button onClick={openCreate} className="inline-flex items-center gap-1.5 rounded-xl border border-white/20 bg-white/15 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/25 transition-colors cursor-pointer">
             <UserPlus size={14} />
@@ -403,6 +422,80 @@ export const FormateursStaffView: React.FC<FormateursStaffViewProps> = ({
           </button>
         ) : undefined}
       />
+
+      {/* ── Bandeau intelligent M4 ── */}
+      {sessionsNonAffectees.length > 0 && (
+        <div className={`rounded-2xl border p-5 ${aConflitDeDates ? 'border-amber-200 bg-amber-50' : 'border-emerald-200 bg-emerald-50'}`}>
+          <div className="flex flex-col sm:flex-row sm:items-start gap-4">
+            <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${aConflitDeDates ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
+              <GraduationCap size={22} />
+            </div>
+            <div className="flex-1 min-w-0">
+              {aConflitDeDates ? (
+                <>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-xs font-bold uppercase tracking-wider text-amber-700">Sessions simultanées détectées · Recrutement recommandé</span>
+                  </div>
+                  <p className="text-sm font-bold text-amber-900">
+                    {chevauchements.length} session{chevauchements.length > 1 ? 's' : ''} ont des dates qui se chevauchent — un seul formateur interne ne peut pas couvrir toutes les formations en même temps.
+                  </p>
+                  <p className="mt-1 text-xs text-amber-700">
+                    Utilisez la section <strong>Recrutement assisté IA</strong> ci-dessous pour analyser des CV, préparer les entretiens et générer les contrats.
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {chevauchements.slice(0, 3).map(s => (
+                      <span key={s.id} className="rounded-lg bg-amber-100 border border-amber-200 px-2.5 py-1 text-xs font-semibold text-amber-800">
+                        {s.intitule.length > 35 ? s.intitule.slice(0, 35) + '…' : s.intitule}
+                      </span>
+                    ))}
+                    {chevauchements.length > 3 && <span className="rounded-lg bg-amber-100 px-2.5 py-1 text-xs text-amber-700">+{chevauchements.length - 3} autres</span>}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-xs font-bold uppercase tracking-wider text-emerald-700">Affectation directe possible · Pas de conflit de planning</span>
+                  </div>
+                  <p className="text-sm font-bold text-emerald-900">
+                    {sessionsNonAffectees.length} session{sessionsNonAffectees.length > 1 ? 's' : ''} sans formateur affecté — les sessions ne se chevauchent pas, un formateur interne peut les couvrir.
+                  </p>
+                  <p className="mt-1 text-xs text-emerald-700">
+                    {formateursDispo.length > 0
+                      ? `${formateursDispo.length} formateur${formateursDispo.length > 1 ? 's' : ''} disponible${formateursDispo.length > 1 ? 's' : ''} : ${formateursDispo.map(f => `${f.prenom ?? ''} ${f.nom}`.trim()).join(', ')}.`
+                      : 'Aucun formateur marqué "Disponible" pour le moment — vérifiez les statuts ci-dessous.'}
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {sessionsNonAffectees.slice(0, 3).map(s => (
+                      <span key={s.id} className="rounded-lg bg-emerald-100 border border-emerald-200 px-2.5 py-1 text-xs font-semibold text-emerald-800">
+                        {s.intitule.length > 35 ? s.intitule.slice(0, 35) + '…' : s.intitule}
+                      </span>
+                    ))}
+                    {sessionsNonAffectees.length > 3 && <span className="rounded-lg bg-emerald-100 px-2.5 py-1 text-xs text-emerald-700">+{sessionsNonAffectees.length - 3} autres</span>}
+                  </div>
+                </>
+              )}
+            </div>
+            <div className="shrink-0">
+              {aConflitDeDates ? (
+                <span className="inline-flex items-center gap-1.5 rounded-xl bg-amber-600 px-3 py-2 text-xs font-bold text-white">
+                  Recrutement externe
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-bold text-white">
+                  Affectation interne
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {sessionsNonAffectees.length === 0 && sessions.length > 0 && (
+        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 flex items-center gap-3">
+          <CheckCircle2 size={18} className="text-emerald-600 shrink-0" />
+          <p className="text-sm font-semibold text-slate-700">Toutes les sessions ont un formateur affecté.</p>
+        </div>
+      )}
 
       {canManage && <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs space-y-5">
         <div className="flex items-center gap-2"><Sparkles size={18} className="text-[#0B1F4D]"/><div><h2 className="font-extrabold text-[#11162A]">M4 · Recrutement assisté</h2><p className="mt-1 text-xs text-slate-500">Analyse comparative des CV, préparation des entretiens et contrats soumis à validation humaine.</p></div></div>

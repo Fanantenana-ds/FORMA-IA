@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+﻿import React, { useState, useEffect, useRef } from 'react';
 import {
   CalendarDays,
   Plus,
@@ -14,7 +14,16 @@ import {
   Check,
   Trash2,
   UserCheck,
-  Pencil
+  Pencil,
+  Copy,
+  CheckCheck,
+  Link2,
+  GraduationCap,
+  ClipboardList,
+  BookOpen,
+  AlertCircle,
+  Sparkles,
+  ExternalLink,
 } from 'lucide-react';
 import { PageHeader } from '../PageHeader';
 import { Session, PresenceRecord, MenuSection } from '../../types';
@@ -121,6 +130,7 @@ export const SessionsGroupesView: React.FC<SessionsGroupesViewProps> = ({
   const [deletingLinkKind, setDeletingLinkKind] = useState<'participant' | 'formateur' | 'post_formation' | null>(null);
   const [publicLinkError, setPublicLinkError] = useState('');
   const [publicLinkNotice, setPublicLinkNotice] = useState('');
+  const [copiedKind, setCopiedKind] = useState<string | null>(null);
   const [sessionSupports, setSessionSupports] = useState<any[]>([]);
   const [supportsLoading, setSupportsLoading] = useState(false);
   const [supportsError, setSupportsError] = useState('');
@@ -130,18 +140,32 @@ export const SessionsGroupesView: React.FC<SessionsGroupesViewProps> = ({
   const assessmentSupportReady = pedagogicalSupports.length > 0 && pedagogicalSupports.every(item => item.statut === 'indexe' && Number(item.nb_chunks) > 0);
   const indexedSupportChunks = pedagogicalSupports.reduce((sum, item) => sum + (item.statut === 'indexe' ? Number(item.nb_chunks ?? 0) : 0), 0);
 
+  const copyLink = async (kind: string, url: string) => {
+    try {
+      if (navigator.clipboard) {
+        await navigator.clipboard.writeText(url);
+      } else {
+        const el = document.createElement('textarea');
+        el.value = url; el.style.cssText = 'position:fixed;opacity:0;top:0;left:0';
+        document.body.appendChild(el); el.select();
+        document.execCommand('copy');
+        document.body.removeChild(el);
+      }
+      setCopiedKind(kind);
+      setTimeout(() => setCopiedKind(null), 2500);
+    } catch { setPublicLinkError('Impossible de copier automatiquement. Sélectionnez le lien et copiez-le manuellement.'); }
+  };
+
   const generatePublicLink = async (kind: 'participant' | 'formateur' | 'post_formation') => {
     setPublicLinkBusy(true); setPublicLinkError(''); setPublicLinkNotice('');
     try {
       if (!activeSession?.id) throw new Error('Sélectionnez une session avant de générer ce lien.');
-      if (kind !== 'formateur' && !assessmentSupportReady) {
-        throw new Error('Indexez tous les supports pédagogiques de cette session avant de générer un lien d’évaluation.');
-      }
       const result = await apiService.createPublicRegistrationLink(kind, activeSession.id);
       const url = new URL(result.path, window.location.origin).toString();
       setPublicLinks(prev => ({ ...prev, [kind]: url }));
       setPublicLinkTokens(prev => ({ ...prev, [kind]: result.token }));
-      try { await navigator.clipboard?.writeText(url); } catch { /* Le lien reste affiché avec son bouton Copier dédié. */ }
+      const modeLabel = kind === 'formateur' ? 'candidature formateur' : assessmentSupportReady ? 'évaluation (supports indexés · 12 questions)' : 'évaluation (mode TDR · 10 questions)';
+      setPublicLinkNotice(`Lien ${modeLabel} généré et prêt à partager.`);
     } catch (error) { setPublicLinkError(error instanceof Error ? error.message : 'Génération du lien impossible.'); }
     finally { setPublicLinkBusy(false); }
   };
@@ -150,7 +174,7 @@ export const SessionsGroupesView: React.FC<SessionsGroupesViewProps> = ({
     const token = publicLinkTokens[kind];
     if (!token) { setPublicLinkError('Le jeton de révocation de ce lien est indisponible. Actualisez la session puis réessayez.'); return; }
     const label = kind === 'participant' ? 'inscription participants' : kind === 'formateur' ? 'candidature formateur' : 'évaluation post-formation';
-    if (!window.confirm(`Désactiver le lien « ${label} » ? L’URL ne sera plus accessible. Les inscriptions et réponses déjà reçues seront conservées.`)) return;
+    if (!window.confirm(`Désactiver le lien « ${label} » ? L'URL ne sera plus accessible. Les inscriptions et réponses déjà reçues seront conservées.`)) return;
     setDeletingLinkKind(kind); setPublicLinkError('');
     try {
       await apiService.revokePublicRegistrationLink(token);
@@ -182,11 +206,11 @@ export const SessionsGroupesView: React.FC<SessionsGroupesViewProps> = ({
           post_formation: links.post_formation ? new URL(links.post_formation.path, window.location.origin).toString() : undefined,
         });
         setPublicLinkTokens({ participant: links.participant?.token, formateur: links.formateur?.token, post_formation: links.post_formation?.token });
-      } else setPublicLinkError('Les liens publics existants n’ont pas pu être chargés.');
+      } else setPublicLinkError("Les liens publics existants n'ont pas pu être chargés.");
       if (supportsResult.status === 'fulfilled') {
         const data = supportsResult.value?.data;
         setSessionSupports(Array.isArray(data) ? data : []);
-      } else setSupportsError('Le statut des supports de cette session n’a pas pu être vérifié.');
+      } else setSupportsError("Le statut des supports de cette session n'a pas pu être vérifié.");
       setSupportsLoading(false);
     });
     return () => { cancelled = true; };
@@ -254,7 +278,7 @@ export const SessionsGroupesView: React.FC<SessionsGroupesViewProps> = ({
         ...records
       ]);
       if (results.some((result) => result.status === 'rejected')) {
-        setParticipantError('Certains inscrits n’ont pas pu être chargés. Actualisez la page pour réessayer.');
+        setParticipantError("Certains inscrits n'ont pas pu être chargés. Actualisez la page pour réessayer.");
       }
     });
     return () => { cancelled = true; };
@@ -317,7 +341,7 @@ export const SessionsGroupesView: React.FC<SessionsGroupesViewProps> = ({
     try {
       const lines=(await file.text()).replace(/^\uFEFF/,'').split(/\r?\n/).filter(Boolean);
       const parse=(line:string)=>line.split(/[,;]/).map(s=>s.trim().replace(/^"|"$/g,''));
-      if(lines.length<2) throw new Error('Le CSV doit contenir une ligne d’en-têtes et au moins un participant.');
+      if(lines.length<2) throw new Error("Le CSV doit contenir une ligne d'en-têtes et au moins un participant.");
       const headers=parse(lines[0]).map(s=>s.toLowerCase().replaceAll(' ','_'));
       const existing=await apiService.getParticipants(); let added=0;
       for(const line of lines.slice(1)) {
@@ -568,35 +592,236 @@ export const SessionsGroupesView: React.FC<SessionsGroupesViewProps> = ({
                 </p>
               </div>
 
-              <div className="flex flex-wrap gap-2">
-                {!readOnly && <>
-                  <button onClick={() => void openAddParticipant()} className="px-4 py-2.5 bg-[#0B1F4D] hover:bg-[#06132F] text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-sm transition-colors cursor-pointer"><UserPlus size={16} /><span>Ajouter un participant retenu</span></button>
-                  <input ref={participantCsvInput} type="file" accept=".csv,text/csv" className="hidden" onChange={e=>void importParticipantsCsv(e.target.files?.[0])}/><button onClick={()=>participantCsvInput.current?.click()} className="px-4 py-2.5 bg-slate-100 text-slate-700 rounded-xl text-xs font-bold">Importer CSV</button>
-                  <button disabled={publicLinkBusy || supportsLoading || !assessmentSupportReady} title={assessmentSupportReady ? 'Créer le lien avec les supports indexés de cette session' : 'Indexez d’abord les supports pédagogiques de cette session'} onClick={() => void generatePublicLink('participant')} className="px-4 py-2.5 bg-blue-50 text-blue-800 rounded-xl text-xs font-bold disabled:cursor-not-allowed disabled:opacity-50">Lien public participants</button>
-                  <button disabled={publicLinkBusy || supportsLoading || !assessmentSupportReady} title={assessmentSupportReady ? 'Créer l’évaluation post-formation à partir des supports indexés' : 'Indexez d’abord les supports pédagogiques de cette session'} onClick={() => void generatePublicLink('post_formation')} className="px-4 py-2.5 bg-emerald-50 text-emerald-800 rounded-xl text-xs font-bold disabled:cursor-not-allowed disabled:opacity-50">Lien d’évaluation post-formation</button>
-                  <button disabled={publicLinkBusy} onClick={() => void generatePublicLink('formateur')} className="px-4 py-2.5 bg-violet-50 text-violet-800 rounded-xl text-xs font-bold disabled:opacity-50">Lien candidature formateur</button>
-                </>}
-              </div>
+              {/* Boutons d'action participants */}
+              {!readOnly && (
+                <div className="flex flex-wrap gap-2">
+                  <button onClick={() => void openAddParticipant()} className="inline-flex items-center gap-1.5 px-4 py-2.5 bg-[#0B1F4D] hover:bg-[#06132F] text-white rounded-xl text-xs font-bold shadow-sm transition-colors cursor-pointer">
+                    <UserPlus size={15} /><span>Ajouter un participant retenu</span>
+                  </button>
+                  <input ref={participantCsvInput} type="file" accept=".csv,text/csv" className="hidden" onChange={e=>void importParticipantsCsv(e.target.files?.[0])}/>
+                  <button onClick={()=>participantCsvInput.current?.click()} className="inline-flex items-center gap-1.5 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-colors">
+                    Importer CSV
+                  </button>
+                </div>
+              )}
             </div>
-            {!readOnly && <div className={`mt-4 rounded-xl border p-3 text-xs ${assessmentSupportReady ? 'border-emerald-200 bg-emerald-50 text-emerald-900' : 'border-amber-200 bg-amber-50 text-amber-900'}`}>
-              <div className="font-bold">Prérequis des tests participants</div>
-              {supportsLoading ? <p className="mt-1">Vérification des supports de cette session…</p>
-                : supportsError ? <p role="alert" className="mt-1">{supportsError} Les liens d’évaluation restent désactivés tant que leur état ne peut pas être confirmé.</p>
-                : assessmentSupportReady ? <p className="mt-1">{pedagogicalSupports.length} support(s) indexé(s), {indexedSupportChunks} passage(s) vectorisé(s). Les liens d’évaluation peuvent être générés.</p>
-                : pedagogicalSupports.length === 0 ? <p className="mt-1">Aucun support pédagogique n’est rattaché à cette session. Les liens d’évaluation restent désactivés.</p>
-                  : <p className="mt-1">{pedagogicalSupports.filter(item => item.statut !== 'indexe' || Number(item.nb_chunks) <= 0).length} support(s) attendent encore une indexation complète. Les liens d’évaluation restent désactivés.</p>}
-            </div>}
-            {(publicLinks.participant || publicLinks.formateur || publicLinks.post_formation || publicLinkError || publicLinkNotice) && <div className="mt-3 space-y-2">
-              {publicLinkError && <p role="alert" className="text-xs text-red-700">{publicLinkError}</p>}
-              {publicLinkNotice && <p role="status" className="text-xs font-semibold text-emerald-700">{publicLinkNotice}</p>}
-              {(['participant','post_formation','formateur'] as const).map(kind => publicLinks[kind] && <div key={kind} className="flex flex-wrap items-center gap-2 rounded-lg bg-slate-50 p-2 text-xs">
-                <strong>{kind === 'participant' ? 'Inscription participants' : kind === 'formateur' ? 'Candidatures formateur' : 'Évaluation post-formation'} :</strong>
-                <a className="min-w-0 flex-1 break-all text-blue-700 underline" href={publicLinks[kind]} target="_blank" rel="noreferrer">{publicLinks[kind]}</a>
-                <button onClick={() => void navigator.clipboard?.writeText(publicLinks[kind]!)} className="rounded bg-white px-2 py-1 font-bold">Copier</button>
-                {!readOnly && <button type="button" title="Désactiver ce lien public" aria-label={`Désactiver le lien ${kind}`} disabled={!publicLinkTokens[kind] || deletingLinkKind === kind} onClick={() => void revokePublicLink(kind)} className="inline-flex items-center gap-1 rounded bg-red-50 px-2 py-1 font-bold text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"><Trash2 size={13} />{deletingLinkKind === kind ? 'Désactivation…' : 'Supprimer le lien'}</button>}
-              </div>)}
-              {publicLinks.formateur && <p className="text-xs text-slate-600">Avant de partager ce lien, vérifiez sur la page publique le lieu, les dates et le profil issu du TDR validé.</p>}
-            </div>}
+
+            {/* ── Bloc liens publics ── */}
+            {!readOnly && (
+              <div className="mt-5 pt-5 border-t border-slate-100 space-y-4">
+
+                {/* Titre section */}
+                <div className="flex items-center gap-2">
+                  <Link2 size={16} className="text-slate-500" />
+                  <h3 className="text-sm font-extrabold text-[#11162A]">Liens publics de la session</h3>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 uppercase tracking-wide">Partage externe</span>
+                </div>
+
+                {/* Indicateur mode IA — palette navy/or */}
+                <div className={`flex items-center gap-3 rounded-xl border px-4 py-3 ${
+                  supportsLoading ? 'border-slate-200 bg-slate-50' :
+                  assessmentSupportReady
+                    ? 'border-[#0A1628]/20 bg-[#0A1628]/5'
+                    : 'border-brand-gold/30 bg-amber-50/50'
+                }`}>
+                  <span className={`shrink-0 ${assessmentSupportReady ? 'text-[#0B1F4D]' : supportsLoading ? 'text-slate-400' : 'text-amber-700'}`}>
+                    {assessmentSupportReady ? <Sparkles size={14}/> : <AlertCircle size={14}/>}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    {supportsLoading ? (
+                      <p className="text-xs font-semibold text-slate-500">Vérification des supports de cours…</p>
+                    ) : assessmentSupportReady ? (
+                      <p className="text-xs font-bold text-[#11162A]">
+                        Source des questions : <span className="font-extrabold">supports de cours indexés</span>
+                        <span className="ml-2 font-normal text-slate-500">{pedagogicalSupports.length} document(s) · {indexedSupportChunks} passages · 7–10 questions / participant</span>
+                      </p>
+                    ) : (
+                      <p className="text-xs font-bold text-amber-900">
+                        Mode secours TDR actif ·
+                        <span className="ml-1 font-normal text-amber-700">
+                          {pedagogicalSupports.length === 0
+                            ? 'Aucun support indexé — questions générées depuis le TDR validé'
+                            : `${pedagogicalSupports.filter(i => i.statut !== 'indexe' || Number(i.nb_chunks) <= 0).length} support(s) en cours d'indexation — TDR utilisé en attendant`}
+                        </span>
+                      </p>
+                    )}
+                  </div>
+                  <div className={`shrink-0 h-2 w-2 rounded-full ${assessmentSupportReady ? 'bg-[#0B1F4D]' : 'bg-brand-gold animate-pulse'}`} />
+                </div>
+
+                {/* 3 cartes de liens — palette navy/or, génération séquentielle */}
+                <div className="grid gap-4 md:grid-cols-3">
+                  {([
+                    {
+                      kind: 'participant' as const,
+                      icon: <ClipboardList size={18}/>,
+                      stepNum: '01',
+                      label: 'Positionnement',
+                      sublabel: 'participants',
+                      timing: 'Avant la formation',
+                      description: "Test de niveau initial · Envoyez avant le démarrage",
+                    },
+                    {
+                      kind: 'post_formation' as const,
+                      icon: <BookOpen size={18}/>,
+                      stepNum: '02',
+                      label: 'Évaluation',
+                      sublabel: 'post-formation',
+                      timing: 'Après la formation',
+                      description: "Test final + satisfaction · Envoyez à la dernière séance",
+                    },
+                    {
+                      kind: 'formateur' as const,
+                      icon: <GraduationCap size={18}/>,
+                      stepNum: '03',
+                      label: 'Candidature',
+                      sublabel: 'formateur externe',
+                      timing: 'Recrutement',
+                      description: "Profil TDR validé · Pour les formateurs extérieurs",
+                    },
+                  ]).map(({ kind, icon, stepNum, label, sublabel, timing, description }, cardIndex) => {
+                    const url = publicLinks[kind];
+                    const isCopied = copiedKind === kind;
+                    const isGeneratingThis = publicLinkBusy && !isCopied;
+                    // séquentiel : désactiver si une autre carte génère
+                    const isBlocked = publicLinkBusy || supportsLoading;
+                    const hasLink = !!url;
+
+                    return (
+                      <div key={kind}
+                        className={`group flex flex-col rounded-2xl border bg-white shadow-sm transition-all duration-200
+                          ${hasLink ? 'border-brand-gold/40 shadow-brand-gold/10' : 'border-slate-200 hover:border-slate-300 hover:shadow-md'}`}
+                      >
+                        {/* Numéro + timing */}
+                        <div className="flex items-center justify-between px-4 pt-4 pb-0">
+                          <span className="text-[10px] font-black tracking-[0.15em] text-slate-300 uppercase">{stepNum}</span>
+                          <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${
+                            hasLink
+                              ? 'bg-brand-gold/15 text-amber-700'
+                              : 'bg-slate-100 text-slate-500'
+                          }`}>{timing}</span>
+                        </div>
+
+                        {/* Header */}
+                        <div className="flex items-start gap-3 px-4 pt-3 pb-3">
+                          <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition-colors
+                            ${hasLink
+                              ? 'bg-[#0A1628] text-brand-gold'
+                              : 'bg-slate-100 text-slate-500 group-hover:bg-[#0A1628] group-hover:text-brand-gold'
+                            }`}>
+                            {icon}
+                          </span>
+                          <div className="min-w-0">
+                            <p className="text-sm font-extrabold text-[#11162A] leading-tight">{label}</p>
+                            <p className="text-xs font-semibold text-slate-400 leading-tight">{sublabel}</p>
+                            <p className="mt-1 text-[10px] leading-relaxed text-slate-400">{description}</p>
+                          </div>
+                        </div>
+
+                        {/* Séparateur */}
+                        <div className="mx-4 border-t border-slate-100" />
+
+                        {/* URL zone */}
+                        <div className="mx-4 my-3">
+                          {url ? (
+                            <div className="rounded-xl border border-brand-gold/20 bg-amber-50/40 px-3 py-2.5">
+                              <div className="flex items-center gap-1.5 mb-1.5">
+                                <span className="h-1.5 w-1.5 rounded-full bg-brand-gold animate-pulse" />
+                                <span className="text-[9px] font-extrabold uppercase tracking-widest text-amber-700">Lien actif</span>
+                                <span className="ml-auto text-[9px] text-slate-400 font-medium">
+                                  {kind !== 'formateur' ? (assessmentSupportReady ? 'RAG · 7–10 q.' : 'TDR · 7–10 q.') : 'TDR validé'}
+                                </span>
+                              </div>
+                              <a href={url} target="_blank" rel="noreferrer"
+                                className="block truncate text-[10px] font-mono text-[#0B1F4D] hover:underline leading-tight">
+                                {url}
+                              </a>
+                            </div>
+                          ) : (
+                            <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 py-3 text-center">
+                              <p className="text-[10px] font-semibold text-slate-400">Aucun lien généré</p>
+                              <p className="text-[9px] text-slate-300 mt-0.5">
+                                {cardIndex === 0 ? 'Commencez ici' : `Après l'étape ${String(cardIndex).padStart(2,'0')}`}
+                              </p>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Actions */}
+                        <div className="mt-auto px-4 pb-4 flex flex-wrap gap-1.5">
+                          <button
+                            type="button"
+                            disabled={isBlocked}
+                            onClick={() => void generatePublicLink(kind)}
+                            className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-[#0A1628] px-3 py-2.5 text-[11px] font-extrabold text-white shadow-sm transition-all hover:bg-[#0B1F4D] disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            {isGeneratingThis ? (
+                              <span className="h-3 w-3 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                            ) : hasLink ? (
+                              <span className="h-1.5 w-1.5 rounded-full bg-brand-gold" />
+                            ) : null}
+                            {isGeneratingThis ? 'Génération en cours…' : hasLink ? 'Regénérer' : 'Générer le lien'}
+                          </button>
+
+                          {url && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => void copyLink(kind, url)}
+                                title={isCopied ? 'Copié !' : 'Copier le lien'}
+                                className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-2.5 text-[11px] font-bold transition-all ${
+                                  isCopied
+                                    ? 'border-brand-gold/40 bg-amber-50 text-amber-800'
+                                    : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50'
+                                }`}
+                              >
+                                {isCopied ? <CheckCheck size={13}/> : <Copy size={13}/>}
+                                {isCopied ? 'Copié !' : 'Copier'}
+                              </button>
+
+                              <a href={url} target="_blank" rel="noreferrer"
+                                className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-2.5 py-2.5 text-slate-400 hover:text-[#0A1628] hover:bg-slate-50 hover:border-slate-300 transition-all"
+                              >
+                                <ExternalLink size={13}/>
+                              </a>
+
+                              <button
+                                type="button"
+                                disabled={!publicLinkTokens[kind] || deletingLinkKind === kind}
+                                onClick={() => void revokePublicLink(kind)}
+                                className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-2.5 py-2.5 text-slate-400 hover:text-red-600 hover:bg-red-50 hover:border-red-200 transition-all disabled:opacity-40"
+                              >
+                                <Trash2 size={13}/>
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Messages erreur / succès */}
+                {publicLinkError && (
+                  <div role="alert" className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-800">
+                    <AlertCircle size={14} className="mt-0.5 shrink-0"/>
+                    <span>{publicLinkError}</span>
+                  </div>
+                )}
+                {publicLinkNotice && (
+                  <div role="status" className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs font-semibold text-emerald-800">
+                    <Check size={14} className="shrink-0"/>
+                    <span>{publicLinkNotice}</span>
+                  </div>
+                )}
+
+                {publicLinks.formateur && (
+                  <p className="text-[11px] text-slate-500 leading-relaxed">
+                    <strong>Avant de partager le lien formateur :</strong> vérifiez sur la page publique le lieu, les dates et le profil issu du TDR validé.
+                  </p>
+                )}
+              </div>
+            )}
 
             {/* Session Stats Bar */}
             <div className="grid grid-cols-3 gap-3 mt-6 pt-5 border-t border-slate-100">

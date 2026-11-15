@@ -478,7 +478,7 @@ class BenchmarkRunner:
             elapsed = time.perf_counter() - start
             latencies.append(elapsed)
 
-            if result.get("ai_provider") == "fallback":
+            if result.get("ai_provider") == "fallback" or result.get("status") == "quota_atteint":
                 llm_fallback_count += 1
 
             predicted_opportunities = result.get("opportunities", []) or []

@@ -150,6 +150,23 @@ def test_repli_llm_compte_separement_des_erreurs(tmp_path, monkeypatch):
     assert resultat["model_error_count"] == 0
 
 
+def test_quota_groq_compte_comme_repli_llm(tmp_path, monkeypatch):
+    lignes = [{"id": "c1", "raw_text": "Texte assez long pour passer la validation minimale du corpus.",
+               "gold": {"is_opportunity": False}}]
+    chemin = _corpus(tmp_path, lignes)
+    runner = BenchmarkRunner(corpus_path=chemin)
+
+    async def analyse_quota(texte, source, sync_backend=True, date_reference=None):
+        return {"opportunities": [], "status": "quota_atteint"}
+
+    monkeypatch.setattr(runner.orchestrator, "analyser_texte", analyse_quota)
+
+    resultat = run(runner.run(limit=1))
+
+    assert resultat["llm_fallback_count"] == 1
+    assert resultat["model_error_count"] == 0
+
+
 def test_date_reference_transmise_est_bien_date_collected(tmp_path, monkeypatch):
     lignes = [{"id": "c1", "raw_text": "Texte assez long pour passer la validation minimale du corpus.",
                "date_collected": "2026-09-01", "gold": {"is_opportunity": False}}]

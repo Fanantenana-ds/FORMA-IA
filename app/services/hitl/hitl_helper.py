@@ -1,7 +1,7 @@
 import json
 import logging
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -265,7 +265,14 @@ def replace_pending_review_data(
         "data": review.get("data"),
     })
     review["data"] = data
-    review["updated_at"] = datetime.now().isoformat()
+    try:
+        previous_updated_at = datetime.fromisoformat(review["updated_at"])
+    except (KeyError, TypeError, ValueError):
+        previous_updated_at = None
+    now = datetime.now(previous_updated_at.tzinfo if previous_updated_at else None)
+    if previous_updated_at and now <= previous_updated_at:
+        now = previous_updated_at + timedelta(microseconds=1)
+    review["updated_at"] = now.isoformat()
     review["manual_edits_count"] = int(review.get("manual_edits_count") or 0) + 1
     _save_store(store, store_path)
     if _load_store(store_path).get("reviews", {}).get(review_id, {}).get("updated_at") != review["updated_at"]:

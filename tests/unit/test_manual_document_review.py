@@ -1,6 +1,7 @@
 """Édition humaine M2/M3 : la version sauvegardée reste celle du review HITL."""
 
 import asyncio
+from datetime import datetime as RealDateTime
 
 import pytest
 from fastapi import HTTPException
@@ -22,13 +23,24 @@ def modifier(review_id, content, version):
     ))
 
 
-def test_offre_modifiee_avant_approbation_et_version_protegee():
+def test_offre_modifiee_avant_approbation_et_version_protegee(monkeypatch):
     review_id = hitl_helper.create_review(
         "agent_m3_technique",
         {"reference": "OT-1", "titre_offre": "Ancien titre", "metadata": {"source": "llm"}},
         "Offre technique",
     )
     version = hitl_helper.get_review(review_id)["updated_at"]
+
+    class FrozenDateTime:
+        @staticmethod
+        def now(tz=None):
+            return RealDateTime.fromisoformat(version)
+
+        @staticmethod
+        def fromisoformat(value):
+            return RealDateTime.fromisoformat(value)
+
+    monkeypatch.setattr(hitl_helper, "datetime", FrozenDateTime)
 
     response = modifier(review_id, {"reference": "OT-1", "titre_offre": "Titre corrigé"}, version)
     saved = hitl_helper.get_review(review_id)

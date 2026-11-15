@@ -441,6 +441,17 @@ def test_analyser_texte_llm_echoue_fallback(orchestrateur, monkeypatch):
     assert resultat["ai_provider"] == "fallback"
 
 
+def test_analyser_texte_propage_le_quota_groq(orchestrateur, monkeypatch):
+    monkeypatch.setattr(
+        orchestrateur.llm_service,
+        "analyze",
+        _async(lambda *a, **k: {"opportunities": [], "status": "quota_atteint", "notes": "Quota Groq."}),
+    )
+    resultat = run(orchestrateur.analyser_texte("Appel d'offre pour une formation en IA."))
+    assert resultat["status"] == "quota_atteint"
+    assert resultat["ai_provider"] == "fallback"
+
+
 def test_analyser_texte_success(orchestrateur, monkeypatch):
     monkeypatch.setattr(
         orchestrateur.llm_service, "analyze",

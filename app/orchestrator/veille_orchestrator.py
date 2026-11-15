@@ -939,6 +939,17 @@ class VeilleOrchestrator(BaseOrchestrator):
             vlog(f"🏁 M1 ANALYSE TEXTE FALLBACK — FIN ({elapsed:.3f}s)")
             return result
 
+        if groq_response.get("status") == "quota_atteint":
+            elapsed = time.perf_counter() - start_total
+            result = self._empty_response(
+                status="quota_atteint",
+                notes=groq_response.get("notes") or "Quota Groq atteint. Réessayez après le renouvellement du quota.",
+                elapsed=elapsed,
+                raw_count=len(pseudo_sources),
+            )
+            result["ai_provider"] = "fallback"
+            return result
+
         groq_opportunities = groq_response.get("opportunities", [])
 
         return await self._finalize_opportunities(

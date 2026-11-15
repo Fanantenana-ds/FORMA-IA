@@ -213,7 +213,8 @@ class AttestationGeneratorService:
                 from app.services.rag.registry_service import charger_registre
                 titre = (session_info.get("titre") or "").lower()
                 for entree in charger_registre().values():
-                    if entree.formation_code and titre and titre in (entree.formation_titre or "").lower():
+                    formation_titre = str(getattr(entree, "formation_titre", "") or "").lower()
+                    if entree.formation_code and titre and titre in formation_titre:
                         formation_code = entree.formation_code
                         break
 
@@ -737,22 +738,23 @@ class AttestationGeneratorService:
 
         template = ImageReader(str(template_path))
         image_width, image_height = template.getSize()
-        page_width = landscape(A4)[0]
-        # Le PDF conserve exactement le ratio du modèle PNG (1536 × 1024).
-        page_height = page_width * image_height / image_width
+        page_width, page_height = landscape(A4)
+        # Conserver le ratio du modèle PNG et le centrer sur une page A4 paysage.
+        image_draw_height = page_width * image_height / image_width
+        image_offset_y = (page_height - image_draw_height) / 2
         pdf = rl_canvas.Canvas(str(pdf_path), pagesize=(page_width, page_height))
         pdf.drawImage(
-            template, 0, 0, width=page_width, height=page_height,
+            template, 0, image_offset_y, width=page_width, height=image_draw_height,
             preserveAspectRatio=True, mask="auto",
         )
         sx = page_width / image_width
-        sy = page_height / image_height
+        sy = image_draw_height / image_height
 
         def x(px: float) -> float:
             return px * sx
 
         def y_from_top(px: float) -> float:
-            return page_height - px * sy
+            return page_height - image_offset_y - px * sy
 
         def cover(x0: float, y0: float, x1: float, y1: float, color) -> None:
             pdf.setFillColor(color)
@@ -871,13 +873,25 @@ class AttestationGeneratorService:
         title_first_baseline = 353 - (len(title_lines) - 1) * title_leading / 2
         draw_centered_lines(title_lines, image_width / 2, title_first_baseline, font_bold, title_size, title_leading)
 
-        commitment_lines = [
-            "Votre implication et votre engagement tout au long de cette formation témoignent de votre volonté",
-            "de développer vos compétences et de contribuer à l’excellence.",
-        ]
+        if result.get("metadata", {}).get("competencies_source") == "participation_only":
+            taux = participant.get("taux_presence")
+            taux_text = ""
+            if taux not in (None, ""):
+                try:
+                    taux_text = f"Présence enregistrée : {float(str(taux).rstrip('%').strip()):g} %"
+                except (TypeError, ValueError):
+                    taux_text = f"Présence enregistrée : {str(taux).strip()}"
+            commitment_lines = ["PRÉSENCE ET PARTICIPATION CONFIRMÉES"]
+            if taux_text:
+                commitment_lines.append(taux_text)
+        else:
+            commitment_lines = [
+                "Votre implication et votre engagement tout au long de cette formation témoignent de votre volonté",
+                "de développer vos compétences et de contribuer à l’excellence.",
+            ]
         commitment_size = fitted_size(commitment_lines[0], font_bold, 16, 12, 1270)
         pdf.setFillColor(colors.HexColor("#0B1F4D"))
-        draw_centered_lines(commitment_lines, image_width / 2, 453, font_bold, commitment_size, 29)
+        draw_centered_lines(commitment_lines, image_width / 2, 453, font_bold, commitment_size, 25)
 
         # 3. Valeurs sous les libellés déjà imprimés sur le modèle.
         values = (

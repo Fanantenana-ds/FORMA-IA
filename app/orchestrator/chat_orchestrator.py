@@ -370,9 +370,10 @@ class ChatOrchestrator:
             elif type_detecte == "contenu_formation":
                 texte, sources, formation_resolue = await self._repondre_contenu_formation(message, formation_code, session_id, module_contexte, conv, hide_references)
             elif type_detecte == "synthese_thematique":
+                stream_options = {"on_token": on_token} if on_token is not None else {}
                 texte, sources, modele_requete, cache_utilise = await self._repondre_synthese_thematique(
                     message, conv, formation_code, session_id, module_contexte,
-                    allowed_session_ids, hide_references, on_token=on_token,
+                    allowed_session_ids, hide_references, **stream_options,
                 )
             elif type_detecte == "localisation":
                 texte, sources, modele_requete, cache_utilise = await self._repondre_localisation(message, formation_code, session_id, module_contexte, hide_references, conv)

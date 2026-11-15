@@ -148,7 +148,7 @@ def _normaliser_preuve(value: str) -> str:
     return " ".join(re.findall(r"[a-z0-9]+", sans_accents))
 
 
-_MIN_QUESTIONS = 7  # seuil assoupli : 7 questions valides suffisent
+_MIN_QUESTIONS = 10
 
 def _assessment_est_ancre(questions: list[dict] | None) -> bool:
     return bool(questions) and len(questions) >= _MIN_QUESTIONS and all(
@@ -371,7 +371,7 @@ async def _generate_assessment(session: TrainingSession, stage: str = "initial",
         "Base chaque question exclusivement sur ces extraits. Le titre de session et le code client sont administratifs : "
         "ne les utilise jamais comme source de notions pédagogiques. Pour chaque question, fournis preuve_support : "
         "une citation courte, copiée mot pour mot d'un extrait qui justifie la question et sa bonne réponse. "
-        f"Produis exactement {_MIN_QUESTIONS + 3} questions distinctes : si les supports présentent peu de notions, reformule ces notions "
+        f"Produis exactement {_MIN_QUESTIONS} questions distinctes : si les supports présentent peu de notions, reformule ces notions "
         "sous des angles pédagogiques différents (expliquer, distinguer, appliquer à un cas simple, repérer une limite, "
         "choisir une méthode), sans ajouter de nouveaux concepts, faits ou objectifs. La question et sa réponse attendue "
         "doivent toutes deux pouvoir être justifiées par la citation. La bonne réponse doit reprendre littéralement "
@@ -393,13 +393,13 @@ async def _generate_assessment(session: TrainingSession, stage: str = "initial",
             llm_provider,
             system_prompt=("Tu conçois une évaluation en français STRICTEMENT à partir des extraits fournis. N'ajoute aucune connaissance générale, aucun sujet tiré du nom du client ou du titre administratif, et refuse implicitement toute notion absente des extraits. "
                            "Écris pour les participants avec une formulation naturelle, claire et précise. Le test final mesure les acquis; le test initial mesure le niveau de départ, sans juger la personne."),
-            user_prompt=(f"Crée exactement {_MIN_QUESTIONS + 3} QCM concis de {'validation des acquis après la formation' if stage == 'final' else 'positionnement avant la formation'} à partir des seuls extraits ci-dessous."
+            user_prompt=(f"Crée exactement {_MIN_QUESTIONS} QCM concis de {'validation des acquis après la formation' if stage == 'final' else 'positionnement avant la formation'} à partir des seuls extraits ci-dessous."
                          f"{objectif_etape}\n{context_block} Retourne uniquement un objet JSON avec une clé questions. "
                          "Chaque question doit avoir id (q1...), competence courte, enonce court, options (4 objets id A-D et label court), "
                          "correct_answer (A-D), preuve_support (citation exacte des extraits). Questions concrètes, progressives, "
                          "une seule bonne réponse. Varie l'angle, jamais le contenu. N'invente rien. "
                          "Réponse très concise : une phrase par énoncé, options brèves et preuve courte exacte."),
-            temperature=0.1, max_tokens=2200, json_mode=True,
+            temperature=0.1, max_tokens=1700, json_mode=True,
             reasoning_effort="low",
         )
         if response.get("finish_reason") == "length":
@@ -499,9 +499,9 @@ async def _generate_assessment(session: TrainingSession, stage: str = "initial",
                             break
                 valid = list(questions_uniques.values())
         if len(valid) >= _MIN_QUESTIONS:
-            for index, question in enumerate(valid[:_MIN_QUESTIONS + 3], start=1):
+            for index, question in enumerate(valid[:_MIN_QUESTIONS], start=1):
                 question["id"] = f"q{index}"
-            return valid[:_MIN_QUESTIONS + 3]
+            return valid[:_MIN_QUESTIONS]
         logger.warning(
             "Questionnaire rejeté après validation des preuves "
             "(session=%s, étape=%s, reçues=%s, format_valide=%s, preuve_exacte_initiale=%s, "

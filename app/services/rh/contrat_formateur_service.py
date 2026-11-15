@@ -137,6 +137,9 @@ class ContratFormateurService:
             content = self._generate_fallback(formateur, session)
 
         elapsed = round((datetime.now() - start).total_seconds(), 2)
+        tarif = formateur.get("tarif_journalier", 0)
+        nb_jours = session.get("nb_jours", 1)
+        total = tarif * nb_jours
         result = {
             "success": True,
             **content,
@@ -161,10 +164,6 @@ class ContratFormateurService:
                 "agent_id": AGENT_ID,
             },
         }
-
-        tarif = formateur.get("tarif_journalier", 0)
-        nb_jours = session.get("nb_jours", 1)
-        total = tarif * nb_jours
 
         formateur_id = formateur.get("id")
         formateur_email = formateur.get("email")

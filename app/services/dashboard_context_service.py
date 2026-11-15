@@ -12,7 +12,7 @@ from datetime import datetime
 from typing import Any
 
 
-def _ar(v: int | float | None) -> str:
+def _ar(v: float | None) -> str:
     """Format Ariary lisible."""
     if v is None:
         return "non disponible"
@@ -37,7 +37,7 @@ def construire_contexte_dashboard(stats: dict[str, Any]) -> str:
     sessions       = stats.get("sessions_realisees") or stats.get("session_realisees") or 0
     participants   = stats.get("participants_formes") or stats.get("participant") or 0
     taux_presence  = stats.get("taux_presence_moyen") or stats.get("taux_presence") or 0
-    statut_presence = "✅ objectif atteint (≥ 85%)" if taux_presence >= 85 else f"⚠️ sous l'objectif de 85%"
+    statut_presence = "✅ objectif atteint (≥ 85%)" if taux_presence >= 85 else "⚠️ sous l'objectif de 85%"
 
     # ── Opportunités ─────────────────────────────────────────────
     opp_total      = stats.get("opportunites_detectees") or stats.get("opportunite_total") or 0

@@ -3,7 +3,7 @@
 # SCHÉMAS Pydantic — Module RAG (C3)
 # ============================================================
 
-from typing import Any, Dict, List, Optional
+from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -15,7 +15,7 @@ class ChatRequest(BaseModel):
     formation_code: str | None = None
     session_id: UUID | None = None
     module: str | None = None
-    dashboard_stats: Dict[str, Any] | None = Field(
+    dashboard_stats: dict[str, Any] | None = Field(
         default=None,
         description=(
             "Indicateurs temps réel du tableau de bord (KPIs) envoyés par le frontend. "

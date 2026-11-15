@@ -172,15 +172,17 @@ class TestPlusDeHTTP500:
             # La détection retourne question_fond mais le handler lève une exception
             mock_detect.return_value = "question_fond"
 
-            with patch.object(orch, "_repondre_question_fond", side_effect=RuntimeError("💥 Erreur test")):
-                with patch("app.orchestrator.chat_orchestrator.journal") as mock_journal:
-                    mock_journal.enregistrer.return_value = None
+            with (
+                patch.object(orch, "_repondre_question_fond", side_effect=RuntimeError("💥 Erreur test")),
+                patch("app.orchestrator.chat_orchestrator.journal") as mock_journal,
+            ):
+                mock_journal.enregistrer.return_value = None
 
-                    result = await orch.traiter_message(
-                        "Explique le deep learning",
-                        conversation_id="conv-test-123",
-                        session_id="sess-test",
-                    )
+                result = await orch.traiter_message(
+                    "Explique le deep learning",
+                    conversation_id="conv-test-123",
+                    session_id="sess-test",
+                )
 
         # Ne doit pas lever une exception
         assert result is not None

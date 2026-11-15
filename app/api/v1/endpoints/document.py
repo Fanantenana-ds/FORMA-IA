@@ -146,7 +146,7 @@ def valider_document(
     document_id: UUID,
     data: ValidationRequest,
     service: DocumentService = Depends(get_document_service),
-    current_user: User = Depends(require_role("DIRECTION")),
+    current_user: User = Depends(require_role("DIRECTION", "ASSISTANT")),
 ):
     return service.valider(document_id, current_user.id, data.approuve)
 

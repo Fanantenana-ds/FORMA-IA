@@ -36,9 +36,9 @@ const exactOpportunityId = (review: Review): string | undefined => {
   const sessionInfo = inputs.session_info ?? {};
   const tdrData = inputs.tdr_data ?? {};
   const projectInfo = inputs.projet_info ?? {};
-  const value = data.opportunite_id ?? data.metadata?.opportunite_id ?? review.meta?.opportunite_id
-    ?? brief.opportunite_id ?? sessionInfo.opportunite_id ?? tdrData.opportunite_id
-    ?? projectInfo.opportunite_id;
+  const value = review.opportunite_id ?? data.opportunite_id ?? data.metadata?.opportunite_id
+    ?? review.meta?.opportunite_id ?? brief.opportunite_id ?? sessionInfo.opportunite_id
+    ?? tdrData.opportunite_id ?? projectInfo.opportunite_id;
   return value == null ? undefined : String(value);
 };
 const exactSessionId = (review: Review): string | undefined => {
@@ -195,6 +195,10 @@ export const DossiersFormationView: React.FC<Props> = ({ opportunites, sessions,
   }, [selected]);
 
   useEffect(() => { void refreshDetail(); void refreshReviews(); }, [refreshDetail, refreshReviews]);
+
+  // Rafraîchit les reviews quand l'utilisateur revient sur cette vue après navigation (ex: retour d'EspaceIA)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { if (selected) void refreshReviews(); }, [opportunites, refreshReviews]);
 
   const opportunityId = selected?.opportunity?.id;
   const session = selected?.session;

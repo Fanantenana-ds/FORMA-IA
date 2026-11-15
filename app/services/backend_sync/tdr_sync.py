@@ -125,7 +125,10 @@ async def sync_tdr_to_backend(
             "POST", f"/documents/{sent['resource_id']}/valider", json={"approuve": True},
         )
         if not validation["ok"]:
-            logger.warning(
-                "⚠️ TDR enregistré mais statut « validé » non appliqué : %s", validation["error"]
+            logger.error(
+                "❌ TDR enregistré (id=%s) mais statut « validé » non appliqué : %s. "
+                "Vérifier que le compte de service a le rôle DIRECTION ou ASSISTANT.",
+                sent["resource_id"], validation["error"],
             )
+            sent["error"] = f"TDR créé mais non validé : {validation['error']}"
     return _legacy(sent)

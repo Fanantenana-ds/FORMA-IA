@@ -39,7 +39,7 @@ async def bind_backend_auth_token(request: Request) -> AsyncGenerator[None, None
         separator
         and scheme.lower() == "bearer"
         and credential
-        and not secrets.compare_digest(credential, SHARED_INTERNAL_TOKEN)
+        and (SHARED_INTERNAL_TOKEN is None or not secrets.compare_digest(credential, SHARED_INTERNAL_TOKEN))
     ):
         token = credential
 

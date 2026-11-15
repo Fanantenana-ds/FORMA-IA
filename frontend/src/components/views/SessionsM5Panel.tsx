@@ -203,7 +203,7 @@ export const SessionsM5Panel: React.FC<{ sessionId: string; sessionTitle: string
     setAttestationDownloadBusy(numero); setError('');
     try {
       const blob = await apiService.downloadAttestation(reviewId, numero);
-      if (!(blob instanceof Blob) || blob.size === 0) throw new Error('Le serveur n'a retourné aucun fichier PDF.');
+      if (!(blob instanceof Blob) || blob.size === 0) throw new Error("Le serveur n'a retourné aucun fichier PDF.");
       saveDownloadedFile(blob, `${numero}.pdf`);
     } catch (e) { setError(e instanceof Error ? e.message : 'Téléchargement du PDF impossible.'); }
     finally { setAttestationDownloadBusy(''); }
@@ -213,21 +213,21 @@ export const SessionsM5Panel: React.FC<{ sessionId: string; sessionTitle: string
     setAttestationDownloadBusy(numero); setError('');
     try {
       const blob = await apiService.previewAttestation(reviewId, numero);
-      if (!(blob instanceof Blob) || blob.size === 0) throw new Error('Le serveur n'a retourné aucun PDF à prévisualiser.');
+      if (!(blob instanceof Blob) || blob.size === 0) throw new Error("Le serveur n'a retourné aucun PDF à prévisualiser.");
       const url = URL.createObjectURL(blob);
       if (previewWindow) { previewWindow.location.href = url; window.setTimeout(() => URL.revokeObjectURL(url), 60000); }
-      else { saveDownloadedFile(blob, `${numero}-apercu.pdf`); setNotice('La fenêtre d'aperçu a été bloquée ; le PDF a été téléchargé.'); }
+      else { saveDownloadedFile(blob, `${numero}-apercu.pdf`); setNotice("La fenêtre d'aperçu a été bloquée ; le PDF a été téléchargé."); }
     } catch (e) { previewWindow?.close(); setError(e instanceof Error ? e.message : 'Prévisualisation impossible.'); }
     finally { setAttestationDownloadBusy(''); }
   };
   const editAttestation = async (numero: string, content: any) => {
-    if (!attestationBatch?.updatedAt) throw new Error('Rechargez le lot d'attestations avant de modifier le contenu.');
+    if (!attestationBatch?.updatedAt) throw new Error("Rechargez le lot d'attestations avant de modifier le contenu.");
     try {
       const response = await apiService.editPendingAttestation(attestationBatch.reviewId, numero, content, attestationBatch.updatedAt);
       const review = response.review;
       setAttestationBatch((current: any) => ({ ...current, status: review.status, updatedAt: review.updated_at, attestations: review.data?.attestations ?? [] }));
       setNotice('Attestation modifiée. Le nouveau PDF attend une validation humaine.');
-    } catch (e) { setError(e instanceof Error ? e.message : 'Modification de l'attestation impossible.'); throw e; }
+    } catch (e) { setError(e instanceof Error ? e.message : "Modification de l'attestation impossible."); throw e; }
   };
   const deleteAttestation = async (numero: string) => {
     const ok = await confirm({ title: "Supprimer l'attestation", message: `L'attestation ${numero} sera retirée du lot en attente. Cette action est irréversible.`, confirmLabel: 'Supprimer', variant: 'danger' });
@@ -237,13 +237,13 @@ export const SessionsM5Panel: React.FC<{ sessionId: string; sessionTitle: string
       const review = response.review;
       setAttestationBatch((current: any) => ({ ...current, status: review.status, updatedAt: review.updated_at, attestations: review.data?.attestations ?? [] }));
       setNotice('Attestation retirée du lot en attente.');
-    } catch (e) { setError(e instanceof Error ? e.message : 'Suppression de l'attestation impossible.'); }
+    } catch (e) { setError(e instanceof Error ? e.message : "Suppression de l'attestation impossible."); }
   };
   const downloadAttestationZip = async (reviewId: string) => {
     setAttestationDownloadBusy('zip'); setError('');
     try {
       const blob = await apiService.downloadAttestationsZip(reviewId);
-      if (!(blob instanceof Blob) || blob.size === 0) throw new Error('Le serveur n'a retourné aucun ZIP d'attestations.');
+      if (!(blob instanceof Blob) || blob.size === 0) throw new Error("Le serveur n'a retourné aucun ZIP d'attestations.");
       saveDownloadedFile(blob, `attestations-${reviewId}.zip`);
     } catch (e) { setError(e instanceof Error ? e.message : 'Téléchargement du ZIP impossible.'); }
     finally { setAttestationDownloadBusy(''); }
@@ -286,9 +286,9 @@ export const SessionsM5Panel: React.FC<{ sessionId: string; sessionTitle: string
     } else if (voiceAction.action === 'ouvrir_analyse_satisfaction') {
       void analyzeSatisfaction();
     } else if (voiceAction.action === 'ouvrir_analyse_presences') {
-      setNotice('La consultation des présences de cette session est ouverte. L'analyse automatique dédiée n'est pas raccordée à cet écran.');
+      setNotice("La consultation des présences de cette session est ouverte. L'analyse automatique dédiée n'est pas raccordée à cet écran.");
     } else if (voiceAction.action === 'ouvrir_formulaire_attestation') {
-      setNotice('La session est ouverte. Vérifiez les présences et l'éligibilité avant toute génération d'attestations.');
+      setNotice("La session est ouverte. Vérifiez les présences et l'éligibilité avant toute génération d'attestations.");
     } else if (voiceAction.action === 'ouvrir_formulaires_session') {
       setNotice('Session sélectionnée. La génération et la publication des formulaires doivent encore être raccordées à cet écran.');
     }

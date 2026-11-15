@@ -44,7 +44,7 @@ def test_valider_document_role_non_autorise(client_role):
     )
     document_id = creation.json()["id"]
 
-    validation_client = client_role(role="ASSISTANT")
+    validation_client = client_role(role="FORMATEUR")
     response = validation_client.post(
         f"/api/v1/documents/{document_id}/valider",
         json = {

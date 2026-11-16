@@ -103,6 +103,12 @@ export const SessionsM5Panel: React.FC<{ sessionId: string; sessionTitle: string
   const [attestationDownloadBusy, setAttestationDownloadBusy] = useState('');
   const { confirm, dialogProps } = useConfirmDialog();
   const [reportBusy, setReportBusy] = useState(false);
+  const [reportReviewId, setReportReviewId] = useState('');
+  const [reportStatus, setReportStatus] = useState<'pending_review' | 'approved' | 'rejected' | ''>('');
+  const [reportDownloadBusy, setReportDownloadBusy] = useState(false);
+  const [prefillBusy, setPrefillBusy] = useState(false);
+  const today = new Date().toISOString().slice(0, 10);
+  const isSessionDone = sessionStatus === 'Terminée' || (!!sessionDateEnd && sessionDateEnd <= today);
   const load = async () => {
     const list = await apiService.getSeances(sessionId); setSeances(list);
     const rows = await Promise.all(list.map(async (item: any) => [item.id, await apiService.getPresenceForSession(item.id)] as const));
@@ -143,6 +149,29 @@ export const SessionsM5Panel: React.FC<{ sessionId: string; sessionTitle: string
     void loadAttestationBatch();
     return () => { live = false; };
   }, [sessionId, trainerMode]);
+
+  useEffect(() => {
+    if (trainerMode) return;
+    let live = true;
+    const loadReportReview = async () => {
+      let reviewId = '';
+      try {
+        const pending = await apiService.getPendingReviews();
+        const match = (pending.reviews ?? []).find((item: any) => item.agent_id === 'agent_6_report' && String(item.meta?.session_id ?? item.data?.session_id ?? '') === String(sessionId));
+        reviewId = String(match?.review_id ?? '');
+        if (reviewId && live) { setReportReviewId(reviewId); setReportStatus('pending_review'); return; }
+      } catch { /* ne bloque pas l'écran */ }
+      try {
+        const history = await apiService.getReviewHistory('approved', 'agent_6_report');
+        const match = (history.reviews ?? []).find((item: any) => String(item.meta?.session_id ?? item.data?.session_id ?? '') === String(sessionId));
+        reviewId = String(match?.review_id ?? '');
+        if (reviewId && live) { setReportReviewId(reviewId); setReportStatus('approved'); return; }
+      } catch { /* ne bloque pas l'écran */ }
+    };
+    void loadReportReview();
+    return () => { live = false; };
+  }, [sessionId, trainerMode]);
+
   const create = async (e: React.FormEvent) => { e.preventDefault(); if (!theme.trim()) return; setBusy(true); setError(''); try { await apiService.createSeance(sessionId, { date, heure_debut:start, heure_fin:end, duree:`${start}–${end}`, theme:theme.trim(), formateur_id:trainerMode ? formateurId : trainer || formateurId || undefined }); await load(); setTheme(''); setNotice('Séance créée pour cette journée de formation.'); } catch(e) { setError(e instanceof Error ? e.message : 'Création séance impossible.'); } finally { setBusy(false); } };
   const save = async (seanceId: string, participantId: string, statut: Attendance['statut'], extra: Partial<Attendance> = {}) => {
     const key = `${seanceId}:${participantId}`, current = attendance[key]; const optimistic = { ...(current ?? { id:'', statut }), statut, ...extra } as Attendance;
@@ -249,6 +278,10 @@ export const SessionsM5Panel: React.FC<{ sessionId: string; sessionTitle: string
     finally { setAttestationDownloadBusy(''); }
   };
   const generateReport = async () => {
+    if (reportStatus === 'pending_review') {
+      setError("Un rapport est déjà en attente de validation. Validez-le dans l'Espace IA avant d'en générer un nouveau.");
+      return;
+    }
     setReportBusy(true); setError(''); setNotice('');
     try {
       const eligibility = await apiService.getM6Eligibility(sessionId);
@@ -267,10 +300,46 @@ export const SessionsM5Panel: React.FC<{ sessionId: string; sessionTitle: string
       if (!result?.success) throw new Error(result?.message ?? 'La génération du rapport a échoué.');
       const reviewId = result.review_id ?? result.data?._review_id;
       if (!reviewId) throw new Error('Le rapport a été préparé, mais son dossier de validation est introuvable.');
+      setReportReviewId(String(reviewId));
+      setReportStatus('pending_review');
       focusReviewInAiSpace(String(reviewId));
       setNotice('Rapport final préparé à partir des données de présence et ouvert dans Espace IA pour validation.');
     } catch(e) { setError(e instanceof Error ? e.message : 'Génération du rapport de formation impossible.'); }
     finally { setReportBusy(false); }
+  };
+
+  const prefillReportContext = async () => {
+    setPrefillBusy(true); setError('');
+    try {
+      const result = await apiService.prefillReportContext(sessionId);
+      if (result) {
+        setReportContext(prev => ({
+          public_cible: result.public_cible || prev.public_cible,
+          objectifs: result.objectifs || prev.objectifs,
+          methodes_pedagogiques: result.methodes_pedagogiques || prev.methodes_pedagogiques,
+          outils: result.outils || prev.outils,
+          observations_formateur: result.observations_formateur || prev.observations_formateur,
+          recommandations_formateur: result.recommandations_formateur || prev.recommandations_formateur,
+        }));
+        setNotice('Champs pré-remplis par l\'IA — vérifiez et ajustez avant génération.');
+      }
+    } catch (e) { setError(e instanceof Error ? e.message : 'Impossible de pré-remplir avec l\'IA.'); }
+    finally { setPrefillBusy(false); }
+  };
+
+  const downloadReport = async (format: 'pdf' | 'docx') => {
+    if (!reportReviewId) return;
+    setReportDownloadBusy(true); setError('');
+    try {
+      const blob = format === 'pdf'
+        ? await apiService.downloadReportPdf(reportReviewId)
+        : await apiService.downloadReportDocx(reportReviewId);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url; link.download = `rapport-formation-${sessionId.slice(0, 8)}.${format}`;
+      document.body.appendChild(link); link.click(); link.remove(); URL.revokeObjectURL(url);
+    } catch (e) { setError(e instanceof Error ? e.message : 'Le téléchargement du rapport a échoué.'); }
+    finally { setReportDownloadBusy(false); }
   };
   useEffect(() => {
     if (!voiceAction) return;
@@ -335,7 +404,10 @@ export const SessionsM5Panel: React.FC<{ sessionId: string; sessionTitle: string
           </div>
         )}
         </div>{attestationBatch && <AttestationBatchCard batch={attestationBatch} sessionTitle={sessionTitle} busy={attestationDownloadBusy} onDownloadPdf={(reviewId, numero) => void downloadPdf(reviewId, numero)} onPreviewPdf={(reviewId, numero) => void previewPdf(reviewId, numero)} onEdit={editAttestation} onDelete={deleteAttestation} onDownloadZip={reviewId => void downloadAttestationZip(reviewId)}/>}{m6 && <div className="space-y-4 p-5"><div className="grid gap-3 sm:grid-cols-3"><div className="rounded-xl border border-slate-100 bg-white p-3"><div className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Participants inscrits</div><div className="mt-1 text-2xl font-extrabold text-[#11162A]">{m6.total_participants}</div></div><div className="rounded-xl border border-emerald-100 bg-white p-3"><div className="text-[10px] font-bold uppercase tracking-wide text-emerald-700">Éligibles · seuil 75 %</div><div className="mt-1 text-2xl font-extrabold text-emerald-700">{m6.total_eligible}</div></div><div className={`rounded-xl border p-3 ${m6.pointages_complets?'border-slate-100 bg-white':'border-amber-200 bg-amber-50'}`}><div className="text-[10px] font-bold uppercase tracking-wide text-slate-500">État des pointages</div><div className={`mt-1 text-sm font-extrabold ${m6.pointages_complets?'text-emerald-700':'text-amber-800'}`}>{m6.pointages_complets?'Complets':`${m6.pointages_manquants} à compléter`}</div></div></div><div className="overflow-x-auto rounded-xl border border-slate-200 bg-white"><table className="min-w-full text-left text-xs"><thead className="bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500"><tr><th className="px-4 py-3">Participant</th><th className="px-4 py-3">Présence</th><th className="px-4 py-3">Pointages</th><th className="px-4 py-3">Décision</th></tr></thead><tbody className="divide-y divide-slate-100">{m6.participants.map((person:any)=><tr key={person.id}><td className="px-4 py-3 font-bold text-slate-800">{person.nom}</td><td className="px-4 py-3"><div className="flex items-center gap-2"><div className="h-1.5 w-20 overflow-hidden rounded-full bg-slate-100"><div className={`h-full rounded-full ${person.eligible_attestation?'bg-emerald-500':'bg-rose-500'}`} style={{width:`${Math.min(100,person.taux_presence)}%`}}/></div><span className="font-extrabold tabular-nums text-slate-700">{person.taux_presence}%</span></div></td><td className="px-4 py-3 text-slate-600">{person.nb_presences}/{person.nb_seances}{person.pointages_manquants?` · ${person.pointages_manquants} manquant(s)`:''}</td><td className="px-4 py-3"><span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-extrabold ${person.eligible_attestation?'bg-emerald-100 text-emerald-800':person.pointages_manquants?'bg-amber-100 text-amber-800':'bg-rose-100 text-rose-800'}`}>{person.eligible_attestation?<CheckCircle2 size={12}/>:null}{person.eligible_attestation?'Éligible':person.pointages_manquants?'À compléter':'Non éligible'}</span></td></tr>)}</tbody></table></div><p className="flex items-center gap-2 text-[11px] text-slate-500"><ShieldCheck size={14} className="text-emerald-700"/>Les compétences proposées proviennent des supports indexés, du syllabus approuvé ou des thèmes de séances. La direction conserve la validation finale avant distribution.</p></div>}</section>}
-    {!trainerMode && <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs"><div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"><div><h3 className="font-extrabold text-[#11162A]">Clôture de la formation</h3><p className="mt-1 max-w-2xl text-xs leading-relaxed text-slate-500">Le rapport est assemblé depuis les données de la session, les présences, les évaluations et vos compléments. Les champs facultatifs laissés vides ne seront pas inventés. Le document passe en validation humaine avant téléchargement.</p>{sessionStatus !== 'Terminée' && <p className="mt-2 text-[11px] font-semibold text-amber-700">Rapport et facturation disponibles après la date de fin ({sessionDateEnd ?? 'à préciser'}).</p>}</div><div className="flex shrink-0 flex-wrap gap-2"><div className="space-y-2"><button type="button" disabled={reportBusy || sessionStatus !== 'Terminée'} onClick={() => void generateReport()} className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#11162A] px-4 py-3 text-xs font-extrabold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-45">{reportBusy ? <Loader2 size={15} className="animate-spin"/> : <FileText size={15}/>} {reportBusy ? 'Génération en cours…' : 'Générer le rapport'}</button>
+    {!trainerMode && <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs"><div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"><div><h3 className="font-extrabold text-[#11162A]">Clôture de la formation</h3><p className="mt-1 max-w-2xl text-xs leading-relaxed text-slate-500">Le rapport est assemblé depuis les données de la session, les présences, les évaluations et vos compléments. Les champs facultatifs laissés vides ne seront pas inventés. Le document passe en validation humaine avant téléchargement.</p>{!isSessionDone && <p className="mt-2 text-[11px] font-semibold text-amber-700">Rapport et facturation disponibles après la date de fin ({sessionDateEnd ?? 'à préciser'}).</p>}
+              {reportStatus === 'pending_review' && reportReviewId && <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5"><span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-extrabold text-amber-800"><Loader2 size={11} className="animate-spin"/>En attente de validation</span><span className="text-[11px] text-amber-800">Le rapport a été généré et attend votre approbation dans l'Espace IA.</span><button type="button" onClick={() => focusReviewInAiSpace(reportReviewId)} className="ml-auto rounded-lg bg-amber-800 px-3 py-1.5 text-[10px] font-bold text-white">Ouvrir dans Espace IA</button></div>}
+              {reportStatus === 'approved' && reportReviewId && <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2.5"><span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-1 text-[10px] font-extrabold text-emerald-800"><CheckCircle2 size={11}/>Rapport validé</span><span className="text-[11px] text-emerald-800">Le rapport a été approuvé. Téléchargez-le ci-dessous.</span><div className="ml-auto flex gap-2">{reportDownloadBusy ? <Loader2 size={14} className="animate-spin text-emerald-700"/> : <><button type="button" onClick={() => void downloadReport('pdf')} className="rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-[10px] font-bold text-emerald-800"><Download size={12} className="inline mr-1"/>PDF</button><button type="button" onClick={() => void downloadReport('docx')} className="rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-[10px] font-bold text-emerald-800"><Download size={12} className="inline mr-1"/>Word</button></>}</div></div>}
+            </div><div className="flex shrink-0 flex-wrap gap-2"><div className="space-y-2"><button type="button" disabled={reportBusy || !isSessionDone || reportStatus === 'pending_review'} onClick={() => void generateReport()} className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#11162A] px-4 py-3 text-xs font-extrabold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-45">{reportBusy ? <Loader2 size={15} className="animate-spin"/> : <FileText size={15}/>} {reportBusy ? 'Génération en cours…' : reportStatus === 'approved' ? 'Regénérer le rapport' : 'Générer le rapport'}</button>
             {reportBusy && (
               <div className="rounded-xl border border-blue-200 bg-blue-50 p-3 space-y-2">
                 <div className="flex items-center gap-2 text-xs font-semibold text-blue-900">
@@ -345,10 +417,10 @@ export const SessionsM5Panel: React.FC<{ sessionId: string; sessionTitle: string
                 <div className="w-full h-1.5 rounded-full bg-blue-200 overflow-hidden">
                   <div className="h-full bg-blue-600 rounded-full animate-pulse" style={{width: '60%'}}/>
                 </div>
-                <p className="text-[10px] text-blue-700">L'agent M7 analyse les présences, les évaluations et vos compléments pour assembler le rapport de formation.</p>
+                <p className="text-[10px] text-blue-700">L'agent analyse les présences, les évaluations et vos compléments pour assembler le rapport de formation.</p>
               </div>
             )}
-            </div><button type="button" disabled={sessionStatus !== 'Terminée'} onClick={async () => {
+            </div><button type="button" disabled={!isSessionDone} onClick={async () => {
   // Résolution professionnelle : offre financière approuvée → montantEstime → vide
   let montantHT: number | undefined;
   let client: string | undefined;
@@ -379,7 +451,7 @@ export const SessionsM5Panel: React.FC<{ sessionId: string; sessionTitle: string
   } catch { /* fallback montantEstime déjà défini */ }
 
   onOpenNewInvoice?.(sessionId, montantHT, client);
-}} className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#0B1F4D] px-4 py-3 text-xs font-extrabold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-45"><ReceiptText size={15}/>Créer la facture liée</button></div></div><details className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4"><summary className="cursor-pointer text-xs font-extrabold text-[#0B1F4D]">Compléments du formateur pour enrichir le rapport</summary><p className="mt-2 text-[11px] text-slate-500">Ces éléments sont facultatifs. Saisissez une information par ligne pour les listes.</p><div className="mt-3 grid gap-3 md:grid-cols-2"><label className="text-[11px] font-bold text-slate-600">Public cible<input value={reportContext.public_cible} onChange={event=>setReportContext(current=>({...current,public_cible:event.target.value}))} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-normal" placeholder="Ex. équipe informatique"/></label>{([["objectifs","Objectifs pédagogiques"],["methodes_pedagogiques","Méthodes pédagogiques"],["outils","Outils et supports"],["observations_formateur","Observations du formateur"],["recommandations_formateur","Recommandations du formateur"]] as const).map(([key,label])=><label key={key} className="text-[11px] font-bold text-slate-600">{label}<textarea value={reportContext[key]} onChange={event=>setReportContext(current=>({...current,[key]:event.target.value}))} className="mt-1 min-h-20 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-normal" placeholder="Une information par ligne"/></label>)}</div></details></section>}
+}} className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#0B1F4D] px-4 py-3 text-xs font-extrabold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-45"><ReceiptText size={15}/>Créer la facture liée</button></div></div><details className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4" open><summary className="cursor-pointer text-xs font-extrabold text-[#0B1F4D]">▼ Compléments du formateur pour enrichir le rapport</summary><div className="mt-3 flex items-center justify-between gap-3"><p className="text-[11px] text-slate-500">Ces éléments sont facultatifs. Saisissez une information par ligne pour les listes.</p><button type="button" disabled={prefillBusy} onClick={() => void prefillReportContext()} className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-[11px] font-bold text-indigo-700 hover:bg-indigo-100 disabled:opacity-50">{prefillBusy ? <Loader2 size={12} className="animate-spin"/> : <Sparkles size={12}/>}{prefillBusy ? 'IA en cours…' : 'Pré-remplir avec l\'IA'}</button></div><div className="mt-3 grid gap-3 md:grid-cols-2"><label className="text-[11px] font-bold text-slate-600">Public cible<input value={reportContext.public_cible} onChange={event=>setReportContext(current=>({...current,public_cible:event.target.value}))} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-normal" placeholder="Ex. équipe informatique"/></label>{([["objectifs","Objectifs pédagogiques"],["methodes_pedagogiques","Méthodes pédagogiques"],["outils","Outils et supports"],["observations_formateur","Observations du formateur"],["recommandations_formateur","Recommandations du formateur"]] as const).map(([key,label])=><label key={key} className="text-[11px] font-bold text-slate-600">{label}<textarea value={reportContext[key]} onChange={event=>setReportContext(current=>({...current,[key]:event.target.value}))} className="mt-1 min-h-20 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-normal" placeholder="Une information par ligne"/></label>)}</div></details></section>}
     {analysis && <AnalysisResult analysis={analysis}/>}
   </section>;
 };

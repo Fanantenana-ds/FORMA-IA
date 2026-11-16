@@ -955,6 +955,73 @@ async def generate_session_report(
 
 
 @router.get(
+    "/sessions/{session_id}/report-context-prefill",
+    summary="[M5] Proposer des compléments de rapport pré-remplis par l'IA",
+)
+async def prefill_report_context(
+    session_id: str,
+    current_user=Depends(require_role("DIRECTION", "ADMIN", "ASSISTANT")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Génère des suggestions de compléments (public cible, objectifs…) depuis les données de session."""
+    try:
+        session_uuid = uuid.UUID(session_id)
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(status_code=422, detail="Identifiant de session invalide.") from exc
+
+    owner_id = current_user.owner_id or current_user.id
+    session = db.query(TrainingSession).filter(
+        TrainingSession.id == session_uuid,
+        TrainingSession.owner_id == owner_id,
+    ).first()
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session introuvable.")
+
+    seances = db.query(Seance).filter(
+        Seance.session_id == session.id,
+        Seance.owner_id == owner_id,
+    ).order_by(Seance.date).all()
+
+    themes = [s.theme for s in seances if s.theme]
+    domaine = session.domaine or ""
+    titre = session.titre or ""
+    niveau = session.niveau_cible or ""
+    public = session.public_cible or ""
+    objectifs_db = session.objectifs_pedagogiques or ""
+
+    objectifs_suggest = "\n".join(filter(None, [
+        f"Maîtriser les fondamentaux de {titre}" if titre else "Acquérir les connaissances essentielles",
+        "Appliquer les techniques abordées lors des séances pratiques" if themes else "",
+        "Évaluer sa progression et consolider ses acquis",
+    ]))
+    suggestions = {
+        "public_cible": public or (f"Professionnels du secteur {domaine}" if domaine else "Professionnels en formation continue"),
+        "objectifs": objectifs_db or objectifs_suggest,
+        "methodes_pedagogiques": (
+            "Apports théoriques illustrés par des cas concrets\n"
+            "Exercices pratiques et mises en situation\n"
+            "Échanges et retours d'expérience entre participants\n"
+            "Évaluation des acquis par quiz et exercices"
+        ),
+        "outils": (
+            "Support de présentation numérique\n"
+            "Exercices et fiches pratiques\n"
+            "Questionnaires d'évaluation"
+        ),
+        "observations_formateur": (
+            f"Formation dispensée sur le thème : {titre}. "
+            + (f"Séances abordées : {', '.join(themes[:5])}." if themes else "")
+        ),
+        "recommandations_formateur": (
+            "Mettre en pratique les acquis dès le retour en poste\n"
+            "Partager les connaissances avec les collègues non formés\n"
+            "Consulter les supports remis à l'issue de la formation"
+        ),
+    }
+    return suggestions
+
+
+@router.get(
     "/export-report-pdf/{review_id}",
     summary="[M5] Exporter le rapport final approuvé en PDF ALTIORA",
 )

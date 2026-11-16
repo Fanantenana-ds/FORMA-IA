@@ -116,6 +116,8 @@ export const SessionsGroupesView: React.FC<SessionsGroupesViewProps> = ({
   const [participantOptions, setParticipantOptions] = useState<any[]>([]);
   const [participantError, setParticipantError] = useState('');
   const [participantsLoading, setParticipantsLoading] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<string>('Toutes');
+  const [archiveOpen, setArchiveOpen] = useState(false);
   const [editingDateSessionId, setEditingDateSessionId] = useState<string | null>(null);
   const [editStartDate, setEditStartDate] = useState('');
   const [editEndDate, setEditEndDate] = useState('');
@@ -378,193 +380,216 @@ export const SessionsGroupesView: React.FC<SessionsGroupesViewProps> = ({
       {/* ========================================== */}
       {/* VUE 1 : LISTE DES SESSIONS ET GROUPES      */}
       {/* ========================================== */}
-      {!selectedSessionId && (
-        <>
-          <PageHeader
-            icon={<CalendarDays size={22} />}
-            badge="M5 — 6 Agents IA"
-            title="Sessions & Groupes"
-            subtitle="Organisez les sessions, activez les agents IA de suivi et générez les attestations automatiquement."
-            actions={!readOnly ? (
-              <button onClick={onOpenNewSession} className="inline-flex items-center gap-1.5 rounded-xl border border-white/20 bg-white/15 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/25 transition-colors cursor-pointer">
-                <Plus size={14} /><span>Créer une session</span>
-              </button>
-            ) : undefined}
-          />
+      {!selectedSessionId && (() => {
+        const statusOrder: Record<string, number> = { 'En cours': 0, 'Planifiée': 1, 'Terminée': 2 };
+        const sortedFiltered = [...filteredSessions].sort((a, b) => (statusOrder[a.statut] ?? 3) - (statusOrder[b.statut] ?? 3));
+        const activeSessions = sortedFiltered.filter(s => s.statut !== 'Terminée');
+        const termineesSessions = sortedFiltered.filter(s => s.statut === 'Terminée');
+        const countEnCours = sessions.filter(s => s.statut === 'En cours').length;
+        const countPlanifiee = sessions.filter(s => s.statut === 'Planifiée').length;
+        const countTerminee = sessions.filter(s => s.statut === 'Terminée').length;
 
-          {sessionDeleteError && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-semibold text-red-700">{sessionDeleteError}</div>}
+        const visibleActive = statusFilter === 'Toutes' || statusFilter === 'En cours' || statusFilter === 'Planifiée'
+          ? activeSessions.filter(s => statusFilter === 'Toutes' || s.statut === statusFilter)
+          : [];
+        const visibleTerminees = statusFilter === 'Toutes' || statusFilter === 'Terminée' ? termineesSessions : [];
 
-          {/* Search Bar */}
-          <div className="relative">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-            <input
-              type="text"
-              value={sessionSearch}
-              onChange={(e) => setSessionSearch(e.target.value)}
-              placeholder="Rechercher par intitulé, code session ou formateur..."
-              className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#0B1F4D]"
-            />
-          </div>
+        const SessionCard = ({ s }: { readonly s: Session }) => {
+          const sessionPresences = presencesList.filter((p) => p.sessionId === s.id);
+          const totalInscrits = sessionPresences.length || s.participantsInscrits;
+          const isTerminee = s.statut === 'Terminée';
 
-          {/* Sessions List */}
-          <div className="space-y-4">
-            {filteredSessions.map((s) => {
-              const sessionPresences = presencesList.filter((p) => p.sessionId === s.id);
-              const totalInscrits = sessionPresences.length || s.participantsInscrits;
-
-              return (
-                <div
-                  key={s.id}
-                  className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex flex-col lg:flex-row lg:items-center justify-between gap-4 hover:border-[#0B1F4D]/40 transition-all"
-                >
-                  <div className="space-y-2 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-mono text-xs font-extrabold text-slate-500 bg-[#F4F5F3] px-2.5 py-0.5 rounded border border-slate-200">
-                        {s.code}
-                      </span>
-                      <span
-                        className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${
-                          s.statut === 'En cours'
-                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                            : s.statut === 'Planifiée'
-                            ? 'bg-blue-50 text-blue-700 border border-blue-200'
-                            : 'bg-slate-100 text-slate-600'
-                        }`}
-                      >
-                        {s.statut}
-                      </span>
-                      <span className="text-xs text-slate-500 bg-slate-100 px-2.5 py-0.5 rounded flex items-center gap-1 font-medium">
-                        <MapPin size={12} />
-                        {s.lieu}
-                      </span>
-                    </div>
-
-                    <h3 className="text-base font-extrabold text-[#11162A]">{s.intitule}</h3>
-
-                    <div className="flex flex-wrap items-center gap-4 text-xs text-slate-600">
-                      <span className="flex items-center gap-1.5">
-                        <User size={14} className="text-slate-400" />
-                        Formateur : <strong className="text-slate-800">{s.formateur}</strong>
-                      </span>
-                      <span className="flex items-center gap-1.5">
-                        <Clock size={14} className="text-slate-400" />
-                        Dates : <strong className="text-slate-800">{s.dates}</strong>
-                      </span>
-                    </div>
-                    <div className="pt-1">
-                      <div className="mb-1.5 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-slate-500">
-                        <Users size={12} /> Participants inscrits
-                      </div>
-                      {sessionPresences.length ? (
-                        <div className="flex flex-wrap gap-1.5">
-                          {sessionPresences.map((participant) => (
-                            <span key={participant.id} className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-semibold text-slate-700">
-                              {participant.apprenantNom}
-                              {participant.niveauInitial && <span className="text-[#0B1F4D]">· {participant.niveauInitial}</span>}
-                            </span>
-                          ))}
-                        </div>
-                      ) : (
-                        <span className="text-[11px] text-slate-400">Aucun participant inscrit pour le moment.</span>
-                      )}
-                    </div>
-                      {/* Badge M5 — prochaine action IA recommandée */}
-                    <div className="mt-2">
-                      {s.statut === 'Planifiée' && (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 border border-blue-200 px-2.5 py-1 text-[10px] font-bold text-blue-700">
-                          ⚡ Prochaine étape M5 · Envoyer les formulaires de positionnement
-                        </span>
-                      )}
-                      {s.statut === 'En cours' && (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 border border-emerald-200 px-2.5 py-1 text-[10px] font-bold text-emerald-700">
-                          ● Formation en cours · Agents IA disponibles
-                        </span>
-                      )}
-                      {s.statut === 'Terminée' && (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 border border-amber-200 px-2.5 py-1 text-[10px] font-bold text-amber-700">
-                          ✓ Terminée · Générer les attestations PDF
-                        </span>
-                      )}
-                    </div>
-                  {!readOnly && editingDateSessionId === s.id && (
-                      <div className="mt-3 flex flex-wrap items-end gap-2">
-                        <label className="text-[11px] font-semibold text-slate-600">
-                          Début
-                          <input type="date" required value={editStartDate} onChange={(e) => setEditStartDate(e.target.value)} className="block mt-1 px-2.5 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs text-slate-800" />
-                        </label>
-                        <label className="text-[11px] font-semibold text-slate-600">
-                          Fin
-                          <input type="date" min={editStartDate || undefined} value={editEndDate} onChange={(e) => setEditEndDate(e.target.value)} className="block mt-1 px-2.5 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs text-slate-800" />
-                        </label>
-                        <label className="text-[11px] font-semibold text-slate-600">
-                          Lieu
-                          <input type="text" maxLength={200} value={editLieu} onChange={(e) => setEditLieu(e.target.value)} placeholder="Ville et salle à confirmer" className="block mt-1 min-w-44 px-2.5 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs text-slate-800" />
-                        </label>
-                        <label className="text-[11px] font-semibold text-slate-600">
-                          Formateur
-                          <select value={editFormateurId} onChange={(e) => setEditFormateurId(e.target.value)} className="block mt-1 min-w-52 px-2.5 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs text-slate-800">
-                            <option value="">Conserver le formateur actuel</option>
-                            {sessionTrainerOptions.map((trainer) => <option key={trainer.id} value={trainer.id}>{[trainer.prenom, trainer.nom].filter(Boolean).join(' ')}{trainer.recommandation === 'Oui' ? ' · Recommandé' : trainer.recommandation === 'Conditionnel' ? ' · À confirmer' : ''}{trainer.scoreMoyen != null ? ` · ${Math.round(trainer.scoreMoyen)}/100` : ''}{trainer.statut === 'En session' ? ' · En session' : ''}</option>)}
-                          </select>
-                          {!sessionTrainerOptions.length && <span className="block mt-1 max-w-52 text-[10px] text-slate-500">Aucun formateur disponible dans la section Formateurs.</span>}
-                        </label>
-                        <button type="button" disabled={savingDates} onClick={() => void saveSessionDates(s.id)} className="px-3 py-2 bg-[#0B1F4D] text-white rounded-lg text-xs font-bold disabled:opacity-50">
-                          {savingDates ? 'Enregistrement…' : 'Enregistrer'}
-                        </button>
-                        <button type="button" onClick={() => { setEditingDateSessionId(null); setDateEditError(''); }} className="px-3 py-2 bg-slate-100 text-slate-700 rounded-lg text-xs font-bold">Annuler</button>
-                        {dateEditError && <span className="w-full text-xs text-red-600">{dateEditError}</span>}
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-5 pt-3 lg:pt-0 border-t lg:border-t-0 border-slate-100 shrink-0">
-                    <div>
-                      <div className="text-[10px] font-bold text-slate-400 uppercase">Inscrits / Jauge</div>
-                      <div className="text-sm font-extrabold text-[#11162A] mt-0.5">
-                        {s.capacityMax ? `${totalInscrits} / ${s.capacityMax}` : `${totalInscrits} inscrits`}
-                      </div>
-                      <div className="w-24 bg-slate-100 h-1.5 rounded-full mt-1 overflow-hidden">
-                        <div
-                          className="bg-[#0B1F4D] h-full rounded-full"
-                          style={{ width: s.capacityMax ? `${Math.min(100, (totalInscrits / s.capacityMax) * 100)}%` : '0%' }}
-                        ></div>
-                      </div>
-                    </div>
-
-                    <div className="text-right">
-                      <div className="text-[10px] font-bold text-slate-400 uppercase">Prix par apprenant</div>
-                      <div className="text-sm font-extrabold text-[#11162A] mt-0.5">
-                        {s.prixUnitaire != null ? `${s.prixUnitaire.toLocaleString()} Ar HT` : 'À définir'}
-                      </div>
-                    </div>
-
-                    {!readOnly && <button
-                      type="button"
-                      title="Modifier les dates et le formateur"
-                      onClick={() => editingDateSessionId === s.id ? setEditingDateSessionId(null) : startDateEdit(s)}
-                      className="p-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg transition-colors"
-                    >
-                      <Pencil size={15} />
-                    </button>}
-
-                    {!readOnly && canDeleteSessions && <button type="button" title="Supprimer cette formation" disabled={deletingSessionId === s.id} onClick={() => void deleteSession(s)} className="p-2.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg transition-colors disabled:opacity-50"><Trash2 size={15} /></button>}
-
-                    <button
-                      type="button"
-                      onClick={() => setSelectedSessionId(s.id)}
-                      className="px-4 py-2.5 bg-[#11162A] hover:bg-[#0B1F4D] text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-xs transition-colors cursor-pointer"
-                    >
-                      <Users size={15} />
-                      <span>Agents IA &amp; Inscrits →</span>
-                    </button>
-                  </div>
-                  {formsFeedback?.id === s.id && <div className={`w-full text-xs font-semibold ${formsFeedback.error ? 'text-red-600' : 'text-emerald-700'}`}>{formsFeedback.text}</div>}
+          return (
+            <div
+              key={s.id}
+              className={`bg-white rounded-2xl border shadow-xs flex flex-col gap-4 hover:shadow-sm transition-all ${
+                s.statut === 'En cours' ? 'border-l-4 border-l-emerald-400 border-slate-200' :
+                s.statut === 'Planifiée' ? 'border-l-4 border-l-blue-400 border-slate-200' :
+                'border-slate-200 opacity-80'
+              }`}
+            >
+              {/* Card header */}
+              <div className={`px-5 pt-5 ${isTerminee ? 'pb-0' : ''}`}>
+                <div className="flex flex-wrap items-center gap-2 mb-2">
+                  <span className="font-mono text-xs font-extrabold text-slate-500 bg-[#F4F5F3] px-2.5 py-0.5 rounded border border-slate-200">{s.code}</span>
+                  <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${
+                    s.statut === 'En cours' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
+                    s.statut === 'Planifiée' ? 'bg-blue-50 text-blue-700 border border-blue-200' :
+                    'bg-slate-100 text-slate-500'
+                  }`}>{s.statut}</span>
+                  {s.lieu && <span className="text-xs text-slate-500 bg-slate-100 px-2.5 py-0.5 rounded flex items-center gap-1 font-medium"><MapPin size={12} />{s.lieu}</span>}
                 </div>
-              );
-            })}
-          </div>
-        </>
-      )}
+                <h3 className="text-sm font-extrabold text-[#11162A] leading-snug break-words">{s.intitule}</h3>
+                <div className="flex flex-wrap items-center gap-3 mt-2 text-xs text-slate-500">
+                  <span className="flex items-center gap-1"><User size={12} className="text-slate-400" />{s.formateur}</span>
+                  <span className="flex items-center gap-1"><Clock size={12} className="text-slate-400" />{s.dates}</span>
+                </div>
+              </div>
+
+              {/* Participants chips */}
+              <div className="px-5">
+                {sessionPresences.length > 0 ? (
+                  <div className="flex flex-wrap gap-1.5">
+                    {sessionPresences.slice(0, 6).map((p) => (
+                      <span key={p.id} className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-semibold text-slate-700">
+                        {p.apprenantNom}{p.niveauInitial && <span className="text-[#0B1F4D]">· {p.niveauInitial}</span>}
+                      </span>
+                    ))}
+                    {sessionPresences.length > 6 && <span className="text-[10px] text-slate-400 font-semibold py-0.5">+{sessionPresences.length - 6}</span>}
+                  </div>
+                ) : (
+                  <span className="text-[11px] text-slate-400">Aucun participant inscrit.</span>
+                )}
+              </div>
+
+              {/* Prochaine action badge */}
+              <div className="px-5">
+                {s.statut === 'Planifiée' && <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 border border-blue-200 px-2.5 py-1 text-[10px] font-bold text-blue-700">⚡ Prochaine étape · Envoyer les formulaires de positionnement</span>}
+                {s.statut === 'En cours' && <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 border border-emerald-200 px-2.5 py-1 text-[10px] font-bold text-emerald-700">● Formation en cours · Agents IA disponibles</span>}
+                {s.statut === 'Terminée' && <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 border border-amber-200 px-2.5 py-1 text-[10px] font-bold text-amber-700">✓ Terminée · Attestations & rapport disponibles dans Dossiers</span>}
+              </div>
+
+              {/* Inline edit form */}
+              {!readOnly && editingDateSessionId === s.id && (
+                <div className="px-5 pb-2">
+                  <div className="flex flex-wrap items-end gap-2 p-3 bg-slate-50 rounded-xl border border-slate-200">
+                    <label className="text-[11px] font-semibold text-slate-600">Début<input type="date" required value={editStartDate} onChange={(e) => setEditStartDate(e.target.value)} className="block mt-1 px-2.5 py-2 bg-white border border-slate-300 rounded-lg text-xs text-slate-800" /></label>
+                    <label className="text-[11px] font-semibold text-slate-600">Fin<input type="date" min={editStartDate || undefined} value={editEndDate} onChange={(e) => setEditEndDate(e.target.value)} className="block mt-1 px-2.5 py-2 bg-white border border-slate-300 rounded-lg text-xs text-slate-800" /></label>
+                    <label className="text-[11px] font-semibold text-slate-600">Lieu<input type="text" maxLength={200} value={editLieu} onChange={(e) => setEditLieu(e.target.value)} placeholder="Ville et salle" className="block mt-1 min-w-36 px-2.5 py-2 bg-white border border-slate-300 rounded-lg text-xs text-slate-800" /></label>
+                    <label className="text-[11px] font-semibold text-slate-600">Formateur
+                      <select value={editFormateurId} onChange={(e) => setEditFormateurId(e.target.value)} className="block mt-1 min-w-44 px-2.5 py-2 bg-white border border-slate-300 rounded-lg text-xs text-slate-800">
+                        <option value="">Conserver l'actuel</option>
+                        {sessionTrainerOptions.map((trainer) => <option key={trainer.id} value={trainer.id}>{[trainer.prenom, trainer.nom].filter(Boolean).join(' ')}{trainer.recommandation === 'Oui' ? ' · Recommandé' : ''}{trainer.scoreMoyen != null ? ` · ${Math.round(trainer.scoreMoyen)}/100` : ''}</option>)}
+                      </select>
+                    </label>
+                    <button type="button" disabled={savingDates} onClick={() => void saveSessionDates(s.id)} className="px-3 py-2 bg-[#0B1F4D] text-white rounded-lg text-xs font-bold disabled:opacity-50">{savingDates ? 'Enregistrement…' : 'Enregistrer'}</button>
+                    <button type="button" onClick={() => { setEditingDateSessionId(null); setDateEditError(''); }} className="px-3 py-2 bg-slate-200 text-slate-700 rounded-lg text-xs font-bold">Annuler</button>
+                    {dateEditError && <span className="w-full text-xs text-red-600">{dateEditError}</span>}
+                  </div>
+                </div>
+              )}
+
+              {/* Footer */}
+              <div className="px-5 pb-5 flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-100 mt-auto">
+                <div className="flex items-center gap-4">
+                  <div>
+                    <div className="text-[10px] font-bold text-slate-400 uppercase">Inscrits</div>
+                    <div className="text-sm font-extrabold text-[#11162A]">{s.capacityMax ? `${totalInscrits} / ${s.capacityMax}` : `${totalInscrits}`}</div>
+                    {s.capacityMax && <div className="w-20 bg-slate-100 h-1.5 rounded-full mt-1 overflow-hidden"><div className="bg-[#0B1F4D] h-full rounded-full" style={{ width: `${Math.min(100, (totalInscrits / s.capacityMax) * 100)}%` }} /></div>}
+                  </div>
+                  <div>
+                    <div className="text-[10px] font-bold text-slate-400 uppercase">Prix / apprenant</div>
+                    <div className="text-sm font-extrabold text-[#11162A]">{s.prixUnitaire != null ? `${s.prixUnitaire.toLocaleString()} Ar HT` : '—'}</div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  {!readOnly && <button type="button" title="Modifier dates / formateur" onClick={() => editingDateSessionId === s.id ? setEditingDateSessionId(null) : startDateEdit(s)} className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg transition-colors"><Pencil size={14} /></button>}
+                  {!readOnly && canDeleteSessions && <button type="button" title="Supprimer" disabled={deletingSessionId === s.id} onClick={() => void deleteSession(s)} className="p-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg transition-colors disabled:opacity-50"><Trash2 size={14} /></button>}
+                  <button type="button" onClick={() => setSelectedSessionId(s.id)} className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer ${isTerminee ? 'bg-slate-700 hover:bg-slate-800 text-white' : 'bg-[#11162A] hover:bg-[#0B1F4D] text-white'}`}>
+                    <Users size={14} /><span>{isTerminee ? 'Voir le dossier →' : 'Agents IA & Inscrits →'}</span>
+                  </button>
+                </div>
+                {formsFeedback?.id === s.id && <div className={`w-full text-xs font-semibold ${formsFeedback.error ? 'text-red-600' : 'text-emerald-700'}`}>{formsFeedback.text}</div>}
+              </div>
+            </div>
+          );
+        };
+
+        return (
+          <>
+            <PageHeader
+              icon={<CalendarDays size={22} />}
+              badge="M5 — 6 Agents IA"
+              title="Sessions & Groupes"
+              subtitle="Organisez les sessions, activez les agents IA de suivi et générez les attestations automatiquement."
+              actions={!readOnly ? (
+                <button onClick={onOpenNewSession} className="inline-flex items-center gap-1.5 rounded-xl border border-white/20 bg-white/15 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/25 transition-colors cursor-pointer">
+                  <Plus size={14} /><span>Créer une session</span>
+                </button>
+              ) : undefined}
+            />
+
+            {sessionDeleteError && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-semibold text-red-700">{sessionDeleteError}</div>}
+
+            {/* KPI Bar */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {[
+                { label: 'Total sessions', value: sessions.length, color: 'text-[#11162A]', bg: 'bg-white' },
+                { label: 'En cours', value: countEnCours, color: 'text-emerald-700', bg: 'bg-emerald-50' },
+                { label: 'Planifiées', value: countPlanifiee, color: 'text-blue-700', bg: 'bg-blue-50' },
+                { label: 'Terminées', value: countTerminee, color: 'text-slate-600', bg: 'bg-slate-50' },
+              ].map(kpi => (
+                <div key={kpi.label} className={`${kpi.bg} rounded-xl border border-slate-200 px-4 py-3 flex flex-col gap-0.5`}>
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{kpi.label}</span>
+                  <span className={`text-2xl font-extrabold ${kpi.color}`}>{kpi.value}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* Search + filter chips */}
+            <div className="flex flex-col sm:flex-row gap-3">
+              <div className="relative flex-1">
+                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                <input type="text" value={sessionSearch} onChange={(e) => setSessionSearch(e.target.value)} placeholder="Rechercher par intitulé, code ou formateur…" className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#0B1F4D]" />
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                {(['Toutes', 'En cours', 'Planifiée', 'Terminée'] as const).map(f => (
+                  <button key={f} onClick={() => setStatusFilter(f)} className={`px-3 py-2 rounded-xl text-xs font-bold border transition-colors cursor-pointer ${statusFilter === f ? 'bg-[#0B1F4D] text-white border-[#0B1F4D]' : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'}`}>
+                    {f}{f !== 'Toutes' && <span className="ml-1.5 opacity-70">{f === 'En cours' ? countEnCours : f === 'Planifiée' ? countPlanifiee : countTerminee}</span>}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Active sessions grid */}
+            {visibleActive.length > 0 && (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {visibleActive.map(s => <React.Fragment key={s.id}>{SessionCard({ s })}</React.Fragment>)}
+              </div>
+            )}
+
+            {visibleActive.length === 0 && statusFilter !== 'Terminée' && (
+              <div className="bg-white rounded-2xl border border-slate-200 p-10 text-center">
+                <CalendarDays size={28} className="mx-auto text-slate-300 mb-2" />
+                <p className="text-sm font-bold text-slate-600">Aucune session active</p>
+                <p className="text-xs text-slate-400 mt-1">Créez une nouvelle session ou changez le filtre.</p>
+              </div>
+            )}
+
+            {/* Archive section — Terminées */}
+            {visibleTerminees.length > 0 && (
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setArchiveOpen(o => !o)}
+                  className="w-full flex items-center justify-between px-4 py-3 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl text-xs font-bold text-slate-600 transition-colors cursor-pointer"
+                >
+                  <span className="flex items-center gap-2 flex-wrap">
+                    <GraduationCap size={15} className="text-slate-400" />
+                    Archive — Formations terminées ({visibleTerminees.length})
+                    <span className="text-[10px] font-normal text-slate-400 hidden sm:inline">· Ouvrez chaque session puis cliquez "Voir le dossier →"</span>
+                    {onNavigateToSection && (
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); onNavigateToSection('dossiers_formation'); }}
+                        className="inline-flex items-center gap-1 px-2 py-0.5 bg-[#0B1F4D]/10 text-[#0B1F4D] rounded-lg text-[10px] font-bold hover:bg-[#0B1F4D]/20 transition-colors"
+                      >
+                        <ExternalLink size={10} />Dossiers de formation
+                      </button>
+                    )}
+                  </span>
+                  <span className="shrink-0">{(archiveOpen || statusFilter === 'Terminée') ? '▲' : '▼'}</span>
+                </button>
+                {(archiveOpen || statusFilter === 'Terminée') && (
+                  <div className="mt-3 grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    {visibleTerminees.map(s => <React.Fragment key={s.id}>{SessionCard({ s })}</React.Fragment>)}
+                  </div>
+                )}
+              </div>
+            )}
+          </>
+        );
+      })()}
 
       {/* ========================================== */}
       {/* VUE 2 : LISTE DES PARTICIPANTS D'UNE SESSION */}

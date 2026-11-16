@@ -457,6 +457,7 @@ class ApiService {
   async suggestSessionAttestationTitle(sessionId: string) { return this.request<any>(`/ia/formations/sessions/${encodeURIComponent(sessionId)}/attestations/titre`, this.json('POST', {}), { ia: true, timeout: 60000 }); }
   async generateFormationReport(sessionData: unknown) { return this.request<any>('/ia/formations/generate-report', this.json('POST', { session_data: sessionData }), { ia: true, timeout: 120000 }); }
   async generateSessionReport(sessionId: string, context: unknown) { return this.request<any>(`/ia/formations/sessions/${encodeURIComponent(sessionId)}/generate-report`, this.json('POST', context), { ia: true, timeout: 120000 }); }
+  async prefillReportContext(sessionId: string) { return this.request<any>(`/ia/formations/sessions/${encodeURIComponent(sessionId)}/report-context-prefill`, {}, { ia: true, timeout: 60000 }); }
   async previewAttestation(reviewId: string, numero: string) { return this.request<Blob>(`/ia/formations/reviews/${encodeURIComponent(reviewId)}/attestations/${encodeURIComponent(numero)}/preview`, {}, { ia: true }); }
   async downloadAttestation(reviewId: string, numero: string) { return this.request<Blob>(`/ia/formations/reviews/${encodeURIComponent(reviewId)}/attestations/${encodeURIComponent(numero)}/download`, {}, { ia: true }); }
   async downloadAttestationsZip(reviewId: string) { return this.request<Blob>(`/ia/formations/reviews/${encodeURIComponent(reviewId)}/attestations.zip`, {}, { ia: true }); }
@@ -560,7 +561,9 @@ class ApiService {
   async createRoom(body: unknown) { return this.request<any>('/salles', this.json('POST', body)); }
   async createCandidate(body: unknown) { return this.request<any>('/rh/candidats', this.json('POST', body)); }
   async generateSyllabus(body: unknown) { return this.request<any>('/ia/rag/syllabus', this.json('POST', body), { ia: true, timeout: 120000 }); }
+  async exportSyllabus(reviewId: string) { return this.request<Blob>(`/ia/rag/syllabus/${reviewId}/exporter`, { method: 'POST' }, { ia: true, timeout: 60000 }); }
   async generatePortfolio(body: unknown) { return this.request<any>('/ia/rag/portfolio', this.json('POST', body), { ia: true, timeout: 120000 }); }
+  async exportPortfolio(reviewId: string) { return this.request<Blob>(`/ia/rag/portfolio/${reviewId}/exporter`, { method: 'POST' }, { ia: true, timeout: 60000 }); }
   async getBlob(path: string, params: Record<string, string> = {}) { return this.request<Blob>(`${path}${queryString(params)}`); }
 
   // ── Config LLM runtime ────────────────────────────────────────────────────

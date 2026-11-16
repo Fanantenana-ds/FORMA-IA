@@ -140,6 +140,8 @@ export const VeilleMarcheView: React.FC<VeilleMarcheViewProps> = ({
   };
 
   const handleOpenDocGenerator = (market: VeilleMarche) => {
+    // Présélectionne l'opportunité dans le CRM via sessionStorage (pont lu par OpportunitesCrmView)
+    try { sessionStorage.setItem('formaia-active-market', market.id); } catch { /* stockage indisponible */ }
     if (onSelectMarketForDoc) onSelectMarketForDoc(market);
     if (onNavigateToSection) onNavigateToSection('opportunites_crm');
   };

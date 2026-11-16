@@ -138,7 +138,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {/* ── Header ── */}
       <div className={`relative border-b border-white/[0.07] ${collapsed ? 'px-2 py-4' : 'px-4 py-4'}`}>
         <div className={`flex items-center ${collapsed ? 'justify-center' : 'gap-3 items-center'}`}>
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-white shadow-lg shadow-black/30 ring-1 ring-white/30 p-1">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-white shadow-xl shadow-black/40 ring-2 ring-white/60 p-1.5">
             <img src="/logo_altiora_prest.png" alt="ALTIORA PREST" className="h-full w-full object-contain" />
           </div>
 

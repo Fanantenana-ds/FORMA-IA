@@ -1,5 +1,5 @@
 import React from 'react';
-import { Building2, Calendar, FileText, Sparkles, CheckCircle2, Trash2 } from 'lucide-react';
+import { Building2, CheckCircle2, Loader2, Trophy, Trash2 } from 'lucide-react';
 import { AcceptedMarket } from '../../types/tdr';
 
 interface AcceptedMarketsListProps {
@@ -9,6 +9,8 @@ interface AcceptedMarketsListProps {
   onOpenNewOpportunity?: () => void;
   onDeleteMarket?: (id: string, title: string) => void;
   canDeleteMarkets?: boolean;
+  onMarkWon?: (id: string) => Promise<void>;
+  markingWonId?: string;
 }
 
 export const AcceptedMarketsList: React.FC<AcceptedMarketsListProps> = ({
@@ -17,7 +19,9 @@ export const AcceptedMarketsList: React.FC<AcceptedMarketsListProps> = ({
   onSelectMarket,
   onOpenNewOpportunity,
   onDeleteMarket,
-  canDeleteMarkets = false
+  canDeleteMarkets = false,
+  onMarkWon,
+  markingWonId = ''
 }) => {
   return (
     <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-4">
@@ -58,12 +62,23 @@ export const AcceptedMarketsList: React.FC<AcceptedMarketsListProps> = ({
               }`}
             >
               <div className="flex items-center justify-between gap-2">
-                <span className="px-2 py-0.5 rounded text-[10px] font-extrabold bg-emerald-100 text-emerald-800 flex items-center gap-1">
-                  <CheckCircle2 size={12} />
+                <span className={`px-2 py-0.5 rounded text-[10px] font-extrabold flex items-center gap-1 ${m.statut === 'Gagnée' ? 'bg-yellow-100 text-yellow-800' : 'bg-emerald-100 text-emerald-800'}`}>
+                  {m.statut === 'Gagnée' ? <Trophy size={12}/> : <CheckCircle2 size={12} />}
                   {m.statut}
                 </span>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5">
                   <span className="text-[11px] font-mono text-slate-400">{m.date}</span>
+                  {onMarkWon && m.statut !== 'Gagnée' && (
+                    <button
+                      type="button"
+                      title="Marquer comme gagnée"
+                      disabled={markingWonId === m.id}
+                      onClick={(event) => { event.stopPropagation(); void onMarkWon(m.id); }}
+                      className="rounded-lg p-1.5 text-amber-500 hover:bg-yellow-50 hover:text-yellow-700 disabled:opacity-50"
+                    >
+                      {markingWonId === m.id ? <Loader2 size={14} className="animate-spin"/> : <Trophy size={14}/>}
+                    </button>
+                  )}
                   {canDeleteMarkets && onDeleteMarket && <button type="button" title="Supprimer cette opportunité acceptée" aria-label={`Supprimer ${m.titre}`} onClick={(event) => { event.stopPropagation(); onDeleteMarket(m.id, m.titre); }} className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600"><Trash2 size={14} /></button>}
                 </div>
               </div>

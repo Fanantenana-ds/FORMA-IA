@@ -81,7 +81,7 @@ import { AlertCircle, Archive, Award, Check, CheckCheck, Copy, Download, Eye, Fi
 import { apiService } from '../../services/api';
 import { MenuSection } from '../../types';
 
-type Tab = 'reviews' | 'history' | 'supports' | 'chat' | 'syllabus' | 'config_llm';
+type Tab = 'reviews' | 'history' | 'supports' | 'chat' | 'syllabus' | 'portfolio' | 'config_llm';
 const errorText = (error: unknown) => error instanceof Error ? error.message : 'Une erreur est survenue.';
 const panel = 'bg-white p-5 rounded-2xl border border-slate-200 shadow-xs';
 const supportStatusStyle: Record<string, string> = {
@@ -239,6 +239,13 @@ export const EspaceIAView: React.FC<{ readOnly?: boolean; trainerMode?: boolean;
   const [formationCode, setFormationCode] = useState('');
   const [module, setModule] = useState('');
   const [syllabusForm, setSyllabusForm] = useState({ formation_code: '', modules: '', format: 'présentiel' });
+  const [syllabusReviewId, setSyllabusReviewId] = useState('');
+  const [syllabusReviewStatus, setSyllabusReviewStatus] = useState<'pending_review' | 'approved' | ''>('');
+  const [syllabusExportBusy, setSyllabusExportBusy] = useState(false);
+  const [portfolioForm, setPortfolioForm] = useState({ domaine: '', reference_ao: '' });
+  const [portfolioReviewId, setPortfolioReviewId] = useState('');
+  const [portfolioReviewStatus, setPortfolioReviewStatus] = useState<'pending_review' | 'approved' | ''>('');
+  const [portfolioExportBusy, setPortfolioExportBusy] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [messages, setMessages] = useState<Array<{ role: 'user' | 'assistant'; text: string; sources?: any[]; suggestions?: string[] }>>([]);
   const [conversationId, setConversationId] = useState<string | null>(null);
@@ -826,10 +833,45 @@ export const EspaceIAView: React.FC<{ readOnly?: boolean; trainerMode?: boolean;
       });
       if (!modules.length) throw new Error('Ajoutez au moins un module avec sa durée.');
       const result = await apiService.generateSyllabus({ formation_code: syllabusForm.formation_code, modules, options: { format: syllabusForm.format } });
-      const reviewId = result?._review_id ?? result?.review_id ?? result?.data?._review_id;
+      const reviewId = String(result?._review_id ?? result?.review_id ?? result?.data?._review_id ?? '');
+      if (reviewId) { setSyllabusReviewId(reviewId); setSyllabusReviewStatus('pending_review'); }
       setNotice(`Syllabus généré et envoyé pour validation humaine${reviewId ? ` · ${reviewId}` : ''}. Consultez l'onglet Validation IA.`);
       setSyllabusForm(previous => ({ ...previous, modules: '' }));
     } catch (e) { setError(errorText(e)); } finally { setBusy(false); }
+  };
+
+  const downloadSyllabus = async () => {
+    if (!syllabusReviewId) return;
+    setSyllabusExportBusy(true); setError('');
+    try {
+      const blob = await apiService.exportSyllabus(syllabusReviewId);
+      const url = URL.createObjectURL(blob as Blob);
+      const a = document.createElement('a'); a.href = url; a.download = `syllabus-${syllabusReviewId}.docx`;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 3000);
+    } catch (e) { setError(errorText(e)); } finally { setSyllabusExportBusy(false); }
+  };
+
+  const submitGeneratePortfolio = async (event: React.FormEvent) => {
+    event.preventDefault(); setBusy(true); setError(''); setNotice('');
+    try {
+      const result = await apiService.generatePortfolio({ domaine: portfolioForm.domaine || undefined, reference_ao: portfolioForm.reference_ao || undefined });
+      const reviewId = String(result?._review_id ?? result?.review_id ?? result?.data?._review_id ?? '');
+      if (reviewId) { setPortfolioReviewId(reviewId); setPortfolioReviewStatus('pending_review'); }
+      setNotice(`Portfolio généré et envoyé pour validation humaine${reviewId ? ` · ${reviewId}` : ''}. Consultez l'onglet Validation IA.`);
+    } catch (e) { setError(errorText(e)); } finally { setBusy(false); }
+  };
+
+  const downloadPortfolio = async () => {
+    if (!portfolioReviewId) return;
+    setPortfolioExportBusy(true); setError('');
+    try {
+      const blob = await apiService.exportPortfolio(portfolioReviewId);
+      const url = URL.createObjectURL(blob as Blob);
+      const a = document.createElement('a'); a.href = url; a.download = `portfolio-${portfolioReviewId}.docx`;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 3000);
+    } catch (e) { setError(errorText(e)); } finally { setPortfolioExportBusy(false); }
   };
   const sendMessage = async (text = draft) => {
     const message = text.trim(); if (!message || busy) return;
@@ -882,7 +924,8 @@ export const EspaceIAView: React.FC<{ readOnly?: boolean; trainerMode?: boolean;
   const tabs: Array<{ id: Tab; label: string; icon: React.ReactNode }> = [
     ...(!readOnly ? [{ id: 'reviews' as const, label: 'Validation IA', icon: <ShieldCheck size={15} /> }] : []),
     ...(!readOnly ? [{ id: 'history' as const, label: 'Historique', icon: <FileText size={15} /> }] : []),
-    ...(!readOnly ? [{ id: 'syllabus' as const, label: 'Générer un syllabus', icon: <FileText size={15} /> }] : []),
+    ...(!readOnly ? [{ id: 'syllabus' as const, label: 'Syllabus', icon: <FileText size={15} /> }] : []),
+    ...(!readOnly ? [{ id: 'portfolio' as const, label: 'Portfolio', icon: <Award size={15} /> }] : []),
     { id: 'supports', label: 'Supports RAG', icon: <Paperclip size={15} /> },
     { id: 'chat', label: 'Chat documentaire', icon: <MessageCircle size={15} /> },
     ...(!readOnly ? [{ id: 'config_llm' as const, label: 'Config LLM', icon: <Zap size={15} /> }] : []),
@@ -976,16 +1019,169 @@ export const EspaceIAView: React.FC<{ readOnly?: boolean; trainerMode?: boolean;
       <section className={panel}>{selected ? <><div className="flex items-start justify-between gap-3"><div><h2 className="font-extrabold text-[#11162A]">{selected.summary ?? selected.agent_id ?? 'Décision'}</h2><p className="mt-1 text-xs text-slate-500">{selected.review_id} · {selected.reviewed_at ? new Date(selected.reviewed_at).toLocaleString('fr-FR') : ''}</p></div><button type="button" onClick={() => setSelected(null)} className="text-slate-500"><X size={16} /></button></div>{reviewLoading ? <p className="mt-4 text-xs text-slate-500">Chargement…</p> : <><div className="mt-4 rounded-xl bg-slate-50 p-3 text-xs text-slate-700"><strong>{selected.status === 'approved' ? 'Note de validation' : 'Motif du rejet'}</strong><p className="mt-1 whitespace-pre-wrap">{selected.status === 'approved' ? selected.reviewer_note || 'Aucune note' : selected.rejection_reason || 'Aucun motif'}</p>{selected.manual_edits_count > 0 && <p className="mt-2">Modifications manuelles avant décision : {selected.manual_edits_count}</p>}</div><div className="mt-4"><ReviewContent value={selected} /></div>{Array.isArray(selected.revision_history) && selected.revision_history.length > 0 && <details className="mt-4 rounded-xl border border-slate-200 p-3"><summary className="cursor-pointer text-xs font-bold text-[#11162A]">Versions avant validation ({selected.revision_history.length})</summary><div className="mt-3 space-y-3">{selected.revision_history.map((revision: any, index: number) => <div key={index} className="rounded-lg bg-slate-50 p-3"><p className="mb-2 text-xs font-bold text-slate-600">Version {index + 1} · {revision.updated_at ? new Date(revision.updated_at).toLocaleString('fr-FR') : 'Date inconnue'}</p><ReviewContent value={{ data: revision.data }} /></div>)}</div></details>}</>}</> : <p className="text-xs text-slate-500">Sélectionnez une décision pour revoir son contenu et sa note.</p>}</section>
     </div>}
 
-    {tab === 'syllabus' && <div className="grid gap-4 lg:grid-cols-[minmax(280px,0.85fr)_minmax(0,1.15fr)]">
-      <form onSubmit={generateSyllabus} className={`${panel} space-y-4`}>
-        <div><h2 className="font-extrabold text-[#11162A]">Générer un syllabus avec le RAG</h2><p className="mt-1 text-xs text-slate-500">Le syllabus s'appuie sur les supports indexés et passe en validation humaine avant utilisation.</p></div>
-        <label className="block text-[11px] font-bold uppercase text-slate-600">Formation du catalogue *<select required value={syllabusForm.formation_code} onChange={e => setSyllabusForm(previous => ({ ...previous, formation_code: e.target.value }))} className="mt-1 w-full rounded-xl border border-slate-300 bg-slate-50 px-3 py-2.5 text-sm font-normal normal-case text-slate-800"><option value="">Sélectionner une formation</option>{formations.map((formation: any) => <option key={formation.code ?? formation.formation_code} value={formation.code ?? formation.formation_code}>{formation.code ?? formation.formation_code} — {formation.titre ?? formation.nom}</option>)}</select></label>
-        <label className="block text-[11px] font-bold uppercase text-slate-600">Modules et durées *<textarea required value={syllabusForm.modules} onChange={e => setSyllabusForm(previous => ({ ...previous, modules: e.target.value }))} rows={7} placeholder={'Introduction | 1 jour\nAtelier pratique | 3h\nÉvaluation | 2h'} className="mt-1 w-full rounded-xl border border-slate-300 bg-slate-50 p-3 text-sm font-normal normal-case text-slate-800"/><span className="mt-1 block text-[10px] font-normal normal-case text-slate-500">Une ligne par module au format « titre | durée ».</span></label>
-        <label className="block text-[11px] font-bold uppercase text-slate-600">Format<select value={syllabusForm.format} onChange={e => setSyllabusForm(previous => ({ ...previous, format: e.target.value }))} className="mt-1 w-full rounded-xl border border-slate-300 bg-slate-50 px-3 py-2.5 text-sm font-normal normal-case"><option value="présentiel">Présentiel</option><option value="distanciel">Distanciel</option><option value="hybride">Hybride</option></select></label>
-        <button disabled={busy || !syllabusForm.formation_code} className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#0B1F4D] px-4 py-2.5 text-xs font-bold text-white disabled:opacity-50">{busy ? <Loader2 size={15} className="animate-spin"/> : <FileText size={15}/>}Générer et soumettre à validation</button>
-      </form>
-      <section className={`${panel} space-y-4`}><h2 className="font-extrabold text-[#11162A]">Documents de formation</h2><p className="text-xs leading-relaxed text-slate-600">Les syllabus générés apparaissent dans <strong>Validation IA</strong>. Les supports nécessaires au RAG se déposent dans l'onglet <strong>Supports RAG</strong>, puis sont indexés pour enrichir les prochains syllabus.</p><button type="button" onClick={() => setTab('supports')} className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-xs font-bold text-[#11162A]">Ouvrir les supports documentaires</button>{formations.length === 0 && <p className="rounded-lg bg-amber-50 p-3 text-[11px] text-amber-800">Le catalogue de formations n'est pas disponible. Vérifiez le backend RAG avant de générer le syllabus.</p>}</section>
-    </div>}
+    {tab === 'syllabus' && (
+      <div className="space-y-5">
+        <div className="grid gap-5 lg:grid-cols-[minmax(320px,1fr)_minmax(0,1.4fr)]">
+          <form onSubmit={generateSyllabus} className={`${panel} space-y-5`}>
+            <div className="pb-4 border-b border-slate-100">
+              <div className="flex items-center gap-2 mb-1"><FileText size={16} className="text-[#0B1F4D]" /><h2 className="font-extrabold text-[#11162A]">Nouveau syllabus</h2></div>
+              <p className="text-xs text-slate-500">Document de planification pédagogique — décrit les modules, durées et objectifs d'une formation à venir.</p>
+            </div>
+            <div className="space-y-1">
+              <label className="block text-[11px] font-bold uppercase tracking-wide text-slate-600">Formation *</label>
+              <select required value={syllabusForm.formation_code} onChange={e => setSyllabusForm(previous => ({ ...previous, formation_code: e.target.value }))} className="w-full rounded-xl border border-slate-300 bg-slate-50 px-3 py-2.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#0B1F4D]">
+                <option value="">Sélectionner une formation du catalogue</option>
+                {formations.map((f: any) => <option key={f.code ?? f.formation_code} value={f.code ?? f.formation_code}>{f.code ?? f.formation_code} — {f.titre ?? f.nom}</option>)}
+              </select>
+            </div>
+            <div className="space-y-1">
+              <label className="block text-[11px] font-bold uppercase tracking-wide text-slate-600">Modules et durées *</label>
+              <textarea required value={syllabusForm.modules} onChange={e => setSyllabusForm(previous => ({ ...previous, modules: e.target.value }))} rows={6} placeholder={'Introduction | 1 jour\nAtelier pratique | 3h\nÉvaluation | 2h'} className="w-full rounded-xl border border-slate-300 bg-slate-50 p-3 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#0B1F4D]"/>
+              <p className="text-[10px] text-slate-400">Format par ligne : Titre du module | Durée</p>
+            </div>
+            <div className="grid grid-cols-1 gap-3">
+              <div className="space-y-1">
+                <label className="block text-[11px] font-bold uppercase tracking-wide text-slate-600">Modalité</label>
+                <select value={syllabusForm.format} onChange={e => setSyllabusForm(previous => ({ ...previous, format: e.target.value }))} className="w-full rounded-xl border border-slate-300 bg-slate-50 px-3 py-2.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#0B1F4D]">
+                  <option value="présentiel">Présentiel</option><option value="distanciel">Distanciel</option><option value="hybride">Hybride</option>
+                </select>
+              </div>
+            </div>
+            <button disabled={busy || !syllabusForm.formation_code} className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#0B1F4D] px-4 py-3 text-xs font-bold text-white hover:bg-[#06132F] disabled:opacity-50 transition-colors">
+              {busy ? <><Loader2 size={14} className="animate-spin"/>Génération en cours…</> : <><FileText size={14}/>Générer le syllabus</>}
+            </button>
+            {formations.length === 0 && <p className="rounded-xl bg-amber-50 border border-amber-200 p-3 text-[11px] text-amber-800">Catalogue de formations indisponible. Vérifiez la configuration.</p>}
+          </form>
+
+          <div className="space-y-4">
+            {syllabusReviewStatus === '' && (
+              <div className={`${panel} flex flex-col items-center justify-center py-12 text-center gap-3`}>
+                <div className="w-12 h-12 rounded-2xl bg-slate-100 flex items-center justify-center"><FileText size={22} className="text-slate-400" /></div>
+                <div>
+                  <p className="text-sm font-bold text-slate-700">Aucun syllabus en cours</p>
+                  <p className="text-xs text-slate-400 mt-1">Remplissez le formulaire et lancez la génération.</p>
+                </div>
+                <button type="button" onClick={() => setTab('supports')} className="mt-2 text-xs font-semibold text-[#0B1F4D] hover:underline">Gérer les supports documentaires →</button>
+              </div>
+            )}
+            {syllabusReviewStatus === 'pending_review' && syllabusReviewId && (
+              <div className={`${panel} space-y-4`}>
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center shrink-0"><Loader2 size={18} className="animate-spin text-amber-700" /></div>
+                  <div>
+                    <p className="font-extrabold text-sm text-[#11162A]">Syllabus soumis à validation</p>
+                    <p className="text-xs text-slate-500 mt-0.5">En attente de révision et approbation par la direction.</p>
+                  </div>
+                </div>
+                <div className="bg-slate-50 rounded-xl px-4 py-3 flex items-center justify-between gap-2">
+                  <span className="text-[11px] font-mono text-slate-500 truncate">{syllabusReviewId}</span>
+                  <button type="button" onClick={() => setTab('reviews')} className="shrink-0 inline-flex items-center gap-1.5 rounded-lg bg-[#0B1F4D] px-3 py-1.5 text-[10px] font-bold text-white">Valider dans Espace IA</button>
+                </div>
+              </div>
+            )}
+            {syllabusReviewStatus === 'approved' && syllabusReviewId && (
+              <div className={`${panel} space-y-4`}>
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center shrink-0"><CheckCheck size={18} className="text-emerald-700" /></div>
+                  <div>
+                    <p className="font-extrabold text-sm text-[#11162A]">Syllabus approuvé</p>
+                    <p className="text-xs text-slate-500 mt-0.5">Document prêt à être téléchargé et distribué.</p>
+                  </div>
+                </div>
+                <button type="button" disabled={syllabusExportBusy} onClick={() => void downloadSyllabus()} className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 px-4 py-3 text-xs font-bold text-white disabled:opacity-50 transition-colors">
+                  {syllabusExportBusy ? <><Loader2 size={14} className="animate-spin"/>Export en cours…</> : <><Download size={14}/>Télécharger le syllabus Word</>}
+                </button>
+                <button type="button" onClick={() => { setSyllabusReviewId(''); setSyllabusReviewStatus(''); }} className="w-full text-center text-xs text-slate-400 hover:text-slate-600">Créer un nouveau syllabus</button>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    )}
+
+    {tab === 'portfolio' && (
+      <div className="space-y-5">
+        <div className="grid gap-5 lg:grid-cols-[minmax(320px,1fr)_minmax(0,1.4fr)]">
+          <form onSubmit={submitGeneratePortfolio} className={`${panel} space-y-5`}>
+            <div className="pb-4 border-b border-slate-100">
+              <div className="flex items-center gap-2 mb-1"><Award size={16} className="text-[#0B1F4D]" /><h2 className="font-extrabold text-[#11162A]">Générer le portfolio</h2></div>
+              <p className="text-xs text-slate-500">Document de référence pour les appels d'offres — compile toutes vos formations, réalisations et capacités en un seul document Word professionnel.</p>
+            </div>
+            <div className="space-y-1">
+              <label className="block text-[11px] font-bold uppercase tracking-wide text-slate-600">Domaine <span className="font-normal normal-case text-slate-400">(facultatif)</span></label>
+              <input type="text" maxLength={80} value={portfolioForm.domaine} onChange={e => setPortfolioForm(previous => ({ ...previous, domaine: e.target.value }))} placeholder="ex. Management, Informatique, RH…" className="w-full rounded-xl border border-slate-300 bg-slate-50 px-3 py-2.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#0B1F4D]" />
+              <p className="text-[10px] text-slate-400">Laissez vide pour toutes les formations du catalogue.</p>
+            </div>
+            <div className="space-y-1">
+              <label className="block text-[11px] font-bold uppercase tracking-wide text-slate-600">Réf. appel d'offres <span className="font-normal normal-case text-slate-400">(facultatif)</span></label>
+              <input type="text" maxLength={80} value={portfolioForm.reference_ao} onChange={e => setPortfolioForm(previous => ({ ...previous, reference_ao: e.target.value }))} placeholder="ex. AO-2026-MFPTLS-001" className="w-full rounded-xl border border-slate-300 bg-slate-50 px-3 py-2.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#0B1F4D]" />
+              <p className="text-[10px] text-slate-400">Incluse dans l'en-tête du document.</p>
+            </div>
+            <button disabled={busy} className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#0B1F4D] px-4 py-3 text-xs font-bold text-white hover:bg-[#06132F] disabled:opacity-50 transition-colors">
+              {busy ? <><Loader2 size={14} className="animate-spin"/>Génération en cours…</> : <><Award size={14}/>Générer le portfolio</>}
+            </button>
+          </form>
+
+          <div className="space-y-4">
+            {portfolioReviewStatus === '' && !portfolioReviewId && (
+              <div className={`${panel} space-y-4`}>
+                <div className="flex flex-col items-center justify-center py-8 text-center gap-3">
+                  <div className="w-12 h-12 rounded-2xl bg-slate-100 flex items-center justify-center"><Award size={22} className="text-slate-400" /></div>
+                  <div>
+                    <p className="text-sm font-bold text-slate-700">Aucun portfolio généré</p>
+                    <p className="text-xs text-slate-400 mt-1">Lancez la génération pour créer votre document de référence.</p>
+                  </div>
+                </div>
+                <div className="border-t border-slate-100 pt-4 grid grid-cols-2 gap-3">
+                  {[
+                    { icon: '🏢', label: 'Présentation', desc: 'Organisme & missions' },
+                    { icon: '📊', label: 'Synthèse chiffrée', desc: 'Formations, clients, participants' },
+                    { icon: '📋', label: 'Fiches formation', desc: 'Catalogue détaillé' },
+                    { icon: '✅', label: 'Réalisations', desc: 'Historique par client' },
+                  ].map(item => (
+                    <div key={item.label} className="rounded-xl bg-slate-50 border border-slate-100 px-3 py-2.5">
+                      <div className="text-base mb-1">{item.icon}</div>
+                      <p className="text-xs font-bold text-slate-800">{item.label}</p>
+                      <p className="text-[10px] text-slate-500">{item.desc}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {portfolioReviewStatus === 'pending_review' && portfolioReviewId && (
+              <div className={`${panel} space-y-4`}>
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center shrink-0"><Loader2 size={18} className="animate-spin text-amber-700" /></div>
+                  <div>
+                    <p className="font-extrabold text-sm text-[#11162A]">Portfolio soumis à validation</p>
+                    <p className="text-xs text-slate-500 mt-0.5">En attente de révision et approbation par la direction.</p>
+                  </div>
+                </div>
+                <div className="bg-slate-50 rounded-xl px-4 py-3 flex items-center justify-between gap-2">
+                  <span className="text-[11px] font-mono text-slate-500 truncate">{portfolioReviewId}</span>
+                  <button type="button" onClick={() => setTab('reviews')} className="shrink-0 inline-flex items-center gap-1.5 rounded-lg bg-[#0B1F4D] px-3 py-1.5 text-[10px] font-bold text-white">Valider dans Espace IA</button>
+                </div>
+              </div>
+            )}
+            {portfolioReviewStatus === 'approved' && portfolioReviewId && (
+              <div className={`${panel} space-y-4`}>
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center shrink-0"><CheckCheck size={18} className="text-emerald-700" /></div>
+                  <div>
+                    <p className="font-extrabold text-sm text-[#11162A]">Portfolio approuvé</p>
+                    <p className="text-xs text-slate-500 mt-0.5">Document prêt à joindre à votre offre commerciale.</p>
+                  </div>
+                </div>
+                <button type="button" disabled={portfolioExportBusy} onClick={() => void downloadPortfolio()} className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 px-4 py-3 text-xs font-bold text-white disabled:opacity-50 transition-colors">
+                  {portfolioExportBusy ? <><Loader2 size={14} className="animate-spin"/>Export en cours…</> : <><Download size={14}/>Télécharger le portfolio Word</>}
+                </button>
+                <button type="button" onClick={() => { setPortfolioReviewId(''); setPortfolioReviewStatus(''); }} className="w-full text-center text-xs text-slate-400 hover:text-slate-600">Générer un nouveau portfolio</button>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    )}
 
     {tab === 'supports' && <div className="grid lg:grid-cols-[minmax(280px,0.8fr)_minmax(0,1.2fr)] gap-4">
       {(!readOnly || trainerMode) && <form onSubmit={upload} className={`${panel} space-y-4`}><div><h2 className="font-extrabold text-[#11162A]">Ajouter un support de formation</h2><p className="mt-1 text-[11px] leading-relaxed text-slate-500">{trainerMode ? 'Choisissez une session qui vous est affectée ; le document ne sera visible que dans celle-ci.' : 'Chaque support est classé par session puis par module pour éviter de mélanger les contenus.'}</p></div><div><label className="block font-bold text-slate-600 text-[11px] uppercase mb-1">Session de formation *</label><select required value={sessionId} onChange={e => { const id = e.target.value; setSessionId(id); setFormationCode(sessions.find((item: any) => item.id === id)?.formation_code ?? ''); setModule(''); }} className="w-full px-3 py-2.5 border border-slate-300 bg-slate-50 rounded-xl text-sm"><option value="">Sélectionner une session</option>{sessions.map((item: any) => <option key={item.id} value={item.id}>{item.titre}{item.formation_code ? ` — ${item.formation_code}` : ''}</option>)}</select></div><div><label className="block font-bold text-slate-600 text-[11px] uppercase mb-1">Séance / module pédagogique *</label><input required list="rag-session-modules" value={module} onChange={e => setModule(e.target.value)} placeholder="Choisir une séance ou saisir un module" className="w-full px-3 py-2.5 border border-slate-300 bg-slate-50 rounded-xl text-sm" /><datalist id="rag-session-modules">{(sessions.find((item: any) => item.id === sessionId)?.modules ?? []).map((name: string) => <option key={name} value={name} />)}</datalist><p className="mt-1 text-[10px] text-slate-500">Les thèmes des séances planifiées et les modules déjà classés sont proposés. Vous pouvez aussi saisir un autre module.</p></div><label className="flex items-center gap-3 border border-dashed border-slate-300 rounded-xl p-4 cursor-pointer hover:border-[#0B1F4D]"><Upload size={18} className="text-[#0B1F4D]" /><span className="text-xs text-slate-600">{file?.name ?? 'Choisir un PDF, DOCX, PPTX, XLSX, TXT ou MD'}</span><input type="file" accept=".pdf,.docx,.pptx,.xlsx,.txt,.md" className="hidden" onChange={e => setFile(e.target.files?.[0] ?? null)} /></label><button disabled={busy || !file || !sessionId || !module.trim()} className="w-full py-2.5 bg-[#0B1F4D] text-white rounded-xl text-xs font-bold flex justify-center gap-2 items-center">{busy ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} />}Indexer dans cette session</button></form>}

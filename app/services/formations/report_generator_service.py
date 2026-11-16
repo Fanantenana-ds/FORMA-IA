@@ -87,45 +87,76 @@ class ReportGeneratorService:
             else "\n".join(f"- {r}" for r in cfg.get("regles", [])),
         ])
 
+    @staticmethod
+    def _val(s: dict[str, Any], key: str, fallback: str = "Non renseigné") -> str:
+        """Retourne la valeur ou le fallback — jamais 'N/A' brut dans le prompt."""
+        v = s.get(key)
+        if v is None or v == "" or v == {} or v == []:
+            return fallback
+        if isinstance(v, dict):
+            # ex. niveaux_avant = {"moyenne": 42}
+            parts = [f"{k}: {val}" for k, val in v.items() if val is not None]
+            return ", ".join(parts) if parts else fallback
+        return str(v)
+
     def _build_user_prompt(
         self, session_data: dict[str, Any], contexte_rag: str = ""
     ) -> str:
         s = session_data
+        v = self._val  # raccourci
+        # Satisfaction : si non mesurée, on l'indique clairement au LLM
+        nb_sat = int(s.get("nb_reponses_satisfaction") or 0)
+        sat_intro = (
+            f"({nb_sat} réponse(s) reçue(s))"
+            if nb_sat > 0
+            else "(aucune réponse reçue — section à omettre ou signaler comme non disponible)"
+        )
+        # Niveaux : si pas de scores, indiquer au LLM
+        nb_scores = int(s.get("nb_scores_complets") or len(s.get("resultats_individuels") or []))
+        niveaux_intro = (
+            f"({nb_scores} participant(s) avec scores initiaux et finaux)"
+            if nb_scores > 0
+            else "(aucun score enregistré — section à omettre ou signaler comme non disponible)"
+        )
         lines = [
+            "INSTRUCTION : Si une donnée est absente ou marquée 'Non renseigné', rédige une phrase adaptée",
+            "dans le rapport (ex. « Les évaluations de satisfaction n'ont pas été collectées lors de cette session. »).",
+            "Ne répète jamais littéralement 'N/A', 'Non renseigné' ou 'Non mesurée' dans le texte final.",
+            "",
             "Génère le rapport final pour la session suivante :",
             "",
             "=== SESSION ===",
-            f"- Titre : {s.get('titre', 'N/A')}",
-            f"- Domaine : {s.get('domaine', 'N/A')}",
-            f"- Niveau cible : {s.get('niveau_cible', 'Non renseigné')}",
-            f"- Date début : {s.get('date_debut', 'N/A')}",
-            f"- Date fin : {s.get('date_fin', 'N/A')}",
-            f"- Lieu : {s.get('lieu', 'N/A')}",
-            f"- Formateur : {s.get('formateur', 'N/A')}",
-            f"- Durée (jours) : {s.get('duree_jours', 2)}",
-            f"- Public cible : {s.get('public_cible', 'N/A')}",
+            f"- Titre : {v(s, 'titre', 'Formation professionnelle')}",
+            f"- Domaine : {v(s, 'domaine', 'Formation professionnelle')}",
+            f"- Niveau cible : {v(s, 'niveau_cible', 'Tous niveaux')}",
+            f"- Date début : {v(s, 'date_debut', 'Date non communiquée')}",
+            f"- Date fin : {v(s, 'date_fin', 'Date non communiquée')}",
+            f"- Lieu : {v(s, 'lieu', 'Lieu non renseigné')}",
+            f"- Formateur : {v(s, 'formateur', 'Non renseigné')}",
+            f"- Durée (jours) : {s.get('duree_jours') or 'Non calculée'}",
+            f"- Public cible : {v(s, 'public_cible', 'Non précisé')}",
             "",
             "=== STATISTIQUES PARTICIPANTS ===",
             f"- Total inscrits : {s.get('total_inscrits', 0)}",
             f"- Total présents : {s.get('total_presents', 0)}",
-            f"- Taux de présence moyen : {s.get('taux_presence', 'N/A')}",
-            f"- Entreprises : {', '.join(s.get('entreprises', [])) or 'N/A'}",
+            f"- Taux de présence moyen : {v(s, 'taux_presence', 'Non calculé (pointages manquants)')}",
+            f"- Entreprises : {', '.join(s.get('entreprises') or []) or 'Non renseignées'}",
             "",
-            "=== NIVEAUX AVANT / APRÈS ===",
-            f"- Avant : {s.get('niveaux_avant', 'N/A')}",
-            f"- Après : {s.get('niveaux_apres', 'N/A')}",
-            f"- Progression : {s.get('progression', 'N/A')}",
+            f"=== NIVEAUX AVANT / APRÈS {niveaux_intro} ===",
+            f"- Avant : {v(s, 'niveaux_avant', 'Données non disponibles')}",
+            f"- Après : {v(s, 'niveaux_apres', 'Données non disponibles')}",
+            f"- Progression : {v(s, 'progression', 'Non calculée')}",
             "",
-            "=== SATISFACTION ===",
-            f"- Note globale : {s.get('note_globale', 'N/A')}",
-            f"- Note formateur : {s.get('note_formateur', 'N/A')}",
-            f"- Note contenu : {s.get('note_contenu', 'N/A')}",
-            f"- Note supports : {s.get('note_supports', 'N/A')}",
-            f"- Note organisation : {s.get('note_organisation', 'N/A')}",
-            f"- Points forts : {', '.join(s.get('points_forts', [])) or 'N/A'}",
-            f"- Axes d'amélioration : {', '.join(s.get('axes_amelioration', [])) or 'N/A'}",
-            f"- Taux recommandation : {s.get('taux_recommandation', 'N/A')}",
-            f"- Nombre de réponses de satisfaction : {s.get('nb_reponses_satisfaction', 0)}",
+            f"=== SATISFACTION {sat_intro} ===",
+            f"- Note globale : {v(s, 'note_globale', 'Non mesurée')}",
+            f"- Note formateur : {v(s, 'note_formateur', 'Non mesurée')}",
+            f"- Note contenu : {v(s, 'note_contenu', 'Non mesurée')}",
+            f"- Note supports : {v(s, 'note_supports', 'Non mesurée')}",
+            f"- Note organisation : {v(s, 'note_organisation', 'Non mesurée')}",
+            f"- Points forts : {', '.join(s.get('points_forts') or []) or 'Non renseignés'}",
+            f"- Axes d'amélioration : {', '.join(s.get('axes_amelioration') or []) or 'Non renseignés'}",
+            f"- Taux recommandation : {v(s, 'taux_recommandation', 'Non calculé')}",
+            f"- Nombre de réponses : {nb_sat}",
         ]
 
         if s.get("objectifs"):

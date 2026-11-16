@@ -77,7 +77,7 @@ function renderMarkdown(rawText: string): string {
     .replace(/^(.+)/, '<p class="text-[14px] leading-[1.75] text-slate-800">$1')
     + '</p>';
 }
-import { AlertCircle, Archive, Award, Check, CheckCheck, Copy, Download, Eye, FileText, Loader2, MessageCircle, Paperclip, Pencil, PlusCircle, Send, ShieldCheck, ThumbsDown, ThumbsUp, Trash2, Upload, X, Zap } from 'lucide-react';
+import { AlertCircle, Archive, Award, Check, CheckCheck, Copy, Download, Eye, FileText, Loader2, MessageCircle, Paperclip, Pencil, PlusCircle, Send, ShieldCheck, Sparkles, ThumbsDown, ThumbsUp, Trash2, Upload, X, Zap } from 'lucide-react';
 import { apiService } from '../../services/api';
 import { MenuSection } from '../../types';
 
@@ -203,6 +203,145 @@ const ReviewContent: React.FC<{ value: any }> = ({ value }) => {
     return String(node);
   };
   return <div className="max-h-[560px] space-y-3 overflow-auto rounded-2xl bg-slate-50 p-3">{renderNode(content)}</div>;
+};
+
+const documentCorrectionAgents = ['agent_m2_tdr', 'agent_m3_technique', 'agent_m3_financiere'];
+
+const HitlActionBar: React.FC<{
+  selected: any;
+  busy: boolean;
+  reviewLoading: boolean;
+  documentEdit: any;
+  reviewNote: string;
+  onNoteChange: (v: string) => void;
+  onApprove: () => void;
+  onReject: () => void;
+  onCorrectDocument: () => void;
+  onRequestCorrection: (feedback: string) => Promise<void>;
+  onDownloadReport?: () => void;
+  onDownloadReportDocx?: () => void;
+  reportDownloadBusy?: boolean;
+  reportDocxDownloadBusy?: boolean;
+}> = ({ selected, busy, reviewLoading, documentEdit, reviewNote, onNoteChange, onApprove, onReject, onCorrectDocument, onRequestCorrection, onDownloadReport, onDownloadReportDocx, reportDownloadBusy, reportDocxDownloadBusy }) => {
+  const [correctionMode, setCorrectionMode] = React.useState(false);
+  const [correctionText, setCorrectionText] = React.useState('');
+  const [correctionBusy, setCorrectionBusy] = React.useState(false);
+  const agent = String(selected?.agent_id ?? '');
+  const isDocAgent = documentCorrectionAgents.includes(agent);
+  // Correction IA disponible pour tous les agents sauf attestations (correction par participant)
+  const isGenericCorrectable = !documentCorrectionAgents.includes(agent) && agent !== 'agent_5_attestations';
+  const isPending = selected?.status === 'pending_review' || !selected?.status;
+
+  const handleGenericCorrection = async () => {
+    if (correctionText.trim().length < 5) return;
+    setCorrectionBusy(true);
+    try { await onRequestCorrection(correctionText.trim()); setCorrectionMode(false); setCorrectionText(''); }
+    finally { setCorrectionBusy(false); }
+  };
+
+  return (
+    <div className="mt-4 space-y-3 rounded-2xl border border-slate-200 bg-slate-50/60 p-4">
+      {/* Zone principale note/motif */}
+      {!correctionMode && (
+        <div className="space-y-1">
+          <textarea
+            disabled={documentEdit !== null || busy}
+            value={reviewNote}
+            onChange={e => onNoteChange(e.target.value)}
+            placeholder={isDocAgent ? "Décrivez la correction souhaitée (ex: « Reformuler les objectifs en termes plus concrets »)…" : "Note de validation ou motif de rejet (facultatif)…"}
+            rows={2}
+            className="w-full resize-none rounded-xl border border-slate-300 bg-white p-3 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#0B1F4D] disabled:opacity-60"
+          />
+        </div>
+      )}
+
+      {/* Zone de correction IA universelle */}
+      {correctionMode && (
+        <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-3 space-y-2">
+          <div className="flex items-center gap-2 text-xs font-extrabold text-indigo-800">
+            <Sparkles size={13}/>
+            Correction demandée à l'IA
+          </div>
+          <p className="text-[11px] text-indigo-700 leading-relaxed">
+            Décrivez précisément ce qui doit être modifié. L'IA va régénérer une nouvelle version complète en tenant compte de votre demande.
+          </p>
+          <textarea
+            autoFocus
+            disabled={correctionBusy}
+            value={correctionText}
+            onChange={e => setCorrectionText(e.target.value)}
+            placeholder="Ex: « Les recommandations sont trop vagues — rends-les plus concrètes avec des actions spécifiques. »&#10;Ex: « Ajouter une section sur les points d'amélioration de la formation. »"
+            rows={4}
+            className="w-full resize-y rounded-lg border border-indigo-300 bg-white p-3 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-60"
+          />
+          <div className="flex justify-end gap-2">
+            <button type="button" disabled={correctionBusy} onClick={() => { setCorrectionMode(false); setCorrectionText(''); }} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600">
+              Annuler
+            </button>
+            <button
+              type="button"
+              disabled={correctionBusy || correctionText.trim().length < 5}
+              onClick={() => void handleGenericCorrection()}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-700 px-4 py-2 text-xs font-extrabold text-white disabled:opacity-50"
+            >
+              {correctionBusy ? <><Loader2 size={13} className="animate-spin"/>Régénération…</> : <><Sparkles size={13}/>Envoyer la correction à l'IA</>}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Boutons d'action */}
+      {!correctionMode && (
+        <div className="space-y-3">
+          {/* Téléchargements rapport (si rapport approuvé ou pending) */}
+          {agent === 'agent_6_report' && (onDownloadReport || onDownloadReportDocx) && (
+            <div className="flex flex-wrap gap-2 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2.5">
+              <span className="flex items-center gap-1 text-[11px] font-bold text-emerald-800"><Download size={12}/>Télécharger le rapport</span>
+              {onDownloadReport && (
+                <button type="button" disabled={reportDownloadBusy || reportDocxDownloadBusy} onClick={onDownloadReport}
+                  className="inline-flex items-center gap-1 rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-[11px] font-bold text-emerald-800 hover:bg-emerald-100 disabled:opacity-50">
+                  {reportDownloadBusy ? <Loader2 size={12} className="animate-spin"/> : <Download size={12}/>}PDF
+                </button>
+              )}
+              {onDownloadReportDocx && (
+                <button type="button" disabled={reportDocxDownloadBusy || reportDownloadBusy} onClick={onDownloadReportDocx}
+                  className="inline-flex items-center gap-1 rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-[11px] font-bold text-emerald-800 hover:bg-emerald-100 disabled:opacity-50">
+                  {reportDocxDownloadBusy ? <Loader2 size={12} className="animate-spin"/> : <Download size={12}/>}Word
+                </button>
+              )}
+            </div>
+          )}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap gap-2">
+              <button disabled={busy || documentEdit !== null} onClick={onReject}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-700 hover:bg-red-100 disabled:opacity-50">
+                <X size={13}/>Rejeter
+              </button>
+              {/* Correction doc (TDR/offres) */}
+              {isDocAgent && !documentEdit && (
+                <button disabled={busy || reviewLoading || documentEdit !== null} onClick={onCorrectDocument}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-800 hover:bg-blue-100 disabled:opacity-50">
+                  {busy ? <><Loader2 size={13} className="animate-spin"/>Correction…</> : <><Sparkles size={13}/>Corriger (TDR/Offre)</>}
+                </button>
+              )}
+              {/* Correction générique IA — tous les agents sauf doc-agents et attestations */}
+              {isPending && isGenericCorrectable && !documentEdit && (
+                <button type="button" disabled={busy} onClick={() => setCorrectionMode(true)}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-extrabold text-indigo-700 hover:bg-indigo-100 disabled:opacity-50">
+                  <Sparkles size={13}/>Demander une correction à l'IA
+                </button>
+              )}
+            </div>
+            <button disabled={busy || documentEdit !== null} onClick={onApprove}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-[#0B1F4D] px-5 py-2.5 text-xs font-extrabold text-white shadow-sm hover:bg-slate-800 disabled:opacity-50">
+              {busy ? <Loader2 size={14} className="animate-spin"/> : selected?.agent_id === 'agent_5_attestations' ? <CheckCheck size={14}/> : <Check size={14}/>}
+              {selected?.agent_id === 'agent_5_attestations' ? 'Approuver toutes' : 'Approuver'}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 };
 
 export const EspaceIAView: React.FC<{ readOnly?: boolean; trainerMode?: boolean; onNavigateToSection?: (section: MenuSection) => void; dashboardStats?: Record<string, unknown> | null }> = ({ readOnly = false, trainerMode = false, onNavigateToSection, dashboardStats }) => {
@@ -1008,7 +1147,35 @@ export const EspaceIAView: React.FC<{ readOnly?: boolean; trainerMode?: boolean;
   {/* Conclusion */}
   {selected.data?.conclusion && <div className="rounded-xl bg-emerald-50/60 border border-emerald-100 p-3"><p className="text-[10px] font-bold uppercase text-emerald-700 mb-1">Conclusion</p><p className="text-xs leading-relaxed text-slate-800">{selected.data.conclusion}</p></div>}
   {selected.status !== 'approved' && <div className="rounded-xl border border-blue-100 bg-blue-50/70 p-3 text-[11px] leading-relaxed text-blue-900">Vérifiez le contenu du rapport. Après approbation, le PDF ALTIORA sera disponible au téléchargement.</div>}
-</div> : <div className="mt-4"><ReviewContent value={selected} /></div>}<div className="mt-3 space-y-1"><textarea disabled={documentEdit !== null || busy} value={reviewNote} onChange={e => setReviewNote(e.target.value)} placeholder={['agent_m2_tdr', 'agent_m3_technique', 'agent_m3_financiere'].includes(String(selected.agent_id)) ? "Décrivez la correction souhaitée (ex: « Reformuler les objectifs spécifiques en termes plus concrets » ou « Ajouter une section sur les prérequis »)…" : "Note de validation ou motif de rejet…"} rows={3} className="w-full p-3 bg-white border border-slate-300 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#0B1F4D] disabled:opacity-60 resize-none" />{['agent_m2_tdr', 'agent_m3_technique', 'agent_m3_financiere'].includes(String(selected.agent_id)) && !documentEdit && <p className="text-[10px] text-slate-400">Décrivez précisément ce qui doit changer. L'IA génère une nouvelle version complète du document.</p>}</div><div className="flex justify-end gap-2 mt-3"><button disabled={busy || documentEdit !== null} onClick={() => reviewAction(false)} className="px-4 py-2 bg-red-50 text-red-700 rounded-lg text-xs font-bold">Rejeter</button>{['agent_m2_tdr', 'agent_m3_technique', 'agent_m3_financiere'].includes(String(selected.agent_id)) && <button disabled={busy || reviewLoading || documentEdit !== null} onClick={() => void correctDocument()} className="px-4 py-2 bg-blue-50 text-blue-800 rounded-lg text-xs font-bold flex items-center gap-1.5">{busy ? <><Loader2 size={13} className="animate-spin"/>Correction en cours…</> : 'Demander une correction à l\'IA'}</button>}<button disabled={busy || documentEdit !== null} onClick={() => reviewAction(true)} className="px-4 py-2 bg-[#0B1F4D] text-white rounded-lg text-xs font-bold flex gap-1.5 items-center">{busy ? <Loader2 size={14} className="animate-spin" /> : selected.agent_id === 'agent_5_attestations' ? <CheckCheck size={14}/> : <Check size={14} />}{selected.agent_id === 'agent_5_attestations' ? 'Approuver toutes' : 'Approuver'}</button></div></>}</> : <div className="h-full min-h-56 flex flex-col items-center justify-center text-center text-slate-400"><FileText size={30} className="mb-2" /><p className="text-xs font-semibold">Sélectionnez un contenu pour le consulter.</p></div>}</section>
+</div> : <div className="mt-4"><ReviewContent value={selected} /></div>}<HitlActionBar
+  selected={selected}
+  busy={busy}
+  reviewLoading={reviewLoading}
+  documentEdit={documentEdit}
+  reviewNote={reviewNote}
+  onNoteChange={v => setReviewNote(v)}
+  onApprove={() => reviewAction(true)}
+  onReject={() => reviewAction(false)}
+  onCorrectDocument={() => void correctDocument()}
+  onDownloadReport={selected?.agent_id === 'agent_6_report' && (selected?.status === 'approved' || selected?.status === 'pending_review') ? () => void downloadReport() : undefined}
+  onDownloadReportDocx={selected?.agent_id === 'agent_6_report' && (selected?.status === 'approved' || selected?.status === 'pending_review') ? () => void downloadReportDocx() : undefined}
+  reportDownloadBusy={reportDownloadBusy}
+  reportDocxDownloadBusy={reportDocxDownloadBusy}
+  onRequestCorrection={async (feedback) => {
+    const id = String(selected?.review_id ?? selected?.id ?? '');
+    if (!id) return;
+    setBusy(true); setError(''); setNotice('');
+    try {
+      const result = await apiService.requestReviewCorrection(id, feedback);
+      if (!result?.success) throw new Error(result?.message ?? 'La correction a échoué.');
+      setReviewNote('');
+      setNotice('Nouvelle version corrigée créée — vérifiez-la avant approbation.');
+      await loadReviews();
+      if (result.review_id) await openReview({ review_id: result.review_id, agent_id: selected?.agent_id });
+    } catch (e) { setError(errorText(e)); }
+    finally { setBusy(false); }
+  }}
+/></>}</> : <div className="h-full min-h-56 flex flex-col items-center justify-center text-center text-slate-400"><FileText size={30} className="mb-2" /><p className="text-xs font-semibold">Sélectionnez un contenu pour le consulter.</p></div>}</section>
     </div>}
 
     {tab === 'history' && <div className="grid gap-4 lg:grid-cols-[minmax(260px,0.8fr)_minmax(0,1.2fr)]">

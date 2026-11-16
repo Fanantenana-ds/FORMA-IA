@@ -1021,6 +1021,169 @@ async def prefill_report_context(
     return suggestions
 
 
+class RequestCorrectionPayload(BaseModel):
+    feedback: str = Field(..., min_length=5, max_length=2000, description="Instruction de correction humaine")
+
+
+# Agents qui ont leur propre endpoint de rectification (gérés côté frontend)
+_FRONTEND_CORRECTION_AGENTS = {"agent_m2_tdr", "agent_m3_technique", "agent_m3_financiere"}
+
+
+@router.post(
+    "/reviews/{review_id}/request-correction",
+    response_model=RouteResponse,
+    summary="[HITL] Demander une correction IA pour n'importe quelle review en attente",
+)
+async def request_review_correction(
+    review_id: str,
+    payload: RequestCorrectionPayload,
+    current_user=Depends(require_role("DIRECTION", "ADMIN", "ASSISTANT")),
+    db: Session = Depends(get_db),
+    orchestrator: FormationOrchestrator = Depends(get_formation_orchestrator),
+) -> RouteResponse:
+    """
+    Stratégie universelle :
+    1. agent_6_report → re-trigger complet depuis les données de session
+    2. Tous les autres agents HITL → le LLM applique la correction directement
+       sur les données JSON de la review et crée une nouvelle review corrigée
+    """
+    from app.services.hitl import create_review as _create_review
+    from app.services.llm import get_llm_provider
+    import json as _json
+
+    review = _get(review_id)
+    if review is None:
+        raise HTTPException(status_code=404, detail="Review introuvable.")
+    if review.get("status") != "pending_review":
+        raise HTTPException(status_code=409, detail="Cette review n'est plus en attente.")
+
+    agent_id = str(review.get("agent_id", ""))
+    feedback = payload.feedback.strip()
+    start = time.perf_counter()
+
+    # ── 1. Rapport de formation : re-génération complète depuis la session ──
+    if agent_id == "agent_6_report":
+        review_data = review.get("data") or {}
+        raw_session_id = (
+            review_data.get("session_id")
+            or (review_data.get("presentation") or {}).get("session_id")
+            or (review.get("meta") or {}).get("session_id")
+        )
+        if not raw_session_id:
+            raise HTTPException(status_code=422, detail="Identifiant de session introuvable dans la review.")
+        try:
+            session_uuid = uuid.UUID(str(raw_session_id))
+        except (ValueError, TypeError) as exc:
+            raise HTTPException(status_code=422, detail="Identifiant de session invalide.") from exc
+
+        owner_id = current_user.owner_id or current_user.id
+        session = db.query(TrainingSession).filter(
+            TrainingSession.id == session_uuid,
+            TrainingSession.owner_id == owner_id,
+        ).first()
+        if session is None:
+            raise HTTPException(status_code=404, detail="Session introuvable.")
+
+        corrected_data = dict(review_data)
+        corrected_data["_correction_instruction"] = (
+            f"CORRECTION DEMANDÉE PAR LE VALIDATEUR : {feedback}\n"
+            "Applique UNIQUEMENT cette correction. Conserve le reste intact."
+        )
+        _delete_pending(review_id)
+        result = await orchestrator.generate_report(corrected_data)
+        elapsed = round(time.perf_counter() - start, 2)
+        return _build_response(result, "Rapport corrigé — nouvelle version en attente de validation.", elapsed)
+
+    # ── 2. Chemin générique LLM : applicable à TOUT autre agent HITL ────────
+    # (attestations, satisfaction, syllabus, portfolio, veille, relance…)
+    existing_data = review.get("data") or {}
+    summary = review.get("summary", "Contenu IA")
+
+    system_prompt = (
+        "Tu es un assistant IA expert en édition de documents JSON structurés. "
+        "On te donne un document JSON généré par IA et une instruction de correction humaine. "
+        "Tu dois appliquer la correction demandée et retourner le document JSON complet et corrigé. "
+        "RÈGLES ABSOLUES : "
+        "1. Retourne UNIQUEMENT le JSON corrigé, sans commentaire, sans balise markdown. "
+        "2. Conserve TOUTES les clés et la structure d'origine. "
+        "3. Ne modifie QUE ce que la correction demande explicitement. "
+        "4. Si une valeur ne peut pas être corrigée sans données supplémentaires, laisse-la telle quelle. "
+        "5. Ne jamais inventer de données factuelles (noms, dates, chiffres). "
+    )
+
+    # Limiter la taille du JSON envoyé au LLM (truncate si > 12k chars)
+    data_json = _json.dumps(existing_data, ensure_ascii=False, indent=2)
+    if len(data_json) > 12000:
+        data_json = data_json[:12000] + "\n... [tronqué pour la correction]"
+
+    user_prompt = (
+        f"DOCUMENT JSON ORIGINAL :\n{data_json}\n\n"
+        f"INSTRUCTION DE CORRECTION : {feedback}\n\n"
+        "Retourne le JSON complet corrigé."
+    )
+
+    try:
+        llm = get_llm_provider()
+        llm_result = await llm.generate(
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            temperature=0.2,
+            max_tokens=4000,
+            json_mode=True,
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Le service IA n'est pas disponible pour appliquer la correction : {exc}",
+        ) from exc
+
+    # Extraire le JSON corrigé de la réponse LLM
+    raw = llm_result.get("content") or llm_result.get("text") or llm_result
+    if isinstance(raw, str):
+        try:
+            corrected_data = _json.loads(raw)
+        except _json.JSONDecodeError:
+            # Fallback : chercher le premier { ... } dans la réponse
+            import re as _re
+            match = _re.search(r"\{.*\}", raw, _re.DOTALL)
+            if match:
+                try:
+                    corrected_data = _json.loads(match.group(0))
+                except _json.JSONDecodeError as exc2:
+                    raise HTTPException(status_code=502, detail=f"L'IA n'a pas retourné un JSON valide : {exc2}") from exc2
+            else:
+                raise HTTPException(status_code=502, detail="L'IA n'a pas retourné un JSON valide.")
+    elif isinstance(raw, dict):
+        corrected_data = raw
+    else:
+        raise HTTPException(status_code=502, detail="Réponse IA inattendue.")
+
+    # Préserver les clés techniques (_inputs, _correction_history…) de l'original
+    for key, value in existing_data.items():
+        if key.startswith("_") and key not in corrected_data:
+            corrected_data[key] = value
+    # Tracer la correction dans les données
+    history = corrected_data.get("_correction_history") or []
+    history.append({"feedback": feedback, "original_review_id": review_id})
+    corrected_data["_correction_history"] = history
+
+    # Supprimer l'ancienne review et en créer une nouvelle
+    _delete_pending(review_id)
+    new_review_id = _create_review(
+        agent_id=agent_id,
+        data=corrected_data,
+        summary=f"[Corrigé] {summary}",
+        criticity=review.get("criticity", "medium"),
+    )
+
+    elapsed = round(time.perf_counter() - start, 2)
+    return _build_response(
+        {"success": True, "review_id": new_review_id, "_review_id": new_review_id},
+        f"Contenu corrigé par l'IA en {elapsed}s — nouvelle version en attente de validation.",
+        elapsed,
+    )
+
+
 @router.get(
     "/export-report-pdf/{review_id}",
     summary="[M5] Exporter le rapport final approuvé en PDF ALTIORA",

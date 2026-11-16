@@ -458,6 +458,7 @@ class ApiService {
   async generateFormationReport(sessionData: unknown) { return this.request<any>('/ia/formations/generate-report', this.json('POST', { session_data: sessionData }), { ia: true, timeout: 120000 }); }
   async generateSessionReport(sessionId: string, context: unknown) { return this.request<any>(`/ia/formations/sessions/${encodeURIComponent(sessionId)}/generate-report`, this.json('POST', context), { ia: true, timeout: 120000 }); }
   async prefillReportContext(sessionId: string) { return this.request<any>(`/ia/formations/sessions/${encodeURIComponent(sessionId)}/report-context-prefill`, {}, { ia: true, timeout: 60000 }); }
+  async requestReviewCorrection(reviewId: string, feedback: string) { return this.request<any>(`/ia/formations/reviews/${encodeURIComponent(reviewId)}/request-correction`, this.json('POST', { feedback }), { ia: true, timeout: 120000 }); }
   async previewAttestation(reviewId: string, numero: string) { return this.request<Blob>(`/ia/formations/reviews/${encodeURIComponent(reviewId)}/attestations/${encodeURIComponent(numero)}/preview`, {}, { ia: true }); }
   async downloadAttestation(reviewId: string, numero: string) { return this.request<Blob>(`/ia/formations/reviews/${encodeURIComponent(reviewId)}/attestations/${encodeURIComponent(numero)}/download`, {}, { ia: true }); }
   async downloadAttestationsZip(reviewId: string) { return this.request<Blob>(`/ia/formations/reviews/${encodeURIComponent(reviewId)}/attestations.zip`, {}, { ia: true }); }

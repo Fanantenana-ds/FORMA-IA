@@ -1,0 +1,127 @@
+import os
+import uuid
+
+# Le CI n'a pas de GROQ_API_KEY : sans clé, les agents (TDR, M5…) valent None
+# et les tests qui mockent leur appel LLM échouent. Clé factice, jamais appelée
+# (ces tests mockent le LLM) ; une vraie clé du .env reste prioritaire.
+os.environ.setdefault("GROQ_API_KEY", "test-cle-factice")
+
+import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy.orm import Session as DbSession
+
+from app.core.dependencies import get_current_user
+from app.core.tenant_context import set_tenant_id
+from app.database import engine, get_db
+from app.main import app
+from app.models.user import RoleEnum, User
+from app.utils.security import verify_api_key
+
+FAKE_USER_ID = "1f12722d-7108-4fc8-9de3-ffb258195f12"
+
+class FakeUser:
+    def __init__(self, id=FAKE_USER_ID, role="DIRECTION", actif=True, owner_id=None):
+        self.id = id
+        self.role = role
+        self.actif = actif
+        self.owner_id = owner_id
+
+
+@pytest.fixture(autouse=True)
+def _analyse_sans_llm(monkeypatch):
+    """
+    L'analyse IA d'une opportunité appelle Groq (extraction) si la clé est
+    configurée. Les tests ne doivent jamais consommer de quota : extraction LLM
+    coupée par défaut, les tests qui en ont besoin la réactivent avec un faux LLM.
+    """
+    monkeypatch.setenv("ANALYSE_USE_LLM", "false")
+
+
+@pytest.fixture
+def db_isolee():
+    """
+    Exécute le test dans une transaction ANNULÉE à la fin : aucune ligne de test
+    n'atteint la base PostgreSQL (avant : opportunités, documents, sessions… de
+    test s'accumulaient dans « formaia »).
+
+    - Chaque requête reçoit une session en SAVEPOINT : les db.commit() des
+      services restent possibles, mais ne sont jamais validés pour de bon.
+    - Un utilisateur factice RÉEL est créé dans cette transaction : les clés
+      étrangères vers users.id (ex. documents.valide_par) sont ainsi respectées.
+    """
+    connection = engine.connect()
+    transaction = connection.begin()
+
+    def override_get_db():
+        db = DbSession(
+            bind=connection,
+            join_transaction_mode="create_savepoint",
+            autoflush=False,
+        )
+        db.info["tenant_owner_id"] = uuid.UUID(FAKE_USER_ID)
+        try:
+            yield db
+        finally:
+            db.close()
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    with DbSession(bind=connection, join_transaction_mode="create_savepoint") as db:
+        user = User(
+            id=uuid.UUID(FAKE_USER_ID),
+            nom="Utilisateur de test",
+            email="utilisateur-de-test@example.invalid",
+            password="!",
+            role=RoleEnum.DIRECTION,
+            actif=True,
+        )
+        db.merge(user)
+        db.commit()
+
+    yield
+
+    app.dependency_overrides.pop(get_db, None)
+    transaction.rollback()
+    connection.close()
+
+
+@pytest.fixture
+def client_authenticated(db_isolee):
+    def override_get_current_user():
+        set_tenant_id(uuid.UUID(FAKE_USER_ID))
+        return FakeUser()
+
+    app.dependency_overrides[get_current_user] = override_get_current_user
+    yield TestClient(app)
+    app.dependency_overrides.pop(get_current_user, None)
+
+@pytest.fixture
+def client(db_isolee):
+    return TestClient(app)
+
+@pytest.fixture
+def client_ia(db_isolee):
+    """Client pour les routes /ia/* — bypass verify_api_key en tests."""
+    async def _no_api_key_check():
+        return None
+
+    app.dependency_overrides[verify_api_key] = _no_api_key_check
+    yield TestClient(app)
+    app.dependency_overrides.pop(verify_api_key, None)
+
+
+@pytest.fixture
+def client_role(db_isolee):
+    """Fabrique un client authentifié avec un rôle et un statut actif donnés."""
+    def _make(role="DIRECTION", actif=True):
+        fake_user = FakeUser(role=role, actif=actif)
+
+        def override_get_current_user():
+            set_tenant_id(uuid.UUID(fake_user.id))
+            return fake_user
+
+        app.dependency_overrides[get_current_user] = override_get_current_user
+        return TestClient(app)
+
+    yield _make
+    app.dependency_overrides.pop(get_current_user, None)

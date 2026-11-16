@@ -1,47 +1,66 @@
+# app/schemas/tdr.py
 # ============================================================
-# SCHEMAS M2 — TDR (CONTRAT IA ↔ BACKEND)
+# SCHÉMAS TDR — Pydantic (V4.0)
 # ============================================================
 
-from pydantic import BaseModel
-from typing import Optional, Dict, Any, List
+from typing import Any
+
+from pydantic import BaseModel, Field
 
 
 class TDRRequest(BaseModel):
-    """Requête pour la génération d'un TDR"""
-    client: str
-    objectifs: str
-    public: str
-    duree: str
-    format: Optional[str] = "Présentiel"
-    budget: Optional[str] = None
+    """Brief client pour la génération de TDR."""
+    client: str = Field(..., min_length=2)
+    objectifs: str = Field(..., min_length=5)
+    public: str = Field(..., min_length=2)
+    duree: str = Field(..., min_length=1)
+    format: str | None = "Présentiel"
+    budget: str | None = None
+    lieu: str | None = None
+    deadline: str | None = None
+    opportunite_id: str | None = None       # ✅ Lien vers M1
+    feedback: str | None = Field(default=None, max_length=3000, description="Corrections demandées par le réviseur humain")
 
 
-class TDRSection(BaseModel):
-    """Section d'un TDR"""
-    titre: str
-    contenu: str
+class TDRFromOpportuniteRequest(BaseModel):
+    """Requête pour pré-remplir depuis une opportunité."""
+    opportunite_id: str
 
 
-class TDRData(BaseModel):
-    """Données d'un TDR"""
-    titre: str
-    sections: Dict[str, str]
-    date_generation: Optional[str] = None
+class TDRFromOpportuniteResponse(BaseModel):
+    """Réponse avec le brief pré-rempli."""
+    success: bool
+    brief: dict[str, Any] | None = None
+    opportunite: dict[str, Any] | None = None
+    error: str | None = None
+
+
+class TDRFiles(BaseModel):
+    docx: str | None = None
+    pdf: str | None = None
 
 
 class TDRResponse(BaseModel):
-    """Réponse pour la génération d'un TDR"""
     success: bool
-    data: Dict[str, Any]
-    error: Optional[str] = None
+    data: dict[str, Any] | None = None
+    files: TDRFiles | None = None
+    error: str | None = None    # Correction 1b : le TDR n'est plus envoyé au Backend directement à la
+    # génération — un review HITL est créé, à approuver puis synchroniser
+    # via POST /ia/tdr/synchroniser (même mécanisme que M3).
+    review_id: str | None = None
+    review_status: str | None = None
 
 
-class TDRDocument(BaseModel):
-    """Document TDR généré"""
-    id: Optional[int] = None
-    client: str
-    titre: str
-    contenu: str
-    format: str
-    url: Optional[str] = None
-    created_at: Optional[str] = None
+class SynchroniserTDRRequest(BaseModel):
+    """Corps de la requête pour enregistrer un TDR APPROUVÉ dans le Backend."""
+    review_id: str = Field(
+        ..., description="ID du review APPROUVÉ du TDR (agent_m2_tdr)"
+    )
+    opportunite_id: str | None = Field(
+        default=None,
+        description="UUID de l'opportunité Backend liée (sinon lu dans le brief mémorisé)",
+    )
+    force: bool = Field(
+        default=False,
+        description="Renvoyer même si déjà synchronisé (crée un nouveau document Backend)",
+    )

@@ -11,7 +11,6 @@
 # Ce schéma est la frontière entre les deux.
 # ============================================================
 
-from typing import List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -23,24 +22,33 @@ class OpportunityResult(BaseModel):
     """
 
     title: str
-    source: Optional[str] = None
-    source_site: Optional[str] = None
-    source_priority: Optional[str] = None
+    source: str | None = None
+    source_site: str | None = None
+    source_priority: str | None = None
     url: str
-    budget: Optional[str] = "Non précisé"
-    deadline: Optional[str] = None
-    organizer: Optional[str] = None
-    domain: Optional[str] = "autre"
-    opportunity_type: Optional[str] = "autre"
-    summary: Optional[str] = None
+    budget: str | None = "Non précisé"
+    deadline: str | None = None
+    organizer: str | None = None
+    domain: str | None = "autre"
+    opportunity_type: str | None = "autre"
+    summary: str | None = None
     is_actionable: bool = False
     score: int = Field(default=0, ge=0, le=100)
     confidence: float = Field(default=0.0, ge=0.0, le=1.0)
-    status: Optional[str] = "to_review"
-    country_scope: Optional[str] = None
-    ai_provider: Optional[str] = None
-    reason: Optional[str] = None
-    flags: List[str] = Field(default_factory=list)
+    status: str | None = "to_review"
+    country_scope: str | None = None
+    ai_provider: str | None = None
+    reason: str | None = None
+    flags: list[str] = Field(default_factory=list)
+    freshness_status: str = "date_inconnue"
+    published_at: str | None = None
+    captured_at: str | None = None
+    last_verified_at: str | None = None
+    ai_summary: str | None = None
+    ai_relevance: str | None = None
+    ai_recommendation: str | None = None
+    ai_points_to_verify: list[str] = Field(default_factory=list)
+    ai_risk_level: str | None = None
 
 
 class VeilleResponse(BaseModel):
@@ -48,6 +56,6 @@ class VeilleResponse(BaseModel):
 
     query: str
     total_results: int
-    opportunities: List[OpportunityResult]
+    opportunities: list[OpportunityResult]
     status: str
-    notes: Optional[str] = None
+    notes: str | None = None

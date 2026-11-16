@@ -1,0 +1,154 @@
+﻿from collections.abc import Callable
+
+from fastapi import Depends, HTTPException, Request, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy.orm import Session
+
+from app.core.security import TokenExpiredError, decode_access_token
+from app.core.tenant_context import set_tenant_id
+from app.database import get_db
+from app.repositories.revoked_token_repository import RevokedTokenRepository
+from app.repositories.user_repository import UserRepository
+from app.services.opportunite_analyse_service import OpportuniteAnalyseService
+
+security_scheme = HTTPBearer(auto_error=False)
+
+def get_current_user(request: Request, credential: HTTPAuthorizationCredentials = Depends(security_scheme), db: Session = Depends(get_db)):
+    if not credential:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentification requise — veuillez vous connecter via POST /api/v1/auth/login",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    token = credential.credentials
+    try:
+        payload = decode_access_token(token)
+    except TokenExpiredError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Session expirée — veuillez vous reconnecter via POST /api/v1/auth/login",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    if not payload:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token invalide",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    # Récupérationdes informations du JWT
+    user_id = payload.get("sub")
+    jti = payload.get("jti")
+
+    if not user_id or not jti:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token invalide",
+            headers={
+                "WWW-Authenticate": "Bearer"
+            }
+        )
+
+    # Vérification si le JWT a été révoqué
+    revoked_repository = RevokedTokenRepository(db)
+
+    if revoked_repository.exist_by_jti(jti):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token révoqué",
+            headers={
+                "WWW-Authenticate": "Bearer"
+            }
+        )
+
+    # Récupération de l'utilisateur
+    user_repository = UserRepository(db)
+
+    user = user_repository.find_by_id(user_id)
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Utilisateur introuvable",
+            headers={
+                "WWW-Authenticate": "Bearer"
+            }
+        )
+
+    # Vérification du compte si il est toujours actif
+    if not user.actif:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Ce compte est désactivé"
+        )
+
+    role = user.role.value if hasattr(user.role, "value") else str(user.role)
+    if role == "ASSISTANT" and (
+        request.url.path.startswith("/api/v1/dashboard")
+        or request.url.path.startswith("/api/v1/ia/veille")
+    ):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cette section n’est pas accessible au secrétariat.")
+    if role == "FORMATEUR":
+        path = request.url.path
+        method = request.method.upper()
+        allowed_read = (
+            path == "/api/v1/auth/me"
+            or path == "/api/v1/auth/logout" and method == "POST"
+            or path.startswith("/api/v1/sessions") and method == "GET"
+            or path.startswith("/api/v1/participants") and method == "GET"
+            or (path in {"/api/v1/ia/rag/formations", "/api/v1/ia/rag/sessions", "/api/v1/ia/rag/guides", "/api/v1/ia/rag/health"} and method == "GET")
+            or (path.startswith("/api/v1/ia/rag/documents/") and method == "GET")
+            or (path.startswith("/api/v1/ia/rag/statut/") and method == "GET")
+            or path.startswith("/api/v1/documents/rag/supports") and method == "GET"
+            # Historique des conversations RAG du formateur
+            or (path == "/api/v1/ia/rag/conversations" and method == "GET")
+            or (path.startswith("/api/v1/ia/rag/conversations/") and method in {"GET", "DELETE", "PATCH"})
+        )
+        allowed_assistant_query = method == "POST" and (
+            path in {"/api/v1/ia/rag/chat", "/api/v1/ia/rag/chat/stream", "/api/v1/ia/rag/rechercher",
+                     "/api/v1/ia/rag/indexer-document", "/api/v1/documents/upload"}
+            or (path.startswith("/api/v1/ia/rag/conversations/") and path.endswith("/feedback"))
+        )
+        allowed_trainer_session_create = (
+            method == "POST"
+            and path.startswith("/api/v1/sessions/")
+            and path.endswith("/seances")
+        )
+        if not (allowed_read or allowed_assistant_query or allowed_trainer_session_create):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Ce compte formateur est limité à ses sessions, à leurs présences et à l’espace IA/documentation en consultation.")
+
+    # All ORM-managed business records in this request are scoped to the
+    # director who owns the account (or to the director account itself).
+    db.info["tenant_owner_id"] = user.owner_id or user.id
+    set_tenant_id(user.owner_id or user.id)
+    return user
+
+
+async def get_current_tenant_user(current_user=Depends(get_current_user)):
+    """Async boundary that exposes tenant context to registry/storage calls."""
+    tenant_id = current_user.owner_id or current_user.id
+    set_tenant_id(tenant_id)
+    return current_user
+
+def require_role(*allowed_roles: str) -> Callable:
+
+    def role_checker(current_user = Depends(get_current_user)):
+        user_role = (
+            current_user.role.value
+            if hasattr(current_user.role, "value")
+            else current_user.role
+        )
+
+        if user_role not in allowed_roles:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Vous n'avez pas les permissions nécessaires"
+            )
+
+        return current_user
+
+    return role_checker
+
+def get_opportunite_analyse_service() -> OpportuniteAnalyseService:
+    return OpportuniteAnalyseService()

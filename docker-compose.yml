@@ -1,0 +1,36 @@
+﻿services:
+  db:
+    image: pgvector/pgvector:pg17
+    restart: always
+    environment:
+      POSTGRES_USER: forma_user
+      POSTGRES_PASSWORD: forma_pass
+      POSTGRES_DB: forma_ia
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata17:/var/lib/postgresql/data
+  backend:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+      - generated_files:/app/exports
+    depends_on:
+      - db
+    environment:
+      DATABASE_URL: postgresql://forma_user:forma_pass@db:5432/forma_ia
+      SECRET_KEY: ${SECRET_KEY}
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      - backend
+volumes:
+  pgdata17:
+  generated_files:

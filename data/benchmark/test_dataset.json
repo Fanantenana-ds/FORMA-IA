@@ -1,0 +1,106 @@
+[
+  {
+    "id": "req_001",
+    "query": "Opportunite sur la poste devellopeur IA CDD,CDI automatisation",
+    "expected": {
+      "opportunities": [
+        {
+          "title": "Développeur Expert IA & Automatisation (H/F)",
+          "organizer": "MadaticNet",
+          "domain": "ia",
+          "country": "Madagascar"
+        }
+      ]
+    }
+  },
+  {
+    "id": "req_002",
+    "query": "Opportunite sur la poste des devops",
+    "expected": {
+      "opportunities": [
+        {
+          "title": "UN DEVOPS",
+          "organizer": "Central Test",
+          "domain": "devops",
+          "country": "Madagascar"
+        },
+        {
+          "title": "DevOps SRE (Site Reliability Engineer)",
+          "organizer": "Novity Madagascar",
+          "domain": "devops",
+          "country": "Madagascar"
+        }
+      ]
+    }
+  },
+  {
+    "id": "req_003",
+    "query": "Opportunite sur la poste devellopeur fullstack CDD,CDI Antananrivo ou autres",
+    "expected": {
+      "opportunities": [
+        {
+          "title": "OFFRE DE STAGE – DÉVELOPPEUR WEB FULL STACK",
+          "organizer": "FaceDev",
+          "domain": "dev",
+          "country": "Madagascar"
+        }
+      ]
+    }
+  },
+  {
+    "id": "req_004",
+    "query": "Chercher des offres sur la poste des devops,IA",
+    "expected": {
+      "opportunities": [
+        {
+          "title": "Ingénieur DevOps",
+          "organizer": "NUMEN Madagascar",
+          "domain": "devops",
+          "country": "Madagascar"
+        }
+      ]
+    }
+  },
+  {
+    "id": "req_005",
+    "query": "Offre emploi data scientist Madagascar",
+    "expected": {
+      "opportunities": []
+    }
+  },
+  {
+    "id": "req_006",
+    "query": "stage développeur web Antananarivo",
+    "expected": {
+      "opportunities": []
+    }
+  },
+  {
+    "id": "req_007",
+    "query": "recrutement chef de projet IT",
+    "expected": {
+      "opportunities": []
+    }
+  },
+  {
+    "id": "req_008",
+    "query": "consultant en cybersécurité Madagascar",
+    "expected": {
+      "opportunities": []
+    }
+  },
+  {
+    "id": "req_009",
+    "query": "formation intelligence artificielle",
+    "expected": {
+      "opportunities": []
+    }
+  },
+  {
+    "id": "req_010",
+    "query": "appel d'offres formation professionnelle",
+    "expected": {
+      "opportunities": []
+    }
+  }
+]

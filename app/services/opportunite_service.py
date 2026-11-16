@@ -1,0 +1,62 @@
+﻿from typing import List, Optional
+from uuid import UUID
+
+from app.models.opportunite import Domaine, Opportunite, StatutOpportunite
+from app.repositories.interfaces.iopportunite_repository import IOpportuniteRepository
+from app.schemas.opportunite import OpportuniteCreate, OpportuniteUpdate
+from app.services.interfaces.iopportunite_service import IOpportuniteService
+
+
+class OpportuniteService(IOpportuniteService):
+    def __init__(self, repository: IOpportuniteRepository):
+        self.repository = repository
+
+    def create(self, data: OpportuniteCreate) -> Opportunite:
+        opportunite = Opportunite(
+            source=data.source,
+            contenu=data.contenu,
+            objet=data.objet,
+            budget=data.budget,
+            echeance=data.echeance,
+            domaine=data.domaine
+        )
+
+        return self.repository.save(opportunite)
+
+    def get_by_id(self, opportunite_id: UUID) -> Opportunite | None:
+
+        return self.repository.find_by_id(opportunite_id)
+
+    def get_all(
+        self,
+        statut: StatutOpportunite | None = None,
+        domaine: Domaine | None = None,
+        skip: int = 0,
+        limit: int = 100,
+    ) -> list[Opportunite]:
+        return self.repository.find_all(statut=statut, domaine=domaine, skip=skip, limit=limit)
+
+    def delete(self, opportunite_id: UUID) -> bool:
+        return self.repository.delete(opportunite_id)
+
+    def update_statut(self, opportunite_id: UUID, statut: StatutOpportunite) -> Opportunite | None:
+        opportunite = self.repository.find_by_id(opportunite_id)
+        if not opportunite:
+            return None
+        opportunite.statut = statut
+        return self.repository.update(opportunite)
+
+    def update(self, opportunite_id: UUID, data: OpportuniteUpdate) -> Opportunite | None:
+        opportunite = self.repository.find_by_id(opportunite_id)
+
+        if not opportunite:
+            return None
+
+        opportunite.source = data.source
+        opportunite.contenu = data.contenu
+        opportunite.objet = data.objet
+        opportunite.budget = data.budget
+        opportunite.echeance = data.echeance
+        opportunite.domaine = data.domaine
+
+        return self.repository.update(opportunite)

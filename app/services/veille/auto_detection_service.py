@@ -1,0 +1,262 @@
+# app/services/veille/auto_detection_service.py
+
+
+import asyncio
+import json
+import logging
+import os
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from typing import Any, Optional
+
+from app.services.veille import tavily_quota_service
+
+logger = logging.getLogger(__name__)
+
+BASE_DIR = Path(__file__).resolve().parents[3]
+STATE_PATH = BASE_DIR / "data" / "veille_auto_state.json"
+
+DELAI_PREMIER_PASSAGE_S = 60.0     # après le démarrage, si jamais exécuté
+ATTENTE_MAX_ENTRE_VERIFICATIONS_S = 3600.0
+
+# Profil ALTIORA Prest : formation / conseil en IA, data, DevOps, développement.
+# "Madagascar" est ajouté automatiquement par le pipeline M1.
+REQUETES_PAR_DEFAUT: list[str] = [
+    "appel d'offres formation intelligence artificielle IA",
+    "appel d'offres formation data science analyse de données",
+    "appel d'offres formation DevOps cloud",
+    "appel d'offres formation développement web mobile",
+    "recrutement formateur consultant IA data",
+]
+
+
+class DetectionAutoEnCours(Exception):
+    """Une détection automatique est déjà en cours d'exécution."""
+
+
+_en_cours = False
+_tache: Optional["asyncio.Task"] = None
+_demarre_a: datetime | None = None
+
+
+# ============================================================
+# CONFIGURATION (lue à chaque appel : modifiable sans redémarrage des tests)
+# ============================================================
+
+def _env_int(nom: str, defaut: int, minimum: int = 0) -> int:
+    try:
+        return max(minimum, int(os.getenv(nom, str(defaut))))
+    except ValueError:
+        return defaut
+
+
+def planification_activee() -> bool:
+    return os.getenv("VEILLE_AUTO_ENABLED", "false").strip().lower() in {
+        "1", "true", "yes", "oui",
+    }
+
+
+def intervalle_heures() -> int:
+    return _env_int("VEILLE_AUTO_INTERVAL_HOURS", 24, minimum=1)
+
+
+def score_minimum() -> int:
+    return min(100, _env_int("VEILLE_AUTO_MIN_SCORE", 40))
+
+
+def limite() -> int:
+    return _env_int("VEILLE_AUTO_LIMIT", 20, minimum=1)
+
+
+def get_queries() -> list[str]:
+    """Requêtes du passage : VEILLE_AUTO_QUERIES ou profil par défaut, bornées."""
+    brut = os.getenv("VEILLE_AUTO_QUERIES", "")
+    requetes = [q.strip() for q in brut.split(";") if q.strip()] or list(
+        REQUETES_PAR_DEFAUT
+    )
+    return requetes[: _env_int("VEILLE_AUTO_MAX_QUERIES", 5, minimum=1)]
+
+
+def get_config() -> dict[str, Any]:
+    return {
+        "planification_activee": planification_activee(),
+        "intervalle_heures": intervalle_heures(),
+        "requetes": get_queries(),
+        "score_minimum": score_minimum(),
+        "limite": limite(),
+    }
+
+
+# ============================================================
+# ÉTAT DE LA DERNIÈRE EXÉCUTION
+# ============================================================
+
+def lire_etat() -> dict[str, Any]:
+    try:
+        with open(STATE_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _ecrire_etat(etat: dict[str, Any]) -> None:
+    try:
+        STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        tmp = STATE_PATH.with_suffix(".tmp")
+        tmp.write_text(json.dumps(etat, ensure_ascii=False, indent=2), encoding="utf-8")
+        tmp.replace(STATE_PATH)
+    except OSError as exc:
+        logger.warning("⚠️ État de détection automatique non enregistré : %s", exc)
+
+
+def est_en_cours() -> bool:
+    return _en_cours
+
+
+# ============================================================
+# EXÉCUTION D'UN PASSAGE
+# ============================================================
+
+async def executer_detection(
+    orchestrator,
+    declenchement: str = "manuel",
+    min_score: int | None = None,
+    limit: int | None = None,
+    sync_backend: bool = True,
+) -> dict[str, Any]:
+    """
+    Lance un passage de détection automatique.
+
+    Lève DetectionAutoEnCours si un passage est déjà actif (deux passages
+    en parallèle doubleraient la consommation de quota).
+    L'état est enregistré même en cas d'échec, pour que la planification
+    n'enchaîne pas de nouvelles tentatives à la suite.
+
+    Correction Étape B (quota Tavily) : APRÈS le verrou anti-chevauchement,
+    UNE SEULE vérification de quota pour tout le passage (pas par requête
+    individuelle) — runs/jour, budget auto, plafond dur. Si refusé, retourne
+    {"statut": "quota_atteint", "raison": ...} sans appeler l'orchestrateur.
+    """
+    global _en_cours
+    if _en_cours:
+        raise DetectionAutoEnCours()
+
+    _en_cours = True
+    debut = datetime.now(UTC)
+    etat: dict[str, Any] = {
+        "derniere_execution": debut.isoformat(),
+        "declenchement": declenchement,
+        "statut": "error",
+        "erreur": None,
+    }
+    try:
+        autorise, raison = tavily_quota_service.verifier_quota_auto(debut)
+        if not autorise:
+            logger.warning("⏸️ Détection automatique bloquée par le quota Tavily : %s", raison)
+            etat["statut"] = "quota_atteint"
+            etat["erreur"] = raison
+            return {
+                "statut": "quota_atteint",
+                "raison": raison,
+                "mode": "automatique",
+                "status": "quota_atteint",
+                "opportunities": [],
+                "total": 0,
+                "queries": [],
+                "statistics": {},
+            }
+
+        tavily_quota_service.enregistrer_run_auto(debut)
+
+        resultat = await orchestrator.detecter_automatiquement(
+            queries=get_queries(),
+            min_score=score_minimum() if min_score is None else min_score,
+            limit=limite() if limit is None else limit,
+            sync_backend=sync_backend,
+            collect_first=True,
+        )
+        sync = (resultat.get("statistics") or {}).get("backend_sync") or {}
+        etat.update({
+            "statut": resultat.get("status"),
+            "requetes": len(resultat.get("queries") or []),
+            "total": resultat.get("total", 0),
+            "envoyees": sync.get("sent", 0),
+            "deja_presentes": sync.get("already_present", 0),
+            "echecs_envoi": sync.get("failed", 0),
+        })
+        return resultat
+    except Exception as exc:
+        etat["erreur"] = f"{type(exc).__name__}: {exc}"
+        raise
+    finally:
+        _en_cours = False
+        _ecrire_etat(etat)
+
+
+# ============================================================
+# PLANIFICATION (optionnelle)
+# ============================================================
+
+def secondes_avant_prochaine_execution(maintenant: datetime | None = None) -> float:
+    """0 = passage dû maintenant. Tient compte des passages manuels et des redémarrages."""
+    maintenant = maintenant or datetime.now(UTC)
+    derniere = lire_etat().get("derniere_execution")
+
+    if derniere:
+        try:
+            echeance = datetime.fromisoformat(derniere) + timedelta(hours=intervalle_heures())
+            return max(0.0, (echeance - maintenant).total_seconds())
+        except ValueError:
+            pass  # état illisible : traité comme « jamais exécuté »
+
+    debut = _demarre_a or maintenant
+    return max(0.0, DELAI_PREMIER_PASSAGE_S - (maintenant - debut).total_seconds())
+
+
+async def _boucle_planifiee(orchestrator) -> None:
+    while True:
+        attente = secondes_avant_prochaine_execution()
+        if attente > 0:
+            # Réévalue régulièrement : un passage manuel décale la prochaine échéance.
+            await asyncio.sleep(min(attente, ATTENTE_MAX_ENTRE_VERIFICATIONS_S))
+            continue
+        try:
+            logger.info("⏰ Détection automatique planifiée : démarrage")
+            await executer_detection(orchestrator, declenchement="planifie")
+        except DetectionAutoEnCours:
+            logger.info("⏰ Détection automatique déjà en cours — passage ignoré")
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("❌ Détection automatique planifiée en échec")
+        await asyncio.sleep(DELAI_PREMIER_PASSAGE_S)   # jamais de boucle serrée
+
+
+def demarrer_planification(orchestrator) -> Optional["asyncio.Task"]:
+    """Démarre la planification si VEILLE_AUTO_ENABLED=true (sinon ne fait rien)."""
+    global _tache, _demarre_a
+    if not planification_activee():
+        logger.info("⏸️ Détection automatique planifiée : désactivée (VEILLE_AUTO_ENABLED)")
+        return None
+    if _tache is not None and not _tache.done():
+        return _tache
+
+    _demarre_a = datetime.now(UTC)
+    _tache = asyncio.get_running_loop().create_task(_boucle_planifiee(orchestrator))
+    logger.info(
+        "⏰ Détection automatique planifiée : toutes les %d h (%d requête(s))",
+        intervalle_heures(), len(get_queries()),
+    )
+    return _tache
+
+
+async def arreter_planification() -> None:
+    global _tache
+    if _tache is not None and not _tache.done():
+        _tache.cancel()
+        try:
+            await _tache
+        except asyncio.CancelledError:
+            pass
+    _tache = None

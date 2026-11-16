@@ -1,0 +1,72 @@
+version: 1
+groups:
+  - id: institutionnel
+    query_hint: "formation prestataire cabinet consultant"
+    include_raw_content: false
+    search_budget_seconds: 25
+    request_timeout_seconds: 12
+    sources:
+      - id: fid
+        domains: [fid.mg]
+        enabled: true
+        preferred_paths: ["/recrutement-", "/appels-a-manifestations"]
+        excluded_paths: []
+      - id: armp
+        domains: [armp.mg]
+        enabled: true
+        preferred_paths: ["/avis", "/marches_publics"]
+        excluded_paths: ["/site/fichiers/MAPS/"]
+  - id: international
+    query_hint: "Madagascar formation consultant termes de référence"
+    search_budget_seconds: 25
+    request_timeout_seconds: 12
+    sources:
+      - id: ungm
+        domains: [ungm.org]
+        enabled: true
+        preferred_paths: ["/Public/Notice/"]
+        excluded_paths: []
+      - id: undp
+        domains: [procurement-notices.undp.org]
+        enabled: true
+        preferred_paths: ["/view_notice"]
+        excluded_paths: []
+  - id: missions_privees
+    query_hint: "recherche formateur externe consultant prestation formation Madagascar"
+    include_raw_content: false
+    search_budget_seconds: 25
+    request_timeout_seconds: 24
+    sources:
+      - id: linkedin
+        domains: [linkedin.com]
+        enabled: true
+        preferred_paths: ["/posts/", "/jobs/view/"]
+        excluded_paths: ["/in/", "/learning/"]
+      - id: asako
+        domains: [asako.mg]
+        enabled: true
+        preferred_paths: ["/emploi/"]
+        excluded_paths: ["/candidats/", "/cv/"]
+      - id: portaljob
+        domains: [portaljob-madagascar.com]
+        enabled: true
+        preferred_paths: ["/emploi/view/"]
+        excluded_paths: ["/candidats/", "/application/resources/upload/cv/"]
+  - id: decouverte
+    query_hint: "Madagascar formation informatique appel d'offres"
+    search_budget_seconds: 25
+    request_timeout_seconds: 12
+    sources:
+      - id: dgmarket
+        domains: [dgmarket.com]
+        enabled: true
+        preferred_paths: ["/tender/"]
+        excluded_paths: []
+      - id: afd
+        domains: [afd.fr]
+        enabled: true
+        preferred_paths: []
+        excluded_paths: ["/fr/ressources/", "/fr/projets/", "/fr/actualites/"]
+excluded_domains: [wikipedia.org, youtube.com, instagram.com, twitter.com, tiktok.com, amazon.com, ebay.com, pinterest.com]
+rejected_keywords: [skincare, lotion, cosmetic, makeup, bitcoin, cryptocurrency]
+employment_keywords: [emploi, recrutement, cdi, cdd, freelance, mission, poste]

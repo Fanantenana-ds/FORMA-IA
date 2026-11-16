@@ -34,14 +34,13 @@
 #
 # ============================================================
 
-from typing import Dict, List, Any, Tuple
-from datetime import datetime
-from urllib.parse import urlparse
-import re
 import logging
+import re
+from datetime import datetime
+from typing import Any
+from urllib.parse import urlparse
 
 from app.models.opportunity import DomainEnum
-
 
 logger = logging.getLogger(__name__)
 
@@ -377,7 +376,7 @@ class Validator:
         return text
 
     @staticmethod
-    def _add_flag(data: Dict, flag: str) -> None:
+    def _add_flag(data: dict, flag: str) -> None:
         """
         Ajoute un flag sans créer de doublon.
         """
@@ -393,7 +392,7 @@ class Validator:
         data["flags"] = flags
 
     @staticmethod
-    def _remove_flag(data: Dict, flag: str) -> None:
+    def _remove_flag(data: dict, flag: str) -> None:
         """
         Supprime un flag s'il existe.
         """
@@ -408,7 +407,7 @@ class Validator:
             if item != flag
         ]
 
-    def _combined_text(self, data: Dict) -> str:
+    def _combined_text(self, data: dict) -> str:
         """
         Construit le texte utilisé pour la détection.
         """
@@ -434,7 +433,7 @@ class Validator:
     # VALIDATION SCHÉMA
     # ========================================================
 
-    def validate_schema(self, data: Dict) -> Dict:
+    def validate_schema(self, data: dict) -> dict:
         """
         Vérifie et normalise la structure des données.
         """
@@ -579,8 +578,8 @@ class Validator:
 
     def _detect_opportunity_type(
         self,
-        data: Dict
-    ) -> Tuple[str, bool]:
+        data: dict
+    ) -> tuple[str, bool]:
         """
         Détermine le type d'opportunité et indique
         si le contenu contient des signaux actionnables.
@@ -774,8 +773,8 @@ class Validator:
 
     def validate_opportunity_type(
         self,
-        data: Dict
-    ) -> Dict:
+        data: dict
+    ) -> dict:
         """
         Détermine si le contenu représente une vraie
         opportunité professionnelle/commerciale.
@@ -952,8 +951,8 @@ class Validator:
 
     def reject_non_opportunity(
         self,
-        data: Dict
-    ) -> Dict:
+        data: dict
+    ) -> dict:
         """
         Marque les contenus non actionnables comme rejetés.
         """
@@ -983,8 +982,8 @@ class Validator:
 
     def validate_business(
         self,
-        data: Dict
-    ) -> Dict:
+        data: dict
+    ) -> dict:
         """
         Vérifie les règles métier.
         """
@@ -1105,8 +1104,8 @@ class Validator:
 
     def validate_url(
         self,
-        data: Dict
-    ) -> Dict:
+        data: dict
+    ) -> dict:
         """
         Vérifie si l'URL semble valide et si elle ne correspond
         pas uniquement à une page générique de recherche.
@@ -1204,8 +1203,8 @@ class Validator:
 
     def validate_confidence(
         self,
-        data: Dict
-    ) -> Dict:
+        data: dict
+    ) -> dict:
         """
         Détermine le statut selon la confiance.
 
@@ -1278,8 +1277,8 @@ class Validator:
 
     def flag_data(
         self,
-        data: Dict
-    ) -> Dict:
+        data: dict
+    ) -> dict:
         """
         Ajoute les flags complémentaires.
         """
@@ -1471,8 +1470,8 @@ class Validator:
 
     def validate_consistency(
         self,
-        data: Dict
-    ) -> Dict:
+        data: dict
+    ) -> dict:
         """
         Vérifie la cohérence finale des champs.
         """
@@ -1555,8 +1554,8 @@ class Validator:
 
     def validate(
         self,
-        data: Dict
-    ) -> Dict:
+        data: dict
+    ) -> dict:
         """
         Pipeline complet de validation.
         """
@@ -1650,8 +1649,8 @@ class Validator:
 
     def validate_batch(
         self,
-        opportunities: List[Dict]
-    ) -> List[Dict]:
+        opportunities: list[dict]
+    ) -> list[dict]:
         """
         Valide un ensemble d'opportunités.
 

@@ -1,0 +1,435 @@
+# ============================================================
+# TESTS — app/orchestrator/rag_orchestrator.py (Étape C, intégration)
+# ============================================================
+# Aucune vraie base (faux KnowledgeRepository en mémoire), aucun vrai appel
+# Voyage/Groq (faux fournisseur d'embeddings, résumé Groq désactivé sauf
+# test dédié), aucun fichier réel du projet touché (registre + dossier des
+# fichiers originaux redirigés vers tmp_path).
+# ============================================================
+
+import asyncio
+import zipfile
+from types import SimpleNamespace
+
+import pytest
+from docx import Document as DocxDocument
+
+import app.orchestrator.rag_orchestrator as rag_orch_module
+from app.orchestrator.rag_orchestrator import RagOrchestrator
+from app.services.rag import catalogue_service as catalogue
+from app.services.rag import registry_service as registre
+from app.services.rag import resume_service
+
+
+def run(coro):
+    return asyncio.run(coro)
+
+
+# ============================================================
+# FAUX FOURNISSEUR D'EMBEDDINGS — aucun réseau
+# ============================================================
+
+class FauxEmbeddingProvider:
+    def __init__(self, tpm=10_000, rpm=3, dimension=1024):
+        self.config = SimpleNamespace(tpm=tpm, rpm=rpm)
+        self.appels_documents = 0
+        self.textes_recus = []
+        self._dimension = dimension
+
+    @property
+    def modele_document(self):
+        return "voyage-4-large"
+
+    @property
+    def modele_requete(self):
+        return "voyage-4-large"
+
+    async def embed_documents(self, textes):
+        self.appels_documents += 1
+        self.textes_recus.append(list(textes))
+        return [[0.1] * self._dimension for _ in textes]
+
+    async def embed_query(self, texte, *, attente_max_s=5.0):
+        return [0.1] * self._dimension
+
+
+class FauxKnowledgeRepository:
+    def __init__(self):
+        self.chunks = []
+        self.appels_insertion = 0
+
+    def modeles_presents(self, collection=None):
+        modeles = {c.modele_embed for c in self.chunks if not collection or c.collection == collection}
+        return list(modeles)
+
+    def rechercher_par_similarite(self, vecteur, collection, top_k, **filtres):
+        return []  # non utilisé par les tests de l'orchestrateur (Étape D)
+
+    def inserer_chunks(self, lignes):
+        self.appels_insertion += 1
+        self.chunks.extend(lignes)
+
+    def supprimer_par_hash(self, doc_hash):
+        avant = len(self.chunks)
+        self.chunks = [c for c in self.chunks if c.doc_hash != doc_hash]
+        return avant - len(self.chunks)
+
+    def remplacer_resume_formation(self, formation_code, ligne):
+        self.chunks = [
+            c for c in self.chunks
+            if not (c.collection == "resume_formation" and c.formation_code == formation_code)
+        ]
+        self.chunks.append(ligne)
+
+
+@pytest.fixture(autouse=True)
+def isole(monkeypatch, tmp_path):
+    monkeypatch.setattr(registre, "CHEMIN_REGISTRE_DEFAUT", tmp_path / "index_registry.json")
+    monkeypatch.setattr(rag_orch_module, "DOSSIER_FICHIERS_ORIGINAUX", tmp_path / "fichiers")
+    # Pas de résumé Groq par défaut (sauf test dédié) : simule un échec propre.
+    monkeypatch.setattr(resume_service, "generer_resume_support", _async(lambda *a, **k: None))
+    monkeypatch.setattr(resume_service, "generer_resume_formation", _async(lambda *a, **k: None))
+    monkeypatch.setattr(rag_orch_module, "generer_resume_support", _async(lambda *a, **k: None))
+    monkeypatch.setattr(rag_orch_module, "generer_resume_formation", _async(lambda *a, **k: None))
+
+
+def _async(fn):
+    async def wrapper(*args, **kwargs):
+        return fn(*args, **kwargs)
+    return wrapper
+
+
+@pytest.fixture
+def orchestrateur(monkeypatch):
+    # get_embedding_provider() lirait le vrai .env et ferait de vrais appels
+    # réseau : remplacé par un faux AVANT toute construction, par défaut
+    # pour tous les tests (certains le réassignent avec un tpm différent).
+    monkeypatch.setattr(rag_orch_module, "get_embedding_provider", lambda: FauxEmbeddingProvider())
+    orch = RagOrchestrator(repository=FauxKnowledgeRepository())
+    return orch
+
+
+def _docx_simple(tmp_path, nom="doc.docx", texte="Un paragraphe de contenu réel. "):
+    chemin = tmp_path / nom
+    doc = DocxDocument()
+    doc.add_paragraph(texte)
+    doc.save(str(chemin))
+    return chemin
+
+
+# ============================================================
+# CLASSIFICATION
+# ============================================================
+
+def test_ingerer_fichier_image_seule_non_indexable(orchestrateur, tmp_path):
+    chemin = tmp_path / "photo.jpg"
+    chemin.write_bytes(bytes.fromhex("FFD8FFE000104A46494600010100000100010000FFD9"))
+
+    resultat = run(orchestrateur.ingerer_fichier(str(chemin), formation_code=None))
+
+    assert resultat["statut"] == "non_indexable_image"
+    assert orchestrateur.embedding_provider.appels_documents == 0
+
+
+def test_ingerer_fichier_format_video_refuse(orchestrateur, tmp_path):
+    chemin = tmp_path / "video.mp4"
+    chemin.write_bytes(b"contenu binaire quelconque")
+
+    resultat = run(orchestrateur.ingerer_fichier(str(chemin), formation_code=None))
+
+    assert resultat["statut"] == "erreur"
+    assert "vidéo" in resultat["message"].lower() or "audio" in resultat["message"].lower()
+
+
+def test_ingerer_fichier_pdf_scanne_ocr_necessaire(orchestrateur, tmp_path, monkeypatch):
+    chemin = tmp_path / "scan.pdf"
+    from reportlab.pdfgen import canvas
+    c = canvas.Canvas(str(chemin))
+    c.showPage()  # page vide, aucun texte
+    c.save()
+
+    resultat = run(orchestrateur.ingerer_fichier(str(chemin), formation_code=None))
+
+    assert resultat["statut"] == "ocr_necessaire"
+    assert orchestrateur.embedding_provider.appels_documents == 0
+
+
+# ============================================================
+# CONFIDENTIALITÉ
+# ============================================================
+
+def test_ingerer_fichier_formation_confidentielle_refusee(orchestrateur, tmp_path, monkeypatch):
+    chemin_catalogue = tmp_path / "catalogue.yaml"
+    chemin_catalogue.write_text(
+        "formations:\n  - code: SECRET\n    titre: 'Formation secrète'\n    confidentiel: true\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(catalogue, "CHEMIN_CATALOGUE_DEFAUT", chemin_catalogue)
+    monkeypatch.setattr(rag_orch_module, "obtenir_formation", lambda code: catalogue.obtenir_formation(code, chemin_catalogue))
+    monkeypatch.delenv("VOYAGE_OPT_OUT", raising=False)
+
+    chemin_doc = _docx_simple(tmp_path)
+    resultat = run(orchestrateur.ingerer_fichier(str(chemin_doc), formation_code="SECRET"))
+
+    assert resultat["statut"] == "erreur"
+    assert "confidentielle" in resultat["message"].lower()
+    assert orchestrateur.embedding_provider.appels_documents == 0
+
+
+# ============================================================
+# IDEMPOTENCE
+# ============================================================
+
+def test_ingerer_fichier_idempotence(orchestrateur, tmp_path):
+    chemin = _docx_simple(tmp_path)
+
+    premier = run(orchestrateur.ingerer_fichier(str(chemin), formation_code=None))
+    appels_apres_premier = orchestrateur.embedding_provider.appels_documents
+
+    second = run(orchestrateur.ingerer_fichier(str(chemin), formation_code=None))
+
+    assert premier["statut"] == "indexe"
+    assert second["statut"] == "deja_indexe"
+    assert orchestrateur.embedding_provider.appels_documents == appels_apres_premier  # aucun nouvel appel Voyage
+
+
+# ============================================================
+# ÉCHEC GROQ — document indexé quand même
+# ============================================================
+
+def test_echec_groq_document_indexe_quand_meme(orchestrateur, tmp_path):
+    chemin = _docx_simple(tmp_path)
+
+    resultat = run(orchestrateur.ingerer_fichier(str(chemin), formation_code=None))
+
+    assert resultat["statut"] == "indexe"  # le résumé Groq est mocké à None (échec simulé)
+    entree = registre.obtenir_entree(resultat["hash"])
+    assert entree.resume_statut == "a_generer"
+
+
+# ============================================================
+# REPRISE APRÈS INTERRUPTION
+# ============================================================
+
+
+def test_progression_chunks_n_est_confirmee_qu_apres_insertion(orchestrateur, tmp_path):
+    chemin = _docx_simple(tmp_path)
+    doc_hash = registre.calculer_hash_fichier(str(chemin))
+    original_insert = orchestrateur.repository.inserer_chunks
+    observations = []
+
+    def insert(lignes):
+        progression = registre.obtenir_entree(doc_hash).progression.copy()
+        observations.append(progression)
+        assert progression["etape"] == "enregistrement"
+        assert progression["chunks_indexes"] == len(orchestrateur.repository.chunks)
+        original_insert(lignes)
+
+    orchestrateur.repository.inserer_chunks = insert
+    resultat = run(orchestrateur.ingerer_fichier(str(chemin), None))
+    progression = registre.obtenir_entree(doc_hash).progression
+    assert observations
+    assert resultat["statut"] == "indexe"
+    assert progression["etape"] == "termine"
+    assert progression["chunks_indexes"] == len(orchestrateur.repository.chunks)
+    assert progression["chunks_prepares"] == resultat["nb_chunks"]
+
+
+def test_echec_insertion_ne_compte_pas_les_chunks_prepares(orchestrateur, tmp_path):
+    chemin = _docx_simple(tmp_path)
+    def refuse(_):
+        raise RuntimeError("Base indisponible")
+    orchestrateur.repository.inserer_chunks = refuse
+    resultat = run(orchestrateur.ingerer_fichier(str(chemin), None))
+    entree = registre.obtenir_entree(resultat["hash"])
+    assert resultat["statut"] == "erreur"
+    assert entree.progression["chunks_prepares"] > 0
+    assert entree.progression["chunks_indexes"] == 0
+    assert entree.progression["etape"] != "termine"
+
+def test_reprise_apres_interruption_ne_refait_pas_les_lots_termines(orchestrateur, tmp_path):
+    # TPM très bas : chaque chunk (~700 tokens) dépasse déjà le budget d'un
+    # lot -> 1 chunk = 1 lot, donc plusieurs lots pour un document à
+    # plusieurs chunks (déterministe, sans dépendre du texte exact).
+    orchestrateur.embedding_provider = FauxEmbeddingProvider(tpm=50)
+
+    chemin = tmp_path / "long.docx"
+    doc = DocxDocument()
+    for i in range(20):
+        doc.add_paragraph(f"Paragraphe numéro {i}. " + ("Contenu substantiel pour remplir le chunk. " * 40))
+    doc.save(str(chemin))
+
+    hash_fichier = registre.calculer_hash_fichier(str(chemin))
+    registre.initialiser_entree(hash_fichier, "long.docx", None)
+    registre.marquer_lot_termine(hash_fichier, 0)  # simule : lot 0 déjà inséré lors d'une exécution précédente
+
+    resultat = run(orchestrateur.ingerer_fichier(str(chemin), formation_code=None))
+
+    assert resultat["statut"] == "indexe"
+    # Le lot 0 n'a PAS été redemandé à Voyage : le nombre d'appels est
+    # strictement inférieur au nombre total de chunks (1 lot = 1 chunk ici).
+    assert orchestrateur.embedding_provider.appels_documents < resultat["nb_chunks"]
+
+
+# ============================================================
+# SUPPRESSION
+# ============================================================
+
+def test_supprimer_document_retire_les_chunks_et_le_registre(orchestrateur, tmp_path):
+    chemin = _docx_simple(tmp_path)
+    resultat = run(orchestrateur.ingerer_fichier(str(chemin), formation_code=None))
+    assert len(orchestrateur.repository.chunks) > 0
+
+    suppression = run(orchestrateur.supprimer_document(resultat["hash"]))
+
+    assert suppression["statut"] == "supprime"
+    assert len(orchestrateur.repository.chunks) == 0
+    assert registre.obtenir_entree(resultat["hash"]) is None
+
+
+def test_supprimer_document_introuvable(orchestrateur):
+    resultat = run(orchestrateur.supprimer_document("hash-jamais-vu"))
+    assert resultat["statut"] == "introuvable"
+
+
+# ============================================================
+# ESTIMATION DU COÛT
+# ============================================================
+
+def test_estimer_cout(orchestrateur):
+    orchestrateur.embedding_provider = FauxEmbeddingProvider(tpm=1000)
+    textes = ["x" * 400] * 10  # 10 * 100 tokens = 1000 tokens
+
+    estimation = orchestrateur.estimer_cout(textes)
+
+    assert estimation["tokens_estimes"] == 1000
+    assert estimation["nb_requetes"] >= 1
+    assert "duree_estimee_min" in estimation
+
+
+# ============================================================
+# ZIP — rapport par fichier, un échec n'arrête pas les autres
+# ============================================================
+
+def test_ingerer_zip_rapport_par_fichier(orchestrateur, tmp_path):
+    chemin_docx = tmp_path / "bon.docx"
+    doc = DocxDocument()
+    doc.add_paragraph("Contenu valide et suffisamment long pour former un chunk exploitable.")
+    doc.save(str(chemin_docx))
+
+    chemin_zip = tmp_path / "corpus.zip"
+    with zipfile.ZipFile(chemin_zip, "w") as zf:
+        zf.write(chemin_docx, arcname="bon.docx")
+        zf.writestr("image.jpg", bytes.fromhex("FFD8FFE000104A46494600010100000100010000FFD9"))
+        zf.writestr("video.mp4", b"contenu video")
+
+    resultat = run(orchestrateur.ingerer_zip(str(chemin_zip), formation_code=None))
+
+    assert resultat["statut"] == "termine"
+    assert resultat["nb_fichiers"] == 3
+    assert resultat["nb_indexes"] == 1
+    statuts = {r["fichier"]: r["statut"] for r in resultat["fichiers"]}
+    assert statuts["bon.docx"] == "indexe"
+    assert statuts["image.jpg"] == "non_indexable_image"
+    assert statuts["video.mp4"] == "erreur"
+
+
+def test_ingerer_zip_bombe_refuse_avant_extraction(orchestrateur, tmp_path, monkeypatch):
+    from app.services.rag import zip_securite
+    monkeypatch.setattr(zip_securite, "MAX_DECOMPRESSE_OCTETS", 10)
+
+    chemin_zip = tmp_path / "bombe.zip"
+    with zipfile.ZipFile(chemin_zip, "w") as zf:
+        zf.writestr("gros.txt", b"x" * 1000)
+
+    resultat = run(orchestrateur.ingerer_zip(str(chemin_zip), formation_code=None))
+
+    assert resultat["statut"] == "refuse"
+    assert orchestrateur.embedding_provider.appels_documents == 0
+
+
+# ============================================================
+# LIAISON C3 → M5 — exporter_questions_m5
+# ============================================================
+
+def _fausse_formation(code="TEST_M5", titre="Test formation"):
+    from types import SimpleNamespace
+    return SimpleNamespace(code=code, titre=titre, domaine="Test")
+
+
+def test_exporter_questions_m5_aucun_support(orchestrateur, monkeypatch):
+    """Sans supports indexés : retourne success=False + listes vides."""
+    import app.services.rag.questions_service as qsvc
+
+    monkeypatch.setattr(rag_orch_module, "obtenir_formation", lambda code: _fausse_formation(code))
+
+    async def faux_generer(*a, **kw):
+        return {"questions": [], "message": "Aucun support indexé."}
+    monkeypatch.setattr(qsvc, "generer_questions", faux_generer)
+
+    resultat = run(orchestrateur.exporter_questions_m5("TEST_M5"))
+    assert resultat["success"] is False
+    assert resultat["test_avant"] == []
+    assert resultat["test_apres"] == []
+
+
+def test_exporter_questions_m5_avec_questions(orchestrateur, monkeypatch):
+    """Avec questions générées : retourne test_avant + test_apres structurés."""
+    import app.services.rag.questions_service as qsvc
+
+    monkeypatch.setattr(rag_orch_module, "obtenir_formation", lambda code: _fausse_formation(code))
+
+    fausses_questions = [
+        {"question": "Qu'est-ce que X ?", "type": "qcm", "options": ["A. a", "B. b"], "correct_answer": "A"},
+        {"question": "Définir Y.", "type": "qcm", "options": ["A. c", "B. d"], "correct_answer": "B"},
+    ]
+
+    async def faux_generer(*a, **kw):
+        return {"questions": fausses_questions, "message": None}
+    monkeypatch.setattr(qsvc, "generer_questions", faux_generer)
+
+    resultat = run(orchestrateur.exporter_questions_m5("TEST_M5", nb_questions_max=5))
+    assert resultat["success"] is True
+    assert resultat["nb_questions"] == 2
+    assert len(resultat["test_avant"]) == 2
+    assert len(resultat["test_apres"]) == 2
+    assert resultat["test_avant"][0]["id"] == "av_01"
+    assert resultat["test_apres"][0]["id"] == "ap_01"
+    assert "Qu'est-ce que X" in resultat["supports_resume"]
+
+
+# ============================================================
+# LIAISON C3 → M3 — exporter_portfolio_m3
+# ============================================================
+
+def test_exporter_portfolio_m3_review_non_approuve(orchestrateur, monkeypatch):
+    """Un review non approuvé lève une exception."""
+    from app.services.backend_sync import review_sync as rsync
+
+    def faux_load_approved(review_id, agent_ids=None):
+        raise ValueError("Review non approuvé ou introuvable.")
+    monkeypatch.setattr(rsync, "load_approved_review", faux_load_approved)
+
+    with pytest.raises(ValueError, match="non approuvé"):
+        run(orchestrateur.exporter_portfolio_m3("review-inexistant"))
+
+
+def test_exporter_portfolio_m3_avec_fiches(orchestrateur, monkeypatch):
+    """Avec un review approuvé contenant des fiches : retourne la liste de références M3."""
+    from app.services.backend_sync import review_sync as rsync
+
+    fiches = [
+        {"intitule": "Formation IA", "client": "ONG X", "annee": "2025", "nb_participants": 20, "duree_jours": 3, "domaine": "IA"},
+        {"intitule": "Formation Data", "client": "Entreprise Y", "annee": "2024", "nb_participants": 15, "duree_jours": 2, "domaine": "Data"},
+    ]
+
+    def faux_load_approved(review_id, agent_ids=None):
+        return {"data": {"fiches_reference": fiches}}
+    monkeypatch.setattr(rsync, "load_approved_review", faux_load_approved)
+
+    resultat = run(orchestrateur.exporter_portfolio_m3("review-approuve-123"))
+    assert resultat["success"] is True
+    assert resultat["nb_references"] == 2
+    assert resultat["references"][0]["intitule"] == "Formation IA"
+    assert resultat["references"][1]["client"] == "Entreprise Y"
+    assert "usage" in resultat

@@ -1,0 +1,252 @@
+# app/services/rag/registry_service.py
+# ============================================================
+# REGISTRE D'INDEXATION — data/rag/index_registry.json (RAG, Étape C)
+# ============================================================
+# Même principe que app/services/backend_sync/review_sync.py (registre
+# JSON, écriture atomique). Porte : l'idempotence (SHA-256 du fichier),
+# la reprise après interruption (dernier lot terminé) et le suivi des
+# résumés Groq (Étape C §9-11).
+# ============================================================
+
+import hashlib
+import json
+import logging
+import os
+from dataclasses import asdict, dataclass, field
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+logger = logging.getLogger(__name__)
+
+CHEMIN_REGISTRE_DEFAUT = (
+    Path(__file__).resolve().parents[3] / "data" / "rag" / "index_registry.json"
+)
+
+
+def _chemin_registre_actif() -> Path:
+    """Use a private registry for every company; never merge tenant uploads."""
+    from app.core.tenant_context import get_tenant_id
+
+    tenant_id = get_tenant_id()
+    if tenant_id is None:
+        return CHEMIN_REGISTRE_DEFAUT
+    return CHEMIN_REGISTRE_DEFAUT.parent / "tenants" / str(tenant_id) / CHEMIN_REGISTRE_DEFAUT.name
+
+STATUTS_VALIDES = (
+    "en_attente", "en_cours", "indexe", "erreur",
+    "non_indexable_image", "ocr_necessaire", "archive",
+)
+
+
+@dataclass
+class EntreeRegistre:
+    hash: str
+    fichier: str
+    formation_code: str | None = None
+    collection: str = "support"
+    statut: str = "en_attente"
+
+    nb_pages: int | None = None
+    nb_chunks: int | None = None
+    tokens_estimes: int | None = None
+    modele_embed: str | None = None
+    message: str | None = None
+
+    date_debut: str | None = None
+    date_fin: str | None = None
+
+    # Module pédagogique (optionnel) — ex: "Module 1 — Introduction"
+    module: str | None = None
+    # UUID de la session réelle, pour isoler les documents de deux sessions
+    # qui partagent le même code de formation.
+    session_id: str | None = None
+
+    # Résumé (Étape C §9)
+    resume: str | None = None
+    plan: list[dict[str, Any]] = field(default_factory=list)
+    mots_cles: list[str] = field(default_factory=list)
+    resume_statut: str = "a_generer"  # a_generer | genere | echec
+
+    # Reprise après interruption : index (0-based) du dernier lot de chunks
+    # inséré en base avec succès. -1 = rien encore inséré.
+    dernier_lot_termine: int = -1
+
+    # Télémétrie additive du pipeline, exposée par GET /ia/rag/statut/{hash}.
+    # Un chunk préparé n'est pas nécessairement vectorisé ni persisté.
+    progression: dict[str, Any] = field(default_factory=dict)
+
+
+def calculer_hash_fichier(chemin: str) -> str:
+    """SHA-256 du contenu du fichier (idempotence)."""
+    sha256 = hashlib.sha256()
+    with open(chemin, "rb") as f:
+        for bloc in iter(lambda: f.read(65536), b""):
+            sha256.update(bloc)
+    return sha256.hexdigest()
+
+
+def _charger_brut(chemin: Path) -> dict[str, Any]:
+    if not chemin.exists():
+        return {}
+    try:
+        with open(chemin, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except (json.JSONDecodeError, OSError) as exc:
+        logger.error(f"❌ Registre RAG illisible : {exc}")
+        return {}
+
+
+def _sauvegarder_brut(registre: dict[str, Any], chemin: Path) -> None:
+    chemin.parent.mkdir(parents=True, exist_ok=True)
+    tmp = chemin.with_suffix(".tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(registre, f, indent=2, ensure_ascii=False)
+    os.replace(tmp, chemin)  # écriture atomique
+
+
+def charger_registre(chemin: Path | None = None) -> dict[str, EntreeRegistre]:
+    chemin = chemin or _chemin_registre_actif()
+    brut = _charger_brut(chemin)
+    return {h: EntreeRegistre(**v) for h, v in brut.items()}
+
+
+def obtenir_entree(hash_fichier: str, chemin: Path | None = None) -> EntreeRegistre | None:
+    return charger_registre(chemin).get(hash_fichier)
+
+
+def enregistrer_entree(entree: EntreeRegistre, chemin: Path | None = None) -> None:
+    chemin = chemin or _chemin_registre_actif()
+    registre = _charger_brut(chemin)
+    registre[entree.hash] = asdict(entree)
+    _sauvegarder_brut(registre, chemin)
+
+
+def supprimer_entree(hash_fichier: str, chemin: Path | None = None) -> None:
+    chemin = chemin or _chemin_registre_actif()
+    registre = _charger_brut(chemin)
+    registre.pop(hash_fichier, None)
+    _sauvegarder_brut(registre, chemin)
+
+
+def deja_indexe(hash_fichier: str, chemin: Path | None = None) -> bool:
+    """True si ce fichier (par son SHA-256) est déjà indexé avec succès :
+    aucun appel Voyage à refaire."""
+    entree = obtenir_entree(hash_fichier, chemin)
+    return entree is not None and entree.statut == "indexe"
+
+
+def initialiser_entree(
+    hash_fichier: str,
+    fichier: str,
+    formation_code: str | None,
+    collection: str = "support",
+    module: str | None = None,
+    chemin: Path | None = None,
+    session_id: str | None = None,
+) -> EntreeRegistre:
+    """Crée (ou retourne) l'entrée pour ce fichier, statut 'en_attente' si
+    nouvelle, INCHANGÉE si elle existe déjà (reprise après interruption)."""
+    existante = obtenir_entree(hash_fichier, chemin)
+    if existante is not None:
+        if session_id and existante.session_id and str(session_id) != str(existante.session_id):
+            raise ValueError("Ce fichier est déjà rattaché à une autre session. Téléversez un support propre à cette session.")
+        if session_id and not existante.session_id:
+            if existante.formation_code and formation_code and existante.formation_code != formation_code:
+                raise ValueError("Ce fichier est déjà associé à un autre code formation.")
+            existante.session_id = str(session_id)
+            existante.module = module or existante.module
+            enregistrer_entree(existante, chemin)
+        return existante
+
+    entree = EntreeRegistre(
+        hash=hash_fichier, fichier=fichier, formation_code=formation_code,
+        collection=collection, module=module, session_id=str(session_id) if session_id else None,
+        statut="en_attente",
+        date_debut=datetime.now().isoformat(),
+    )
+    enregistrer_entree(entree, chemin)
+    return entree
+
+
+def marquer_lot_termine(hash_fichier: str, numero_lot: int, chemin: Path | None = None) -> None:
+    """Enregistre qu'un lot de chunks a été inséré en base avec succès —
+    permet de reprendre exactement là en cas d'interruption."""
+    entree = obtenir_entree(hash_fichier, chemin)
+    if entree is None:
+        return
+    entree.dernier_lot_termine = numero_lot
+    entree.statut = "en_cours"
+    enregistrer_entree(entree, chemin)
+
+
+def marquer_progression(
+    hash_fichier: str, etape: str, chemin: Path | None = None, **compteurs: Any,
+) -> None:
+    """Publie un jalon réellement atteint, sans pourcentage temporel estimé."""
+    entree = obtenir_entree(hash_fichier, chemin)
+    if entree is None:
+        return
+    entree.progression.update(compteurs)
+    entree.progression.update(etape=etape, mise_a_jour=datetime.now().isoformat())
+    enregistrer_entree(entree, chemin)
+
+
+def marquer_termine(
+    hash_fichier: str, nb_pages: int, nb_chunks: int, tokens_estimes: int,
+    modele_embed: str, chemin: Path | None = None,
+) -> None:
+    entree = obtenir_entree(hash_fichier, chemin)
+    if entree is None:
+        return
+    entree.statut = "indexe"
+    entree.nb_pages = nb_pages
+    entree.nb_chunks = nb_chunks
+    entree.tokens_estimes = tokens_estimes
+    entree.modele_embed = modele_embed
+    entree.date_fin = datetime.now().isoformat()
+    entree.message = None
+    entree.progression.update(
+        etape="termine", chunks_prepares=nb_chunks, chunks_indexes=nb_chunks,
+        mise_a_jour=entree.date_fin,
+    )
+    enregistrer_entree(entree, chemin)
+
+
+def marquer_statut_special(
+    hash_fichier: str, fichier: str, formation_code: str | None,
+    statut: str, message: str, chemin: Path | None = None,
+) -> None:
+    """Pour non_indexable_image / ocr_necessaire / erreur : crée ou met à
+    jour l'entrée avec le statut et un message clair, sans chunk ni appel
+    Voyage."""
+    if statut not in STATUTS_VALIDES:
+        raise ValueError(f"Statut de registre invalide : '{statut}'.")
+
+    entree = obtenir_entree(hash_fichier, chemin) or EntreeRegistre(
+        hash=hash_fichier, fichier=fichier, formation_code=formation_code,
+        date_debut=datetime.now().isoformat(),
+    )
+    entree.statut = statut
+    entree.message = message
+    entree.date_fin = datetime.now().isoformat()
+    enregistrer_entree(entree, chemin)
+
+
+def entrees_pour_formation(formation_code: str, chemin: Path | None = None) -> list[EntreeRegistre]:
+    return [
+        e for e in charger_registre(chemin).values()
+        if e.formation_code == formation_code
+    ]
+
+
+def entrees_pour_session(session_id: str, chemin: Path | None = None) -> list[EntreeRegistre]:
+    return [e for e in charger_registre(chemin).values() if str(e.session_id or "") == str(session_id)]
+
+
+def entrees_sans_resume(chemin: Path | None = None) -> list[EntreeRegistre]:
+    return [
+        e for e in charger_registre(chemin).values()
+        if e.statut == "indexe" and e.resume_statut == "a_generer"
+    ]

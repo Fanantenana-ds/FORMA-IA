@@ -1,25 +1,31 @@
 # ============================================================
 # FORMA-IA — M1 VEILLE
 # ROUTES API
+# api/v1/routes_veille.py
+# ============================================================
+# Version : V2.0 — Seuils permissifs + operation_id explicites
 # ============================================================
 
 from __future__ import annotations
 
+import asyncio
 import io
+import json
 import logging
-from typing import List, Optional
-from fastapi import Depends
-from app.utils.security import verify_api_key
+from contextlib import suppress
 
-import PyPDF2
-
+import pypdf
 from fastapi import (
     APIRouter,
+    Depends,
     File,
     Form,
     HTTPException,
+    Query,
     UploadFile,
 )
+from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse
 from pydantic import (
     BaseModel,
     Field,
@@ -28,11 +34,31 @@ from pydantic import (
 from app.orchestrator.veille_orchestrator import (
     VeilleOrchestrator,
 )
-
+from app.services.benchmark.benchmark_runner import BenchmarkRunner
+from app.services.veille import auto_detection_service as auto_detection
+from app.services.veille import tavily_quota_service
+from app.services.veille.progress_service import PROGRESS_CALLBACK
+from app.services.veille.demo_mode_service import (
+    DEMO_MODE,
+    charger_opportunites_demo_reelles,
+    generer_opportunites_demo,
+)
+from app.services.veille.tavily_quota_service import QuotaTavilyDepasseError
+from app.services.veille.access_service import verify_api_key, verify_api_key_sse
+from app.services.backend_sync.request_context import bind_backend_auth_token
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(dependencies=[Depends(verify_api_key)])
+router = APIRouter(
+    dependencies=[Depends(verify_api_key), Depends(bind_backend_auth_token)]
+)
+
+# Router séparé pour les routes SSE : l'auth Bearer standard est incompatible
+# avec EventSource (le navigateur ne peut pas envoyer de headers custom).
+# verify_api_key_sse accepte le token en query param ?token= ou en header Bearer.
+sse_router = APIRouter(
+    dependencies=[Depends(verify_api_key_sse), Depends(bind_backend_auth_token)]
+)
 
 
 # ============================================================
@@ -43,7 +69,7 @@ orchestrator = VeilleOrchestrator()
 
 
 # ============================================================
-# REQUESTS
+# REQUESTS / RESPONSES
 # ============================================================
 
 class SearchRequest(BaseModel):
@@ -54,10 +80,11 @@ class SearchRequest(BaseModel):
         max_length=500,
     )
 
-    domains: Optional[List[str]] = None
+    domains: list[str] | None = None
 
+    # ✅ Seuil ABAISSÉ pour ne pas filtrer les opportunités valides
     min_score: int = Field(
-        default=40,
+        default=10,       # était 40
         ge=0,
         le=100,
     )
@@ -77,22 +104,28 @@ class AnalyseTexteRequest(BaseModel):
         max_length=10000,
     )
 
-    source: Optional[str] = "manuel"
+    source: str | None = "manuel"
+
+
+class DetectionAutoRequest(BaseModel):
+    """Corps OPTIONNEL : sans corps, la configuration VEILLE_AUTO_* s'applique."""
+
+    min_score: int | None = Field(default=None, ge=0, le=100)
+    limit: int | None = Field(default=None, ge=1, le=50)
+    # False = aperçu : rien n'est envoyé au Backend
+    sync_backend: bool = True
 
 
 class SearchResponse(BaseModel):
 
     success: bool
-
     data: dict
-
-    error: Optional[str] = None
-
-    file: Optional[dict] = None
+    error: str | None = None
+    file: dict | None = None
 
 
 # ============================================================
-# NORMALISATION
+# NORMALISATION — PERMISSIVE
 # ============================================================
 
 def _normalize_result(
@@ -100,109 +133,85 @@ def _normalize_result(
     min_score: int,
     limit: int,
 ):
+    """Filtre les opportunités avec un seuil bas pour ne rien manquer."""
 
-    if not isinstance(
-        resultat,
-        dict,
-    ):
+    if not isinstance(resultat, dict):
         raise HTTPException(
             status_code=502,
-            detail=(
-                "Réponse invalide "
-                "de l'orchestrateur."
-            ),
+            detail="Réponse invalide de l'orchestrateur.",
         )
 
-    opportunities = resultat.get(
-        "opportunities",
-        [],
-    )
+    opportunities = resultat.get("opportunities", [])
 
-    if not isinstance(
-        opportunities,
-        list,
-    ):
+    if not isinstance(opportunities, list):
         opportunities = []
 
     filtered = []
 
     for opportunity in opportunities:
 
-        if not isinstance(
-            opportunity,
-            dict,
-        ):
+        if not isinstance(opportunity, dict):
             continue
 
         try:
-            score = int(
-                opportunity.get(
-                    "score",
-                    0,
-                )
-            )
-        except (
-            TypeError,
-            ValueError,
-        ):
+            score = int(opportunity.get("score", 0))
+        except (TypeError, ValueError):
             score = 0
 
+        # ✅ Filtrer UNIQUEMENT si le score est vraiment très bas
         if score < min_score:
             continue
 
-        opportunity[
-            "score"
-        ] = score
+        opportunity["score"] = score
 
         try:
-            opportunity[
-                "confidence"
-            ] = round(
-                float(
-                    opportunity.get(
-                        "confidence",
-                        0,
-                    )
-                ),
+            opportunity["confidence"] = round(
+                float(opportunity.get("confidence", 0)),
                 3,
             )
-        except (
-            TypeError,
-            ValueError,
-        ):
-            opportunity[
-                "confidence"
-            ] = 0.0
+        except (TypeError, ValueError):
+            opportunity["confidence"] = 0.0
 
-        filtered.append(
-            opportunity
-        )
+        filtered.append(opportunity)
 
     filtered.sort(
         key=lambda x: (
-            x.get(
-                "score",
-                0,
-            ),
-            x.get(
-                "confidence",
-                0,
-            ),
+            x.get("score", 0),
+            x.get("confidence", 0),
         ),
         reverse=True,
     )
 
     filtered = filtered[:limit]
 
-    resultat[
-        "opportunities"
-    ] = filtered
-
-    resultat[
-        "total"
-    ] = len(filtered)
+    resultat["opportunities"] = filtered
+    resultat["total"] = len(filtered)
 
     return resultat
+
+
+def _opportunites_demo_visibles(limit: int) -> list[dict]:
+    """Varie les avis archivés vérifiables, ouverts ou clôturés."""
+    archive = charger_opportunites_demo_reelles()
+    verifiables = [
+        item for item in archive
+        if isinstance(item, dict) and (item.get("source_url") or item.get("url"))
+    ]
+    if verifiables:
+        import random
+        return random.sample(verifiables, min(limit, len(verifiables)))
+    return []
+
+
+# ===========================================================
+# SYSTÈME
+# ===========================================================
+
+@router.post("/benchmark", tags=["Système"])
+async def run_benchmark(limit: int = Query(20, ge=1, le=100)):
+    runner = BenchmarkRunner()
+    report = await runner.run(limit=limit)
+    return {"status": "success", "report": report}
 
 
 # ============================================================
@@ -213,6 +222,8 @@ def _normalize_result(
     "/ia/veille/rechercher",
     response_model=SearchResponse,
     tags=["M1 - Veille Marché"],
+    operation_id="rechercherOpportunites",
+    summary="Mode 1 — Recherche d'offres (requête saisie)",
 )
 async def rechercher_opportunites(
     request: SearchRequest,
@@ -225,24 +236,39 @@ async def rechercher_opportunites(
 
     try:
 
-        resultat = (
-            await orchestrator.analyser_opportunites(
+        if DEMO_MODE:
+            opportunites = _opportunites_demo_visibles(request.limit)
+            resultat = {
+                "status": "success",
+                "query": request.query,
+                "opportunities": opportunites,
+                "total": len(opportunites),
+                "demo_mode": True,
+            }
+        else:
+            resultat = await orchestrator.analyser_opportunites(
                 query=request.query
             )
-        )
 
         resultat = _normalize_result(
             resultat=resultat,
-            min_score=request.min_score,
+            min_score=0 if DEMO_MODE else request.min_score,
             limit=request.limit,
         )
 
+        if resultat.get("status") in {"technical_error", "quota_atteint"}:
+            return JSONResponse(
+                status_code=429 if resultat["status"] == "quota_atteint" else 503,
+                content={
+                    "success": False,
+                    "data": resultat,
+                    "error": "La recherche web est temporairement indisponible.",
+                },
+            )
+
         logger.info(
             "✅ IA: %d opportunités retournées",
-            resultat.get(
-                "total",
-                0,
-            ),
+            resultat.get("total", 0),
         )
 
         return {
@@ -250,6 +276,9 @@ async def rechercher_opportunites(
             "data": resultat,
             "error": None,
         }
+
+    except QuotaTavilyDepasseError as exc:
+        raise HTTPException(status_code=429, detail=str(exc))
 
     except HTTPException:
         raise
@@ -263,11 +292,130 @@ async def rechercher_opportunites(
 
         raise HTTPException(
             status_code=500,
-            detail=(
-                "Erreur interne du "
-                "service de veille."
-            ),
+            detail="Erreur interne du service de veille.",
         )
+
+
+# ============================================================
+# 1 bis. DÉTECTION AUTOMATIQUE (sans requête saisie)
+# ============================================================
+
+@router.post(
+    "/ia/veille/detecter",
+    response_model=SearchResponse,
+    tags=["M1 - Veille Marché"],
+    operation_id="detecterOpportunites",
+    summary="Mode 2 — Détection automatique (sans requête)",
+)
+async def detecter_opportunites(
+    request: DetectionAutoRequest | None = None,
+):
+    """
+    Lance les requêtes du profil ALTIORA (VEILLE_AUTO_QUERIES ou défaut),
+    fusionne, dédoublonne, garde les meilleurs scores et enregistre dans le
+    Backend celles qui n'y sont pas déjà. En mode démo, renvoie des avis archivés
+    sourcés (ouverts ou clôturés) sans lancer Tavily/Groq ni enregistrer de données.
+    """
+    request = request or DetectionAutoRequest()
+
+    try:
+        if DEMO_MODE:
+            debut = asyncio.get_running_loop().time()
+            opportunites = _opportunites_demo_visibles(
+                request.limit or auto_detection.limite()
+            )
+            queries = [
+                {"query": query, "status": "demo", "opportunities": len(opportunites)}
+                for query in auto_detection.get_queries()
+            ]
+            elapsed = round(asyncio.get_running_loop().time() - debut, 3)
+            resultat_demo = {
+                "status": "success",
+                "mode": "automatique",
+                "demo_mode": True,
+                "opportunities": opportunites,
+                "total": len(opportunites),
+                "queries": queries,
+                    "notes": "Mode démo : avis archivés affichés avec leur état courant, aucune donnée enregistrée automatiquement.",
+                "statistics": {
+                    "queries_run": len(queries),
+                    "processing_time_seconds": elapsed,
+                    "final": len(opportunites),
+                    "final_opportunities": len(opportunites),
+                    "demo_mode": True,
+                    "backend_sync": {
+                        "enabled": False,
+                        "sent": 0,
+                        "already_present": 0,
+                        "failed": 0,
+                        "deferred": True,
+                    },
+                },
+            }
+            return {"success": True, "data": resultat_demo, "error": None}
+
+        resultat = await auto_detection.executer_detection(
+            orchestrator,
+            declenchement="manuel",
+            min_score=request.min_score,
+            limit=request.limit,
+            sync_backend=request.sync_backend,
+        )
+        if resultat.get("status") in {"technical_error", "quota_atteint"}:
+            return JSONResponse(
+                status_code=429 if resultat["status"] == "quota_atteint" else 503,
+                content={"success": False, "data": resultat,
+                         "error": resultat.get("notes") or "Détection réelle indisponible."},
+            )
+        return {"success": True, "data": resultat, "error": None}
+
+    except auto_detection.DetectionAutoEnCours:
+        raise HTTPException(
+            status_code=409,
+            detail="Une détection automatique est déjà en cours.",
+        )
+
+    except Exception as exc:
+        logger.exception("❌ Erreur détection automatique M1 : %s", exc)
+        raise HTTPException(
+            status_code=500,
+            detail="Erreur interne lors de la détection automatique.",
+        )
+
+
+@router.get(
+    "/ia/veille/detecter/statut",
+    response_model=SearchResponse,
+    tags=["M1 - Veille Marché"],
+    operation_id="statutDetectionAutomatique",
+    summary="Mode 2 — État et configuration de la détection automatique",
+)
+async def statut_detection_automatique():
+    return {
+        "success": True,
+        "data": {
+            "en_cours": auto_detection.est_en_cours(),
+            "configuration": auto_detection.get_config(),
+            "derniere_execution": auto_detection.lire_etat() or None,
+        },
+        "error": None,
+    }
+
+
+@router.get(
+    "/ia/veille/quota",
+    tags=["M1 - Veille Marché"],
+    operation_id="quotaTavily",
+    summary="Quota Tavily — appels HTTP réels du mois, par catégorie",
+)
+async def quota_tavily():
+    """
+    Appels HTTP RÉELS vers Tavily ce mois-ci (pas les "requêtes"
+    utilisateur — jusqu'à 2 appels HTTP par recherche, repli et retries
+    compris), ventilés par catégorie (auto / manuel / collecte), restant,
+    pourcentage utilisé, configuration active, avertissement (80%/95%).
+    """
+    return {"success": True, "data": tavily_quota_service.etat_pour_route(), "error": None}
 
 
 # ============================================================
@@ -278,6 +426,7 @@ async def rechercher_opportunites(
     "/ia/veille/analyser-texte",
     response_model=SearchResponse,
     tags=["M1 - Veille Marché"],
+    operation_id="analyserTexte",
 )
 async def analyser_texte(
     request: AnalyseTexteRequest,
@@ -287,13 +436,26 @@ async def analyser_texte(
 
         texte = request.texte.strip()
 
-        result = await orchestrator.analyser_texte(request.texte, request.source)
+        if not texte:
+            raise HTTPException(
+                status_code=400,
+                detail="Le texte est vide.",
+            )
+
+        result = await orchestrator.analyser_texte(
+            texte=texte,
+            source=request.source or "manuel",
+            sync_backend=False,
+        )
 
         return {
             "success": True,
             "data": result,
             "error": None,
         }
+
+    except HTTPException:
+        raise
 
     except Exception as exc:
 
@@ -304,10 +466,7 @@ async def analyser_texte(
 
         raise HTTPException(
             status_code=500,
-            detail=(
-                "Erreur interne lors "
-                "de l'analyse texte."
-            ),
+            detail="Erreur interne lors de l'analyse texte.",
         )
 
 
@@ -318,27 +477,19 @@ async def analyser_texte(
 @router.post(
     "/ia/veille/analyser-pdf",
     tags=["M1 - Veille Marché"],
+    operation_id="analyserPdf",
 )
 async def analyser_pdf(
     file: UploadFile = File(...),
-    source: str = Form(
-        default="manuel"
-    ),
+    source: str = Form(default="manuel"),
 ):
 
-    filename = (
-        file.filename or ""
-    ).lower()
+    filename = (file.filename or "").lower()
 
-    if not filename.endswith(
-        ".pdf"
-    ):
+    if not filename.endswith(".pdf"):
         raise HTTPException(
             status_code=400,
-            detail=(
-                "Le fichier doit être "
-                "un PDF."
-            ),
+            detail="Le fichier doit être un PDF.",
         )
 
     try:
@@ -346,81 +497,48 @@ async def analyser_pdf(
         contents = await file.read()
 
         if not contents:
-
             raise HTTPException(
                 status_code=400,
-                detail=(
-                    "Le PDF est vide."
-                ),
+                detail="Le PDF est vide.",
             )
 
-        max_size = (
-            15 * 1024 * 1024
-        )
+        max_size = 15 * 1024 * 1024
 
         if len(contents) > max_size:
-
             raise HTTPException(
                 status_code=413,
-                detail=(
-                    "PDF trop volumineux "
-                    "(maximum 15 MB)."
-                ),
+                detail="PDF trop volumineux (maximum 15 MB).",
             )
 
         try:
-
-            reader = PyPDF2.PdfReader(
-                io.BytesIO(contents)
-            )
-
+            reader = pypdf.PdfReader(io.BytesIO(contents))
         except Exception:
-
             raise HTTPException(
                 status_code=400,
-                detail=(
-                    "PDF invalide ou "
-                    "corrompu."
-                ),
+                detail="PDF invalide ou corrompu.",
             )
 
         pages = []
 
         for page in reader.pages:
-
-            text = (
-                page.extract_text()
-                or ""
-            ).strip()
-
+            text = (page.extract_text() or "").strip()
             if text:
-                pages.append(
-                    text
-                )
+                pages.append(text)
 
-        texte_complet = (
-            "\n\n".join(pages)
-        )
+        texte_complet = "\n\n".join(pages)
 
         if not texte_complet.strip():
-
             raise HTTPException(
                 status_code=400,
-                detail=(
-                    "Aucun texte exploitable "
-                    "dans le PDF."
-                ),
+                detail="Aucun texte exploitable dans le PDF.",
             )
 
-        texte_complet = (
-            texte_complet[:10000]
-        )
+        texte_complet = texte_complet[:10000]
 
-        resultat = (
-            await orchestrator.analyser_texte(
-                texte=texte_complet,
-                source=source,
-            )
+        resultat = await orchestrator.analyser_texte(
+            texte=texte_complet,
+            source=source,
+            sync_backend=False,
         )
 
         return {
@@ -447,16 +565,324 @@ async def analyser_pdf(
 
         raise HTTPException(
             status_code=500,
-            detail=(
-                "Erreur interne lors "
-                "de l'analyse PDF."
-            ),
+            detail="Erreur interne lors de l'analyse PDF.",
         )
-from fastapi import Query
-from app.services.benchmark.benchmark_runner import BenchmarkRunner
 
-@router.post("/benchmark")
-async def run_benchmark(limit: int = Query(20, ge=1, le=100)):
-    runner = BenchmarkRunner()
-    report = await runner.run(limit=limit)
-    return {"status": "success", "report": report}
+
+# ============================================================
+# 4. SYNCHRONISATION BACKEND — APRÈS APPROBATION HITL
+# ============================================================
+
+class SynchroniserBackendRequest(BaseModel):
+    review_id: str
+    force: bool = False
+
+
+@router.post(
+    "/ia/veille/synchroniser-backend",
+    response_model=SearchResponse,
+    tags=["M1 - Veille Marché"],
+    operation_id="synchroniserBackendVeille",
+    summary="Sync M1 → Backend après approbation HITL (agent_m1_veille)",
+    description=(
+        "Envoie les opportunités approuvées au Backend.\n\n"
+        "⚠️ Requiert une review HITL approuvée (agent_m1_veille). "
+        "Sans approbation humaine, la requête est rejetée (403)."
+    ),
+)
+async def synchroniser_backend(
+    request: SynchroniserBackendRequest,
+):
+    try:
+        result = await orchestrator.synchroniser_backend(
+            review_id=request.review_id,
+            force=request.force,
+        )
+        return {"success": True, "data": result, "error": None}
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    except Exception as exc:
+        logger.exception("❌ Erreur sync veille Backend : %s", exc)
+        raise HTTPException(
+            status_code=500,
+            detail="Erreur interne lors de la synchronisation Backend.",
+        )
+
+
+# ============================================================
+# DÉTECTION EN STREAMING (Server-Sent Events)
+# ============================================================
+
+def _sse(event: str, data: dict) -> str:
+    """Formate un événement SSE."""
+    return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+
+async def _stream_detection(min_score: int, limit: int, sync_backend: bool, owner: str = "internal"):
+    """
+    Générateur SSE — émet les événements de détection en temps réel.
+
+    En mode DEMO_MODE=true : rejoue les avis archivés (données réelles capturées)
+    avec les mêmes événements et le même rythme que la détection live,
+    sans appel Tavily ni Groq.
+    En mode normal : détection réelle Tavily + Groq.
+    """
+    queries = auto_detection.get_config().get("requetes", [])
+    total_queries = len(queries)
+
+    yield _sse("debut", {"message": "Consultation des avis publics vérifiés..." if DEMO_MODE else "Lancement de la recherche réelle d’opportunités..."})
+    await asyncio.sleep(0.3)
+
+    # ================================================================
+    # BRANCHE DEMO — archive réelle, même rythme que le pipeline live
+    # ================================================================
+    if DEMO_MODE:
+        opportunites_filtrees = _opportunites_demo_visibles(limit)
+        for i, opp in enumerate(opportunites_filtrees, 1):
+            yield _sse("requete", {
+                "numero": i,
+                "total": len(opportunites_filtrees),
+                "query": opp.get("source_site", "Source publique"),
+                "message": f"Avis {i}/{len(opportunites_filtrees)} · {opp.get('source_site', 'Source publique')}",
+            })
+            await asyncio.sleep(0.7)
+
+        yield _sse("analyse", {"message": "Classement des avis archivés selon leur pertinence..."})
+        await asyncio.sleep(1.5)
+
+        rejets = 0
+
+        # 4. Stream les résultats un par un
+        for opp in opportunites_filtrees:
+            yield _sse("opportunite", {
+                "titre": opp.get("title", ""),
+                "organizer": opp.get("organizer", ""),
+                "score": opp.get("score", 0),
+                "confidence": opp.get("confidence", 0.85),
+                "domain": opp.get("domain", ""),
+                "budget": opp.get("budget") or "Non précisé",
+                "deadline": opp.get("deadline") or opp.get("date_limite"),
+                "summary": opp.get("summary", ""),
+                "source_url": opp.get("source_url") or opp.get("url"),
+                "source_site": opp.get("source_site"),
+                "reference": opp.get("reference"),
+                "date_capture": opp.get("date_capture"),
+                "date_derniere_verification": opp.get("date_derniere_verification"),
+                "status_at_capture": opp.get("status_at_capture"),
+                "current_status": opp.get("current_status", ""),
+                "capture_type": opp.get("capture_type"),
+                "message": f"✅ {opp.get('title', '')} — score {opp.get('score', 0)}/100",
+            })
+            await asyncio.sleep(0.8)
+
+        yield _sse("fin", {
+            "status": "success",
+            "total": len(opportunites_filtrees),
+            "sources": len(opportunites_filtrees),
+            "candidats_collectes": len(opportunites_filtrees),
+            "requêtes": 0,
+            "rejets": rejets,
+            "message": f"{len(opportunites_filtrees)} avis publics archivés et vérifiables prêts à examiner.",
+            "opportunites": opportunites_filtrees,
+        })
+        return
+
+    # ================================================================
+    # BRANCHE RÉELLE — Tavily + Groq
+    # ================================================================
+    opportunites_trouvees: list[dict] = []
+    sources_analysees: int | None = None
+    rejets = 0
+
+    try:
+        if tavily_quota_service.plafond_dur_atteint():
+            yield _sse("erreur", {"message": "Plafond Tavily atteint."})
+            yield _sse("fin", {"status": "quota_atteint", "total": 0, "sources": 0, "rejets": 0})
+            return
+
+        queue = asyncio.Queue(maxsize=128)
+        async def progress(event, data):
+            await queue.put((event, data))
+        async def run_detection():
+            token = PROGRESS_CALLBACK.set(progress)
+            try:
+                return await auto_detection.executer_detection(
+                    orchestrator, declenchement="manuel", min_score=min_score,
+                    limit=limit, sync_backend=sync_backend)
+            finally:
+                PROGRESS_CALLBACK.reset(token)
+        worker = asyncio.create_task(run_detection())
+        received = None
+        try:
+            while not worker.done() or not queue.empty():
+                if not queue.empty():
+                    event, data = queue.get_nowait()
+                    yield _sse(event, data)
+                    continue
+                received = asyncio.create_task(queue.get())
+                ready, _ = await asyncio.wait({worker, received}, timeout=10, return_when=asyncio.FIRST_COMPLETED)
+                if received in ready:
+                    event, data = received.result()
+                    yield _sse(event, data)
+                else:
+                    received.cancel()
+                    with suppress(asyncio.CancelledError):
+                        await received
+                    if not worker.done():
+                        yield ": keep-alive\n\n"
+                received = None
+            resultat = await worker
+        finally:
+            if received is not None and not received.done():
+                received.cancel()
+                with suppress(asyncio.CancelledError):
+                    await received
+            if not worker.done():
+                worker.cancel()
+            with suppress(asyncio.CancelledError):
+                await worker
+
+        from app.services.veille.pending_service import bind
+        bind(resultat.get("continuation_id"), owner, min_score)
+        from app.services.veille.result_context_service import remember
+        remember(owner, resultat)
+        opportunites_brutes = sorted(resultat.get("opportunities", []) or [], key=lambda o: o.get("score", 0), reverse=True)
+        statistiques = resultat.get("statistics") or {}
+        sources_analysees = statistiques.get("sources_analyzed")
+        rejets = statistiques.get("below_min_score", 0)
+        statut = resultat.get("status", "technical_error")
+
+        if statut == "partial":
+            yield _sse("analyse", {"stage": "partial_completion", "message": resultat.get("notes") or "Résultats disponibles ; analyse partielle.", "status": statut})
+        if statut in {"technical_error", "degraded", "error", "quota_atteint"}:
+            yield _sse("erreur", {
+                "message": resultat.get("notes") or "La détection n'a pas abouti complètement.",
+                "status": statut,
+            })
+
+        opportunites_trouvees.extend(opportunites_brutes)
+        # Le frontend existant ajoute chaque carte en tête : le meilleur arrive
+        # en dernier pour être affiché en premier. Le paquet fin reste décroissant.
+        for opp in reversed(opportunites_brutes):
+            yield _sse("opportunite", {
+                **opp,
+                "rank": opportunites_brutes.index(opp) + 1,
+                "titre": opp.get("title", ""),
+                "organizer": opp.get("organizer", ""),
+                "score": opp.get("score", 0),
+                "confidence": opp.get("confidence", 0),
+                "domain": opp.get("domain", ""),
+                "budget": opp.get("budget", "Non précisé"),
+                "deadline": opp.get("deadline"),
+                "summary": opp.get("summary", ""),
+                "message": f"✅ {opp.get('title', '')} — score {opp.get('score', 0)}/100",
+            })
+            await asyncio.sleep(0.15)
+
+        for candidate in resultat.get("to_review_candidates", []):
+            yield _sse("candidat_a_verifier", candidate)
+
+        yield _sse("rejet_info", {
+            "message": f"❌ {rejets} opportunités écartées sous le seuil de score.",
+            "rejets": rejets,
+        })
+
+        yield _sse("fin", {
+            "status": statut,
+            "total": len(opportunites_trouvees),
+            "sources": sources_analysees,
+            "candidats_collectes": statistiques.get("raw_results", statistiques.get("collected", 0)),
+            "requêtes": statistiques.get("queries_run", len(queries)),
+            "rejets": rejets,
+            "message": (
+                f"🎯 Détection terminée : {len(opportunites_trouvees)} opportunité(s) "
+                f"retenue(s) après {statistiques.get('queries_run', len(queries))} requête(s), "
+                f"{rejets} écartée(s) sous le seuil de score."
+            ),
+            "opportunites": opportunites_trouvees,
+            "to_review_candidates": resultat.get("to_review_candidates", []),
+            "analyzed_sources": resultat.get("analyzed_sources", []),
+            "pending_sources": resultat.get("pending_sources", []),
+            "continuation_id": resultat.get("continuation_id"),
+            "source_groups": resultat.get("source_groups", []),
+            "queries": resultat.get("queries", []),
+            "analysis_strategy": resultat.get("analysis_strategy"),
+            "collection_complete": resultat.get("collection_complete"),
+            "collection_diagnostics": resultat.get("collection_diagnostics", {}),
+            "navigation_sources": resultat.get("navigation_sources", []),
+            "analysis_batches": resultat.get("analysis_batches", []),
+            "statistics": statistiques,
+        })
+
+    except auto_detection.DetectionAutoEnCours:
+        yield _sse("erreur", {"message": "Une détection est déjà en cours. Réessayez dans quelques instants."})
+        yield _sse("fin", {"status": "in_progress", "total": 0, "sources": 0, "rejets": 0})
+    except Exception as exc:
+        logger.exception("❌ Erreur stream détection M1 : %s", exc)
+        yield _sse("erreur", {"message": "Erreur interne lors de la détection."})
+        yield _sse("fin", {"status": "technical_error", "total": 0, "sources": 0, "rejets": 0})
+
+
+@sse_router.get(
+    "/ia/veille/detecter/stream",
+    tags=["M1 - Veille Marché"],
+    operation_id="streamDetectionOpportunites",
+    summary="Mode 2 — Détection automatique en streaming (Server-Sent Events)",
+    description=(
+        "Lance la détection automatique et émet les résultats en temps réel "
+        "via Server-Sent Events. Événements : debut, requete, analyse, "
+        "opportunite, rejet_info, erreur, fin.\n\n"
+        "La recherche utilise les fournisseurs configurés. Les erreurs techniques et "
+        "les recherches sans opportunité pertinente sont signalées séparément."
+    ),
+)
+async def stream_detection(
+    min_score: int = Query(default=40, ge=0, le=100),
+    limit: int = Query(default=20, ge=1, le=100),
+    sync_backend: bool = Query(default=True),
+    token: str | None = Query(default=None, include_in_schema=False),
+    principal=Depends(verify_api_key_sse),
+):
+    return StreamingResponse(
+        _stream_detection(min_score=min_score, limit=limit, sync_backend=sync_backend, owner=str(getattr(principal, "id", "internal"))),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+class ReprendreSourcesRequest(BaseModel):
+    continuation_id: str = Field(..., min_length=20, max_length=100)
+
+
+@router.post("/ia/veille/sources/reprendre", tags=["M1 - Veille Marché"])
+async def reprendre_sources(payload: ReprendreSourcesRequest, principal=Depends(verify_api_key)):
+    if DEMO_MODE:
+        raise HTTPException(409, "La reprise des sources est disponible uniquement en mode réel.")
+    from app.services.veille.pending_service import resume
+    owner = str(getattr(principal, "id", "internal"))
+    result = await resume(payload.continuation_id, owner, orchestrator)
+    from app.services.veille.result_context_service import remember, latest
+    previous = latest(owner)
+    if previous:
+        by_url = {item.get("url") or item.get("title"): item for item in previous.get("opportunities", []) or []}
+        by_url.update({item.get("url") or item.get("title"): item for item in result.get("opportunities", [])})
+        merged = {**result, "opportunities": sorted(by_url.values(), key=lambda item: item.get("score", 0), reverse=True)}
+        if previous.get("status") == "partial": merged["status"] = "partial"
+        remember(owner, merged)
+    else:
+        remember(owner, result)
+    return result
+
+
+@router.get("/ia/veille/dernier-resultat", tags=["M1 - Veille Marché"])
+async def dernier_resultat_veille(principal=Depends(verify_api_key)):
+    from app.services.veille.result_context_service import latest
+    result = latest(str(getattr(principal, "id", "internal")))
+    if not result:
+        raise HTTPException(404, "Aucune détection récente accessible pour cette session.")
+    return {"success": True, "data": result}

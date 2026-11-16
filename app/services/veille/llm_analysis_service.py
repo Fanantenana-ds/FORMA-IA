@@ -18,19 +18,24 @@
 # prompt métier.
 # ============================================================
 
+import asyncio
 import json
 import logging
 import os
+import re
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
-import httpx
-from openai import AsyncOpenAI
-
-from app.utils.retry import retry_with_backoff
+from app.services.llm import (
+    LLMError,
+    LLMNotAvailableError,
+    LLMRateLimitError,
+    get_llm_provider,
+)
 from app.utils.url_utils import normalize_url
+from app.services.veille.evidence_service import MADAGASCAR, source_need
 
 logger = logging.getLogger(__name__)
 
@@ -38,9 +43,7 @@ BASE_DIR = Path(__file__).resolve().parents[3]
 PROMPTS_DIR = BASE_DIR / "app" / "prompts" / "m1"
 VEILLE_YAML_PATH = PROMPTS_DIR / "veille.yaml"
 
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-20b")
-GROQ_TIMEOUT = float(os.getenv("GROQ_TIMEOUT", "20"))
+GROQ_TIMEOUT = float(os.getenv("GROQ_TIMEOUT", "12"))
 # 1200 était trop juste pour openai/gpt-oss-120b avec reasoning
 # activé, même en "low" : le JSON de sortie (jusqu'à 4 sources,
 # champs reason/summary/flags) peut dépasser ce budget.
@@ -50,8 +53,7 @@ MAX_PROMPT_CHARS = int(os.getenv("MAX_PROMPT_CHARS", "18000"))
 MAX_SOURCE_CHARS_TOTAL = int(os.getenv("MAX_SOURCE_CHARS_TOTAL", "4500"))
 MAX_SOURCE_CHARS_EACH = int(os.getenv("MAX_SOURCE_CHARS_EACH", "1000"))
 
-RETRY_MAX_ATTEMPTS = int(os.getenv("RETRY_MAX_ATTEMPTS", "3"))
-RETRY_BASE_DELAY = float(os.getenv("RETRY_BASE_DELAY", "1.0"))
+M1_ANALYSIS_BUDGET_S = max(1.0, float(os.getenv("M1_ANALYSIS_BUDGET_S", "20")))
 
 # Ce texte est ajouté UNIQUEMENT si le mot "json" est absent du
 # prompt final (donc en principe jamais si veille.yaml est à jour,
@@ -67,20 +69,15 @@ class LLMAnalysisService:
     """Analyse factuelle des sources via Groq, pilotée par veille.yaml."""
 
     def __init__(self):
-        self.model = GROQ_MODEL
-        self.client: Optional[AsyncOpenAI] = None
-
-        if GROQ_API_KEY:
-            self.client = AsyncOpenAI(
-                api_key=GROQ_API_KEY,
-                base_url="https://api.groq.com/openai/v1",
-                timeout=GROQ_TIMEOUT,
-            )
-            logger.info("🤖 GROQ configuré : %s", self.model)
-        else:
-            logger.warning("⚠️ GROQ_API_KEY absente")
+        try:
+            self.llm = get_llm_provider()
+            logger.info("🤖 Provider LLM configuré : %s", self.llm.get_provider_name())
+        except LLMNotAvailableError:
+            self.llm = None
+            logger.warning("⚠️ Aucun provider LLM disponible")
 
         self.veille_yaml_text = self._load_raw_yaml(VEILLE_YAML_PATH)
+        self.compact_yaml_text = self._load_raw_yaml(PROMPTS_DIR / "analyse_compacte.yaml")
         logger.info("✅ Prompt veille.yaml chargé")
 
         if "json" not in self.veille_yaml_text.lower():
@@ -115,6 +112,52 @@ class LLMAnalysisService:
     # CONSTRUCTION DU PROMPT
     # --------------------------------------------------------
 
+    def _prepare_compact_prompt(self, query, results, date_reference=None):
+        sources = [r for r in results if isinstance(r, dict)]
+        while True:
+            blocks = []
+            for index, source in enumerate(sources, 1):
+                text = str(source.get("content") or "")
+                windows = [text[:450]]
+                for match in list(re.finditer(r"cl[ôo]ture|deadline|date limite|au plus tard", text, re.IGNORECASE))[:3]:
+                    excerpt = text[max(0, match.start() - 30):match.start() + 260]
+                    if excerpt not in windows:
+                        windows.append(excerpt)
+                blocks.append(f"RESULTAT {index}\nTITRE: {source.get('title', '')}\nURL: {source.get('url', '')}\n"
+                              f"BESOIN LU: {source_need(source) or 'Non extrait'}\n"
+                              f"CONTENU: {' […] '.join(windows)[:1300]}")
+            today = (date_reference or datetime.now(MADAGASCAR)).strftime("%Y-%m-%d")
+            prompt = self._replace_placeholders(self.compact_yaml_text, query, today, "\n\n".join(blocks))
+            if len(prompt) <= MAX_PROMPT_CHARS or len(sources) <= 1:
+                return self._ensure_json_keyword(prompt), sources
+            sources.pop()
+
+    @staticmethod
+    def _retry_delay(error):
+        """Une attente courte indiquée par le fournisseur ; aucun retry aveugle."""
+        response = getattr(error.__cause__, "response", None)
+        headers = getattr(response, "headers", {})
+        try:
+            delay = float(headers.get("retry-after"))
+            return delay if 0 <= delay <= 2 else None
+        except (TypeError, ValueError):
+            match = re.search(r"try again in\s+(\d+(?:\.\d+)?)\s*(ms|s)\b", str(error), re.IGNORECASE)
+            if match:
+                delay = float(match.group(1)) / (1000 if match.group(2).lower() == "ms" else 1)
+                return delay if 0 <= delay <= 2 else None
+        return None
+
+    async def _generate_once_or_short_retry(self, **kwargs):
+        try:
+            return await self.llm.generate(**kwargs)
+        except LLMRateLimitError as exc:
+            delay = self._retry_delay(exc)
+            if delay is None:
+                raise
+            await asyncio.sleep(delay + 0.15)
+            # Une seconde erreur remonte ; le budget extérieur inclut l'attente.
+            return await self.llm.generate(**kwargs)
+
     @staticmethod
     def _replace_placeholders(
         template: str, query: str, current_date: str, results_text: str
@@ -137,38 +180,59 @@ class LLMAnalysisService:
 
         return rendered
 
-    def _build_source_blocks(self, results: List[Dict[str, Any]]) -> str:
+    def _build_source_blocks(self, results: list[dict[str, Any]]) -> str:
+        # Budget réparti équitablement : avant, on s'arrêtait dès que le total
+        # dépassait MAX_SOURCE_CHARS_TOTAL, et les dernières sources du lot
+        # n'étaient jamais montrées au LLM (sans aucun log).
+        sources = [r for r in results if isinstance(r, dict)]
+        part = min(MAX_SOURCE_CHARS_EACH, MAX_SOURCE_CHARS_TOTAL // max(1, len(sources)))
+
         blocks = []
-        total_chars = 0
-
-        for index, result in enumerate(results, start=1):
-            if not isinstance(result, dict):
-                continue
-
-            title = str(result.get("title", "")).strip()
+        for index, result in enumerate(sources, start=1):
+            title = " ".join(str(result.get("title", "")).split())
             url = normalize_url(result.get("url", ""))
             content = str(
                 result.get("content", "") or result.get("snippet", "")
-            ).strip()[:MAX_SOURCE_CHARS_EACH]
+            ).strip()[:part]
 
-            block = (
+            blocks.append(
                 f"===== RESULTAT {index} =====\n"
                 f"TITRE: {title}\n"
                 f"URL: {url}\n"
+                f"PUBLICATION SOURCE: {result.get('published_at') or 'Non précisée'}\n"
+                f"CAPTURE SOURCE: {result.get('captured_at') or 'Non précisée'}\n"
                 f"CONTENU:\n{content}\n"
             )
 
-            projected = total_chars + len(block)
-            if projected > MAX_SOURCE_CHARS_TOTAL:
-                break
-
-            blocks.append(block)
-            total_chars = projected
-
         return "\n".join(blocks)
 
-    def _build_prompt(self, query: str, results: List[Dict[str, Any]]) -> str:
-        current_date = datetime.now().strftime("%Y-%m-%d")
+    @staticmethod
+    def _log_rejets(data: dict[str, Any], results: list[dict[str, Any]]) -> None:
+        """Journalise la raison de rejet de chaque source (diagnostic / mesure M1)."""
+        rejets = data.get("rejets")
+        if not isinstance(rejets, list):
+            return
+        for rejet in rejets:
+            if not isinstance(rejet, dict):
+                continue
+            numero = rejet.get("resultat")
+            titre = "?"
+            if isinstance(numero, int) and 1 <= numero <= len(results):
+                titre = " ".join(str(results[numero - 1].get("title", "?")).split())[:60]
+            logger.info("   ❌ [%s] %s → %s", numero, titre, rejet.get("raison", "?"))
+
+    def _build_prompt(
+        self,
+        query: str,
+        results: list[dict[str, Any]],
+        date_reference: datetime | None = None,
+    ) -> str:
+        # date_reference : si fournie (ex. benchmark M1 — reproductibilité),
+        # remplace datetime.now() pour que le LLM évalue les échéances par
+        # rapport à la DATE DE COLLECTE du document, pas à aujourd'hui.
+        # Sans ce paramètre, un document annoté "valide" le 2026-09-01 avec
+        # deadline 2026-09-15 serait vu comme "expiré" le 2026-09-26.
+        current_date = (date_reference or datetime.now()).strftime("%Y-%m-%d")
         results_text = self._build_source_blocks(results)
 
         prompt = self._replace_placeholders(
@@ -217,14 +281,23 @@ class LLMAnalysisService:
         return prompt
 
     def build_prompt_with_budget(
-        self, query: str, results: List[Dict[str, Any]]
+        self,
+        query: str,
+        results: list[dict[str, Any]],
+        date_reference: datetime | None = None,
     ) -> str:
+        return self._prepare_prompt(query, results, date_reference)[0]
+
+    def _prepare_prompt(
+        self, query: str, results: list[dict[str, Any]],
+        date_reference: datetime | None = None,
+    ) -> tuple[str, list[dict[str, Any]]]:
         """Conserve le YAML complet, réduit uniquement les sources si besoin."""
 
-        prompt = self._build_prompt(query, results)
+        prompt = self._build_prompt(query, results, date_reference=date_reference)
 
         if len(prompt) <= MAX_PROMPT_CHARS:
-            return self._ensure_json_keyword(prompt)
+            return self._ensure_json_keyword(prompt), results
 
         logger.warning(
             "⚠️ Prompt trop grand : %d caractères. Réduction des sources.",
@@ -234,7 +307,7 @@ class LLMAnalysisService:
         reduced_results = list(results)
         while len(prompt) > MAX_PROMPT_CHARS and len(reduced_results) > 1:
             reduced_results.pop()
-            prompt = self._build_prompt(query, reduced_results)
+            prompt = self._build_prompt(query, reduced_results, date_reference=date_reference)
 
         if len(prompt) > MAX_PROMPT_CHARS:
             logger.warning("⚠️ Le YAML seul est proche de la limite de prompt.")
@@ -245,75 +318,72 @@ class LLMAnalysisService:
             len(reduced_results),
         )
 
-        return self._ensure_json_keyword(prompt)
+        return self._ensure_json_keyword(prompt), reduced_results
 
     # --------------------------------------------------------
-    # APPEL GROQ (avec retry/backoff)
+    # APPEL LLM (retry/backoff géré par la Provider Abstraction)
     # --------------------------------------------------------
-
-    async def _do_call(self, prompt: str):
-        """Un seul essai — rejouable par retry_with_backoff."""
-        return await self.client.chat.completions.create(
-            model=self.model,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.1,
-            max_tokens=GROQ_MAX_OUTPUT_TOKENS,
-            response_format={"type": "json_object"},
-            # IMPORTANT : openai/gpt-oss-120b est un modèle de
-            # raisonnement sur Groq. Par défaut (reasoning_effort=
-            # "medium"), le raisonnement interne peut épuiser tout
-            # le budget max_tokens AVANT que le JSON final ne soit
-            # généré -> erreur "json_validate_failed / max completion
-            # tokens reached before generating a valid document".
-            # "low" laisse plus de marge pour la réponse elle-même.
-            reasoning_effort="low",
-        )
 
     async def analyze(
-        self, query: str, results: List[Dict[str, Any]]
-    ) -> Optional[Dict[str, Any]]:
+        self,
+        query: str,
+        results: list[dict[str, Any]],
+        date_reference: datetime | None = None,
+        compact: bool = False,
+    ) -> dict[str, Any] | None:
         """
-        Construit le prompt et interroge Groq. Retourne le JSON
+        Construit le prompt et interroge le LLM. Retourne le JSON
         brut du modèle, ou None en cas d'échec (réseau ou format).
+
+        date_reference : si fournie, remplace datetime.now() dans le
+        prompt LLM ({{DATE_DU_JOUR}}) — reproductibilité benchmark M1.
         """
 
-        if self.client is None:
-            logger.warning("⚠️ GROQ indisponible")
+        if self.llm is None:
+            logger.warning("⚠️ Aucun provider LLM disponible")
             return None
 
-        prompt = self.build_prompt_with_budget(query, results)
+        prepare = self._prepare_compact_prompt if compact else self._prepare_prompt
+        prompt, submitted = prepare(query, results, date_reference=date_reference)
 
-        logger.info("📤 Envoi à GROQ : %d sources", len(results))
-        for i, r in enumerate(results, start=1):
+        logger.info("📤 Envoi à GROQ : %d sources", len(submitted))
+        for i, r in enumerate(submitted, start=1):
             content_preview = str(
                 r.get("content", "") or r.get("snippet", "")
             )[:150]
             logger.info(
                 "   [%d] %s | contenu: %s...",
-                i, str(r.get("title", "?"))[:60], content_preview,
+                i, " ".join(str(r.get("title", "?")).split())[:60],
+                " ".join(content_preview.split()),
             )
         logger.info("📦 Taille prompt : %d caractères", len(prompt))
 
         start = time.perf_counter()
 
         try:
-            response = await retry_with_backoff(
-                self._do_call,
-                prompt,
-                max_retries=RETRY_MAX_ATTEMPTS,
-                base_delay=RETRY_BASE_DELAY,
-                retryable_exceptions=(httpx.TimeoutException, httpx.HTTPError),
-                label="Groq",
-            )
+            # Une seule tentative M1 : le 429 doit remonter immédiatement.
+            # Le budget inclut aussi un éventuel retry interne du SDK.
+            response = await asyncio.wait_for(self._generate_once_or_short_retry(
+                system_prompt="",
+                user_prompt=prompt,
+                temperature=0.1,
+                max_tokens=min(1800, GROQ_MAX_OUTPUT_TOKENS) if compact else GROQ_MAX_OUTPUT_TOKENS,
+                json_mode=True,
+                # IMPORTANT : openai/gpt-oss-120b est un modèle de
+                # raisonnement sur Groq. Par défaut (reasoning_effort=
+                # "medium"), le raisonnement interne peut épuiser tout
+                # le budget max_tokens AVANT que le JSON final ne soit
+                # généré -> erreur "json_validate_failed / max completion
+                # tokens reached before generating a valid document".
+                # "low" laisse plus de marge pour la réponse elle-même.
+                reasoning_effort="low",
+                timeout=GROQ_TIMEOUT,
+            ), timeout=M1_ANALYSIS_BUDGET_S)
 
             elapsed = time.perf_counter() - start
             logger.info("⏱️ Groq : %.3fs", elapsed)
 
-            if not response.choices:
-                logger.error("❌ GROQ : aucune choice")
-                return None
-
-            content = response.choices[0].message.content
+            content = response["content"]
             if not content:
                 logger.error("❌ GROQ : réponse vide")
                 return None
@@ -341,23 +411,36 @@ class LLMAnalysisService:
                 "✅ GROQ : réponse JSON valide — %d opportunités",
                 len(data["opportunities"]),
             )
+            self._log_rejets(data, submitted)
+            # Le consommateur doit savoir quelles sources sont réellement
+            # entrées dans le prompt après réduction de son budget.
+            data["sources_submitted"] = len(submitted)
+            data["llm_usage"] = response.get("usage", {})
+            data["prompt_characters"] = len(prompt)
+            logger.info(f"🔍 Réponse GROQ: {data}")
 
             return data
 
-        # BadRequestError (400) inclut l'erreur "must contain the word json"
-        # -> PAS transitoire, ne doit jamais être retryée.
-        except httpx.HTTPStatusError as exc:
-            logger.error(
-                "❌ GROQ [%s] : erreur HTTP non transitoire (%s) — pas de retry",
-                self.model,
-                exc,
+        except LLMRateLimitError:
+            logger.warning("Quota Groq atteint : arrêt des appels M1 pour ce passage.")
+            return {"opportunities": [], "status": "quota_atteint",
+                    "notes": "Quota Groq atteint. Réessayez après le renouvellement du quota."}
+        except TimeoutError:
+            logger.warning("Budget d'analyse M1 dépassé (%.1f s).", M1_ANALYSIS_BUDGET_S)
+            return None
+        except LLMNotAvailableError as exc:
+            logger.error("❌ Provider LLM indisponible : %s", exc)
+            return None
+
+        # LLMError générique (ex: 400 "must contain the word json") :
+        # generate_with_retry ne la retente jamais (non transitoire).
+        except LLMError as exc:
+            logger.exception(
+                "❌ LLM [%s] (après retries) : %s", self.llm.get_model_name(), exc
             )
             return None
 
-        except (httpx.TimeoutException, httpx.HTTPError) as exc:
-            logger.exception("❌ GROQ [%s] (après retries) : %s", self.model, exc)
+        except Exception as exc:
+            logger.exception("❌ LLM [%s] : %s", self.llm.get_model_name(), exc)
             return None
 
-        except Exception as exc:
-            logger.exception("❌ GROQ [%s] : %s", self.model, exc)
-            return None

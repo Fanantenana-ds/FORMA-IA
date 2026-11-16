@@ -1,0 +1,221 @@
+import React from 'react';
+import { DashboardView } from './DashboardView';
+import { VeilleMarcheView } from './VeilleMarcheView';
+import { OpportunitesCrmView } from './OpportunitesCrmView';
+import { FormateursStaffView } from './FormateursStaffView';
+import { EvaluationCompetencesView } from './EvaluationCompetencesView';
+import { SessionsGroupesView } from './SessionsGroupesView';
+import { SuiviPresencesView } from './SuiviPresencesView';
+import { FacturationDevisView } from './FacturationDevisView';
+import { EspaceIAView } from './EspaceIAView';
+import { GestionUtilisateursView } from './GestionUtilisateursView';
+import { DossiersFormationView } from './DossiersFormationView';
+import { ProfileView } from './ProfileView';
+import { ParametresView } from './ParametresView';
+import {
+  MenuSection,
+  UserRole,
+  AuthUser,
+  KPIStats,
+  DomainOpportunity,
+  FacturationStatut,
+  ActiviteRecente,
+  VeilleMarche,
+  OpportuniteCRM,
+  Formateur,
+  Session,
+  PresenceRecord,
+  DevisFacture
+} from '../../types';
+
+interface ViewRouterProps {
+  currentSection: MenuSection;
+  currentRole: UserRole;
+  kpis: KPIStats;
+  domainOpportunities: DomainOpportunity[];
+  facturationStatuts: FacturationStatut[];
+  activites: ActiviteRecente[];
+  veilles: VeilleMarche[];
+  opportunites: OpportuniteCRM[];
+  formateurs: Formateur[];
+  sessions: Session[];
+  presences: PresenceRecord[];
+  factures: DevisFacture[];
+  onRefreshData: () => void;
+  dashboardLoading?: boolean;
+  dashboardNotice?: string | null;
+  onNavigateTo: (section: MenuSection) => void;
+  onOpenNewOpportunity: () => void;
+  onOpenNewSession: () => void;
+  /** Seule la Direction peut créer, modifier ou supprimer des formateurs. */
+  canManageFormateurs: boolean;
+  onOpenNewInvoice: (sessionId?: string, montantHT?: number, client?: string) => void;
+  authUser: AuthUser;
+  avatarUrl: string | null;
+  onUploadAvatar: (file: File) => Promise<void>;
+  onDeleteAvatar: () => Promise<void>;
+  onUpdateUser: (updates: Pick<AuthUser, 'nom' | 'email'>) => Promise<void>;
+  onBackFromProfile: () => void;
+  pendingReviewCount?: number;
+}
+
+export const ViewRouter: React.FC<ViewRouterProps> = ({
+  currentSection,
+  currentRole,
+  kpis,
+  domainOpportunities,
+  facturationStatuts,
+  activites,
+  veilles,
+  opportunites,
+  formateurs,
+  sessions,
+  presences,
+  factures,
+  onRefreshData,
+  dashboardLoading,
+  dashboardNotice,
+  onNavigateTo,
+  onOpenNewOpportunity,
+  onOpenNewSession,
+  onOpenNewInvoice,
+  canManageFormateurs,
+  authUser,
+  avatarUrl,
+  onUploadAvatar,
+  onDeleteAvatar,
+  onUpdateUser,
+  onBackFromProfile,
+  pendingReviewCount = 0
+}) => {
+  switch (currentSection) {
+    case 'mon_profil':
+      return <ProfileView authUser={authUser} avatarUrl={avatarUrl} onUploadAvatar={onUploadAvatar} onDeleteAvatar={onDeleteAvatar} onUpdateUser={onUpdateUser} onBack={onBackFromProfile} />;
+    case 'parametres':
+      return <ParametresView authUser={authUser} onBack={onBackFromProfile} />;
+    case 'gestion_utilisateurs':
+      return currentRole === 'Dir.' ? <GestionUtilisateursView /> : null;
+    case 'tableau_de_bord':
+      return (
+        <DashboardView
+          kpis={kpis}
+          domainOpportunities={domainOpportunities}
+          facturationStatuts={facturationStatuts}
+          activites={activites}
+          currentRole={currentRole}
+          isLoading={dashboardLoading}
+          notice={dashboardNotice}
+          pendingReviewCount={pendingReviewCount}
+          onRefresh={onRefreshData}
+          onNavigateTo={onNavigateTo}
+          onOpenNewOpportunity={onOpenNewOpportunity}
+          onOpenNewSession={onOpenNewSession}
+          authUser={authUser}
+        />
+      );
+
+    case 'veille_marche':
+      return (
+        <VeilleMarcheView
+          veilles={veilles}
+          onNavigateToSection={onNavigateTo}
+          onRefreshData={onRefreshData}
+          canTriggerDetection={currentRole === 'Dir.' || currentRole === 'Assis.'}
+        />
+      );
+
+    case 'opportunites_crm':
+      return (
+        <OpportunitesCrmView
+          opportunites={opportunites}
+          onOpenNewOpportunity={onOpenNewOpportunity}
+          onRefreshData={onRefreshData}
+          canDeleteOpportunities={currentRole === 'Dir.' || currentRole === 'Assis.'}
+          onNavigateToSection={onNavigateTo}
+        />
+      );
+
+    case 'formateurs_staff':
+      return (
+        <FormateursStaffView
+          formateurs={formateurs}
+          sessions={sessions}
+          opportunites={opportunites}
+          canManage={canManageFormateurs}
+          onRefreshData={onRefreshData}
+        />
+      );
+
+    case 'evaluation_competences':
+      return (
+        <EvaluationCompetencesView
+          formateurs={formateurs}
+        />
+      );
+
+    case 'sessions_groupes':
+      return (
+        <SessionsGroupesView
+          sessions={sessions}
+          presences={presences}
+          onOpenNewSession={onOpenNewSession}
+          onRefreshData={onRefreshData}
+          canDeleteSessions={currentRole === 'Dir.'}
+          readOnly={currentRole === 'Form.'}
+          onNavigateToSection={onNavigateTo}
+          onOpenNewInvoice={onOpenNewInvoice}
+          opportunites={opportunites}
+        />
+      );
+
+    case 'suivi_presences':
+      return <SuiviPresencesView presences={presences} sessions={sessions} readOnly={currentRole === 'Form.'} />;
+
+    case 'facturation_devis':
+      return (
+        <FacturationDevisView
+          factures={factures}
+          sessions={sessions}
+          onOpenNewInvoice={onOpenNewInvoice}
+          onRefreshData={onRefreshData}
+          onNavigateToSection={onNavigateTo}
+        />
+      );
+
+    case 'dossiers_formation':
+      return currentRole === 'Form.' ? null : (
+        <DossiersFormationView
+          opportunites={opportunites}
+          sessions={sessions}
+          formateurs={formateurs}
+          factures={factures}
+          onRefreshData={onRefreshData}
+          onNavigateTo={onNavigateTo}
+          canManagePreparation={currentRole === 'Dir.' || currentRole === 'Assis.'}
+          onOpenNewInvoice={onOpenNewInvoice}
+        />
+      );
+
+    case 'espace_ia':
+      return <EspaceIAView readOnly={currentRole === 'Form.'} trainerMode={currentRole === 'Form.'} onNavigateToSection={onNavigateTo} dashboardStats={kpis as Record<string, unknown>} />;
+
+    default:
+      return (
+        <DashboardView
+          kpis={kpis}
+          domainOpportunities={domainOpportunities}
+          facturationStatuts={facturationStatuts}
+          activites={activites}
+          currentRole={currentRole}
+          isLoading={dashboardLoading}
+          notice={dashboardNotice}
+          pendingReviewCount={pendingReviewCount}
+          onRefresh={onRefreshData}
+          onNavigateTo={onNavigateTo}
+          onOpenNewOpportunity={onOpenNewOpportunity}
+          onOpenNewSession={onOpenNewSession}
+          authUser={authUser}
+        />
+      );
+  }
+};

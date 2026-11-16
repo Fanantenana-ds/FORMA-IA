@@ -155,9 +155,9 @@
 # ============================================================
 
 import logging
-import os
+import re
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 import yaml
 
@@ -206,7 +206,29 @@ DOMAIN_KEYWORDS = {
 }
 
 
-def _load_yaml_reference(path: Path) -> Dict[str, Any]:
+# Un mot-clé court ("ia", "ml", "bi"...) matché par simple "in" (sous-chaîne)
+# déclenche des faux positifs : "materiaux" contient "ia", "stabilité" contient
+# "bi". La frontière de mot (\b) exige que le mot-clé soit un mot entier
+# (ou une phrase entière pour les mots-clés à plusieurs mots), pas un fragment.
+#
+# Correction 1e (2026-09-25, mission "Étape 1") : "s?" optionnel juste avant
+# la frontière finale reconnaît le pluriel régulier français/anglais
+# ("bureautique" -> "bureautiques", "application" -> "applications") sans
+# affaiblir la protection anti-sous-chaîne ci-dessus (la frontière de DÉBUT
+# du mot-clé est inchangée : "redéveloppement" ne matche toujours pas
+# "développement", seule la fin du mot-clé accepte un "s" optionnel).
+# Limite assumée : ne couvre pas les pluriels irréguliers français
+# (ex. "-al" -> "-aux"), aucun mot-clé actuel n'étant concerné.
+_KEYWORD_PATTERNS: dict[str, dict[str, "re.Pattern[str]"]] = {
+    domain: {
+        keyword: re.compile(r"\b" + re.escape(keyword) + r"s?\b")
+        for keyword in keywords
+    }
+    for domain, keywords in DOMAIN_KEYWORDS.items()
+}
+
+
+def _load_yaml_reference(path: Path) -> dict[str, Any]:
     if not path.exists():
         logger.warning("⚠️ Prompt de référence absent : %s", path)
         return {}
@@ -230,7 +252,7 @@ class ClassificationService:
         )
         logger.info("✅ classification.yaml chargé (référence)")
 
-    def classify(self, opportunity: Dict[str, Any]) -> Dict[str, Any]:
+    def classify(self, opportunity: dict[str, Any]) -> dict[str, Any]:
         title = str(opportunity.get("title", "")).lower()
         summary = str(opportunity.get("summary", "") or "").lower()
         text = f"{title} {summary}"
@@ -239,12 +261,12 @@ class ClassificationService:
         best_score = 0
         matches = []
 
-        for domain, keywords in DOMAIN_KEYWORDS.items():
+        for domain, patterns in _KEYWORD_PATTERNS.items():
             current_score = 0
             found = []
 
-            for keyword in keywords:
-                if keyword in text:
+            for keyword, pattern in patterns.items():
+                if pattern.search(text):
                     current_score += 1
                     found.append(keyword)
 
@@ -263,7 +285,7 @@ class ClassificationService:
         }
 
     @staticmethod
-    def detect_country(opportunity: Dict[str, Any]) -> str:
+    def detect_country(opportunity: dict[str, Any]) -> str:
         text = (
             f"{opportunity.get('title', '')} "
             f"{opportunity.get('summary', '') or ''} "

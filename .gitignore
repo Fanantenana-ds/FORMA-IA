@@ -1,56 +1,168 @@
-# ============================================================
+﻿# ═══════════════════════════════════════════════════════════════
 # FORMA-IA — .gitignore
-# ============================================================
+# ═══════════════════════════════════════════════════════════════
 
-# Environnement virtuel
-venv/
-env/
-.venv/
-
-# Variables d'environnement (SÉCURITÉ !)
+# ─────────────────────────────────────────────────────────────
+# 🔐 SECRETS — JAMAIS PUSH
+# ─────────────────────────────────────────────────────────────
 .env
 .env.local
 .env.*.local
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+secrets/
+credentials/
+config/secrets.yaml
 
-# Python
+# ─────────────────────────────────────────────────────────────
+# 🐍 PYTHON
+# ─────────────────────────────────────────────────────────────
 __pycache__/
+*.py[cod]
 *.pyc
-*.pyo
-*.pyd
+*$py.class
 *.so
-*.dylib
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
 
-# IDE
+# Environnements virtuels
+venv/
+env/
+ENV/
+.venv/
+.env-*
+
+# ─────────────────────────────────────────────────────────────
+# 🧪 TESTS & CACHE
+# ─────────────────────────────────────────────────────────────
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+coverage.json
+htmlcov/
+.tox/
+.hypothesis/
+
+# ─────────────────────────────────────────────────────────────
+# 📁 OUTPUTS & DATA (fichiers générés)
+# ─────────────────────────────────────────────────────────────
+outputs/
+exports/
+data/
+!frontend/src/data/
+logs/
+*.log
+*.out
+
+# Attestations PDF générées (mais garder le template)
+exports/attestations/*.pdf
+exports/rapports/*.pdf
+exports/rapports/*.docx
+
+# TDR générés
+exports/tdr/*.pdf
+exports/tdr/*.docx
+
+# HITL reviews (fichier de persistance local)
+data/hitl_reviews.json
+
+# ─────────────────────────────────────────────────────────────
+# 💾 BASES DE DONNÉES LOCALES
+# ─────────────────────────────────────────────────────────────
+*.db
+*.sqlite
+*.sqlite3
+*.dump
+
+# ─────────────────────────────────────────────────────────────
+# 🎨 IDE / ÉDITEURS
+# ─────────────────────────────────────────────────────────────
 .vscode/
+!.vscode/settings.json.example
+!.vscode/extensions.json
 .idea/
 *.swp
 *.swo
+*~
+.project
+.pydevproject
+.settings/
 
-# Base de données
-*.db
-*.sqlite
+# ─────────────────────────────────────────────────────────────
+# 🖥️ OS
+# ─────────────────────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
 
-# Logs
-logs/
+# ─────────────────────────────────────────────────────────────
+# 📦 NODE (si frontend dans le repo)
+# ─────────────────────────────────────────────────────────────
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# ─────────────────────────────────────────────────────────────
+# 📊 JUPYTER
+# ─────────────────────────────────────────────────────────────
+.ipynb_checkpoints/
+
+# ─────────────────────────────────────────────────────────────
+# 🐳 DOCKER
+# ─────────────────────────────────────────────────────────────
 *.log
 
-# Fichiers temporaires
+# ─────────────────────────────────────────────────────────────
+# 🤖 FICHIERS DE TRAVAIL CLAUDE CODE (internes, jamais partagés)
+# ─────────────────────────────────────────────────────────────
+CLAUDE.md
+claude.md
+AGENTS.md
+trace-claude.ps1
+trace-claude-ia.ps1
+trace-codex-ia.ps1
+01_plan.md
+
+# ─────────────────────────────────────────────────────────────
+# 📝 TEMPORAIRES
+# ─────────────────────────────────────────────────────────────
 *.tmp
-*.temp
-.DS_Store
-Thumbs.db
-
-# Docker
-data/
-pgdata/
-
-# Exports générés
-exports/
-*.pdf
-*.docx
-*.xlsx
-
-# Tests
-.pytest_cache/
-.coverage
-htmlcov/
+*.bak
+*.swp
+*.swo
+*~
+.cache/
+# Fichiers de test / temporaires du projet
+test.http
+formaia-backend.zip
+backups/
+!.env.production.example
+# Uploaded applicant CVs are runtime data, not repository fixtures
+app/uploads/candidats/

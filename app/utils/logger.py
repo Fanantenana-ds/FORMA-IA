@@ -2,9 +2,9 @@
 # FORMA-IA — LOGGING
 # ============================================================
 
-import os
-import logging
 import json
+import logging
+import os
 from datetime import datetime
 
 # Configuration du logging
@@ -43,3 +43,21 @@ logger.addHandler(console_handler)
 def get_logger(name: str):
     """Retourne un logger avec un nom spécifique"""
     return logger.getChild(name)
+
+
+_VERBOSE = os.getenv("VERBOSE_LOGS", "true").lower() == "true"
+
+
+def make_vlog(module_logger: logging.Logger):
+    """
+    Retourne une fonction vlog(msg, level) liée au logger du module appelant.
+
+    Usage :
+        logger = logging.getLogger(__name__)
+        vlog = make_vlog(logger)
+        vlog("message de debug")
+    """
+    def vlog(msg: str, level: str = "info") -> None:
+        if _VERBOSE:
+            getattr(module_logger, level)(msg)
+    return vlog

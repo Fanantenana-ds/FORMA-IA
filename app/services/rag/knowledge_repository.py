@@ -1,0 +1,180 @@
+# app/services/rag/knowledge_repository.py
+# ============================================================
+# ACCÈS DONNÉES — knowledge_base (RAG, Étape C)
+# ============================================================
+# Isole rag_orchestrator.py de SQLAlchemy : permet de le tester "sans
+# base" (mission C3) en injectant un faux dépôt en mémoire dans les tests,
+# sans avoir à interpréter des constructions SQLAlchemy Core dans les faux.
+# ============================================================
+
+import logging
+from typing import Any, Dict, List, Optional, Tuple
+from uuid import UUID
+
+from sqlalchemy import delete, select, func, update
+
+from app.database import SessionLocal
+from app.models.knowledge_base import KnowledgeBase
+
+logger = logging.getLogger(__name__)
+
+
+class KnowledgeRepository:
+    """Implémentation réelle (PostgreSQL, via SessionLocal)."""
+
+    def lister_chunks_document(self, doc_hash: str, offset: int = 0, limit: int = 20, collection: str | None = None) -> dict:
+        """Inspecte les extraits persistés, sans lire/transmettre les vecteurs."""
+        db = SessionLocal()
+        try:
+            filters = [KnowledgeBase.doc_hash == doc_hash]
+            if collection:
+                filters.append(KnowledgeBase.collection == collection)
+            total = db.execute(select(func.count()).select_from(KnowledgeBase).where(*filters)).scalar_one()
+            query = select(KnowledgeBase.chunk_index, KnowledgeBase.contenu, KnowledgeBase.fichier,
+                           KnowledgeBase.collection, KnowledgeBase.page_debut, KnowledgeBase.page_fin,
+                           KnowledgeBase.modele_embed).where(*filters).order_by(KnowledgeBase.collection, KnowledgeBase.chunk_index).offset(offset).limit(limit)
+            return {"total": total, "offset": offset, "limit": limit, "data": [dict(row._mapping) for row in db.execute(query).all()]}
+        finally:
+            db.close()
+
+    def lister_chunks_session(
+        self, session_id: str, collection: str = "support", limit: int = 80,
+        module: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Read existing chunks for one tenant session without computing embeddings."""
+        db = SessionLocal()
+        try:
+            stmt = select(
+                KnowledgeBase.contenu,
+                KnowledgeBase.fichier,
+                KnowledgeBase.module,
+                KnowledgeBase.page_debut,
+                KnowledgeBase.page_fin,
+                KnowledgeBase.chunk_index,
+                KnowledgeBase.formation_titre,
+            ).where(
+                KnowledgeBase.session_id == UUID(str(session_id)),
+                KnowledgeBase.collection == collection,
+            )
+            if module:
+                stmt = stmt.where(KnowledgeBase.module == module)
+            stmt = stmt.order_by(
+                KnowledgeBase.fichier, KnowledgeBase.chunk_index
+            ).limit(max(1, min(int(limit), 200)))
+            return [dict(row._mapping) for row in db.execute(stmt).all()]
+        finally:
+            db.close()
+
+    def modeles_presents(self, collection: str | None = None) -> list[str]:
+        db = SessionLocal()
+        try:
+            requete = select(KnowledgeBase.modele_embed).distinct()
+            if collection:
+                requete = requete.where(KnowledgeBase.collection == collection)
+            return [m for (m,) in db.execute(requete).all() if m]
+        finally:
+            db.close()
+
+    def rechercher_par_similarite(
+        self,
+        vecteur: list[float],
+        collection: str,
+        top_k: int,
+        formation_code: str | None = None,
+        session_id: str | None = None,
+        module: str | None = None,
+        domaine: str | None = None,
+        annee: int | None = None,
+        type_support: str | None = None,
+    ) -> list[tuple[KnowledgeBase, float]]:
+        """Retourne [(ligne, distance_cosinus)], triées par distance
+        croissante (les plus similaires d'abord)."""
+        db = SessionLocal()
+        try:
+            distance = KnowledgeBase.embedding.cosine_distance(vecteur)
+            stmt = select(KnowledgeBase, distance.label("distance")).where(
+                KnowledgeBase.collection == collection
+            )
+            if formation_code:
+                stmt = stmt.where(KnowledgeBase.formation_code == formation_code)
+            if session_id:
+                stmt = stmt.where(KnowledgeBase.session_id == UUID(str(session_id)))
+            if module:
+                stmt = stmt.where(KnowledgeBase.module == module)
+            if domaine:
+                stmt = stmt.where(KnowledgeBase.domaine == domaine)
+            if annee:
+                stmt = stmt.where(KnowledgeBase.annee == annee)
+            if type_support:
+                stmt = stmt.where(KnowledgeBase.type_support == type_support)
+
+            stmt = stmt.order_by(distance).limit(top_k)
+            return [(ligne, float(dist)) for ligne, dist in db.execute(stmt).all()]
+        finally:
+            db.close()
+
+    def inserer_chunks(self, lignes: list[KnowledgeBase]) -> None:
+        if not lignes:
+            return
+        db = SessionLocal()
+        try:
+            # Reprise après interruption : un lot déjà écrit mais non marqué
+            # terminé dans le registre est REMPLACÉ, pas dupliqué.
+            for ligne in lignes:
+                if ligne.doc_hash is not None:
+                    db.execute(delete(KnowledgeBase).where(
+                        KnowledgeBase.doc_hash == ligne.doc_hash,
+                        KnowledgeBase.collection == ligne.collection,
+                        KnowledgeBase.chunk_index == ligne.chunk_index,
+                    ))
+            db.add_all(lignes)
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
+        finally:
+            db.close()
+
+    def supprimer_par_hash(self, doc_hash: str) -> int:
+        db = SessionLocal()
+        try:
+            resultat = db.execute(delete(KnowledgeBase).where(KnowledgeBase.doc_hash == doc_hash))
+            db.commit()
+            return resultat.rowcount
+        finally:
+            db.close()
+
+    def rattacher_document_a_session(self, doc_hash: str, session_id: str, module: str | None) -> int:
+        """Classifie les chunks déjà indexés sans recalculer leurs embeddings."""
+        db = SessionLocal()
+        try:
+            resultat = db.execute(
+                update(KnowledgeBase)
+                .where(KnowledgeBase.doc_hash == doc_hash, KnowledgeBase.collection == "support")
+                .values(session_id=UUID(str(session_id)), module=module)
+            )
+            db.commit()
+            return int(resultat.rowcount or 0)
+        except Exception:
+            db.rollback()
+            raise
+        finally:
+            db.close()
+
+    def remplacer_resume_formation(self, formation_code: str, ligne: KnowledgeBase, session_id: str | None = None) -> None:
+        db = SessionLocal()
+        try:
+            filtres = [
+                KnowledgeBase.collection == "resume_formation",
+                KnowledgeBase.formation_code == formation_code,
+            ]
+            if session_id:
+                filtres.append(KnowledgeBase.session_id == UUID(str(session_id)))
+            db.execute(delete(KnowledgeBase).where(*filtres))
+            db.add(ligne)
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
+        finally:
+            db.close()

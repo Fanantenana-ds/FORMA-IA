@@ -1,0 +1,45 @@
+from typing import List, Optional
+
+from sqlalchemy.orm import Session
+
+from app.models.user import RoleEnum, User
+
+
+class UserRepository:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def find_by_email(self, email: str) -> User | None:
+        return self.db.query(User).filter(User.email == email).first()
+
+    def find_by_id(self, user_id) -> User | None:
+        return self.db.query(User).filter(User.id == user_id).first()
+
+    def find_all(
+        self,
+        role: RoleEnum | None = None,
+        actif: bool | None = None,
+        owner_id=None,
+    ) -> list[User]:
+        q = self.db.query(User)
+        if owner_id is not None:
+            q = q.filter(User.owner_id == owner_id)
+        if role is not None:
+            q = q.filter(User.role == role)
+        if actif is not None:
+            q = q.filter(User.actif == actif)
+        return q.order_by(User.nom).all()
+
+    def find_by_id_for_owner(self, user_id, owner_id) -> User | None:
+        return self.db.query(User).filter(User.id == user_id, User.owner_id == owner_id).first()
+
+    def save(self, user: User) -> User:
+        self.db.add(user)
+        self.db.commit()
+        self.db.refresh(user)
+        return user
+
+    def delete(self, user: User) -> None:
+        self.db.delete(user)
+        self.db.commit()
+    

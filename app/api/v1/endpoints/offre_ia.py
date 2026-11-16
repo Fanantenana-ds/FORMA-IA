@@ -1,0 +1,508 @@
+import logging
+import os
+import time
+from typing import Any
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
+
+from app.api.v1.endpoints._helpers import build_response as _build_resp
+from app.api.v1.endpoints._helpers import handle_exception as _handle_exc
+from app.api.v1.endpoints._helpers import log_request as _log_req
+from app.orchestrator.offre_orchestrator import (
+    OffreOrchestrator,
+    get_offre_orchestrator,
+)
+from app.core.dependencies import require_role
+from app.schemas.common import RouteResponse
+from app.services.backend_sync.request_context import bind_backend_auth_token
+from app.utils.security import verify_api_key
+
+logger = logging.getLogger(__name__)
+
+VERBOSE = os.getenv("VERBOSE_LOGS", "true").lower() == "true"
+
+
+def vlog(msg: str, level: str = "info") -> None:
+    if VERBOSE:
+        getattr(logger, level)(msg)
+
+
+# =============================================================================
+# ROUTER
+# =============================================================================
+router = APIRouter(
+    prefix="/ia/offres",
+    tags=["M3 — IA Offres"],
+    dependencies=[Depends(verify_api_key), Depends(bind_backend_auth_token)],
+)
+
+
+# =============================================================================
+# HELPERS
+# =============================================================================
+
+def _log_request(method: str, path: str, **kwargs) -> None:
+    _log_req(logger, "Route M3", method, path, **kwargs)
+
+
+def _handle_exception(e: Exception, context: str) -> None:
+    _handle_exc(e, context, "Route M3", logger)
+
+
+def _build_response(result: dict[str, Any], msg_ok: str, elapsed: float) -> "RouteResponse":
+    """Construit une réponse uniforme avec info HITL."""
+    review_id = result.get("_review_id") if isinstance(result, dict) else None
+    status_val = result.get("_review_status") if isinstance(result, dict) else None
+
+    requires_action = status_val == "pending_review"
+    message = msg_ok
+    if requires_action:
+        message += f" ⚠️ En attente validation (review={review_id})."
+
+    return RouteResponse(
+        success=True,
+        message=message,
+        duration_seconds=elapsed,
+        review_id=review_id,
+        review_status=status_val,
+        requires_human_action=requires_action,
+        data=result,
+    )
+
+
+# =============================================================================
+# SCHÉMAS — REQUÊTES
+# =============================================================================
+
+class GenerateTechniqueRequest(BaseModel):
+    """Corps de la requête pour générer uniquement l'offre technique."""
+    tdr_data: dict[str, Any] = Field(..., description="Données du TDR (issu du M2)")
+    session_info: dict[str, Any] = Field(..., description="Informations de session")
+    feedback: str | None = Field(default=None, max_length=3000, description="Corrections demandées par le réviseur")
+
+
+class GenerateFinanciereRequest(BaseModel):
+    """Corps de la requête pour générer uniquement l'offre financière."""
+    offre_technique: dict[str, Any] = Field(
+        ...,
+        description="Offre technique (issue du M3-1)",
+    )
+    options: dict[str, Any] = Field(default_factory=dict, description="Paramètres de calcul de l'offre financière")
+
+
+class RectifierTechniqueRequest(BaseModel):
+    review_id: str = Field(..., min_length=1, max_length=100)
+    feedback: str = Field(..., min_length=5, max_length=3000)
+    tdr_data: dict[str, Any]
+    session_info: dict[str, Any]
+
+
+class RectifierFinanciereRequest(BaseModel):
+    review_id: str = Field(..., min_length=1, max_length=100)
+    feedback: str = Field(..., min_length=5, max_length=3000)
+    offre_technique: dict[str, Any]
+    options: dict[str, Any] = Field(default_factory=dict)
+
+
+class M3ReviewActionRequest(BaseModel):
+    reviewer_note: str | None = Field(default=None, max_length=1000)
+    reason: str | None = Field(default=None, max_length=1000)
+    options: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Options (type_formateur, type_salle, nb_participants, tva_applicable)",
+    )
+
+
+class GenerateCompleteRequest(BaseModel):
+    """Corps de la requête pour générer une offre complète (⭐ principal)."""
+    tdr_data: dict[str, Any] = Field(..., description="Données du TDR")
+    session_info: dict[str, Any] = Field(..., description="Informations de session")
+    options: dict[str, Any] = Field(
+        default_factory=dict,
+        description=(
+            "Options : "
+            "nb_participants (int), "
+            "type_formateur (senior/junior), "
+            "type_salle (standard/premium), "
+            "tva_applicable (bool), "
+            "inclure_logistique (bool), "
+            "inclure_administration (bool)"
+        ),
+    )
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "tdr_data": {
+                    "id": 1,
+                    "titre": "Introduction à l'IA",
+                    "domaine": "IA",
+                    "objectifs": ["Comprendre les concepts", "Pratiquer"],
+                    "public_cible": "Développeurs juniors",
+                    "duree_jours": 2,
+                },
+                "session_info": {
+                    "id": 1,
+                    "client": "Ministère de l'Éducation",
+                    "client_id": 1,
+                    "formateur": "M. RANAIVOSOA S.",
+                },
+                "options": {
+                    "nb_participants": 20,
+                    "type_formateur": "senior",
+                    "type_salle": "standard",
+                    "tva_applicable": True,
+                },
+            }
+        }
+
+
+class RegenerateRequest(BaseModel):
+    """Corps de la requête pour régénérer une offre rejetée."""
+    review_id: str = Field(..., description="ID du review rejeté")
+    feedback: str = Field(..., min_length=10, description="Feedback humain détaillé")
+
+
+class SynchroniserRequest(BaseModel):
+    """Corps de la requête pour enregistrer une offre APPROUVÉE dans le Backend."""
+    review_id: str = Field(
+        ..., description="ID du review APPROUVÉ de l'offre complète (agent_m3_complete)"
+    )
+    opportunite_id: str | None = Field(
+        default=None,
+        description="UUID de l'opportunité Backend liée (sinon lu dans tdr_data / session_info)",
+    )
+    force: bool = Field(
+        default=False,
+        description="Renvoyer même si déjà synchronisé (crée un DOUBLON côté Backend)",
+    )
+
+
+# =============================================================================
+# SCHÉMAS — RÉPONSES
+# =============================================================================
+
+class RouteResponse(BaseModel):
+    """Réponse standardisée pour les routes M3."""
+    success: bool
+    message: str
+    duration_seconds: float | None = None
+    review_id: str | None = None
+    review_status: str | None = None
+    requires_human_action: bool = False
+    data: dict[str, Any] | None = None
+
+
+# =============================================================================
+# ROUTE 0 — GET /health
+# =============================================================================
+
+@router.get("/health", summary="[M3] État des agents IA Offres")
+async def health_check() -> dict[str, Any]:
+    """Retourne l'état du module M3."""
+    _log_request("GET", "/ia/offres/health")
+    try:
+        from app.services.offres import get_package_status
+        status_data = get_package_status()
+        return {"success": True, **status_data}
+    except Exception as e:
+        _handle_exception(e, "health_check")
+        return {"success": False}
+
+
+# =============================================================================
+# ROUTE 1 — POST /generer-technique  (Agent M3-1 uniquement)
+# =============================================================================
+
+@router.post(
+    "/generer-technique",
+    response_model=RouteResponse,
+    summary="[M3] Agent M3-1 — Générer uniquement l'offre technique",
+)
+async def generer_technique(
+    payload: GenerateTechniqueRequest,
+    orchestrator: OffreOrchestrator = Depends(get_offre_orchestrator),
+) -> RouteResponse:
+    """Génère l'offre technique via l'Agent M3-1."""
+    _log_request(
+        "POST", "/ia/offres/generer-technique",
+        TDR=payload.tdr_data.get("titre", "N/A"),
+        Client=payload.session_info.get("client", "N/A"),
+    )
+    start = time.perf_counter()
+    try:
+        result = await orchestrator.generate_technique(
+            tdr_data=payload.tdr_data,
+            session_info=payload.session_info,
+            feedback=payload.feedback,
+        )
+        elapsed = round(time.perf_counter() - start, 2)
+        vlog(f"✅ [Route M3] generer-technique OK en {elapsed}s")
+        return _build_response(result, "Offre technique générée.", elapsed)
+    except Exception as e:
+        _handle_exception(e, "generer_technique")
+        return RouteResponse(success=False, message="")
+
+
+# =============================================================================
+# ROUTE 2 — POST /generer-financiere  (Agent M3-2 uniquement)
+# =============================================================================
+
+@router.post(
+    "/generer-financiere",
+    response_model=RouteResponse,
+    summary="[M3] Agent M3-2 — Générer uniquement l'offre financière",
+)
+async def generer_financiere(
+    payload: GenerateFinanciereRequest,
+    orchestrator: OffreOrchestrator = Depends(get_offre_orchestrator),
+) -> RouteResponse:
+    """Génère l'offre financière via l'Agent M3-2."""
+    _log_request(
+        "POST", "/ia/offres/generer-financiere",
+        Offre_TECH=payload.offre_technique.get("reference", "N/A"),
+    )
+    start = time.perf_counter()
+    try:
+        result = await orchestrator.generate_financiere(
+            offre_technique=payload.offre_technique,
+            options=payload.options,
+        )
+        elapsed = round(time.perf_counter() - start, 2)
+        vlog(f"✅ [Route M3] generer-financiere OK en {elapsed}s")
+        return _build_response(result, "Offre financière générée.", elapsed)
+    except Exception as e:
+        _handle_exception(e, "generer_financiere")
+        return RouteResponse(success=False, message="")
+
+
+@router.post("/rectifier-technique", response_model=RouteResponse, summary="Appliquer les corrections IA à une offre technique")
+async def rectifier_technique(payload: RectifierTechniqueRequest, orchestrator: OffreOrchestrator = Depends(get_offre_orchestrator)) -> RouteResponse:
+    from app.services.hitl import get_review, reject_review
+    review = get_review(payload.review_id)
+    if not review or review.get("agent_id") != "agent_m3_technique":
+        raise HTTPException(status_code=404, detail="Validation de l’offre technique introuvable.")
+    if review.get("status") != "pending_review":
+        raise HTTPException(status_code=409, detail="Cette version technique n’est plus en attente de validation.")
+    start = time.perf_counter()
+    try:
+        result = await orchestrator.generate_technique(
+            tdr_data=payload.tdr_data,
+            session_info=payload.session_info,
+            feedback=payload.feedback.strip(),
+        )
+        reject_review(payload.review_id, f"Version remplacée par {result.get('_review_id')} — {payload.feedback.strip()}")
+        return _build_response(result, "Offre technique corrigée et soumise à nouveau à validation.", round(time.perf_counter() - start, 2))
+    except Exception as exc:
+        _handle_exception(exc, "rectifier_technique")
+
+
+@router.post("/rectifier-financiere", response_model=RouteResponse, summary="Appliquer les corrections IA à une offre financière")
+async def rectifier_financiere(payload: RectifierFinanciereRequest, orchestrator: OffreOrchestrator = Depends(get_offre_orchestrator)) -> RouteResponse:
+    from app.services.hitl import get_review, reject_review
+    review = get_review(payload.review_id)
+    if not review or review.get("agent_id") != "agent_m3_financiere":
+        raise HTTPException(status_code=404, detail="Validation de l’offre financière introuvable.")
+    if review.get("status") != "pending_review":
+        raise HTTPException(status_code=409, detail="Cette version financière n’est plus en attente de validation.")
+    start = time.perf_counter()
+    try:
+        options = dict(payload.options)
+        options["feedback"] = payload.feedback.strip()
+        result = await orchestrator.generate_financiere(
+            offre_technique=payload.offre_technique,
+            options=options,
+        )
+        reject_review(payload.review_id, f"Version remplacée par {result.get('_review_id')} — {payload.feedback.strip()}")
+        return _build_response(result, "Offre financière corrigée et soumise à nouveau à validation.", round(time.perf_counter() - start, 2))
+    except Exception as exc:
+        _handle_exception(exc, "rectifier_financiere")
+
+
+@router.get("/reviews", summary="Lister les validations en attente M3")
+async def lister_reviews_m3():
+    from app.services.hitl import list_pending
+    reviews = []
+    for agent_id in ("agent_m3_technique", "agent_m3_financiere", "agent_m3_complete"):
+        reviews.extend(list_pending(agent_id=agent_id))
+    return {"success": True, "total": len(reviews), "data": reviews}
+
+
+@router.get("/reviews/{review_id}", summary="Lire une validation M3")
+async def lire_review_m3(review_id: str):
+    from app.services.hitl import get_review
+    review = get_review(review_id)
+    if not review or review.get("agent_id") not in {"agent_m3_technique", "agent_m3_financiere", "agent_m3_complete"}:
+        raise HTTPException(404, detail="Validation M3 introuvable.")
+    return {"success": True, "review": review}
+
+
+@router.delete("/reviews/{review_id}", summary="Supprimer une validation M3 en attente")
+async def supprimer_review_m3(review_id: str, _current_user=Depends(require_role("DIRECTION", "ADMIN", "ASSISTANT"))):
+    from app.services.hitl import delete_pending_review, get_review
+    review = get_review(review_id)
+    if not review or review.get("agent_id") not in {"agent_m3_technique", "agent_m3_financiere", "agent_m3_complete"}:
+        raise HTTPException(404, detail="Validation M3 introuvable.")
+    deleted = delete_pending_review(review_id)
+    if deleted is False:
+        raise HTTPException(409, detail="Cette validation M3 a déjà été traitée.")
+    if deleted is None:
+        raise HTTPException(404, detail="Validation M3 introuvable.")
+    return {"success": True, "review_id": review_id}
+
+
+@router.post("/reviews/{review_id}/approve", summary="Approuver une validation M3")
+async def approuver_review_m3(review_id: str, payload: M3ReviewActionRequest):
+    from app.services.hitl import approve_review, get_review
+    review = get_review(review_id)
+    if not review or review.get("agent_id") not in {"agent_m3_technique", "agent_m3_financiere", "agent_m3_complete"}:
+        raise HTTPException(404, detail="Validation M3 introuvable.")
+    if review.get("status") != "pending_review":
+        raise HTTPException(409, detail="Cette validation M3 a déjà été traitée.")
+    return {"success": True, "review": approve_review(review_id, payload.reviewer_note or "OK")}
+
+
+@router.post("/reviews/{review_id}/reject", summary="Rejeter une validation M3")
+async def rejeter_review_m3(review_id: str, payload: M3ReviewActionRequest):
+    from app.services.hitl import get_review, reject_review
+    review = get_review(review_id)
+    if not review or review.get("agent_id") not in {"agent_m3_technique", "agent_m3_financiere", "agent_m3_complete"}:
+        raise HTTPException(404, detail="Validation M3 introuvable.")
+    if review.get("status") != "pending_review":
+        raise HTTPException(status_code=409, detail="Cette validation M3 a déjà été traitée.")
+    reason = (payload.reason or payload.reviewer_note or "Rejeté").strip()
+    if len(reason) < 2:
+        raise HTTPException(status_code=422, detail="Précisez le motif du rejet.")
+    return {"success": True, "review": reject_review(review_id, reason)}
+
+
+# =============================================================================
+# ROUTE 3 — POST /generer-complet  ( ROUTE PRINCIPALE)
+# =============================================================================
+
+@router.post(
+    "/generer-complet",
+    response_model=RouteResponse,
+    summary=" [M3] Générer une offre complète (technique + financière + HITL)",
+    description=(
+        "Route principale du module M3.\n\n"
+        "1. Génère l'offre technique (Agent M3-1)\n"
+        "2. Génère l'offre financière (Agent M3-2)\n"
+        "3. Crée un review HITL global (validation humaine obligatoire)\n\n"
+        "⚠️ La validation humaine doit approuver avant envoi client."
+    ),
+)
+async def generer_complet(
+    payload: GenerateCompleteRequest,
+    orchestrator: OffreOrchestrator = Depends(get_offre_orchestrator),
+) -> RouteResponse:
+    """Génère une offre complète (technique + financière)."""
+    _log_request(
+        "POST", "/ia/offres/generer-complet",
+        TDR=payload.tdr_data.get("titre", "N/A"),
+        Client=payload.session_info.get("client", "N/A"),
+        Participants=payload.options.get("nb_participants", 20),
+    )
+    start = time.perf_counter()
+    try:
+        result = await orchestrator.generate_complete(
+            tdr_data=payload.tdr_data,
+            session_info=payload.session_info,
+            options=payload.options,
+        )
+        elapsed = round(time.perf_counter() - start, 2)
+        vlog(f"✅ [Route M3] generer-complet OK en {elapsed}s")
+        return _build_response(result, "Offre complète générée.", elapsed)
+    except Exception as e:
+        _handle_exception(e, "generer_complet")
+        return RouteResponse(success=False, message="")
+
+
+# =============================================================================
+# ROUTE 4 — POST /regenerer  (Régénération avec feedback)
+# =============================================================================
+
+@router.post(
+    "/regenerer",
+    response_model=RouteResponse,
+    summary="[M3] Régénérer une offre rejetée avec feedback",
+    description=(
+        "Régénère une offre après rejet HITL.\n\n"
+        "Le review_id doit correspondre à un review en statut 'rejected'."
+    ),
+)
+async def regenerer(
+    payload: RegenerateRequest,
+    orchestrator: OffreOrchestrator = Depends(get_offre_orchestrator),
+) -> RouteResponse:
+    """Régénère une offre avec feedback humain."""
+    _log_request(
+        "POST", "/ia/offres/regenerer",
+        Review_ID=payload.review_id,
+        Feedback=payload.feedback[:80],
+    )
+    start = time.perf_counter()
+    try:
+        result = await orchestrator.regenerate(
+            review_id=payload.review_id,
+            feedback=payload.feedback,
+        )
+        elapsed = round(time.perf_counter() - start, 2)
+        vlog(f"✅ [Route M3] regenerer OK en {elapsed}s")
+        return _build_response(result, "Offre régénérée.", elapsed)
+    except Exception as e:
+        _handle_exception(e, "regenerer")
+        return RouteResponse(success=False, message="")
+
+
+# =============================================================================
+# ROUTE 5 — POST /synchroniser  (Backend, APRÈS approbation HITL)
+# =============================================================================
+
+@router.post(
+    "/synchroniser",
+    response_model=RouteResponse,
+    summary="[M3] Enregistrer une offre APPROUVÉE dans le Backend",
+    description=(
+        "Envoie l'offre au Backend (POST /offres) avec trame_technique et trame_financiere.\n\n"
+        "⚠️ Refusé (422) tant que le review n'est pas **approuvé** : aucun "
+        "contenu IA n'atteint le Backend sans validation humaine.\n\n"
+        "Un seul envoi par review (sauf `force`). Nécessite "
+        "BACKEND_SYNC_ENABLED=true et un `opportunite_id` valide."
+    ),
+)
+async def synchroniser(
+    payload: SynchroniserRequest,
+    orchestrator: OffreOrchestrator = Depends(get_offre_orchestrator),
+) -> RouteResponse:
+    """Synchronise une offre approuvée avec le Backend."""
+    from app.services.backend_sync.review_sync import describe_sync
+
+    _log_request(
+        "POST", "/ia/offres/synchroniser",
+        Review_ID=payload.review_id,
+        Force=payload.force,
+    )
+    start = time.perf_counter()
+    try:
+        result = await orchestrator.synchroniser_backend(
+            review_id=payload.review_id,
+            opportunite_id=payload.opportunite_id,
+            force=payload.force,
+        )
+        elapsed = round(time.perf_counter() - start, 2)
+        success, message = describe_sync(result)
+        vlog(f"✅ [Route M3] synchroniser terminé en {elapsed}s : {message}")
+        return RouteResponse(
+            success=success,
+            message=message,
+            duration_seconds=elapsed,
+            review_id=payload.review_id,
+            review_status="approved",
+            requires_human_action=False,
+            data=result,
+        )
+    except Exception as e:
+        _handle_exception(e, "synchroniser")
+        return RouteResponse(success=False, message="")

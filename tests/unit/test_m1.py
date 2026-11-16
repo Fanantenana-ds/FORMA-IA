@@ -5,10 +5,10 @@
 # Il appelle directement vos endpoints IA.
 # ============================================================
 
-import requests
-import json
 
-BASE_URL = "http://127.0.0.1:8000/api/v1"
+import requests
+
+BASE_URL = "http://127.0.0.1:8001/api/v1"
 
 def test_rechercher():
     """Test la recherche Tavily + analyse Groq"""
@@ -41,7 +41,7 @@ def test_rechercher():
                 total = result.get("data", {}).get("total", 0)
                 validated = result.get("data", {}).get("validated_count", 0)
                 
-                print(f"✅ Success: True")
+                print("✅ Success: True")
                 print(f"✅ Total opportunités: {total}")
                 print(f"✅ Validées: {validated}")
                 print(f"✅ Rejetées/à revoir: {total - validated}")

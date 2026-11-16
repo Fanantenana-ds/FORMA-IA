@@ -1,0 +1,93 @@
+# ============================================================
+# TESTS — conversation_service.py (§5) + chat_log_service.py (§6)
+# ============================================================
+
+from app.services.rag import chat_log_service as journal
+from app.services.rag import conversation_service as memoire
+
+# ---- conversation_service ----
+
+def test_conversation_nouvelle_est_vide(tmp_path):
+    conv = memoire.charger_conversation("abc", tmp_path)
+    assert conv.echanges == []
+    assert conv.derniere_formation_code is None
+
+
+def test_ajouter_echange_et_sauvegarder(tmp_path):
+    conv = memoire.charger_conversation("abc", tmp_path)
+    conv = memoire.ajouter_echange(conv, "utilisateur", "Bonjour")
+    conv = memoire.ajouter_echange(conv, "assistant", "Bonjour, que puis-je faire pour vous ?")
+    memoire.sauvegarder_conversation(conv, tmp_path)
+
+    relue = memoire.charger_conversation("abc", tmp_path)
+    assert len(relue.echanges) == 2
+    assert relue.echanges[0].texte == "Bonjour"
+
+
+def test_seuls_les_25_derniers_echanges_sont_gardes(tmp_path):
+    conv = memoire.charger_conversation("abc", tmp_path)
+    for i in range(30):
+        conv = memoire.ajouter_echange(conv, "utilisateur", f"Message {i}")
+
+    assert len(conv.echanges) == 25
+    assert conv.echanges[-1].texte == "Message 29"
+    assert conv.echanges[0].texte == "Message 5"
+
+
+def test_derniere_formation_memorisee_pour_les_relances(tmp_path):
+    conv = memoire.charger_conversation("abc", tmp_path)
+    conv = memoire.ajouter_echange(conv, "assistant", "Voici le contenu.", formation_code="IA_FONDAMENTAUX")
+
+    assert conv.derniere_formation_code == "IA_FONDAMENTAUX"
+
+    # Un échange sans formation_code ne doit PAS effacer la mémoire (mission : relances)
+    conv = memoire.ajouter_echange(conv, "utilisateur", "et le module 2 ?")
+    assert conv.derniere_formation_code == "IA_FONDAMENTAUX"
+
+
+def test_contexte_conversation_est_isole_par_session():
+    conv = memoire.Conversation(conversation_id="conv-sessions")
+    conv = memoire.ajouter_echange(conv, "utilisateur", "Question session A", session_id="session-a")
+    conv = memoire.ajouter_echange(conv, "assistant", "Réponse session A", session_id="session-a")
+    conv = memoire.ajouter_echange(conv, "utilisateur", "Question session B", session_id="session-b")
+
+    contexte = memoire.contexte_pour_session(conv, "session-a")
+
+    assert [e.texte for e in contexte.echanges] == ["Question session A", "Réponse session A"]
+    assert [e.texte for e in conv.echanges] == ["Question session A", "Réponse session A", "Question session B"]
+
+
+# ---- chat_log_service ----
+
+def test_enregistrer_et_relire(tmp_path):
+    chemin = tmp_path / "chat_logs.jsonl"
+    journal.enregistrer(
+        question="Bonjour", type_detecte="conversationnel", formation_code=None,
+        nb_sources=0, modele_requete=None, cache_utilise=False, duree_ms=12.3,
+        statut="ok", chemin=chemin,
+    )
+    journal.enregistrer(
+        question="Où est expliqué X ?", type_detecte="localisation", formation_code="IA_FONDAMENTAUX",
+        nb_sources=2, modele_requete="voyage-4-large", cache_utilise=True, duree_ms=850.0,
+        statut="ok", chemin=chemin,
+    )
+
+    lignes = journal.lire_toutes_les_lignes(chemin)
+
+    assert len(lignes) == 2
+    assert lignes[0]["type_detecte"] == "conversationnel"
+    assert lignes[1]["cache_utilise"] is True
+
+
+def test_journal_inexistant_retourne_liste_vide(tmp_path):
+    assert journal.lire_toutes_les_lignes(tmp_path / "n_existe_pas.jsonl") == []
+
+
+def test_journal_signale_une_question_similaire_dans_la_meme_formation(tmp_path):
+    chemin = tmp_path / "chat_logs.jsonl"
+    commun = dict(nb_sources=1, modele_requete="voyage", cache_utilise=False, duree_ms=100, statut="ok", chemin=chemin)
+    journal.enregistrer(question="Donne le résumé des supports du cours", type_detecte="synthese_thematique", formation_code="IA", **commun)
+    journal.enregistrer(question="Donne-moi le resume des supports du cours", type_detecte="synthese_thematique", formation_code="IA", **commun)
+    lignes = journal.lire_toutes_les_lignes(chemin)
+    assert lignes[1]["question_similaire"] is not None
+    assert lignes[1]["question_similaire"]["ratio"] >= 0.78

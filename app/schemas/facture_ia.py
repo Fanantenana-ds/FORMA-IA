@@ -1,0 +1,42 @@
+# app/schemas/facture_ia.py
+# ============================================================
+# SCHÉMAS — ROUTES IA M7 (Facturation / relances)
+# ============================================================
+
+
+from pydantic import BaseModel, Field
+
+
+class GenererRelanceRequest(BaseModel):
+    """Corps de la requête pour générer une relance."""
+
+    facture_id: str = Field(..., description="UUID Backend de la facture")
+
+
+class SynchroniserRelanceRequest(BaseModel):
+    """Corps de la requête pour synchroniser une relance approuvée vers le Backend."""
+
+    review_id: str = Field(..., description="ID du review HITL APPROUVÉ (agent_m7_relance)")
+    force: bool = Field(
+        default=False,
+        description="Renvoyer même si déjà synchronisé (crée une NOUVELLE entrée côté Backend)",
+    )
+
+
+class CalculerMontantsRequest(BaseModel):
+    """
+    Corps de la requête pour calculer les montants d'une facture
+    (Python pur, sans LLM) — voir FactureCalculatorService.calculer().
+    """
+
+    type_client: str = Field(..., description="'participant' ou 'entreprise'")
+    nb_participants: int = Field(..., ge=1)
+    tarif_unitaire: float = Field(..., gt=0)
+    tva_taux: float | None = Field(default=None, ge=0)
+    remise_pct: float | None = Field(
+        default=None, ge=0, le=100,
+        description="None = règle automatique (5% dès 15 participants)",
+    )
+    session_id: str | None = Field(
+        default=None, description="Référence Backend, recopiée dans la réponse"
+    )

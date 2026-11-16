@@ -1,463 +1,270 @@
-# # app/orchestrator/tdr_orchestrator.py
-# # ============================================================
-# # FORMA-IA — M2 GÉNÉRATION DE TDR — ORCHESTRATEUR
-# # ============================================================
-# # Version : V1.0 — Architecture modulaire
-# #
-# # Ce fichier coordonne :
-# #   - Chargement du prompt RTFCE (tdr.yaml)
-# #   - Appel à l'API Groq (via llm_analysis_service)
-# #   - Validation du JSON de sortie
-# #   - Retour du TDR structuré
-# # ============================================================
-
-# import logging
-# import json
-# import os
-# import time
-# import re
-# from typing import Dict, Any, List, Optional
-
-# from app.services.veille.llm_analysis_service import LLMAnalysisService
-# from app.utils.prompts_loader import load_prompt
-
-# logger = logging.getLogger(__name__)
-
-# class TdrOrchestrator:
-#     """
-#     Orchestrateur pour la génération de TDR (M2)
-#     Utilise le même service LLM que M1 (Groq)
-#     """
-    
-#     def __init__(self):
-#         logger.info("🚀 M2: Initialisation TDR Orchestrator")
-#         self.llm_service = LLMAnalysisService()
-#         self.prompt_template = self._load_prompt()
-#         self.max_tokens = int(os.getenv("TDR_MAX_TOKENS", "3000"))
-#         self.temperature = float(os.getenv("TDR_TEMPERATURE", "0.3"))
-#         logger.info("✅ M2: TDR Orchestrator prêt")
-    
-#     def _load_prompt(self) -> str:
-#         """Charge le prompt tdr.yaml"""
-#         try:
-#             prompt = load_prompt("m2/tdr.yaml")
-#             logger.info("✅ Prompt tdr.yaml chargé")
-#             return prompt
-#         except Exception as e:
-#             logger.error(f"❌ Erreur chargement prompt: {e}")
-#             # Fallback : prompt simple
-#             return """
-#             Rédige un TDR pour la formation suivante :
-#             {BRIEF}
-            
-#             Retourne un JSON structuré avec : titre, contexte, objectifs_generaux,
-#             objectifs_specifiques, public_cible, programme, methodologie,
-#             evaluation, budget, calendrier, contact.
-#             """
-    
-#     async def generate(self, brief: Dict[str, Any]) -> Dict[str, Any]:
-#         """
-#         Génère un TDR à partir d'un brief structuré
-        
-#         Args:
-#             brief: Dict avec client, objectifs, public, duree, etc.
-            
-#         Returns:
-#             TDR structuré en JSON
-#         """
-#         start_time = time.perf_counter()
-#         logger.info("=" * 60)
-#         logger.info("🚀 M2 TDR — DÉBUT")
-#         logger.info(f"📝 Client : {brief.get('client', 'Non précisé')}")
-#         logger.info(f"📝 Public : {brief.get('public', 'Non précisé')}")
-#         logger.info(f"📝 Durée : {brief.get('duree', 'Non précisée')}")
-#         logger.info("=" * 60)
-        
-#         try:
-#             # 1. Valider le brief
-#             if not self._validate_brief(brief):
-#                 return {"error": "Brief invalide (client, objectifs, public, duree requis)", "status": "error"}
-            
-#             # 2. Construire le prompt
-#             prompt = self._build_prompt(brief)
-
-#             logger.info(f"📦 Taille du prompt: {len(prompt)} caractères")
-            
-#             # 3. Appeler l'API Groq
-#             response = await self._call_api(prompt)
-            
-#             if not response:
-#                 return {"error": "Erreur API Groq", "status": "error"}
-            
-#             # 4. Extraire le JSON de la réponse
-#             tdr_content = self._extract_json(response)
-#             if not tdr_content:
-#                 logger.warning(f"⚠️ Réponse brute: {response[:300]}...")
-#                 return {"error": "Format JSON invalide", "status": "error"}
-            
-#             # 5. Valider le contenu
-#             if not self._validate_tdr(tdr_content):
-#                 return {"error": "TDR invalide (champs manquants)", "status": "error"}
-            
-#             # 6. Ajouter les métadonnées
-#             elapsed = time.perf_counter() - start_time
-#             tdr_content["generated_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
-#             tdr_content["generation_time_seconds"] = round(elapsed, 2)
-#             tdr_content["status"] = "draft"
-            
-#             logger.info(f"🏁 M2 TDR — FIN")
-#             logger.info(f"✅ TDR généré en {elapsed:.2f}s")
-#             logger.info(f"📄 Titre : {tdr_content.get('titre', 'Non défini')}")
-#             logger.info("=" * 60)
-            
-#             return tdr_content
-            
-#         except Exception as e:
-#             logger.error(f"❌ Erreur génération TDR: {e}")
-#             return {"error": str(e), "status": "error"}
-    
-#     async def _call_api(self, prompt: str) -> Optional[str]:
-#         """Appelle l'API Groq en réutilisant le service de M1"""
-#         try:
-#             # Réutiliser la méthode analyze de llm_analysis_service
-#             # On crée une source factice pour utiliser la méthode existante
-#             dummy_result = {
-#                 "content": prompt,
-#                 "title": "TDR Generation"
-#             }
-#             result = await self.llm_service.analyze("Génération de TDR", [dummy_result])
-            
-#             if result and "opportunities" in result:
-#                 # La réponse est déjà un JSON structuré
-#                 return json.dumps(result["opportunities"][0] if result["opportunities"] else {})
-            
-#             return None
-            
-#         except Exception as e:
-#             logger.error(f"❌ Erreur appel API: {e}")
-#             return None
-    
-#     def _validate_brief(self, brief: Dict[str, Any]) -> bool:
-#         """Valide que le brief contient les champs obligatoires"""
-#         required = ["client", "objectifs", "public", "duree"]
-#         for field in required:
-#             if field not in brief or not brief[field]:
-#                 logger.error(f"❌ Champ manquant dans le brief: {field}")
-#                 return False
-#         return True
-    
-#     def _build_prompt(self, brief: Dict[str, Any]) -> str:
-#         """Construit le prompt final en remplaçant {{BRIEF}}"""
-#         brief_text = self._format_brief(brief)
-#         return self.prompt_template.replace("{{BRIEF}}", brief_text)
-    
-#     def _format_brief(self, brief: Dict[str, Any]) -> str:
-#         """Formate le brief en texte lisible pour le prompt"""
-#         lines = []
-#         lines.append(f"Client : {brief.get('client', 'Non précisé')}")
-#         lines.append(f"Objectifs : {', '.join(brief.get('objectifs', []))}")
-#         lines.append(f"Public cible : {brief.get('public', 'Non précisé')}")
-#         lines.append(f"Durée : {brief.get('duree', 'Non précisée')}")
-        
-#         if brief.get('lieu'):
-#             lines.append(f"Lieu : {brief['lieu']}")
-#         if brief.get('budget'):
-#             lines.append(f"Budget : {brief['budget']}")
-#         if brief.get('deadline'):
-#             lines.append(f"Échéance : {brief['deadline']}")
-#         if brief.get('contenu'):
-#             lines.append(f"Contenu spécifique : {brief['contenu']}")
-#         if brief.get('contact'):
-#             lines.append(f"Contact : {brief['contact']}")
-        
-#         return "\n".join(lines)
-    
-#     def _extract_json(self, response: str) -> Optional[Dict[str, Any]]:
-#         """Extrait le JSON de la réponse de l'API"""
-#         if not response:
-#             return None
-        
-#         try:
-#             # Essayer de parser directement
-#             return json.loads(response)
-#         except json.JSONDecodeError:
-#             pass
-        
-#         # Essayer d'extraire le JSON des backticks
-#         json_match = re.search(r'```(?:json)?\s*([\s\S]*?)\s*```', response)
-#         if json_match:
-#             try:
-#                 return json.loads(json_match.group(1))
-#             except:
-#                 pass
-        
-#         # Essayer de trouver un objet JSON dans le texte
-#         json_match = re.search(r'\{[\s\S]*\}', response)
-#         if json_match:
-#             try:
-#                 return json.loads(json_match.group(0))
-#             except:
-#                 pass
-        
-#         logger.warning("⚠️ Impossible d'extraire le JSON de la réponse")
-#         return None
-    
-#     def _validate_tdr(self, tdr: Dict[str, Any]) -> bool:
-#         """Valide que le TDR contient les champs obligatoires"""
-#         required = ["titre", "contexte", "objectifs_generaux", "public_cible", "programme"]
-#         for field in required:
-#             if field not in tdr or not tdr[field]:
-#                 logger.warning(f"⚠️ Champ manquant dans le TDR: {field}")
-#                 return False
-#         return True
-
-
-
-
-
-# ============================================================
-# FORMA-IA — M2 GÉNÉRATION DE TDR — ORCHESTRATEUR
-# ============================================================
-# Version : V1.1 — Correction bugs 1, 2, 3 (mismatch schéma yaml)
-#
-# Ce fichier coordonne :
-#   - Chargement du prompt RTFCE (tdr.yaml)
-#   - Appel à l'API Groq (via llm_analysis_service)
-#   - Validation du JSON de sortie
-#   - Retour du TDR structuré (aplati, cohérent avec TDRResponse)
-# ============================================================
-
 import logging
-import json
 import os
 import time
-import re
-from typing import Dict, Any, List, Optional
+from typing import Any, Dict, Optional
 
-from app.services.veille.llm_analysis_service import LLMAnalysisService
-from app.utils.prompts_loader import load_prompt
+from app.orchestrator.base_orchestrator import BaseOrchestrator
+from app.orchestrator.base_orchestrator import _vlog as vlog
+from app.services.backend_sync import review_sync
+from app.services.backend_sync.tdr_sync import sync_tdr_to_backend
+from app.services.hitl import create_review
+from app.services.tdr.tdr_document_generator import (
+    FORMATEUR_A_DESIGNER,
+    TDRDocumentGenerator,
+)
+from app.services.tdr.tdr_service import TDRService
 
 logger = logging.getLogger(__name__)
 
 
-class TdrOrchestrator:
+# =============================================================================
+# ORCHESTRATEUR
+# =============================================================================
+
+class TdrOrchestrator(BaseOrchestrator):
     """
-    Orchestrateur pour la génération de TDR (M2)
-    Utilise le même service LLM que M1 (Groq) — migration Claude prévue
+    Orchestrateur M2 — coordonne service IA + générateur + sync.
+
+    Pipeline :
+        brief → TDR JSON → Word → PDF → Sync Backend
     """
+
+    _name = "TdrOrchestrator"
 
     def __init__(self):
-        logger.info("🚀 M2: Initialisation TDR Orchestrator")
-        self.llm_service = LLMAnalysisService()
-        self.prompt_template = self._load_prompt()
-        self.max_tokens = int(os.getenv("TDR_MAX_TOKENS", "3000"))
-        self.temperature = float(os.getenv("TDR_TEMPERATURE", "0.3"))
-        logger.info("✅ M2: TDR Orchestrator prêt")
+        vlog("=" * 70)
+        vlog("🚀 Initialisation de TdrOrchestrator...")
+        vlog("=" * 70)
 
-    def _load_prompt(self) -> str:
-        """Charge le prompt tdr.yaml"""
-        try:
-            prompt = load_prompt("m2/tdr.yaml")
-            logger.info("✅ Prompt tdr.yaml chargé")
-            return prompt
-        except Exception as e:
-            logger.error(f"❌ Erreur chargement prompt: {e}")
-            # Fallback : prompt simple (non conforme RTFCE — à corriger via bug 3)
-            return """
-            Rédige un TDR pour la formation suivante :
-            {BRIEF}
+        # Service IA (génération du contenu TDR)
+        self.tdr_service = self._safe_init(
+            TDRService,
+            "TDRService (Agent IA)",
+        )
 
-            Retourne un JSON structuré avec : titre, contexte, objectifs_generaux,
-            objectifs_specifiques, public_cible, programme, methodologie,
-            evaluation, budget, calendrier, contact.
-            """
+        # Générateur documents (Word + PDF)
+        self.document_generator = self._safe_init(
+            TDRDocumentGenerator,
+            "TDRDocumentGenerator (Word + PDF)",
+        )
 
-    async def generate(self, brief: Dict[str, Any]) -> Dict[str, Any]:
+        # Bilan démarrage
+        self._log_startup_summary({
+            "TDRService (IA)":    self.tdr_service,
+            "TDRDocumentGenerator": self.document_generator,
+        })
+
+    def _check_services(self) -> None:
+        """Vérifie que tous les services sont disponibles."""
+        missing = []
+        if not self.tdr_service:
+            missing.append("TDRService")
+        if not self.document_generator:
+            missing.append("TDRDocumentGenerator")
+        if missing:
+            raise RuntimeError(
+                f"❌ Services M2 manquants : {', '.join(missing)}"
+            )
+
+    # =========================================================================
+    # GÉNÉRATION COMPLÈTE
+    # =========================================================================
+
+    async def generate(self, brief: dict[str, Any]) -> dict[str, Any]:
         """
-        Génère un TDR à partir d'un brief structuré
+        Pipeline complet : brief → TDR JSON → Word → PDF → review HITL.
+
+        Correction 1a/1b (2026-09-25) : le TDR n'est PLUS envoyé au Backend
+        directement ici (contrairement à l'ancien comportement). Un review
+        HITL (agent_m2_tdr) est créé — la synchronisation Backend n'a lieu
+        qu'après approbation humaine, via synchroniser_backend(), même
+        mécanisme que M3 (offre_orchestrator.py).
 
         Args:
-            brief: Dict avec client, objectifs, public, duree, etc.
+            brief: Informations du brief client (client, objectifs, etc.).
 
         Returns:
-            TDR structuré en JSON (à plat), ou {"error": ..., "status": "error"}
+            {
+                "success": bool,
+                "data": Dict (contenu TDR),
+                "files": {"docx": str, "pdf": str},
+                "_inputs": {"brief": Dict},
+                "_review_id": str,
+                "_review_status": "pending_review",
+                "duration_seconds": float,
+                "error": Optional[str],
+            }
         """
-        start_time = time.perf_counter()
-        logger.info("=" * 60)
-        logger.info("🚀 M2 TDR — DÉBUT")
-        logger.info(f"📝 Client : {brief.get('client', 'Non précisé')}")
-        logger.info(f"📝 Public : {brief.get('public', 'Non précisé')}")
-        logger.info(f"📝 Durée : {brief.get('duree', 'Non précisée')}")
-        logger.info("=" * 60)
+        start = self._log_start(
+            "generate",
+            **{
+                "📋 Client": brief.get("client", "N/A"),
+                "🎯 Objectifs": str(brief.get("objectifs", "N/A"))[:80],
+                "👥 Public cible": brief.get("public_cible", "N/A"),
+            },
+        )
+        self._check_services()
 
         try:
-            # 1. Valider le brief
-            if not self._validate_brief(brief):
-                return {"error": "Brief invalide (client, objectifs, public, duree requis)", "status": "error"}
+            # ═══════════════════════════════════════════════════════════
+            # ① ÉTAPE 1 : Génération IA (TDR JSON)
+            # ═══════════════════════════════════════════════════════════
+            vlog("")
+            vlog("📝 [1/3] Génération du contenu TDR (Agent IA)...")
 
-            # 2. Construire le prompt
-            prompt = self._build_prompt(brief)
-            logger.info(f"📦 Taille du prompt: {len(prompt)} caractères")
+            tdr_content = await self.tdr_service.generate(brief)
 
-            # 3. Appeler l'API Groq
-            response = await self._call_api(prompt)
-            if not response:
-                return {"error": "Erreur API Groq", "status": "error"}
+            if not tdr_content:
+                raise ValueError("❌ TDRService : réponse vide ou None.")
 
-            # 4. Extraire le JSON de la réponse
-            raw_content = self._extract_json(response)
-            if not raw_content:
-                logger.warning(f"⚠️ Réponse brute: {response[:300]}...")
-                return {"error": "Format JSON invalide", "status": "error"}
+            # Un TDR préparant un appel à candidatures doit définir le profil,
+            # pas attribuer le poste à une personne avant le recrutement.
+            # Cette valeur est imposée côté serveur même si le LLM réutilise
+            # un nom présent dans un ancien exemple.
+            tdr_content["formateur_nom"] = FORMATEUR_A_DESIGNER
 
-            # 4bis. Aplatir la structure si elle suit le format du yaml
-            #       ({"tdr": {"titre": ..., "sections": {...}}, "format": "markdown"})
-            tdr_content = self._flatten_tdr(raw_content)
+            vlog(f"   ✅ TDR JSON généré ({len(str(tdr_content))} chars)")
 
-            # 5. Valider le contenu
-            if not self._validate_tdr(tdr_content):
-                return {"error": "TDR invalide (champs manquants)", "status": "error"}
+            # ═══════════════════════════════════════════════════════════
+            # ② ÉTAPE 2 : Génération documents (Word + PDF)
+            # ═══════════════════════════════════════════════════════════
+            vlog("")
+            vlog("📄 [2/3] Génération des documents Word + PDF...")
 
-            # 6. Ajouter les métadonnées
-            elapsed = time.perf_counter() - start_time
-            tdr_content["generated_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
-            tdr_content["generation_time_seconds"] = round(elapsed, 2)
-            tdr_content["status"] = "draft"
+            docx_filename, pdf_filename = self.document_generator.generate(
+                tdr_content=tdr_content,
+                client=brief.get("client", "Client"),
+            )
 
-            logger.info(f"🏁 M2 TDR — FIN")
-            logger.info(f"✅ TDR généré en {elapsed:.2f}s")
-            logger.info(f"📄 Titre : {tdr_content.get('titre', 'Non défini')}")
-            logger.info("=" * 60)
+            vlog(f"   ✅ Word : {docx_filename}")
+            vlog(f"   ✅ PDF  : {pdf_filename}")
 
-            return tdr_content
+            # ═══════════════════════════════════════════════════════════
+            # ③ ÉTAPE 3 : Review HITL (AUCUN envoi Backend ici)
+            # ═══════════════════════════════════════════════════════════
+            vlog("")
+            vlog("⏳ [3/3] Création du review HITL (CDC : validation humaine avant Backend)...")
+
+            result = {
+                "success": True,
+                "data": tdr_content,
+                "files": {
+                    "docx": docx_filename,
+                    "pdf": pdf_filename,
+                },
+                "_inputs": {"brief": brief},
+                "error": None,
+            }
+
+            review_id = create_review(
+                agent_id="agent_m2_tdr",
+                data=result,
+                summary=f"TDR — {brief.get('client', 'N/A')} — {tdr_content.get('titre', 'N/A')[:60]}",
+                criticity="critical",
+            )
+            result["_review_id"] = review_id
+            result["_review_status"] = "pending_review"
+
+            # ═══════════════════════════════════════════════════════════
+            # ④ RÉSULTAT
+            # ═══════════════════════════════════════════════════════════
+            elapsed = self._log_end(
+                "generate", start,
+                **{
+                    "📄 Word": docx_filename,
+                    "📄 PDF": pdf_filename,
+                    "⏳ Review HITL": review_id,
+                },
+            )
+
+            result["duration_seconds"] = elapsed
+            return result
 
         except Exception as e:
-            logger.error(f"❌ Erreur génération TDR: {e}")
-            return {"error": str(e), "status": "error"}
-
-    async def _call_api(self, prompt: str) -> Optional[str]:
-        """Appelle l'API Groq en réutilisant le service de M1"""
-        try:
-            dummy_result = {
-                "content": prompt,
-                "title": "TDR Generation"
+            self._log_error("generate", start, e)
+            return {
+                "success": False,
+                "error": f"{type(e).__name__} : {e}",
+                "data": None,
+                "files": None,
+                "backend_sync": None,
+                "duration_seconds": round(time.perf_counter() - start, 2),
             }
-            result = await self.llm_service.analyze("Génération de TDR", [dummy_result])
 
-            if result and "opportunities" in result:
-                return json.dumps(result["opportunities"][0] if result["opportunities"] else {})
+    # =========================================================================
+    # SYNCHRONISATION BACKEND — APRÈS APPROBATION HITL (correction 1b)
+    # =========================================================================
 
-            return None
-
-        except Exception as e:
-            logger.error(f"❌ Erreur appel API: {e}")
-            return None
-
-    def _validate_brief(self, brief: Dict[str, Any]) -> bool:
-        """Valide que le brief contient les champs obligatoires"""
-        required = ["client", "objectifs", "public", "duree"]
-        for field in required:
-            if field not in brief or not brief[field]:
-                logger.error(f"❌ Champ manquant dans le brief: {field}")
-                return False
-        return True
-
-    def _build_prompt(self, brief: Dict[str, Any]) -> str:
-        """Construit le prompt final en remplaçant {{BRIEF}}"""
-        brief_text = self._format_brief(brief)
-        return self.prompt_template.replace("{{BRIEF}}", brief_text)
-
-    def _format_brief(self, brief: Dict[str, Any]) -> str:
-        """Formate le brief en texte lisible pour le prompt"""
-        lines = []
-        lines.append(f"Client : {brief.get('client', 'Non précisé')}")
-
-        objectifs = brief.get('objectifs', '')
-        if isinstance(objectifs, list):
-            lines.append(f"Objectifs : {', '.join(objectifs)}")
-        else:
-            lines.append(f"Objectifs : {objectifs}")
-
-        lines.append(f"Public cible : {brief.get('public', 'Non précisé')}")
-        lines.append(f"Durée : {brief.get('duree', 'Non précisée')}")
-
-        if brief.get('format'):
-            lines.append(f"Format : {brief['format']}")
-        if brief.get('lieu'):
-            lines.append(f"Lieu : {brief['lieu']}")
-        if brief.get('budget'):
-            lines.append(f"Budget : {brief['budget']}")
-        if brief.get('deadline'):
-            lines.append(f"Échéance : {brief['deadline']}")
-        if brief.get('contenu'):
-            lines.append(f"Contenu spécifique : {brief['contenu']}")
-        if brief.get('contact'):
-            lines.append(f"Contact : {brief['contact']}")
-
-        return "\n".join(lines)
-
-    def _extract_json(self, response: str) -> Optional[Dict[str, Any]]:
-        """Extrait le JSON de la réponse de l'API"""
-        if not response:
-            return None
-
-        try:
-            return json.loads(response)
-        except json.JSONDecodeError:
-            pass
-
-        json_match = re.search(r'```(?:json)?\s*([\s\S]*?)\s*```', response)
-        if json_match:
-            try:
-                return json.loads(json_match.group(1))
-            except Exception:
-                pass
-
-        json_match = re.search(r'\{[\s\S]*\}', response)
-        if json_match:
-            try:
-                return json.loads(json_match.group(0))
-            except Exception:
-                pass
-
-        logger.warning("⚠️ Impossible d'extraire le JSON de la réponse")
-        return None
-
-    def _flatten_tdr(self, raw: Dict[str, Any]) -> Dict[str, Any]:
+    async def synchroniser_backend(
+        self,
+        review_id: str,
+        opportunite_id: str | None = None,
+        force: bool = False,
+    ) -> dict[str, Any]:
         """
-        Aplati la structure imbriquée définie par prompts/m2/tdr.yaml :
-            {"tdr": {"titre": ..., "sections": {"contexte": ..., "objectifs": ..., ...}}, "format": "markdown"}
-        vers la structure à plat attendue par _validate_tdr / TDRResponse :
-            {"titre": ..., "contexte": ..., "objectifs_generaux": ..., "public_cible": ..., "programme": ...}
+        Envoie le TDR APPROUVÉ au Backend. Même mécanisme que M3
+        (OffreOrchestrator.synchroniser_backend) : garde-fou via
+        review_sync.load_approved_review (review approuvé + bon agent
+        uniquement), un seul envoi par review (sauf force=True).
 
-        Si la réponse est déjà à plat (fallback prompt), la renvoie telle quelle.
+        Args:
+            review_id: review du TDR (agent_m2_tdr).
+            opportunite_id: UUID de l'opportunité Backend liée. À défaut,
+                lu dans le brief mémorisé (_inputs.brief.opportunite_id).
+
+        Raises:
+            ValueError: review introuvable / non approuvé / d'un autre agent.
         """
-        if "tdr" in raw and isinstance(raw["tdr"], dict):
-            tdr = raw["tdr"]
-            sections = tdr.get("sections", {}) if isinstance(tdr.get("sections"), dict) else {}
+        start = self._log_start(
+            "synchroniser_backend",
+            **{"🔍 Review": review_id, "🔁 Force": force},
+        )
 
-            flat = {
-                "titre": tdr.get("titre"),
-                "contexte": sections.get("contexte"),
-                "objectifs_generaux": sections.get("objectifs"),
-                "public_cible": sections.get("public"),
-                "programme": sections.get("contenu"),
-                "methodologie": sections.get("methodologie"),
-                "evaluation": sections.get("evaluation"),
-                "budget": sections.get("budget"),
-                "annexes": sections.get("annexes"),
-                "format_source": raw.get("format", "markdown"),
-            }
-            return flat
+        review = review_sync.load_approved_review(
+            review_id, agent_ids=("agent_m2_tdr",)
+        )
+        data = review.get("data") or {}
+        inputs = data.get("_inputs") or {}
+        brief = inputs.get("brief") or {}
+        files = data.get("files") or {}
 
-        # Déjà à plat (fallback ou évolution future du prompt)
-        return raw
+        opportunite_id = opportunite_id or brief.get("opportunite_id")
 
-    def _validate_tdr(self, tdr: Dict[str, Any]) -> bool:
-        """Valide que le TDR contient les champs obligatoires"""
-        required = ["titre", "contexte", "objectifs_generaux", "public_cible", "programme"]
-        for field in required:
-            if field not in tdr or not tdr[field]:
-                logger.warning(f"⚠️ Champ manquant dans le TDR: {field}")
-                return False
-        return True
+        async def _envoyer() -> dict[str, Any]:
+            return await sync_tdr_to_backend(
+                tdr_content=data.get("data") or {},
+                docx_filename=files.get("docx"),
+                pdf_filename=files.get("pdf"),
+                opportunite_id=opportunite_id,
+            )
+
+        result = await review_sync.sync_once(review_id, _envoyer, force=force)
+        self._log_end(
+            "synchroniser_backend", start,
+            **{
+                "📤 Envoyé": (result["backend_sync"] or {}).get("sent"),
+                "♻️  Déjà synchronisé": result["already_synced"],
+            },
+        )
+        return result
+
+
+# =============================================================================
+# SINGLETON — pour FastAPI Depends
+# =============================================================================
+
+_tdr_orchestrator_instance: TdrOrchestrator | None = None
+
+
+def get_tdr_orchestrator() -> TdrOrchestrator:
+    """
+    Retourne une instance unique (singleton) de TdrOrchestrator.
+
+    Utilisable comme dépendance FastAPI :
+        orchestrator: TdrOrchestrator = Depends(get_tdr_orchestrator)
+    """
+    global _tdr_orchestrator_instance
+    if _tdr_orchestrator_instance is None:
+        logger.info("🔧 Création du singleton TdrOrchestrator...")
+        _tdr_orchestrator_instance = TdrOrchestrator()
+    return _tdr_orchestrator_instance

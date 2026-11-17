@@ -96,6 +96,29 @@ def test_rag_context_for_assessment_is_scoped_to_session(monkeypatch):
     assert "module-1.pptx" in context
 
 
+def test_assessment_context_is_bounded_and_samples_passages_across_the_support(monkeypatch):
+    chunks = [{
+        "contenu": f"Passage pédagogique numéro {index}. " + ("notion précise " * 100),
+        "fichier": "support.pdf",
+        "module": f"Module {index}",
+        "chunk_index": index,
+    } for index in range(35)]
+
+    class FauxKnowledgeRepository:
+        def lister_chunks_session(self, **_kwargs):
+            return chunks
+
+    from app.services.rag import knowledge_repository
+    monkeypatch.setattr(knowledge_repository, "KnowledgeRepository", FauxKnowledgeRepository)
+
+    context = asyncio.run(routes._rag_context_for_formation("FID", "Formation", "session-fid"))
+
+    assert len(context) <= routes._ASSESSMENT_CONTEXT_MAX_CHARS
+    assert context.count("[Document :") <= routes._ASSESSMENT_CONTEXT_MAX_PASSAGES
+    assert "passage 0]" in context
+    assert "passage 34]" in context
+
+
 def test_rag_context_without_session_does_not_query_any_documents():
     context = asyncio.run(routes._rag_context_for_formation("FID", "Formation FID"))
 
@@ -263,6 +286,50 @@ def test_assessment_generates_ten_questions_from_existing_session_chunks(monkeyp
 
     assert len(generated) == 10
     assert all(question.get("preuve_support") == citation for question in generated)
+
+
+def test_assessment_retries_once_with_compact_context_after_tpm_payload_rejection(monkeypatch):
+    citation = "La méthode RTFCE comprend le rôle, la tâche, le format, le contexte et l’exemple."
+    questions = [{
+        "id": f"q{index}",
+        "competence": "Méthode RTFCE",
+        "enonce": f"Question distincte {index} sur la méthode RTFCE ?",
+        "options": [
+            {"id": "A", "label": "Le rôle"}, {"id": "B", "label": "La tâche"},
+            {"id": "C", "label": "Le format"}, {"id": "D", "label": "Le contexte"},
+        ],
+        "correct_answer": "A",
+        "preuve_support": citation,
+    } for index in range(1, 11)]
+    contexte = "\n\n".join(
+        f"[Document : support.pdf ; module : Module {index} ; passage {index}]\n"
+        f"{citation} {('contenu pédagogique détaillé ' * 35)}"
+        for index in range(35)
+    )
+    calls = []
+
+    async def existing_context(*_args, **_kwargs):
+        return contexte
+
+    class FauxLLM:
+        async def generate(self, **kwargs):
+            calls.append(kwargs)
+            if len(calls) == 1:
+                raise routes.LLMError(
+                    "413 request too large for tokens per minute (TPM): Requested 14190; please reduce prompt size"
+                )
+            return {"content": json.dumps({"questions": questions})}
+
+    monkeypatch.setattr(routes, "_rag_context_for_formation", existing_context)
+    monkeypatch.setattr(routes, "get_llm_provider", lambda: FauxLLM())
+    session = SimpleNamespace(id="session-ia", formation_code="FID", titre="Titre administratif")
+
+    generated = asyncio.run(routes._generate_assessment(session))
+
+    assert len(generated) == 10
+    assert len(calls) == 2
+    assert len(calls[1]["user_prompt"]) < len(calls[0]["user_prompt"])
+    assert all(question["preuve_support"] == citation for question in generated)
 
 
 def test_assessment_retries_once_when_groq_rejects_only_json_syntax():

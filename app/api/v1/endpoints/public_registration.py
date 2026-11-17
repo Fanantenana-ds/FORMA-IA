@@ -134,7 +134,12 @@ async def _rag_context_for_formation(
             for i, chunk in enumerate(chunks)
             if str(chunk.get("contenu") or "").strip()
         ]
-        return "\n\n".join(passages)
+        contexte = _limiter_contexte_evaluation("\n\n".join(passages))
+        logger.info(
+            "Contexte questionnaire borné aux extraits utiles (session=%s, passages=%s/%s, caractères=%s).",
+            session_id, contexte.count("[Document :"), len(passages), len(contexte),
+        )
+        return contexte
     except Exception:
         logger.exception("Lecture des chunks RAG déjà indexés impossible pour le questionnaire.")
         return ""
@@ -149,6 +154,60 @@ def _normaliser_preuve(value: str) -> str:
 
 
 _MIN_QUESTIONS = 10
+_ASSESSMENT_CONTEXT_MAX_CHARS = 14_000
+_ASSESSMENT_CONTEXT_MAX_PASSAGES = 14
+
+
+def _limiter_contexte_evaluation(
+    contexte: str,
+    *,
+    max_chars: int = _ASSESSMENT_CONTEXT_MAX_CHARS,
+    max_passages: int = _ASSESSMENT_CONTEXT_MAX_PASSAGES,
+) -> str:
+    """Bound prompt size while keeping a spread of real, citable source passages."""
+    passages = [
+        passage.strip() for passage in re.split(r"(?=\[Document :)", contexte)
+        if passage.strip().startswith("[Document :")
+    ]
+    if not passages:
+        return contexte[:max_chars]
+
+    if len(passages) > max_passages:
+        if max_passages == 1:
+            indices = [0]
+        else:
+            indices = sorted({
+                round(index * (len(passages) - 1) / (max_passages - 1))
+                for index in range(max_passages)
+            })
+        passages = [passages[index] for index in indices]
+
+    compactes = []
+    caracteres_utilises = 0
+    for passage in passages:
+        lignes = passage.splitlines()
+        entete = lignes[0][:240]
+        contenu = "\n".join(lignes[1:]).strip()
+        restant = max_chars - caracteres_utilises - len(entete) - 2
+        if restant < 160:
+            break
+        limite_contenu = min(900, restant)
+        extrait = contenu[:limite_contenu]
+        if len(contenu) > limite_contenu:
+            extrait = extrait.rsplit(" ", 1)[0]
+        compact = f"{entete}\n{extrait}".strip()
+        compactes.append(compact)
+        caracteres_utilises += len(compact) + 2
+        if caracteres_utilises >= max_chars:
+            break
+    return "\n\n".join(compactes)
+
+
+def _erreur_tpm_requete_trop_volumineuse(error: Exception) -> bool:
+    message = str(error).lower()
+    limite_tpm = "tokens per minute" in message or "(tpm)" in message
+    refus_taille = any(marker in message for marker in ("requested", "too large", "reduce"))
+    return limite_tpm and refus_taille
 
 def _assessment_est_ancre(questions: list[dict] | None) -> bool:
     return bool(questions) and len(questions) >= _MIN_QUESTIONS and all(
@@ -366,6 +425,9 @@ async def _generate_assessment(session: TrainingSession, stage: str = "initial",
                 ),
             )
         rag_context = tdr_context
+    # Le TDR de secours peut lui aussi être long : appliquer le même budget
+    # de prompt, sans enlever les citations qui serviront à valider les QCM.
+    rag_context = _limiter_contexte_evaluation(rag_context)
     context_block = (
         f"\n\nCONTENU PÉDAGOGIQUE INDEXÉ (extraits réels des supports de la formation) :\n{rag_context}\n\n"
         "Base chaque question exclusivement sur ces extraits. Le titre de session et le code client sont administratifs : "
@@ -389,19 +451,53 @@ async def _generate_assessment(session: TrainingSession, stage: str = "initial",
     )
     try:
         llm_provider = get_llm_provider()
-        response = await _generate_assessment_json(
-            llm_provider,
-            system_prompt=("Tu conçois une évaluation en français STRICTEMENT à partir des extraits fournis. N'ajoute aucune connaissance générale, aucun sujet tiré du nom du client ou du titre administratif, et refuse implicitement toute notion absente des extraits. "
-                           "Écris pour les participants avec une formulation naturelle, claire et précise. Le test final mesure les acquis; le test initial mesure le niveau de départ, sans juger la personne."),
-            user_prompt=(f"Crée exactement {_MIN_QUESTIONS} QCM concis de {'validation des acquis après la formation' if stage == 'final' else 'positionnement avant la formation'} à partir des seuls extraits ci-dessous."
-                         f"{objectif_etape}\n{context_block} Retourne uniquement un objet JSON avec une clé questions. "
-                         "Chaque question doit avoir id (q1...), competence courte, enonce court, options (4 objets id A-D et label court), "
-                         "correct_answer (A-D), preuve_support (citation exacte des extraits). Questions concrètes, progressives, "
-                         "une seule bonne réponse. Varie l'angle, jamais le contenu. N'invente rien. "
-                         "Réponse très concise : une phrase par énoncé, options brèves et preuve courte exacte."),
-            temperature=0.1, max_tokens=1700, json_mode=True,
-            reasoning_effort="low",
+        system_prompt = (
+            "Tu conçois une évaluation en français STRICTEMENT à partir des extraits fournis. "
+            "N'ajoute aucune connaissance générale, aucun sujet tiré du nom du client ou du titre administratif, "
+            "et refuse implicitement toute notion absente des extraits. Écris pour les participants avec une "
+            "formulation naturelle, claire et précise. Le test final mesure les acquis; le test initial mesure "
+            "le niveau de départ, sans juger la personne."
         )
+        user_prompt = (
+            f"Crée exactement {_MIN_QUESTIONS} QCM concis de "
+            f"{'validation des acquis après la formation' if stage == 'final' else 'positionnement avant la formation'} "
+            f"à partir des seuls extraits ci-dessous.{objectif_etape}\n{context_block} "
+            "Retourne uniquement un objet JSON avec une clé questions. Chaque question doit avoir id (q1...), "
+            "competence courte, enonce court, options (4 objets id A-D et label court), correct_answer (A-D), "
+            "preuve_support (citation exacte des extraits). Questions concrètes, progressives, une seule bonne "
+            "réponse. Varie l'angle, jamais le contenu. N'invente rien. Réponse très concise : une phrase par "
+            "énoncé, options brèves et preuve courte exacte."
+        )
+        try:
+            response = await _generate_assessment_json(
+                llm_provider,
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                temperature=0.1, max_tokens=1700, json_mode=True,
+                reasoning_effort="low",
+            )
+        except LLMError as exc:
+            if not _erreur_tpm_requete_trop_volumineuse(exc):
+                raise
+            contexte_reduit = _limiter_contexte_evaluation(
+                rag_context, max_chars=7_000, max_passages=8,
+            )
+            if len(contexte_reduit) >= len(rag_context):
+                raise
+            logger.warning(
+                "Requête questionnaire refusée pour dépassement TPM; nouvelle tentative "
+                "avec contexte réduit (session=%s, caractères=%s→%s).",
+                session.id, len(rag_context), len(contexte_reduit),
+            )
+            user_prompt_reduit = user_prompt.replace(rag_context, contexte_reduit, 1)
+            rag_context = contexte_reduit
+            response = await _generate_assessment_json(
+                llm_provider,
+                system_prompt=system_prompt,
+                user_prompt=user_prompt_reduit,
+                temperature=0.1, max_tokens=1700, json_mode=True,
+                reasoning_effort="low",
+            )
         if response.get("finish_reason") == "length":
             raise ValueError("La réponse du modèle a été tronquée avant la fin du questionnaire.")
         contenu_json = str(response.get("content") or "").strip()
@@ -539,12 +635,16 @@ async def _generate_assessment(session: TrainingSession, stage: str = "initial",
             "(session=%s, étape=%s, extraits=%s, caractères_contexte=%s, erreur=%s).",
             session.id, stage, rag_context.count("[Document :"), len(rag_context), type(exc).__name__,
         )
+        detail = (
+            "Les extraits restent trop volumineux pour la limite de tokens du fournisseur IA. "
+            "Aucun questionnaire générique n'a été créé ; réduisez les supports indexés ou relancez plus tard."
+            if isinstance(exc, LLMError) and _erreur_tpm_requete_trop_volumineuse(exc)
+            else "Le fournisseur IA n'a pas terminé le questionnaire à partir des supports. "
+                 "Aucun questionnaire générique n'a été créé ; vous pouvez relancer la génération."
+        )
         raise HTTPException(
             status_code=503,
-            detail=(
-                "Le fournisseur IA n'a pas terminé le questionnaire à partir des supports. "
-                "Aucun questionnaire générique n'a été créé ; vous pouvez relancer la génération."
-            ),
+            detail=detail,
         ) from exc
     raise HTTPException(
         status_code=422,

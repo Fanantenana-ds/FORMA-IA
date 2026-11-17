@@ -302,8 +302,11 @@ def decider_candidature(
     if trainer.user_id is None and candidat.email:
         account = db.query(User).filter(User.email == candidat.email).first()
         tenant_id = current_user.owner_id or current_user.id
-        if account and (account.owner_id != tenant_id or account.role != RoleEnum.FORMATEUR):
-            raise HTTPException(409, "Cet email est déjà utilisé par un compte d’une autre entreprise ou d’un autre rôle.")
+        if account and account.owner_id != tenant_id:
+            raise HTTPException(409, "Cet email est déjà utilisé par un compte d’une autre entreprise.")
+        if account and account.role != RoleEnum.FORMATEUR:
+            # Upgrade the existing account role to FORMATEUR for this tenant
+            account.role = RoleEnum.FORMATEUR
         if account is None:
             temporary_password = secrets.token_urlsafe(12)
             account = User(

@@ -9,7 +9,8 @@ from pathlib import Path
 from typing import Any, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -517,6 +518,43 @@ def _review_has_generated_attestation_pdf(review: dict[str, Any]) -> bool:
     return False
 
 
+def _attestation_batch_http_response(
+    result: dict[str, Any], response_message: str, session_id: str,
+) -> JSONResponse:
+    """Sérialise le résultat M6 sans perdre l'accusé du lot HITL déjà créé."""
+    try:
+        response = _build_response(
+            result, response_message, float(result.get("duration_seconds", 0))
+        )
+        return JSONResponse(content=jsonable_encoder(response))
+    except (TypeError, ValueError, OverflowError):
+        review_id = result.get("_review_id")
+        pdf_count = int(result.get("total_pdf_generated", 0) or 0)
+        if not review_id or pdf_count <= 0:
+            raise
+        logger.exception(
+            "Réponse détaillée M6 non sérialisable après création du lot %s; "
+            "retour d'un accusé compact.",
+            review_id,
+        )
+        return JSONResponse(
+            content={
+                "success": True,
+                "message": "Attestations générées et placées en validation humaine.",
+                "duration_seconds": float(result.get("duration_seconds", 0) or 0),
+                "review_id": review_id,
+                "review_status": result.get("_review_status", "pending_review"),
+                "requires_human_action": True,
+                "data": {
+                    "session_id": str(session_id),
+                    "total_eligible": int(result.get("total_eligible", 0) or 0),
+                    "total_pdf_generated": pdf_count,
+                    "total_failed": int(result.get("total_failed", 0) or 0),
+                },
+            }
+        )
+
+
 @router.post("/sessions/{session_id}/attestations/generer", summary="[M6] Générer les attestations PDF des participants éligibles")
 async def generer_attestations_session(
     session_id: str,
@@ -563,7 +601,8 @@ async def generer_attestations_session(
         if not result.get("total_pdf_generated")
         else "Attestations générées pour validation humaine."
     )
-    return _build_response(result, response_message, float(result.get("duration_seconds", 0)))
+    # Sérialiser maintenant : ne pas renvoyer un 500 après la création du lot.
+    return _attestation_batch_http_response(result, response_message, session_id)
 
 
 def _attestation_review(review_id: str, numero: str, *, approved_only: bool = False) -> tuple[dict[str, Any], dict[str, Any]]:

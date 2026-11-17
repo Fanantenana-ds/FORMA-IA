@@ -3,8 +3,11 @@ from typing import List, Optional
 from uuid import UUID
 
 from fastapi import HTTPException
+from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core.tenant_context import get_tenant_id
 from app.models.facture import Facture, Paiement, Relance, StatutFacture
 from app.models.formation import Session as TrainingSession
 from app.schemas.facture import FactureCreate, FactureUpdate, PaiementCreate, RelanceIACreate
@@ -16,8 +19,31 @@ class FactureService:
 
     def _generer_numero(self) -> str:
         annee = date_type.today().year
-        total = self.db.query(Facture).count()
-        return f"FACT-{annee}-{total + 1:04d}"
+        prefixe = f"FACT-{annee}-"
+        # Le numéro est globalement unique (contrainte DB), alors que les
+        # requêtes ORM Facture sont filtrées par tenant. Une lecture SQL brute
+        # limitée aux numéros évite de recalculer une séquence déjà utilisée
+        # dans un autre espace client.
+        numeros = self.db.execute(
+            text("SELECT numero FROM factures WHERE numero LIKE :prefixe"),
+            {"prefixe": f"{prefixe}%"},
+        ).scalars().all()
+        maximum = max(
+            (
+                int(numero.removeprefix(prefixe))
+                for numero in numeros
+                if numero.startswith(prefixe) and numero.removeprefix(prefixe).isdigit()
+            ),
+            default=0,
+        )
+        return f"{prefixe}{maximum + 1:04d}"
+
+    @staticmethod
+    def _is_numero_conflict(error: IntegrityError) -> bool:
+        original = getattr(error, "orig", None)
+        constraint = getattr(getattr(original, "diag", None), "constraint_name", "") or ""
+        message = f"{constraint} {original or error}".lower()
+        return "numero" in message and ("unique" in message or "duplicate" in message or "key" in message)
 
     def emettre_facture(self, data: FactureCreate) -> Facture:
         session = None
@@ -30,23 +56,38 @@ class FactureService:
         client = (data.client or (session.client if session else None) or "").strip()
         if not client:
             raise HTTPException(status_code=422, detail="Le client est obligatoire pour émettre la facture.")
-        facture = Facture(
-            numero = self._generer_numero(),
-            client = client,
-            client_adresse = data.client_adresse,
-            client_siret = data.client_siret,
-            client_rcs = data.client_rcs,
-            client_tva = data.client_tva,
-            montant = data.montant,
-            tva_taux = data.tva_taux,
-            date_echeance = data.date_echeance,
-            session_id = data.session_id,
-            statut = StatutFacture.EMISE
-        )
-        self.db.add(facture)
-        self.db.commit()
-        self.db.refresh(facture)
-        return facture
+        tenant_id = self.db.info.get("tenant_owner_id") or get_tenant_id()
+        for attempt in range(3):
+            facture = Facture(
+                numero=self._generer_numero(),
+                client=client,
+                client_adresse=data.client_adresse,
+                client_siret=data.client_siret,
+                client_rcs=data.client_rcs,
+                client_tva=data.client_tva,
+                montant=data.montant,
+                tva_taux=data.tva_taux,
+                date_echeance=data.date_echeance,
+                session_id=data.session_id,
+                statut=StatutFacture.EMISE,
+                owner_id=tenant_id,
+            )
+            self.db.add(facture)
+            try:
+                self.db.commit()
+            except IntegrityError as exc:
+                self.db.rollback()
+                if not self._is_numero_conflict(exc):
+                    raise
+                if attempt == 2:
+                    raise HTTPException(
+                        status_code=409,
+                        detail="La séquence de facturation vient d’être réservée par une autre émission. Réessayez.",
+                    ) from exc
+                continue
+            self.db.refresh(facture)
+            return facture
+        raise HTTPException(status_code=409, detail="Impossible de réserver un numéro de facture.")
 
     def get_facture(self, facture_id: UUID) -> Facture:
         facture = self.db.query(Facture).filter(Facture.id == facture_id).first()

@@ -1,4 +1,6 @@
 import asyncio
+import json
+import math
 from pathlib import Path
 
 import pytest
@@ -63,6 +65,28 @@ def test_un_review_sans_fichier_pdf_ne_bloque_pas_une_nouvelle_generation(review
     assert formation_ia._review_has_generated_attestation_pdf(review_avec_pdf) is True
     assert formation_ia._review_has_generated_attestation_pdf(review_vide) is False
     assert formation_ia._review_has_generated_attestation_pdf(review_pdf_absent) is False
+
+
+def test_reponse_m6_compacte_si_les_pdf_sont_crees_mais_le_payload_est_invalide():
+    result = {
+        "_review_id": "HITL-test-M6-0001",
+        "_review_status": "pending_review",
+        "total_eligible": 2,
+        "total_pdf_generated": 2,
+        "total_failed": 0,
+        "duration_seconds": 1.2,
+        "data_invalid_for_json": math.nan,
+    }
+
+    response = formation_ia._attestation_batch_http_response(
+        result, "Attestations générées.", "session-test",
+    )
+    payload = json.loads(response.body)
+
+    assert response.status_code == 200
+    assert payload["success"] is True
+    assert payload["review_id"] == "HITL-test-M6-0001"
+    assert payload["data"]["total_pdf_generated"] == 2
 
 
 def test_approbation_individuelle_et_zip_apres_approbation_complete(review_m6):
